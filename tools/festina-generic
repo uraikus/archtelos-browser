@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Runs the Festina CLI with LLVM told to target a generic x86-64 CPU
+instead of the host's exact feature set.
+
+Festina's backend compiles for the host CPU (LLVMGetHostCPUFeatures),
+which on an AVX-512 machine produces instructions valgrind cannot
+emulate. This wrapper only matters for valgrind runs of the test suite
+(tests/run.sh --valgrind); ordinary builds use bin/festina as usual.
+
+Usage: FESTINA_HOME=/path/to/festina tools/festina-generic compile x.f -o x
+"""
+import os
+import sys
+
+home = os.environ.get("FESTINA_HOME")
+if not home:
+    sys.exit("set FESTINA_HOME to the Festina checkout")
+sys.path.insert(0, home)
+
+from festina import llvm_backend, cli  # noqa: E402
+
+binding = llvm_backend._binding()
+binding.host_cpu_name = lambda: b"x86-64"
+binding.host_cpu_features = lambda: b""
+sys.exit(cli.main())
