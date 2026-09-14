@@ -252,9 +252,11 @@ file grew a function of the same name.
 
 Worth saying, because this document is otherwise a list of gaps.
 
-- **A 2,231-entry map literal compiles in five seconds** and looks up in
-  constant time. The generated character reference table is 2,248 lines
-  of source and cost nothing to adopt.
+- **A 2,231-entry map literal works**, and looks up in constant time.
+  The generated character reference table is 2,248 lines of source and
+  costs nothing at runtime. It is not free at compile time — it accounts
+  for 4.2 s of this project's 9.1 s build, against 0.6 s for a one-line
+  program — so a faster path for large literal tables would be welcome.
 - **`ascii` is the right primitive for a parser.** O(1) indexing,
   compile-time literals for keyword comparisons, and a table of immortal
   single-character values so a scan allocates nothing. The tokenizer is
@@ -268,7 +270,8 @@ Worth saying, because this document is otherwise a list of gaps.
   check real pixels with no display.
 - **Template literals span lines**, which is how the user-agent
   stylesheet is embedded as plain readable CSS.
-- **The compiler is fast and its diagnostics are precise.** 11,296 lines
-  in 3.5 seconds, and `file:line:column` on every error.
+- **The compiler is quick and its diagnostics are precise.** 11,296
+  lines in 9.1 seconds, over half of which is one generated table, and
+  `file:line:column` on every error.
 - **The result is one 2.2 MB native binary** that starts in 6 ms,
   against 448 ms for the browser it is measured beside.

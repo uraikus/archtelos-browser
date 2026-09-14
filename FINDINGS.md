@@ -326,8 +326,9 @@ descent 0.24 em), and any other font is laid out slightly wrong.
   single-character values so a character-by-character scan allocates
   nothing.
 - **A 2,231-entry map literal** — the standard's complete named
-  character reference table — compiles in about five seconds and looks
-  up in constant time.
+  character reference table — works, and looks up in constant time. It
+  is priced at compile time rather than run time: that one table is
+  4.2 s of this project's 9.1 s build.
 - **Structs with zero values** make a 40-field computed `Style` free to
   create: the cascade writes only what changed.
 - **The canvas has what a browser needs**: `translate` for scrolling,
@@ -341,7 +342,7 @@ descent 0.24 em), and any other font is laid out slightly wrong.
 - **The HTTP client** handles TLS and chunked responses without
   ceremony, and `try`/`catch` turns a network failure into an error
   page.
-- **The compiler is fast and its diagnostics are precise**: 11,296 lines
-  in 3.5 seconds, `file:line:column` on every error, and a type checker
+- **The compiler is quick and its diagnostics are precise**: 11,296
+  lines in 9.1 seconds, `file:line:column` on every error, and a type checker
   that catches mismatched `?:` branches, a `void` used as a value and an
   `int`/`float` mix before anything runs.

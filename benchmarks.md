@@ -161,5 +161,12 @@ the ones worth closing.
 | | |
 |---|---|
 | Source | 11,296 lines of Festina across `browser.f` and `src/` |
-| Compile | 3.5 s, whole program, no incremental build |
+| Compile | 9.1 s, whole program, no incremental build |
 | Binary | 2.2 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
+
+Of that 9.1 s, **4.2 s is the single generated map literal** holding the
+standard's 2,231 named character references: a one-line program compiles
+in 0.6 s, and the same program importing only that table takes 4.8 s.
+The table is the right data structure — it looks up in constant time and
+the runtime cost is nil — but a large literal is priced at compile time,
+which is worth knowing before generating another one.
