@@ -36,6 +36,10 @@ run() {
         "$@"
     fi
 }
+# The conformance floor: tests/conformance must not pass fewer than this.
+# Raise it when the parser improves; never lower it (CLAUDE.md).
+CONFORMANCE_MIN=1499
+
 failed=0
 for src in tests/unit/*.f tests/render/*.f; do
     name="$(basename "$src" .f)"
@@ -46,6 +50,14 @@ for src in tests/unit/*.f tests/render/*.f; do
         echo "FAILED: $src"; failed=1
     fi
 done
+if compile tests/conformance/html5lib.f "$BUILD/conformance" >/dev/null; then
+    if ! run "$BUILD/conformance" --min "$CONFORMANCE_MIN"; then
+        echo "FAILED: tests/conformance/html5lib.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/html5lib.f"; failed=1
+fi
+
 if compile browser.f "$BUILD/browser" >/dev/null; then
     for page in examples/*.html; do
         out="$BUILD/$(basename "$page" .html).png"

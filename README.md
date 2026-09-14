@@ -1,31 +1,39 @@
 # archtelos-browser
 
-An HTML5 / CSS3 renderer and a small web browser, written entirely in
+An HTML and CSS renderer, and a small web browser, written entirely in
 the [Festina](https://github.com/uraikus/festina) language.
 
-The project exists to find the gaps and insufficiencies in Festina by
-building something demanding with it, and to show what the language
-already does well. The renderer is real: its own HTML tokenizer and
-tree builder, a CSS parser and cascade, block/inline/table layout,
-painting on Festina's canvas, and an HTTP(S) client, all in one native
-binary with no libraries beyond what Festina itself links. What was
-learned along the way is in [FINDINGS.md](FINDINGS.md).
+The project has two purposes, equally weighted: render real pages
+correctly, and keep finding the places where Festina is insufficient.
+The renderer is real — its own HTML tokenizer and tree builder, a CSS
+parser and cascade, block, inline and table layout, painting on
+Festina's canvas, and an HTTP(S) client — all in one 2.2 MB native
+binary that links nothing Festina does not already link. What building
+it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
+Festina should gain as a result is in [festina.md](festina.md).
+
+**HTML parsing follows the
+[WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
+the standard's own tree-construction corpus it passes **1,499 of 1,652**
+cases. Chromium 141 passes 1,535 of the same cases, and 84 of the 153
+this browser fails are cases Chromium fails too. CSS targets the
+[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/); see
+[todo.md](todo.md) for that gap.
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 
 ## Building and running
 
-You need a Festina checkout (its `bin/festina`) and the dependencies
-Festina's graphics tier needs (`clang`, `libsqlite3-dev`,
-`libcairo2-dev`, `libx11-dev`, `libjpeg-dev`, `libmbedtls-dev`,
-`pkg-config`; see Festina's setup.md).
+Point `FESTINA_HOME` at a Festina checkout and compile:
 
 ```bash
 export FESTINA_HOME=/path/to/festina
+sudo apt install clang libsqlite3-dev libcairo2-dev libx11-dev \
+                 libjpeg-dev libmbedtls-dev pkg-config
 $FESTINA_HOME/bin/festina compile browser.f -o browser
 
 ./browser examples/hello.html                     # a local file
-./browser https://raw.githubusercontent.com/uraikus/festina/main/docs/index.html
+./browser https://example.com/                    # over HTTP(S)
 ./browser                                          # a built-in welcome page
 
 # headless: lay out at 900px and write a PNG of the whole document
@@ -36,120 +44,124 @@ Inside the window:
 
 | Input | Effect |
 |---|---|
-| mouse wheel, `Up`/`Down`, `PageUp`/`PageDown`, `Home`/`End`, space | scroll |
-| click on a link | follow it (the target shows in the status bar while hovering) |
+| wheel, `Up`/`Down`, `PageUp`/`PageDown`, `Home`/`End`, space | scroll |
+| click a link | follow it; the target shows in the status bar on hover |
 | `BackSpace`, or the `<` button | back |
 | `F5` | reload |
-| `F6`, or a click on the address bar | edit the address; `Return` loads it, `Escape` cancels |
+| `F6`, or a click on the address bar | edit the address; `Return` loads, `Escape` cancels |
 | resizing the window | re-layout at the new width |
 
-`ARCHTELOS_TIMING=1` in the environment prints how long each phase
-(fetch, parse, stylesheets, images, cascade, layout, paint) took.
+`ARCHTELOS_TIMING=1` prints per-phase timings.
 
 ## What it renders
 
-- **HTML**: an HTML5-style tokenizer (attributes with any quoting,
-  entities including the HTML 4 named set and numeric references,
-  comments, doctypes, CDATA, raw-text `script`/`style`, escapable
-  `textarea`/`title`) and a tree builder with an html/head/body
-  skeleton, void elements and the implied end tags that make untidy
-  markup nest (`p`, `li`, `dt`/`dd`, `option`, `tr`/`td`/`th`, row
-  groups, unclosed headings). UTF-8 input is handled through a byte
-  pre-pass (see FINDINGS.md on why).
-- **CSS**: stylesheets from `<style>`, `<link rel=stylesheet>` (fetched)
-  and `style=""`; comments, `@media` (width/height features, `screen`,
-  `print`, `not`, `and`, `,`), `@supports` and `@layer` blocks
-  (contents used), other at-rules skipped; selectors: type, universal,
-  `#id`, `.class`, `[attr]` with `=`, `~=`, `^=`, `$=`, `*=`, `|=`,
-  descendant / child / adjacent / general-sibling combinators,
-  `:first-child`, `:last-child`, `:only-child`, `:nth-child(odd|even|n)`,
-  `:first-of-type`, `:last-of-type`, `:root`, `:link`, `:not(compound)`;
-  specificity, source order, `!important`, inline styles and HTML
-  presentational attributes (`align`, `bgcolor`, `width`, `height`,
-  `border`, `cellpadding`, `cellspacing`, `font color/size/face`,
-  `nowrap`, `hidden`); shorthands for `margin`, `padding`, `border`,
-  `border-*`, `font`, `background`, `list-style`; units px, em, rem, %,
-  pt, pc, in, cm, mm, ex, ch, vw, vh; colors by name (all 148), `#rgb`,
-  `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`, `rgba()`, `hsl()`, `hsla()`,
-  `transparent`, `currentcolor`; `inherit`.
-- **Properties**: `display` (block, inline, inline-block, list-item,
-  none, table, table-row, table-cell, table-row-group; flex and grid
-  fall back to block), `color`, `background-color`, `font-size`
-  (including keywords, `smaller`/`larger`), `font-weight`,
-  `font-style`, `font-family`, `font`, `line-height`, `text-align`,
-  `text-decoration`, `text-transform`, `letter-spacing`, `white-space`
-  (normal, nowrap, pre, pre-wrap), `list-style-type`, `vertical-align`,
-  `opacity`, `visibility`, `width`/`height`/`min-*`/`max-*`, margins
-  (including `auto` centering), padding, borders with per-side widths
-  and colors, `border-radius`, `border-spacing`, `border-collapse`,
-  `text-indent`.
-- **Layout**: block formatting with margin collapsing (siblings and
-  through parents), inline formatting with word wrapping, collapsible
-  whitespace across inline boundaries, line-height and baseline
-  alignment, `text-align`, inline backgrounds and borders,
-  inline-blocks with shrink-to-fit widths, replaced images with
-  intrinsic sizes and aspect ratio, `br`, `pre`, list markers (disc,
-  circle, square, decimal with `value`), automatic table layout with
-  fixed and percentage columns, `colspan`, row height and vertical
-  alignment, and form controls drawn as boxes (text fields, buttons,
-  checkboxes, radios, selects).
-- **Painting**: backgrounds, borders (rounded corners through a bezier
-  path), text runs at their baselines, underline and line-through,
-  images (PNG/JPEG), broken-image placeholders with alt text, list
-  markers, opacity.
+**HTML** is the standard's algorithm, not an approximation of it. The
+tokenizer implements the tag, attribute, comment, doctype, RCDATA,
+RAWTEXT, PLAINTEXT, script-data and script-data-escaped states, CDATA
+sections, and bogus comments. Character references cover all 2,231 named
+references with longest-match, the 106 legacy names that work without a
+semicolon, the attribute-value rule that leaves `?a=1&copy=2` alone, and
+numeric references with the standard's replacements. Tree construction
+implements all 23 insertion modes, the stack of open elements with its
+five scopes, the list of active formatting elements with the adoption
+agency algorithm, foster parenting, template contents, quirks-mode
+detection from the doctype, and foreign content — SVG and MathML
+namespaces, tag and attribute name adjustment, and integration points.
 
-Not supported, deliberately or for now: floats, positioned boxes,
-flexbox and grid (all laid out as static blocks), `overflow: hidden`
-clipping, generated content, JavaScript, forms that submit, CSS
-`background-image`, cookies, caching. See FINDINGS.md for what a
-Festina limitation caused versus what is simply out of scope.
+**CSS** comes from `<style>`, `<link rel=stylesheet>` (fetched) and
+`style=""`. Selectors: type, universal, `#id`, `.class`, `[attr]` with
+`=`, `~=`, `^=`, `$=`, `*=`, `|=`, the descendant, child, adjacent and
+general-sibling combinators, `:first-child`, `:last-child`,
+`:only-child`, `:nth-child(odd|even|n)`, `:first-of-type`,
+`:last-of-type`, `:root`, `:link` and `:not(compound)`. The cascade
+handles specificity, source order, `!important`, inline styles and HTML
+presentational attributes. `@media` is evaluated against the viewport;
+`@supports` and `@layer` contribute their contents; other at-rules are
+skipped. Units: px, em, rem, %, pt, pc, in, cm, mm, ex, ch, vw, vh.
+Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
+`rgba()`, `hsl()`, `hsla()`, `transparent` and `currentcolor`.
 
-## Layout of the source
+**Layout** is block formatting with margin collapsing, inline formatting
+with word wrapping and baseline alignment, inline-blocks with
+shrink-to-fit widths, replaced images with intrinsic sizes and aspect
+ratio, `pre`, list markers, and automatic table layout with fixed and
+percentage columns, `colspan`, row heights and vertical alignment. Form
+controls are drawn as boxes.
 
-| Path | What it holds |
+**Painting** covers backgrounds, borders with rounded corners,
+text with underline and line-through, images, broken-image placeholders,
+list markers and opacity.
+
+Floats, positioned boxes, Flexbox and Grid are laid out as static
+blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
+[todo.md](todo.md) for what is planned and what is deliberately not.
+
+## Repository
+
+| Path | Contents |
 |---|---|
-| `browser.f` | the windowed shell: toolbar, address bar, scrolling, history, link clicks, `--screenshot` |
-| `src/browser/page.f` | the page pipeline shared with the tests: fetch, parse, stylesheets, images, cascade, layout, paint |
-| `src/html/` | `decode.f` (UTF-8 to ASCII-safe), `entities.f`, `tokenizer.f`, `parser.f` (tree builder) |
-| `src/dom/node.f` | the `Node` tree, registry-backed parent lookup |
-| `src/css/` | `parser.f` (rules, selectors, `@media`), `ua.f` (default stylesheet), `style.f` (computed `Style`), `cascade.f` (matching, specificity, shorthands, computed values) |
-| `src/layout/layout.f` | box tree, block and inline formatting, tables, intrinsic widths |
+| `browser.f` | the windowed shell: toolbar, address bar, scrolling, history, link navigation, `--screenshot` |
+| `src/browser/page.f` | the page pipeline: fetch, parse, stylesheets, images, cascade, layout, paint |
+| `src/html/` | `decode.f`, `entities.f`, `named_refs.f` (the standard's reference table), `tokenizer.f`, `parser.f` |
+| `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's serialization) |
+| `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f` |
+| `src/layout/layout.f` | the box tree, block and inline formatting, tables |
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
-| `src/util/` | `text.f` (the string helpers `text` lacks), `color.f`, `named_colors.f` |
-| `tests/` | unit suites, offscreen pixel checks, the runner |
-| `tools/festina-generic` | builds for a generic x86-64 CPU so valgrind can run the result |
+| `src/util/` | `text.f`, `color.f`, `named_colors.f` |
+| `tests/` | unit suites, offscreen pixel checks, the conformance runner, the runners |
+| `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-About 6,000 lines of Festina in `src/` and `browser.f`.
+11,296 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
 ```bash
-FESTINA_HOME=/path/to/festina tests/run.sh             # native
-FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # generic-CPU builds under valgrind
+FESTINA_HOME=/path/to/festina tests/run.sh             # everything
+FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrind
+FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner compiles and runs every suite in `tests/unit/` (utilities,
-HTML parser, CSS parser, cascade, layout geometry) and `tests/render/`
-(the pipeline painting offscreen, checked with `getPixelColor`), then
-renders every example headlessly. There is no test framework:
-`tests/assert.f` is a dozen lines and the suites are ordinary Festina
-programs. The graphics functions used by the tests work without a
-display; the windowed shell was exercised under Xvfb with xdotool
-(scrolling, hovering, following a link, typing an address, going back).
+The runner covers five unit suites (utilities, HTML, CSS parser,
+cascade, layout geometry), an offscreen render suite that checks real
+pixels with `getPixelColor`, the conformance suite, and a headless
+render of every example. There is no test framework: `tests/assert.f` is
+a dozen lines and every suite is an ordinary Festina program.
+
+The conformance suite needs the standard's corpus:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/web-platform-tests/wpt
+cd wpt && git sparse-checkout set html/syntax/parsing
+export WPT_HTML_TESTS=$PWD/html/syntax/parsing/resources
+```
+
+Without it the suite skips cleanly and the rest still runs. With it,
+`tests/run.sh` fails if the pass count drops.
+
+The whole suite is clean under valgrind: no invalid reads or writes and
+no leaks.
 
 ## Performance
 
-Measured with `ARCHTELOS_TIMING=1` on Festina's own documentation pages
-fetched over HTTPS, after the fixes described in FINDINGS.md:
+Against headless Chromium on the same pages —
+[benchmarks.md](benchmarks.md) has the method and the full tables:
 
-| Page | Elements | Document height | Parse | Cascade | Layout | Paint |
-|---|---|---|---|---|---|---|
-| docs/index.html | ~1,000 | 11,609 px | 3 ms | 102 ms | 19 ms | 4 ms |
-| docs/api.html | 4,470 | 97,584 px | 22 ms | 110 ms | 247 ms | 19 ms |
+| | This browser | Chromium 141 |
+|---|---|---|
+| Start-up (screenshot a one-line page) | 6 ms | 448 ms |
+| Parse 51 KB of HTML | 7 ms | 1.7 ms |
+| Render 51 KB, start-up subtracted | 280 ms | 54 ms |
 
-Before those fixes the same two pages took 21 s and 43 s; the cause,
-and why it matters for Festina, is the first entry of FINDINGS.md.
+A native binary starts two orders of magnitude faster, and Chromium does
+the actual rendering work about five times faster. Parsing is 6% of that
+time; the cascade and layout are 84%.
+
+## Working on this
+
+[CLAUDE.md](CLAUDE.md) holds the project's standing rules — tests before
+code, documents describe the present, benchmarks stay current, and the
+conformance number may not go down.
 
 ## License
 

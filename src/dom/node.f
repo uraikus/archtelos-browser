@@ -20,7 +20,16 @@ import ../css/style.f
 
 const int NODE_ELEMENT = 1
 const int NODE_TEXT = 3
+const int NODE_COMMENT = 8
 const int NODE_DOCUMENT = 9
+const int NODE_DOCTYPE = 10
+const int NODE_FRAGMENT = 11    // a template element's content
+
+// Element namespaces. The tree builder puts foreign content in these;
+// everything else is NS_HTML.
+const int NS_HTML = 0
+const int NS_SVG = 1
+const int NS_MATHML = 2
 
 int nextNodeId = 1
 
@@ -50,9 +59,14 @@ struct Node {
     children:arr[Node]
     parentId:int        // 0 = no parent; see nodeRegistry
     childIndex:int      // position in the parent's children (set by appendChild)
-    data:text           // text node contents
+    data:text           // text node contents, comment data, or doctype name
+    ns:int              // NS_HTML, NS_SVG or NS_MATHML
+    publicId:text       // doctype only
+    systemId:text       // doctype only
+    hasExternalId:bool  // doctype only: a public or system id was present
     style:Style
     boxId:int
+    contentId:int       // a template element's content fragment, else 0
     // the class attribute split into names, computed once on first use
     classes:arr[text]
     classesParsed:bool
@@ -105,6 +119,41 @@ Node func newTextNode(data:text) {
     n.kind = NODE_TEXT
     n.tag = ''
     n.data = `${data}`
+    return n
+}
+
+Node func newTemplateContent() {
+    Node n
+    n.id = nextNodeId
+    nextNodeId++
+    registerNode(n)
+    n.kind = NODE_FRAGMENT
+    n.tag = ''
+    return n
+}
+
+Node func newComment(data:text) {
+    Node n
+    n.id = nextNodeId
+    nextNodeId++
+    registerNode(n)
+    n.kind = NODE_COMMENT
+    n.tag = ''
+    n.data = `${data}`
+    return n
+}
+
+Node func newDoctype(name:text, publicId:text, systemId:text, hasExternalId:bool) {
+    Node n
+    n.id = nextNodeId
+    nextNodeId++
+    registerNode(n)
+    n.kind = NODE_DOCTYPE
+    n.tag = ''
+    n.data = `${name}`
+    n.publicId = `${publicId}`
+    n.systemId = `${systemId}`
+    n.hasExternalId = hasExternalId
     return n
 }
 
@@ -280,31 +329,6 @@ text func textContent(n:Node) {
     for int i = 0, i < n.children.length, i++ {
         text piece = textContent(n.children[i])
         out = out + piece
-    }
-    return out
-}
-
-// A readable dump of the tree, used by the tests to pin down exactly
-// what the tree builder produced.
-text func dumpTree(n:Node, indent:int) {
-    text pad = repeatText('  ', indent)
-    text out = ''
-    if n.kind == NODE_TEXT {
-        out = `${pad}"${n.data}"\n`
-        return out
-    }
-    text attrText = ''
-    arr[text] names = n.present.keys()
-    names.sort(int (a:text, b:text) => compareText(a, b))
-    for int i = 0, i < names.length, i++ {
-        text v = n.attrs[names[i]]
-        if v == null { v = '' }
-        attrText = `${attrText} ${names[i]}="${v}"`
-    }
-    out = `${pad}<${n.tag}${attrText}>\n`
-    for int i = 0, i < n.children.length, i++ {
-        text child = dumpTree(n.children[i], indent + 1)
-        out = out + child
     }
     return out
 }

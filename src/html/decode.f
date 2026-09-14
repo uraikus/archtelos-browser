@@ -1,13 +1,29 @@
-// Input normalization. The tokenizer works on `ascii` for O(1)
-// indexing, but a web page is UTF-8. text.toAscii() answers null for
-// any non-ASCII input, so this pass rewrites every multi-byte UTF-8
-// sequence in the raw bytes as a numeric character reference (`é`
-// becomes `&#233;`), which the entity decoder turns back into UTF-8
-// text when it builds a text node. Bytes are read through blob.byteAt,
-// the one O(1) byte accessor Festina offers; runs of plain ASCII are
-// copied with blob.slice.
+// Input normalization.
+//
+// The tokenizer works on `ascii` for O(1) indexing, but a web page is
+// UTF-8 and `text.toAscii()` answers null for anything outside ASCII
+// (FINDINGS.md, "no non-ASCII in ascii"). So the raw bytes are rewritten
+// here: every multi-byte UTF-8 sequence becomes an ESCAPE byte, the
+// decimal code point, and a terminating `;`.
+//
+// The escape byte is U+0001, not `&`, on purpose. A `&#233;` written
+// literally in a `<style>` or `<script>` element is *not* a character
+// reference -- raw text is never decoded -- so rewriting non-ASCII as
+// `&#233;` would make the two indistinguishable and force raw text to
+// be decoded anyway. A byte the source could not otherwise carry keeps
+// them apart: the tokenizer expands escapes everywhere and character
+// references only where the standard says to.
+//
+// A literal U+0001 in the input is doubled, so the transformation is
+// reversible for any byte sequence.
 
 import ../util/text.f
+
+const int ESCAPE_BYTE = 1
+
+text func encodeCodePoint(cp:int) {
+    return `${ESCAPE_BYTE.toChar()}${cp};`
+}
 
 text func blobToAsciiSafe(b:blob) {
     int n = b.length
@@ -16,13 +32,21 @@ text func blobToAsciiSafe(b:blob) {
     int i = 0
     while i < n {
         int c = b.byteAt(i)
-        if c < 128 {
+        if c < 128 && c != ESCAPE_BYTE {
             i++
             continue
         }
         if i > runStart {
             text run = b.slice(runStart, i)
             out = out + run
+        }
+        if c == ESCAPE_BYTE {
+            // a literal U+0001: double it
+            text esc = `${ESCAPE_BYTE.toChar()}${ESCAPE_BYTE.toChar()}`
+            out = out + esc
+            i++
+            runStart = i
+            continue
         }
         int cp = 0
         int extra = 0
@@ -49,7 +73,7 @@ text func blobToAsciiSafe(b:blob) {
             consumed++
         }
         if consumed < extra { cp = 65533 }
-        text esc = `&#${cp};`
+        text esc = encodeCodePoint(cp)
         out = out + esc
         i = j
         runStart = j
@@ -61,24 +85,26 @@ text func blobToAsciiSafe(b:blob) {
     return out
 }
 
-// The same transformation for text already in memory (a stylesheet
-// fetched over HTTP arrives the same way, as a blob, so this is only
-// for literals in tests). text has no byte access, so this walks code
-// points instead -- O(n) per index, so keep the inputs small.
+// The same transformation for text already in memory. `text` has no
+// byte access, so this walks code points, which is O(n) per index --
+// fine for the small inputs (tests, generated error pages) that use it.
 text func textToAsciiSafe(t:text) {
     if t == null { return '' }
     ascii direct = t.toAscii()
-    if direct != null { return t }
+    if direct != null && asciiIndexOf(direct, ESCAPE_BYTE.toChar().toAscii(), 0) < 0 { return t }
     text out = ''
     int i = 0
     while true {
         int cp = t.charCodeAt(i)
         if cp == null { break }
-        if cp < 128 {
+        if cp == ESCAPE_BYTE {
+            text esc = `${ESCAPE_BYTE.toChar()}${ESCAPE_BYTE.toChar()}`
+            out = out + esc
+        } else if cp < 128 {
             text ch = cp.toChar()
             out = out + ch
         } else {
-            text esc = `&#${cp};`
+            text esc = encodeCodePoint(cp)
             out = out + esc
         }
         i++

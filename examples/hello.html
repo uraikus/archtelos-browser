@@ -29,12 +29,13 @@
 
   <p>This paragraph mixes <b>bold</b>, <i>italic</i>, <u>underlined</u>, <s>struck</s>, <code>code</code>
   and a <a href="https://example.com/">link to example.com</a>. Text wraps at the width of its container, and
-  entities such as &amp;, &lt;, &copy;, &mdash; and caf&eacute; are decoded.</p>
+  entities such as &amp;, &lt;, &copy;, &mdash;, &notin; and caf&eacute; are decoded &mdash; all 2,231 of
+  the named ones.</p>
 
   <div class="card">
     <h2>What works</h2>
-    <span class="tag">HTML5 parsing</span><span class="tag">CSS cascade</span><span class="tag">block + inline layout</span>
-    <span class="tag">tables</span><span class="tag">lists</span><span class="tag">images</span>
+    <span class="tag">WHATWG HTML parsing</span><span class="tag">CSS cascade</span><span class="tag">block + inline layout</span>
+    <span class="tag">tables</span><span class="tag">lists</span><span class="tag">images</span><span class="tag">SVG namespaces</span>
     <ul>
       <li>Nested lists
         <ol>
@@ -43,6 +44,7 @@
         </ol>
       </li>
       <li>Selectors: type, class, id, attribute, descendant and child combinators, <code>:first-child</code></li>
+      <li>The adoption agency algorithm, foster parenting, template contents and quirks mode</li>
       <li>Units: px, em, rem, %, pt; named, hex, rgb() and hsl() colors</li>
     </ul>
   </div>
@@ -50,10 +52,11 @@
   <h2>A table</h2>
   <table>
     <tr><th>Feature</th><th>Status</th><th class="right">Lines of Festina</th></tr>
-    <tr><td>HTML tokenizer and tree builder</td><td>done</td><td class="right">560</td></tr>
-    <tr><td>CSS parser and cascade</td><td>done</td><td class="right">1,400</td></tr>
-    <tr><td>Layout</td><td>block, inline, table</td><td class="right">1,100</td></tr>
-    <tr><td colspan="2">Painting and the window</td><td class="right">600</td></tr>
+    <tr><td>HTML tokenizer, tree builder and DOM</td><td>1,499/1,652 WPT</td><td class="right">3,736</td></tr>
+    <tr><td>Named character references</td><td>generated</td><td class="right">2,248</td></tr>
+    <tr><td>CSS parser and cascade</td><td>done</td><td class="right">1,858</td></tr>
+    <tr><td>Layout</td><td>block, inline, table</td><td class="right">1,697</td></tr>
+    <tr><td colspan="2">Painting, networking and the window</td><td class="right">1,087</td></tr>
   </table>
 
   <h2>Preformatted text</h2>
