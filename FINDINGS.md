@@ -338,7 +338,7 @@ before this was understood. `changeFont(px, 'normal', family)` resets.
 - **The result is one native binary.** 1.9 MB, linking only Cairo,
   X11, libjpeg, mbedTLS and libc: an HTML/CSS renderer with an HTTPS
   client and a window, and nothing to install to run it. Festina
-  compiles the 6,000 lines in about ten seconds.
+  compiles the 6,000 lines in about four seconds.
 - **It is fast once the collector is kept out of the loop.** A
   4,470-element, 97,000-pixel-tall page: parse 22 ms, cascade 110 ms,
   layout 247 ms, paint 19 ms. Measuring 35,000 words through the
