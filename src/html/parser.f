@@ -30,8 +30,6 @@ const int IM_IN_COLUMN_GROUP = 11
 const int IM_IN_TABLE_BODY = 12
 const int IM_IN_ROW = 13
 const int IM_IN_CELL = 14
-const int IM_IN_SELECT = 15
-const int IM_IN_SELECT_IN_TABLE = 16
 const int IM_IN_TEMPLATE = 17
 const int IM_AFTER_BODY = 18
 const int IM_IN_FRAMESET = 19
@@ -47,6 +45,9 @@ int originalInsertionMode = IM_INITIAL
 arr[int] openElements = []
 arr[int] activeFormatting = []
 arr[int] templateModes = []
+// frameset-ok as it was when each open template started: a template's
+// contents do not decide whether a later <frameset> replaces the body.
+arr[bool] templateFramesetOk = []
 int documentId = 0
 int headElementId = 0
 int formElementId = 0
@@ -56,6 +57,9 @@ bool fosterParenting = false
 bool parserDone = false
 // A newline immediately after <pre>, <listing> or <textarea> is dropped.
 bool skipNextNewline = false
+// set when a selectedcontent element is inserted, so the mirroring pass
+// below runs only for documents that contain one
+bool sawSelectedContent = false
 arr[text] pendingTableText = []
 bool pendingTableTextNonSpace = false
 
@@ -157,6 +161,10 @@ bool func doctypeMeansQuirks(tok:Token) {
 
 // ---- element categories -------------------------------------------------
 
+// The standard's "special" category. `select` is deliberately absent:
+// a select now holds ordinary flow content, and treating it as special
+// would stop the adoption agency and the implied-end-tag searches at a
+// select that should be transparent to them.
 bool func isSpecialElement(tag:text) {
     return tag == 'address' || tag == 'applet' || tag == 'area' || tag == 'article'
         || tag == 'aside' || tag == 'base' || tag == 'basefont' || tag == 'bgsound'
@@ -172,7 +180,7 @@ bool func isSpecialElement(tag:text) {
         || tag == 'marquee' || tag == 'menu' || tag == 'meta' || tag == 'nav'
         || tag == 'noembed' || tag == 'noframes' || tag == 'noscript' || tag == 'object'
         || tag == 'ol' || tag == 'p' || tag == 'param' || tag == 'plaintext' || tag == 'pre'
-        || tag == 'script' || tag == 'search' || tag == 'section' || tag == 'select'
+        || tag == 'script' || tag == 'search' || tag == 'section'
         || tag == 'source' || tag == 'style' || tag == 'summary' || tag == 'table'
         || tag == 'tbody' || tag == 'td' || tag == 'template' || tag == 'textarea'
         || tag == 'tfoot' || tag == 'th' || tag == 'thead' || tag == 'title' || tag == 'tr'
@@ -412,51 +420,48 @@ void func insertNodeAt(parentId:int, index:int, childId:int) {
 
 // ---- the appropriate place for inserting a node --------------------------
 
+// "The appropriate place for inserting a node", including the foster
+// parenting substeps and the template-contents redirect.
 void func findInsertionPlace(overrideTarget:int) {
     int target = overrideTarget > 0 ? overrideTarget : currentNodeId()
     insertParentId = target
     insertBeforeIndex = -1
-    if !fosterParenting {
-        // "if the adjusted insertion location is inside a template
-        // element, let it instead be inside the template's contents"
-        if tagOf(target) == 'template' && nodeRegistry[target].contentId > 0 {
-            insertParentId = nodeRegistry[target].contentId
+    text t = htmlTagOf(target)
+    bool inTableContext = t == 'table' || t == 'tbody' || t == 'tfoot' || t == 'thead' || t == 'tr'
+    if fosterParenting && inTableContext {
+        int lastTemplate = -1
+        int lastTable = -1
+        for int i = openElements.length - 1, i >= 0, i-- {
+            text n = htmlTagOf(openElements[i])
+            if lastTemplate < 0 && n == 'template' { lastTemplate = i }
+            if lastTable < 0 && n == 'table' { lastTable = i }
+            if lastTemplate >= 0 && lastTable >= 0 { break }
         }
-        return
-    }
-    text t = tagOf(target)
-    if t != 'table' && t != 'tbody' && t != 'tfoot' && t != 'thead' && t != 'tr' { return }
-    // foster parenting: the node goes before the table rather than
-    // inside it
-    int lastTable = -1
-    for int i = openElements.length - 1, i >= 0, i-- {
-        if tagOf(openElements[i]) == 'table' {
-            lastTable = i
-            break
-        }
-    }
-    if lastTable < 0 {
-        insertParentId = openElements[0]
-        insertBeforeIndex = -1
-        return
-    }
-    if lastTable > 0 && tagOf(openElements[lastTable - 1]) == 'template' {
-        int holder = openElements[lastTable - 1]
-        if nodeRegistry[holder].contentId > 0 {
-            insertParentId = nodeRegistry[holder].contentId
-            insertBeforeIndex = -1
+        // a template lower in the stack than the last table takes the
+        // node into its contents
+        if lastTemplate >= 0 && (lastTable < 0 || lastTemplate > lastTable) {
+            int holder = openElements[lastTemplate]
+            insertParentId = nodeRegistry[holder].contentId > 0 ? nodeRegistry[holder].contentId : holder
             return
         }
-    }
-    int tableId = openElements[lastTable]
-    int tableParent = nodeRegistry[tableId].parentId
-    if tableParent > 0 {
-        insertParentId = tableParent
-        insertBeforeIndex = nodeRegistry[tableId].childIndex
+        if lastTable < 0 {
+            insertParentId = openElements[0]
+            return
+        }
+        int tableId = openElements[lastTable]
+        if nodeRegistry[tableId].parentId > 0 {
+            insertParentId = nodeRegistry[tableId].parentId
+            insertBeforeIndex = nodeRegistry[tableId].childIndex
+            return
+        }
+        insertParentId = openElements[lastTable - 1]
         return
     }
-    insertParentId = openElements[lastTable - 1]
-    insertBeforeIndex = -1
+    // "if the adjusted insertion location is inside a template element,
+    // let it instead be inside the template's contents"
+    if htmlTagOf(insertParentId) == 'template' && nodeRegistry[insertParentId].contentId > 0 {
+        insertParentId = nodeRegistry[insertParentId].contentId
+    }
 }
 
 void func insertAtPlace(childId:int) {
@@ -477,6 +482,7 @@ int func createElementForToken(tok:Token) {
 }
 
 int func insertElementForToken(tok:Token) {
+    if tok.name == 'selectedcontent' { sawSelectedContent = true }
     int id = createElementForToken(tok)
     findInsertionPlace(0)
     insertAtPlace(id)
@@ -670,16 +676,14 @@ bool func adoptionAgency(subject:text) {
         // place the last node at the appropriate place inside the
         // common ancestor, honouring foster parenting
         bool savedFoster = fosterParenting
-        text ancestorTag = tagOf(commonAncestor)
+        text ancestorTag = htmlTagOf(commonAncestor)
         if ancestorTag == 'table' || ancestorTag == 'tbody' || ancestorTag == 'tfoot'
             || ancestorTag == 'thead' || ancestorTag == 'tr' {
             fosterParenting = true
-            findInsertionPlace(commonAncestor)
-            insertAtPlace(lastNodeId)
-            fosterParenting = savedFoster
-        } else {
-            appendNode(commonAncestor, lastNodeId)
         }
+        findInsertionPlace(commonAncestor)
+        insertAtPlace(lastNodeId)
+        fosterParenting = savedFoster
         // not `newElement`: a local may not share a global function's
         // name -- the function wins and the program miscompiles
         // (FINDINGS.md, "a name cannot shadow a function")
@@ -712,20 +716,6 @@ void func resetInsertionModeAppropriately() {
     for int i = openElements.length - 1, i >= 0, i-- {
         bool last = i == 0
         text t = tagOf(openElements[i])
-        if t == 'select' {
-            if !last {
-                for int j = i - 1, j > 0, j-- {
-                    text a = tagOf(openElements[j])
-                    if a == 'template' { break }
-                    if a == 'table' {
-                        insertionMode = IM_IN_SELECT_IN_TABLE
-                        return
-                    }
-                }
-            }
-            insertionMode = IM_IN_SELECT
-            return
-        }
         if (t == 'td' || t == 'th') && !last {
             insertionMode = IM_IN_CELL
             return
@@ -882,8 +872,6 @@ void func dispatchToken(tok:Token, mode:int) {
     else if mode == IM_IN_TABLE_BODY { modeInTableBody(tok) }
     else if mode == IM_IN_ROW { modeInRow(tok) }
     else if mode == IM_IN_CELL { modeInCell(tok) }
-    else if mode == IM_IN_SELECT { modeInSelect(tok) }
-    else if mode == IM_IN_SELECT_IN_TABLE { modeInSelectInTable(tok) }
     else if mode == IM_IN_TEMPLATE { modeInTemplate(tok) }
     else if mode == IM_AFTER_BODY { modeAfterBody(tok) }
     else if mode == IM_IN_FRAMESET { modeInFrameset(tok) }
@@ -1023,6 +1011,7 @@ void func modeInHead(tok:Token) {
             activeFormatting.push(AFE_MARKER)
             insertionMode = IM_IN_TEMPLATE
             templateModes.push(IM_IN_TEMPLATE)
+            templateFramesetOk.push(framesetOk)
             return
         }
         if n == 'head' { return }
@@ -1040,6 +1029,7 @@ void func modeInHead(tok:Token) {
             popUntilIncludingTag('template')
             clearActiveFormattingToMarker()
             if templateModes.length > 0 { templateModes.pop() }
+            if templateFramesetOk.length > 0 { framesetOk = templateFramesetOk.pop() }
             resetInsertionModeAppropriately()
             return
         }
@@ -1192,6 +1182,9 @@ void func inBodyStartTag(tok:Token) {
     }
     if n == 'base' || n == 'basefont' || n == 'bgsound' || n == 'link' || n == 'meta'
         || n == 'noframes' || n == 'script' || n == 'style' || n == 'template' || n == 'title' {
+        // a template in the body makes a later frameset impossible; one
+        // in the head does not
+        if n == 'template' { framesetOk = false }
         modeInHead(tok)
         return
     }
@@ -1342,6 +1335,12 @@ void func inBodyStartTag(tok:Token) {
         return
     }
     if n == 'input' {
+        if hasElementInScope('select', SCOPE_DEFAULT) {
+            popUntilIncludingTag('select')
+            resetInsertionModeAppropriately()
+            dispatchToken(tok, insertionMode)
+            return
+        }
         reconstructActiveFormatting()
         insertElementForToken(tok)
         popOpenElement()
@@ -1356,6 +1355,10 @@ void func inBodyStartTag(tok:Token) {
     }
     if n == 'hr' {
         if hasElementInScope('p', SCOPE_BUTTON) { closePElement() }
+        // an hr ends an open option and optgroup, so it separates the
+        // groups of a select rather than joining one
+        if currentTag() == 'option' { popOpenElement() }
+        if currentTag() == 'optgroup' { popOpenElement() }
         insertElementForToken(tok)
         popOpenElement()
         framesetOk = false
@@ -1393,20 +1396,27 @@ void func inBodyStartTag(tok:Token) {
         return
     }
     if n == 'select' {
+        // a select inside a select closes the outer one and is dropped;
+        // otherwise select content is ordinary body content
+        if hasElementInScope('select', SCOPE_DEFAULT) {
+            popUntilIncludingTag('select')
+            resetInsertionModeAppropriately()
+            return
+        }
         reconstructActiveFormatting()
         insertElementForToken(tok)
         framesetOk = false
-        if insertionMode == IM_IN_TABLE || insertionMode == IM_IN_CAPTION
-            || insertionMode == IM_IN_TABLE_BODY || insertionMode == IM_IN_ROW
-            || insertionMode == IM_IN_CELL {
-            insertionMode = IM_IN_SELECT_IN_TABLE
-        } else {
-            insertionMode = IM_IN_SELECT
-        }
         return
     }
-    if n == 'optgroup' || n == 'option' {
+    if n == 'option' {
         if currentTag() == 'option' { popOpenElement() }
+        reconstructActiveFormatting()
+        insertElementForToken(tok)
+        return
+    }
+    if n == 'optgroup' {
+        if currentTag() == 'option' { popOpenElement() }
+        if currentTag() == 'optgroup' { popOpenElement() }
         reconstructActiveFormatting()
         insertElementForToken(tok)
         return
@@ -1482,6 +1492,12 @@ void func inBodyEndTag(tok:Token) {
         if !hasElementInScope('form', SCOPE_DEFAULT) { return }
         generateImpliedEndTags('')
         popUntilIncludingTag('form')
+        return
+    }
+    if n == 'select' {
+        if !hasElementInScope('select', SCOPE_DEFAULT) { return }
+        popUntilIncludingTag('select')
+        resetInsertionModeAppropriately()
         return
     }
     if n == 'p' {
@@ -1635,8 +1651,10 @@ void func modeInTable(tok:Token) {
             }
         }
         if n == 'form' {
-            if stackHasTag('template') || formElementId > 0 { return }
-            formElementId = insertElementForToken(tok)
+            bool hasTemplate = stackHasTag('template')
+            if formElementId > 0 && !hasTemplate { return }
+            int id = insertElementForToken(tok)
+            if !hasTemplate { formElementId = id }
             popOpenElement()
             return
         }
@@ -1917,110 +1935,6 @@ void func modeInCell(tok:Token) {
     modeInBody(tok)
 }
 
-void func modeInSelect(tok:Token) {
-    if tok.kind == TOK_TEXT {
-        insertCharacters(tok.data)
-        return
-    }
-    if tok.kind == TOK_COMMENT {
-        insertCommentNode(tok.data, 0)
-        return
-    }
-    if tok.kind == TOK_DOCTYPE { return }
-    if tok.kind == TOK_EOF {
-        modeInBody(tok)
-        return
-    }
-    if tok.kind == TOK_START {
-        text n = tok.name
-        if n == 'html' {
-            modeInBody(tok)
-            return
-        }
-        if n == 'option' {
-            if currentTag() == 'option' { popOpenElement() }
-            insertElementForToken(tok)
-            return
-        }
-        if n == 'optgroup' {
-            if currentTag() == 'option' { popOpenElement() }
-            if currentTag() == 'optgroup' { popOpenElement() }
-            insertElementForToken(tok)
-            return
-        }
-        if n == 'hr' {
-            if currentTag() == 'option' { popOpenElement() }
-            if currentTag() == 'optgroup' { popOpenElement() }
-            insertElementForToken(tok)
-            popOpenElement()
-            return
-        }
-        if n == 'select' {
-            if !hasElementInScope('select', SCOPE_SELECT) { return }
-            popUntilIncludingTag('select')
-            resetInsertionModeAppropriately()
-            return
-        }
-        if n == 'input' || n == 'keygen' || n == 'textarea' {
-            if !hasElementInScope('select', SCOPE_SELECT) { return }
-            popUntilIncludingTag('select')
-            resetInsertionModeAppropriately()
-            dispatchToken(tok, insertionMode)
-            return
-        }
-        if n == 'script' || n == 'template' {
-            modeInHead(tok)
-            return
-        }
-        return
-    }
-    if tok.kind == TOK_END {
-        text n = tok.name
-        if n == 'optgroup' {
-            if currentTag() == 'option' && openElements.length > 1
-                && tagOf(openElements[openElements.length - 2]) == 'optgroup' {
-                popOpenElement()
-            }
-            if currentTag() == 'optgroup' { popOpenElement() }
-            return
-        }
-        if n == 'option' {
-            if currentTag() == 'option' { popOpenElement() }
-            return
-        }
-        if n == 'select' {
-            if !hasElementInScope('select', SCOPE_SELECT) { return }
-            popUntilIncludingTag('select')
-            resetInsertionModeAppropriately()
-            return
-        }
-        if n == 'template' {
-            modeInHead(tok)
-            return
-        }
-    }
-}
-
-void func modeInSelectInTable(tok:Token) {
-    text n = tok.name
-    bool tableTag = n == 'caption' || n == 'table' || n == 'tbody' || n == 'tfoot'
-        || n == 'thead' || n == 'tr' || n == 'td' || n == 'th'
-    if tok.kind == TOK_START && tableTag {
-        popUntilIncludingTag('select')
-        resetInsertionModeAppropriately()
-        dispatchToken(tok, insertionMode)
-        return
-    }
-    if tok.kind == TOK_END && tableTag {
-        if !hasElementInScope(n, SCOPE_TABLE) { return }
-        popUntilIncludingTag('select')
-        resetInsertionModeAppropriately()
-        dispatchToken(tok, insertionMode)
-        return
-    }
-    modeInSelect(tok)
-}
-
 void func modeInTemplate(tok:Token) {
     if tok.kind == TOK_TEXT || tok.kind == TOK_COMMENT || tok.kind == TOK_DOCTYPE {
         modeInBody(tok)
@@ -2035,6 +1949,7 @@ void func modeInTemplate(tok:Token) {
         popUntilIncludingTag('template')
         clearActiveFormattingToMarker()
         if templateModes.length > 0 { templateModes.pop() }
+        if templateFramesetOk.length > 0 { framesetOk = templateFramesetOk.pop() }
         resetInsertionModeAppropriately()
         dispatchToken(tok, insertionMode)
         return
@@ -2456,6 +2371,80 @@ bool func useForeignRules(tok:Token) {
     return true
 }
 
+
+// ---- <selectedcontent> -------------------------------------------------
+//
+// A selectedcontent element shows a copy of its select's selected
+// option. That is an element behaviour rather than tree construction,
+// but it is part of the document a parse produces -- the standard's own
+// corpus expects the copy in the tree -- so it is applied once, when
+// parsing finishes, to documents that contain one.
+
+int func cloneNodeDeep(id:int) {
+    int kind = nodeRegistry[id].kind
+    if kind == NODE_TEXT {
+        Node t = newTextNode(nodeRegistry[id].data)
+        return t.id
+    }
+    if kind == NODE_COMMENT {
+        Node c = newComment(nodeRegistry[id].data)
+        return c.id
+    }
+    if kind != NODE_ELEMENT { return 0 }
+    int copy = cloneElement(id)
+    int count = nodeRegistry[id].children.length
+    for int i = 0, i < count, i++ {
+        int child = cloneNodeDeep(nodeRegistry[id].children[i].id)
+        if child > 0 { appendNode(copy, child) }
+    }
+    return copy
+}
+
+void func collectByTag(id:int, tag:text, out:arr[int]) {
+    if nodeRegistry[id].kind == NODE_ELEMENT && nodeRegistry[id].ns == NS_HTML
+        && nodeRegistry[id].tag == tag {
+        out.push(id)
+    }
+    int count = nodeRegistry[id].children.length
+    for int i = 0, i < count, i++ {
+        collectByTag(nodeRegistry[id].children[i].id, tag, out)
+    }
+}
+
+// The option a select displays: the last one carrying `selected`, or
+// else the first one.
+int func selectedOptionOf(selectId:int) {
+    arr[int] options = []
+    collectByTag(selectId, 'option', options)
+    if options.length == 0 { return 0 }
+    for int i = options.length - 1, i >= 0, i-- {
+        if hasAttrOf(options[i], 'selected') { return options[i] }
+    }
+    return options[0]
+}
+
+void func mirrorSelectedContent(doc:int) {
+    arr[int] selects = []
+    collectByTag(doc, 'select', selects)
+    for int i = 0, i < selects.length, i++ {
+        int option = selectedOptionOf(selects[i])
+        if option == 0 { continue }
+        arr[int] targets = []
+        collectByTag(selects[i], 'selectedcontent', targets)
+        for int j = 0, j < targets.length, j++ {
+            int target = targets[j]
+            while nodeRegistry[target].children.length > 0 {
+                detachNode(nodeRegistry[target].children[0].id)
+            }
+            int count = nodeRegistry[option].children.length
+            for int k = 0, k < count, k++ {
+                int copy = cloneNodeDeep(nodeRegistry[option].children[k].id)
+                if copy > 0 { appendNode(target, copy) }
+            }
+        }
+    }
+}
+
 // ---- the driver -------------------------------------------------------------------
 
 text func dropLeadingNewline(t:text) {
@@ -2475,6 +2464,7 @@ Node func parseHtml(src:ascii) {
     openElements = []
     activeFormatting = []
     templateModes = []
+    templateFramesetOk = []
     headElementId = 0
     formElementId = 0
     framesetOk = true
@@ -2482,6 +2472,7 @@ Node func parseHtml(src:ascii) {
     fosterParenting = false
     parserDone = false
     skipNextNewline = false
+    sawSelectedContent = false
     pendingTableText = []
     pendingTableTextNonSpace = false
     tokenizerInit(src)
@@ -2500,9 +2491,11 @@ Node func parseHtml(src:ascii) {
         processToken(tok)
         if tok.kind == TOK_EOF { break }
     }
+    if sawSelectedContent { mirrorSelectedContent(doc.id) }
     openElements = []
     activeFormatting = []
     templateModes = []
+    templateFramesetOk = []
     return doc
 }
 

@@ -14,9 +14,9 @@ Festina should gain as a result is in [festina.md](festina.md).
 
 **HTML parsing follows the
 [WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
-the standard's own tree-construction corpus it passes **1,499 of 1,652**
-cases. Chromium 141 passes 1,535 of the same cases, and 84 of the 153
-this browser fails are cases Chromium fails too. CSS targets the
+the standard's own tree-construction corpus it passes **1,535 of 1,652**
+cases — the same number Chromium 141 passes on the same corpus, and 84
+of the 117 each fails are the same cases. CSS targets the
 [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/); see
 [todo.md](todo.md) for that gap.
 
@@ -65,8 +65,9 @@ numeric references with the standard's replacements. Tree construction
 implements all 23 insertion modes, the stack of open elements with its
 five scopes, the list of active formatting elements with the adoption
 agency algorithm, foster parenting, template contents, quirks-mode
-detection from the doctype, and foreign content — SVG and MathML
-namespaces, tag and attribute name adjustment, and integration points.
+detection from the doctype, the `<select>` content model, and foreign
+content — SVG and MathML namespaces, tag and attribute name adjustment,
+and integration points.
 
 **CSS** comes from `<style>`, `<link rel=stylesheet>` (fetched) and
 `style=""`. Selectors: type, universal, `#id`, `.class`, `[attr]` with
@@ -112,7 +113,7 @@ blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
 | `tests/` | unit suites, offscreen pixel checks, the conformance runner, the runners |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-11,296 lines of Festina in `src/` and `browser.f`.
+11,289 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -149,13 +150,13 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Start-up (screenshot a one-line page) | 6 ms | 448 ms |
-| Parse 51 KB of HTML | 7 ms | 1.7 ms |
-| Render 51 KB, start-up subtracted | 280 ms | 54 ms |
+| Start-up (screenshot a one-line page) | 6 ms | 458 ms |
+| Parse 51 KB of HTML | 8 ms | 1.7 ms |
+| Render 51 KB, start-up subtracted | 311 ms | 72 ms |
 
 A native binary starts two orders of magnitude faster, and Chromium does
-the actual rendering work about five times faster. Parsing is 6% of that
-time; the cascade and layout are 84%.
+the actual rendering work about four times faster. Parsing is 6% of that
+time; the cascade and layout are 82%.
 
 ## Working on this
 

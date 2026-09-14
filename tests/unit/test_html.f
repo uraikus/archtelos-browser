@@ -172,4 +172,71 @@ checkEq(textContent(findElement(d4, 'p')), 'café — “quotes” ✓',
 checkEq(body('<body><style>/* café */</style>'), '<style>\n  "/* café */"',
 'non-ascii survives inside raw text too')
 
+// ---- select content -------------------------------------------------------------
+//
+// A select holds ordinary flow content: it is not a restricted
+// insertion mode of its own.
+
+checkEq(body('<select><div>x</div><button>b</button></select>'),
+'<select>\n  <div>\n    "x"\n  <button>\n    "b"',
+'a select keeps flow content')
+
+checkEq(body('<select><div><i></div><option>o'),
+'<select>\n  <div>\n    <i>\n  <i>\n    <option>\n      "o"',
+'formatting is reconstructed inside a select')
+
+checkEq(body('<select><option>a</select><p>x'),
+'<select>\n  <option>\n    "a"\n<p>\n  "x"',
+'an end tag closes the select')
+
+checkEq(body('<select><div><select><p>x'),
+'<select>\n  <div>\n<p>\n  "x"',
+'a nested select closes the outer one instead of nesting')
+
+checkEq(body('<select>x<input>y'),
+'<select>\n  "x"\n<input>\n"y"',
+'an input breaks out of a select')
+
+checkEq(body('<select><option>a<option>b'),
+'<select>\n  <option>\n    "a"\n  <option>\n    "b"',
+'an option closes an open option')
+
+checkEq(body('<select><optgroup>a<optgroup>b'),
+'<select>\n  <optgroup>\n    "a"\n  <optgroup>\n    "b"',
+'an optgroup closes an open optgroup')
+
+checkEq(body('<select><optgroup><option><hr>'),
+'<select>\n  <optgroup>\n    <option>\n  <hr>',
+'an hr closes an open option and optgroup')
+
+checkEq(body('<font><select><option>a</option></font></select>'),
+'<font>\n  <select>\n    <option>\n      "a"',
+'a select is not a special element, so it does not stop the adoption agency')
+
+checkEq(body('<select><button><selectedcontent></button><option>X<option selected>Y'),
+'<select>\n  <button>\n    <selectedcontent>\n      "Y"\n  <option>\n    "X"\n  <option>\n    selected=""\n    "Y"',
+'selectedcontent mirrors the selected option')
+
+// ---- insertion location -----------------------------------------------------------
+
+checkEq(body('<body><template><tr><div></div></tr></template>'),
+'<template>\n  content\n    <tr>\n    <div>',
+'content misnested in a template row stays inside the template')
+
+checkEq(body('<body><template><i><menu>Foo</i>'),
+'<template>\n  content\n    <i>\n    <menu>\n      <i>\n        "Foo"',
+'the adoption agency keeps its result inside the template')
+
+checkEq(parseAndDump('<!DOCTYPE html><template><table><form></table></template>'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|     <template>\n|       content\n|         <table>\n|           <form>\n|   <body>',
+'a form is kept in a table inside a template')
+
+checkEq(parseAndDump('<!DOCTYPE html><template></template><p><frameset>'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|     <template>\n|       content\n|   <frameset>',
+'a template in the head leaves a later frameset possible')
+
+checkEq(parseAndDump('<!DOCTYPE html><p><template></template><frameset>'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <p>\n|       <template>\n|         content',
+'a template in the body rules a later frameset out')
+
 finish('html')

@@ -31,7 +31,7 @@ Everything below was measured on 2026-09-14.
 
 ## Start-up is not a rendering result
 
-Chromium takes **448 ms** to screenshot a one-line page, and this
+Chromium takes **458 ms** to screenshot a one-line page, and this
 browser takes **6 ms**. That difference is process start-up — a browser
 engine bringing up a multi-process architecture, a JavaScript engine, a
 compositor and a network stack, against a 2.2 MB native binary that
@@ -46,12 +46,12 @@ work rather than the start-up.
 
 | Page | Size | This browser | Chromium | Minus start-up: this | Minus start-up: Chromium |
 |---|---|---|---|---|---|
-| hello.html | 3 KB | 45 ms | 480 ms | 39 ms | 32 ms |
-| css.html | 3 KB | 36 ms | 484 ms | 30 ms | 36 ms |
-| generated.html | 51 KB | 286 ms | 502 ms | 280 ms | 54 ms |
+| hello.html | 4 KB | 49 ms | 486 ms | 43 ms | 28 ms |
+| css.html | 3 KB | 35 ms | 488 ms | 29 ms | 30 ms |
+| generated.html | 51 KB | 317 ms | 530 ms | 311 ms | 72 ms |
 
 On pages of a few kilobytes the two are level once start-up is removed.
-On the 51 KB page Chromium does the same work about **five times
+On the 51 KB page Chromium does the same work about **four times
 faster**. That gap is the honest headline, and it grows with page size.
 
 ## HTML parsing alone
@@ -63,11 +63,11 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 3 KB | <1 ms | 0.1 ms |
-| css.html | 3 KB | <1 ms | 0.2 ms |
-| generated.html | 51 KB | 7 ms | 1.7 ms |
+| hello.html | 4 KB | 1 ms | 0.1 ms |
+| css.html | 3 KB | <1 ms | 0.1 ms |
+| generated.html | 51 KB | 8 ms | 1.7 ms |
 
-About **4x slower** on the large page, or roughly 7 MB/s against
+About **5x slower** on the large page, or roughly 6 MB/s against
 30 MB/s. For a tokenizer and tree builder written in a young language
 against one of the most optimized parsers in software, that is a
 reasonable place to be, and it is not where the remaining time goes.
@@ -79,25 +79,25 @@ reasonable place to be, and it is not where the remaining time goes.
 | Phase | Time |
 |---|---|
 | fetch (local file) | 0 ms |
-| parse | 7 ms |
+| parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 50 ms |
-| layout | 46 ms |
+| cascade | 52 ms |
+| layout | 52 ms |
 | paint | 15 ms |
 
-Parsing is 6% of the total. The cascade and layout are 84% of it, so
+Parsing is 6% of the total. The cascade and layout are 82% of it, so
 that is where any further work belongs — not in the parser.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
 declarations across 2,728 elements, and the three sub-phases (collect
-13 ms, apply 15 ms, compute 21 ms) are evenly matched, which means
+15 ms, apply 18 ms, compute 16 ms) are evenly matched, which means
 there is no single hot spot left to remove — only the constant factor
 of doing it in a language with no hash-consed strings.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (8 ms total); building the box tree is 18 ms and
-inline placement 12 ms.
+cache and reach Cairo (9 ms total); building the box tree is 19 ms and
+inline placement 13 ms.
 
 ## Conformance, measured on both engines
 
@@ -109,15 +109,17 @@ result in the corpus's format.
 
 | | Passed | Rate |
 |---|---|---|
+| This browser | 1535 / 1652 | 92.9% |
 | Chromium 141 | 1535 / 1652 | 92.9% |
-| This browser | 1499 / 1652 | 90.7% |
 
-**84 of the 153 cases this browser fails are cases Chromium fails too**
-— the whole of `processing-instructions.dat`, where the corpus expects
-`<?x>` to build a processing-instruction node and both engines build a
-comment, which is what the tokenizer's bogus-comment state produces.
-Setting that file aside, Chromium passes 1,495 of 1,528 and this
-browser 1,459.
+The two are level, and not by passing the same cases: this browser is
+ahead on 23 and behind on 23.
+
+**84 of the 117 cases each engine fails are the same cases** — the whole
+of `processing-instructions.dat`, where the corpus expects `<?x>` to
+build a processing-instruction node and both build a comment, which is
+what the tokenizer's bogus-comment state produces. Setting that file
+aside, both pass 1,495 of 1,528.
 
 Where the two differ, in cases:
 
@@ -125,42 +127,36 @@ Where the two differ, in cases:
 |---|---|---|
 | noscript01.dat | 18/18 | 3/18 |
 | html5test-com.dat | 29/30 | 26/30 |
-| tests5.dat | 16/16 | 15/16 |
+| webkit02.dat | 44/44 | 42/44 |
+| tests18.dat | 36/36 | 35/36 |
 | tests25.dat | 26/26 | 25/26 |
-| template.dat | 112/123 | 123/123 |
-| webkit02.dat | 33/44 | 42/44 |
+| tests5.dat | 16/16 | 15/16 |
 | tests26.dat | 15/20 | 20/20 |
 | tests16.dat | 180/191 | 185/191 |
-| tests9.dat | 23/27 | 27/27 |
-| tests10.dat | 50/54 | 54/54 |
-| tests1.dat | 105/112 | 109/112 |
 | tests2.dat | 59/63 | 63/63 |
+| tests1.dat | 107/112 | 109/112 |
 | tests19.dat | 101/103 | 103/103 |
-| tests18.dat | 34/36 | 35/36 |
 | adoption01.dat | 16/17 | 17/17 |
 | adoption02.dat | 3/4 | 4/4 |
 | tables01.dat | 18/19 | 19/19 |
 | tests6.dat | 38/39 | 39/39 |
-| tests7.dat | 32/33 | 33/33 |
-| menuitem-element.dat | 19/20 | 20/20 |
 | namespace-sensitivity.dat | 0/1 | 1/1 |
-
-Chromium's net lead over these files is 36 cases.
 
 This browser wins `noscript01.dat` only because it has no script engine
 at all, so its scripting flag is permanently disabled, which is the mode
 that file assumes; Chromium runs those cases with scripting enabled.
 That is a difference in configuration, not in quality.
 
-Chromium's lead is concentrated in template edge cases, `<select>`
-content model changes, and foreign-content corner cases. todo.md tracks
-the ones worth closing.
+What is left on each side is small and scattered: foreign-content
+corners and a few adoption-agency cases here, and on Chromium's side
+mostly cases where its scripting flag is enabled. todo.md tracks the
+ones worth closing.
 
 ## Build
 
 | | |
 |---|---|
-| Source | 11,296 lines of Festina across `browser.f` and `src/` |
+| Source | 11,289 lines of Festina across `browser.f` and `src/` |
 | Compile | 9.1 s, whole program, no incremental build |
 | Binary | 2.2 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 

@@ -19,7 +19,8 @@ The work, in the order it is worth doing:
    of this section can be replaced by something measured rather than
    guessed.
 2. **Find a conformance corpus, as was done for HTML.** The HTML parser
-   went from 20% to 91% against the standard's own tests in one sitting,
+   went from 20% to 93% against the standard's own tests, level with
+   Chromium,
    and the only reason that was possible is that a corpus existed and
    could be run. `web-platform-tests/css` is the equivalent; the first
    question is which of its tests can run without JavaScript, since the
@@ -44,22 +45,20 @@ The work, in the order it is worth doing:
 
 ## HTML: the remaining conformance gap
 
-1,499 of 1,652 tree-construction cases pass; Chromium passes 1,535 of
-the same cases. Of the 153 failures, 84 are cases Chromium also fails.
-The rest, largest first:
+1,535 of 1,652 tree-construction cases pass, which is what Chromium
+passes on the same corpus. Of the 117 failures, 84 are cases Chromium
+fails too. The rest, largest first:
 
-- **Template edge cases** (11 cases). Mostly `</template>` appearing in
-  modes that have to walk the template insertion-mode stack.
-- **`<select>` content model** (part of webkit02, 11 cases). The corpus
-  expects a `<select>` to keep elements the older content model dropped,
-  which Chromium implements and this parser does not. Confirm against
-  the standard's text before implementing; it could not be reached from
-  this network.
-- **Foreign content corners** (8 cases in tests9/tests10): breaking out
-  of SVG and MathML on an HTML block tag, and the namespace-sensitivity
-  case.
-- **Adoption agency corners** (2 cases), `tests26` (5) and `tests16`
-  (11), each a different small rule.
+- **`tests16.dat`** (11 cases). Script-data tokenizer corners, mostly
+  around `<!--` inside a script element and the escaped states.
+- **`tests26.dat`** (5) and **`tests1.dat`** (5), **`tests2.dat`** (4),
+  **`tests19.dat`** (2): a different small rule each, mostly formatting
+  elements interacting with tables and with `<nobr>`.
+- **Foreign content corners** (`namespace-sensitivity.dat`,
+  `html5test-com.dat`, one case each): breaking out of SVG and MathML
+  when an HTML block tag arrives in a namespace-sensitive position.
+- **Adoption agency corners** (`adoption01.dat`, `adoption02.dat`,
+  `tests6.dat`, `tables01.dat`, one each).
 - **Fragment parsing** (195 cases, currently skipped). `innerHTML`
   parsing needs the fragment algorithm and a context element. Nothing
   in the renderer needs it, but it is the single largest block of
@@ -76,6 +75,11 @@ tokenizer's bogus-comment state builds a comment, and so does Chromium,
 which was checked directly. Whichever is right, matching the corpus here
 would mean disagreeing with every shipping engine. Revisit when the
 standard's text is reachable.
+
+**Where this browser is ahead of Chromium** it is mostly configuration
+rather than quality: `noscript01.dat` assumes a disabled scripting flag,
+which is permanently true here. `webkit02.dat` and three other files are
+genuine leads.
 
 ## Layout
 

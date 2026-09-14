@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Conformance brought level with Chromium
+
+Closed the tree-construction gap on the two files where Chromium led
+most, and the rest followed: **1,499 to 1,535 of 1,652** cases, which is
+exactly what Chromium 141 passes on the same corpus. `template.dat` goes
+123/123 and `webkit02.dat` 44/44, the latter two cases ahead of Chromium.
+
+- **The insertion location** now implements the standard's foster
+  parenting substeps: a template lower in the stack of open elements
+  than the last table takes the node into its contents, and the
+  template-contents redirect applies to whatever target the algorithm
+  settles on. The adoption agency places its last node through the same
+  algorithm instead of appending directly, so a repair inside a template
+  stays inside it.
+- **`<select>` holds ordinary flow content.** The "in select" and
+  "in select in table" insertion modes are gone. A nested `<select>`
+  start tag closes the open one, `<input>` breaks out of it, `<option>`
+  and `<optgroup>` close their own kind, and `<hr>` closes both.
+  `select` is no longer a "special" element, so it does not stop the
+  adoption agency or an implied-end-tag search.
+- **`<selectedcontent>` mirrors the selected option's content**, copied
+  once when parsing finishes. This is an element behaviour rather than
+  tree construction, but it is part of the document a parse produces.
+- **frameset-ok** is saved and restored around a template, so a
+  template's contents no longer decide whether a later `<frameset>`
+  replaces the body; a template met in the body still rules one out.
+- **A form in a table** is refused only when the form element pointer is
+  set and no template is open, matching the rule "in body" uses.
+
+The `<select>` and `<selectedcontent>` rules were derived from the
+corpus's expected output and confirmed against Chromium directly,
+because the standard's own text is not reachable from this network.
+
+15 unit checks were added for these behaviours, since the corpus is
+optional.
+
 ### HTML parsing rewritten against the WHATWG Living Standard
 
 The parser was a hand-written scanner with a handful of implied-end-tag

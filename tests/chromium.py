@@ -7,6 +7,10 @@ Two modes, both used by tests/bench.sh:
                through Chromium's own HTML parser and reports how many
                cases it passes, so this project's number has a yardstick.
 
+  detail       Reports which individual cases Chromium fails in named
+               corpus files, which is how this project finds out whether
+               a case it fails is worth chasing.
+
   parse        Times Chromium's HTML parser on a set of pages, using
                DOMParser inside the page and reporting milliseconds.
 
@@ -219,6 +223,48 @@ report({passed: passed, total: passed + failed, perFile: perFile});
     return 0
 
 
+def detail(corpus_dir, filenames):
+    """Reports which individual cases Chromium fails in the named files."""
+    chrome = find_chrome()
+    if not chrome:
+        print("chromium: not found; skipping", file=sys.stderr)
+        return 1
+    cases = []
+    for name in filenames:
+        path = os.path.join(corpus_dir, name)
+        for i, (data, expected, fragment, script_on) in enumerate(read_dat(path)):
+            if fragment or script_on:
+                continue
+            cases.append({"f": name, "i": i, "d": data, "e": expected})
+    harness = """<!doctype html><body><iframe id=f></iframe><pre id=out></pre><script>
+%s
+%s
+var PAYLOAD = "%s";
+var CASES = %s;
+var bad = [];
+var frame = document.getElementById('f');
+for (var k = 0; k < CASES.length; k++) {
+  var c = CASES[k];
+  var d = frame.contentDocument;
+  d.open(); d.write(c.d); d.close();
+  var actual = serializeDoc(d);
+  if (actual !== c.e) bad.push({f: c.f, i: c.i, d: c.d, e: c.e, a: actual});
+}
+report(bad);
+</script>""" % (SERIALIZER, REPORT_JS, encode_payload(cases), DECODE_JS)
+    result = read_result(run_chrome(chrome, harness))
+    if result is None:
+        print("chromium: no result from the harness", file=sys.stderr)
+        return 1
+    for b in result:
+        print("=== %s #%d" % (b["f"], b["i"]))
+        print("  input:    %s" % b["d"][:120].replace("\n", "\\n"))
+        print("  expected: %s" % b["e"].replace("\n", " / ")[:220])
+        print("  chromium: %s" % b["a"].replace("\n", " / ")[:220])
+    print("chromium fails %d of the cases in %s" % (len(result), ", ".join(filenames)))
+    return 0
+
+
 def parse_timing(paths, iterations):
     chrome = find_chrome()
     if not chrome:
@@ -261,6 +307,8 @@ def main():
         return 2
     if sys.argv[1] == "conformance":
         return conformance(sys.argv[2])
+    if sys.argv[1] == "detail":
+        return detail(sys.argv[2], sys.argv[3:])
     if sys.argv[1] == "parse":
         return parse_timing(sys.argv[3:], int(sys.argv[2]))
     if sys.argv[1] == "which":

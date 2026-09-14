@@ -1,3 +1,4 @@
 build/
 *.png.tmp
 festina.sqlite
+__pycache__/

@@ -270,7 +270,7 @@ Worth saying, because this document is otherwise a list of gaps.
   check real pixels with no display.
 - **Template literals span lines**, which is how the user-agent
   stylesheet is embedded as plain readable CSS.
-- **The compiler is quick and its diagnostics are precise.** 11,296
+- **The compiler is quick and its diagnostics are precise.** 11,289
   lines in 9.1 seconds, over half of which is one generated table, and
   `file:line:column` on every error.
 - **The result is one 2.2 MB native binary** that starts in 6 ms,

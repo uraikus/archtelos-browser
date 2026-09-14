@@ -342,7 +342,7 @@ descent 0.24 em), and any other font is laid out slightly wrong.
 - **The HTTP client** handles TLS and chunked responses without
   ceremony, and `try`/`catch` turns a network failure into an error
   page.
-- **The compiler is quick and its diagnostics are precise**: 11,296
+- **The compiler is quick and its diagnostics are precise**: 11,289
   lines in 9.1 seconds, `file:line:column` on every error, and a type checker
   that catches mismatched `?:` branches, a `void` used as a value and an
   `int`/`float` mix before anything runs.
