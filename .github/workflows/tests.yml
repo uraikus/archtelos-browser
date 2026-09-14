@@ -40,10 +40,10 @@ jobs:
             args: '--valgrind'
     steps:
       - name: Check out the browser
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Check out Festina
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: uraikus/festina
           path: .festina
@@ -52,7 +52,7 @@ jobs:
       # repository, which is what the sparse checkout and the blobless
       # filter are for.
       - name: Check out the WHATWG tree-construction corpus
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: web-platform-tests/wpt
           path: .wpt
@@ -86,7 +86,7 @@ jobs:
 
       - name: Keep the screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots-${{ matrix.mode }}
           path: build/tests/*.png
