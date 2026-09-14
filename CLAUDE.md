@@ -113,7 +113,11 @@ proposal. This is a deliverable, not a courtesy.
 
 **Verify before pushing.** `tests/run.sh` must pass; for anything that
 touches parsing, the conformance count must not drop; for anything that
-touches memory ownership, run `tests/run.sh --valgrind`.
+touches memory ownership, run `tests/run.sh --valgrind`. GitHub Actions
+runs the same suite, corpus included, on every pull request and on
+`main` (`.github/workflows/tests.yml`). It is a second pair of eyes, not
+a substitute for the run you do yourself: a red build on a branch is a
+review finding like any other.
 
 **Delivering.** Work on the designated branch, commit with clear
 messages, push, and open a pull request at the end of every task.
@@ -197,6 +201,7 @@ how a struct graph is shaped, gets a valgrind run.
 | `tests/conformance/` | the WPT tree-construction runner |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |
+| `.github/workflows/tests.yml` | CI: the whole suite, natively and under valgrind, on every pull request |
 | `tools/festina-generic` | a Festina CLI wrapper that targets a generic CPU, for valgrind |
 
 ## 6 Conventions

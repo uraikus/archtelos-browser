@@ -111,6 +111,7 @@ blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
 | `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
 | `src/util/` | `text.f`, `color.f`, `named_colors.f` |
 | `tests/` | unit suites, offscreen pixel checks, the conformance runner, the runners |
+| `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
 11,289 lines of Festina in `src/` and `browser.f`.
@@ -142,6 +143,12 @@ Without it the suite skips cleanly and the rest still runs. With it,
 
 The whole suite is clean under valgrind: no invalid reads or writes and
 no leaks.
+
+GitHub Actions runs both, natively and under valgrind, on every pull
+request and on `main`. It assembles the toolchain the same way a person
+does — a Festina checkout, the packages Festina links, and the corpus —
+and fails if the corpus is missing rather than skipping the conformance
+suite the way a laptop run may.
 
 ## Performance
 

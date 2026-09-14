@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Continuous integration
+
+`.github/workflows/tests.yml` runs the whole suite on every pull request
+and on `main`, in two legs: a native build and a valgrind build through
+`tools/festina-generic`. Both run the unit suites, the offscreen render
+checks, the tree-construction corpus with its floor enforced, and a
+headless screenshot of each example, which the run keeps as an artifact.
+
+Festina is not vendored, so the job assembles the toolchain the way
+CLAUDE.md §4 documents it: a checkout of `uraikus/festina` on
+`FESTINA_HOME`, the packages Festina links, and a sparse blobless
+checkout of the corpus on `WPT_HTML_TESTS`.
+
+A step checks the corpus arrived before the suite runs. The conformance
+suite skips cleanly when the corpus is missing, which is right on a
+laptop and wrong in CI, where a mistyped path would have turned the
+conformance floor off without failing anything.
+
+The native leg takes about a minute and the valgrind leg a little over
+one, so both run on every pull request rather than on a schedule.
+
 ### Conformance brought level with Chromium
 
 Closed the tree-construction gap on the two files where Chromium led

@@ -125,3 +125,8 @@ they are constant-factor costs spread evenly. Worth trying, in order:
 - **Incremental rendering.** Pages are parsed, laid out and painted in
   full. Streaming layout would complicate every phase for a benefit
   that only shows on slow networks.
+- **Benchmarks in CI.** The suite runs on every pull request; the
+  benchmarks do not. A shared runner with unknown neighbours measures
+  the neighbours, and a timing gate that fires at random teaches people
+  to ignore it. `tests/bench.sh` is run deliberately, on one machine,
+  with the result written into benchmarks.md.

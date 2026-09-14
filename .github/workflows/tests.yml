@@ -1,0 +1,93 @@
+# The suite that CLAUDE.md §3 requires before a push, run for everyone:
+# every unit and render suite, the WHATWG tree-construction corpus with
+# its floor enforced, and a headless screenshot of each example — once
+# natively and once under valgrind.
+#
+# Festina is not vendored here, so the toolchain is assembled from the
+# same three pieces CLAUDE.md §4 documents: a Festina checkout on
+# FESTINA_HOME, the packages Festina links, and the corpus on
+# WPT_HTML_TESTS.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    # The valgrind leg builds for a generic CPU through
+    # tools/festina-generic, because Festina compiles for the host's
+    # exact feature set and valgrind cannot emulate AVX-512
+    # (CLAUDE.md §4).
+    name: suite (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: native
+            args: ''
+          - mode: valgrind
+            args: '--valgrind'
+    steps:
+      - name: Check out the browser
+        uses: actions/checkout@v4
+
+      - name: Check out Festina
+        uses: actions/checkout@v4
+        with:
+          repository: uraikus/festina
+          path: .festina
+
+      # Only html/syntax/parsing/resources is wanted out of a very large
+      # repository, which is what the sparse checkout and the blobless
+      # filter are for.
+      - name: Check out the WHATWG tree-construction corpus
+        uses: actions/checkout@v4
+        with:
+          repository: web-platform-tests/wpt
+          path: .wpt
+          sparse-checkout: html/syntax/parsing/resources
+          filter: blob:none
+
+      - name: Install what Festina links
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang libsqlite3-dev libcairo2-dev libx11-dev \
+            libjpeg-dev libmbedtls-dev pkg-config valgrind
+
+      - name: Report the toolchain
+        run: .festina/bin/festina doctor
+
+      # The conformance suite skips cleanly when the corpus is missing,
+      # which is right for a laptop and wrong for CI: a mistyped path
+      # would turn the conformance floor off without failing anything.
+      - name: Check the corpus arrived
+        run: |
+          count=$(ls .wpt/html/syntax/parsing/resources/*.dat 2>/dev/null | wc -l)
+          echo "$count .dat files"
+          test "$count" -ge 60
+
+      - name: Run the suite
+        env:
+          FESTINA_HOME: ${{ github.workspace }}/.festina
+          WPT_HTML_TESTS: ${{ github.workspace }}/.wpt/html/syntax/parsing/resources
+        run: tests/run.sh ${{ matrix.args }}
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.mode }}
+          path: build/tests/*.png
+          if-no-files-found: warn
