@@ -17,8 +17,8 @@ Festina should gain as a result is in [festina.md](festina.md).
 the standard's own tree-construction corpus it passes **1,535 of 1,652**
 cases — the same number Chromium 141 passes on the same corpus, and 84
 of the 117 each fails are the same cases. CSS targets the
-[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/); see
-[todo.md](todo.md) for that gap.
+[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/); where it stands
+module by module is in [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 

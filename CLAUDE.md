@@ -13,6 +13,8 @@ kind of information lives.
   is in [festina.md](festina.md).
 - How fast it is, against other browsers, is in
   [benchmarks.md](benchmarks.md).
+- Where the style engine stands against the CSS snapshot, module by
+  module, is in [css-2026.md](css-2026.md).
 
 ## 1 Intent
 
@@ -34,7 +36,7 @@ kind of information lives.
 | Area | Standard | Status here |
 |---|---|---|
 | HTML parsing and the DOM tree it builds | [WHATWG HTML Living Standard](https://html.spec.whatwg.org/), §13 "Parsing HTML documents" | the normative reference; conformance measured against the WPT corpus below |
-| CSS | [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/) | the target; see todo.md for the gap |
+| CSS | [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/) | the target; the gap is measured per module in css-2026.md and the work it implies is in todo.md |
 
 **HTML is the WHATWG Living Standard, not "HTML5" generally.** When the
 parser's behaviour and some other description of HTML disagree, the

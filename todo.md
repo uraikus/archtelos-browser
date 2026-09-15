@@ -6,42 +6,66 @@ describes the present (CLAUDE.md, §3).
 
 ## CSS: move to the 2026 snapshot
 
-The style engine is written against CSS as generally understood rather
-than against a specific edition. The target is
-**[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)**, which names
-the modules that are stable enough to implement, the same way the WHATWG
-HTML Living Standard now governs the parser.
+Where the style engine stands against
+**[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
+module by module, in [css-2026.md](css-2026.md). This section is the
+work that measurement implies, in the order it is worth doing.
 
-The work, in the order it is worth doing:
+1. **Fix the cascade bugs before adding anything.** Each is small, each
+   is wrong on ordinary pages today, and every feature built on top
+   inherits the error:
+   - Compare specificity as a triple rather than collapsing it into one
+     integer weighted 10000 / 100 / 1, where a hundred classes tie an id
+     and a hundred and one beat it.
+   - Make `!important` invert the origin order, so an important UA rule
+     beats an important author rule.
+   - Make `inherit` return the parent's value. It returns the initial
+     value for every property except a handful.
+   - Stop inheriting `text-decoration`; propagate it to descendants the
+     way the standard does. Stop inheriting `opacity` at all.
+   - Evaluate the `@supports` condition. Applying every block means a
+     page's fallback and its enhancement both land.
+   - Resolve `rem` against the real root font size and `vh` against the
+     real viewport height, which is still the 600 its initializer sets.
+   - Drop a whole rule when one of its selectors will not parse, rather
+     than only that selector.
+2. **Add `calc()` and custom properties.** `var()` cannot resolve at all:
+   custom properties are dropped by name at parse time. These two are
+   what modern stylesheets are written in, so the parser rejecting them
+   silently costs more than any single missing property.
+3. **Positioning.** `position` is not parsed at all and every box is
+   static. This is the single largest visual gap.
+4. **Flexbox**, then **Grid**. Both are accepted and laid out as blocks,
+   which is why a modern page renders as one column.
+5. **Floats**, which are computed and never read, and the `clear` that
+   goes with them.
+6. **Selectors Level 4**: `:is()`, `:where()`, `:has()`, a full selector
+   list inside `:not()`, `An+B` in `:nth-child()`, and the attribute
+   case-insensitivity flag, which is parsed and thrown away.
+7. **`@layer` ordering.** Layers are flattened into the ordinary cascade
+   today, so a layered sheet competes purely on specificity.
+8. **Colors Level 4/5**: `lab()`, `lch()`, `oklab()`, `oklch()`,
+   `color-mix()`. The runtime color is already a packed RGBA integer, so
+   these are parse-and-convert rather than architecture.
+9. **`overflow: hidden`**, which is computed and clips nothing. It needs
+   a clip region the canvas does not have; see festina.md.
+10. **Generated content** (`::before`, `::after`), which needs pseudo-
+    element support the selector parser does not have.
 
-1. **Read the snapshot and write down the delta.** Produce a table of
-   the modules it lists against what `src/css/` implements, so the rest
-   of this section can be replaced by something measured rather than
-   guessed.
-2. **Find a conformance corpus, as was done for HTML.** The HTML parser
-   went from 20% to 93% against the standard's own tests, level with
-   Chromium,
-   and the only reason that was possible is that a corpus existed and
-   could be run. `web-platform-tests/css` is the equivalent; the first
-   question is which of its tests can run without JavaScript, since the
-   reference-comparison harness assumes a scripting browser. A pixel
-   comparison against Chromium on a fixed page set (both already wired
-   up in `tests/chromium.py`) may be the more practical instrument.
-3. **Selectors Level 4**: `:is()`, `:where()`, `:has()`, `:not()` with a
-   full selector list rather than one compound, and the case-insensitive
-   attribute flag. The parser already rejects what it does not
-   understand, so these fail closed rather than wrongly.
-4. **Cascade Level 5**: `@layer` ordering (blocks are currently
-   flattened and their contents used), `revert`, and `!important`
-   interaction with layers.
-5. **Values Level 4**: `calc()`, `min()`, `max()`, `clamp()`, and custom
-   properties with `var()`. Custom properties are currently dropped at
-   parse time.
-6. **Box model and layout modules**: `position`, floats, Flexbox,
-   Grid — see the layout section below, which is where the real work is.
-7. **Colors Level 4/5**: `lab()`, `lch()`, `oklab()`, `oklch()`,
-   `color-mix()`. The runtime color model is already a packed RGBA int,
-   so these are parse-and-convert rather than architecture.
+**Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
+against the standard's own tests, level with Chromium, and the only
+reason that was possible is that a corpus existed and could be run.
+`css/` in web-platform-tests is the equivalent, and the first question
+is how much of it runs without script, since the reference-comparison
+harness assumes a scripting browser. A pixel comparison against Chromium
+on a fixed page set, both already wired up in `tests/chromium.py`, may be
+the more practical instrument.
+
+**The snapshot itself is not reachable from this network.** `www.w3.org`
+answers the proxy's CONNECT with 403, so css-2026.md takes its module
+axis from the test suite's own directories instead. Someone who can
+reach the snapshot should add its classification of each module as
+stable, in testing, or abandoned, and check the axis against it.
 
 ## HTML: the remaining conformance gap
 
