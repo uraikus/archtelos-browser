@@ -139,13 +139,50 @@ int func resolvePositionAxis(l:Len, leftover:int, fontSize:int) {
 // canvas has no clip region -- the same reason overflow: hidden works
 // the way it does (FINDINGS.md, "an image is a drawable surface with a
 // smaller API").
+// The size a background image is drawn at (Backgrounds and Borders 3
+// §3.9), from its intrinsic size and the box. `auto` on one axis takes
+// its size from the other through the image's own ratio; `auto` on both
+// is the intrinsic size. A percentage is of the box.
+int bgTileW = 0
+int bgTileH = 0
+
+void func backgroundTileSize(s:Style, iw:int, ih:int, w:int, h:int) {
+    bgTileW = iw
+    bgTileH = ih
+    if s.backgroundSizeKind == BGSIZE_AUTO { return }
+    float fw = w.toFloat() / iw.toFloat()
+    float fh = h.toFloat() / ih.toFloat()
+    if s.backgroundSizeKind == BGSIZE_COVER || s.backgroundSizeKind == BGSIZE_CONTAIN {
+        float scale = s.backgroundSizeKind == BGSIZE_COVER
+            ? (fw > fh ? fw : fh)
+            : (fw < fh ? fw : fh)
+        bgTileW = roundPx(iw.toFloat() * scale)
+        bgTileH = roundPx(ih.toFloat() * scale)
+        return
+    }
+    bool autoW = s.backgroundSizeW.kind != LEN_PX && s.backgroundSizeW.kind != LEN_PERCENT
+    bool autoH = s.backgroundSizeH.kind != LEN_PX && s.backgroundSizeH.kind != LEN_PERCENT
+    if autoW && autoH { return }
+    if !autoW { bgTileW = roundPx(lenToPx(s.backgroundSizeW, w, s.fontSize)) }
+    if !autoH { bgTileH = roundPx(lenToPx(s.backgroundSizeH, h, s.fontSize)) }
+    if autoW { bgTileW = roundPx(iw.toFloat() * bgTileH.toFloat() / ih.toFloat()) }
+    if autoH { bgTileH = roundPx(ih.toFloat() * bgTileW.toFloat() / iw.toFloat()) }
+}
+
 void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
     if w <= 0 || h <= 0 { return }
     img src = loadedImages[s.backgroundUrl]
     if src == null { return }
-    int iw = src.width
-    int ih = src.height
+    int srcW = src.width
+    int srcH = src.height
+    if srcW <= 0 || srcH <= 0 { return }
+    backgroundTileSize(s, srcW, srcH, w, h)
+    int iw = bgTileW
+    int ih = bgTileH
     if iw <= 0 || ih <= 0 { return }
+    // The drawn size, not the intrinsic one, is what the position
+    // distributes the leftover of and what the repeat steps by.
+    bool scaled = iw != srcW || ih != srcH
     int ox = resolvePositionAxis(s.backgroundPosX, w - iw, s.fontSize)
     int oy = resolvePositionAxis(s.backgroundPosY, h - ih, s.fontSize)
 
@@ -163,7 +200,10 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
         int tx = startX
         bool moreX = true
         while moreX {
-            layer.drawImage(src, tx, ty)
+            // An unscaled blit is exact to the pixel and a scaled one
+            // is filtered, so the tile is only scaled when it has to be.
+            if scaled { layer.drawImage(src, tx, ty, iw, ih) }
+            else { layer.drawImage(src, tx, ty) }
             if !s.backgroundRepeatX { moreX = false }
             else {
                 tx = tx + iw

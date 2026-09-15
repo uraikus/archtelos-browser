@@ -2247,6 +2247,31 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             else { s.backgroundPosY = lenPercent(50.0) }
         }
     }
+    // background-size (Backgrounds and Borders 3 §3.9). `auto` is the
+    // initial value on both axes and is the zero value of these fields,
+    // so a style that does not mention it writes nothing here.
+    ascii bgsize = styleProp(props, 'background-size')
+    if bgsize != null {
+        // The lowered string is held in a local and its words indexed
+        // rather than bound (FINDINGS.md, "ascii aliases are not
+        // retained").
+        ascii bgsizeLow = asciiLower(bgsize)
+        arr[ascii] parts = asciiSplitSpace(bgsizeLow)
+        if parts.length >= 1 && parts[0] == 'cover' { s.backgroundSizeKind = BGSIZE_COVER }
+        else if parts.length >= 1 && parts[0] == 'contain' { s.backgroundSizeKind = BGSIZE_CONTAIN }
+        else if parts.length >= 1 {
+            Len sw = parseLength(parts[0], s.fontSize)
+            // One value gives the width and leaves the height `auto`,
+            // which takes its size from the image's own ratio.
+            Len sh = lenAuto()
+            if parts.length >= 2 { sh = parseLength(parts[1], s.fontSize) }
+            if sw.kind == LEN_PX || sw.kind == LEN_PERCENT || sh.kind == LEN_PX || sh.kind == LEN_PERCENT {
+                s.backgroundSizeKind = BGSIZE_EXPLICIT
+                s.backgroundSizeW = sw
+                s.backgroundSizeH = sh
+            }
+        }
+    }
     // object-fit and object-position (CSS Images 3 §5.5, §5.6). The
     // initial position is `50% 50%`, unlike background-position's
     // `0% 0%`, so the centre is written in rather than left at the

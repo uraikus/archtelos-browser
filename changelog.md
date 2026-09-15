@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### background-size
+
+`background-size` takes `cover`, `contain`, lengths, percentages and
+`auto` on either axis. A single value gives the width and leaves the
+height `auto`, which takes its size from the image's own ratio; `auto`
+on both axes is the intrinsic size, which is what the property did
+before it existed.
+
+The size it gives is not only what the image is drawn at. It is also
+what `background-position` distributes the leftover of — a 20px tile in
+a 100px box leaves 80, so `right` starts it at x=80 rather than at the
+90 the intrinsic 10px tile would have given — and what
+`background-repeat` steps by. Both are checked.
+
+Thirteen more pixel checks in `tests/render/background.f`, and the
+equivalence checks the rule asks for: `100% 100%` against the box's own
+measurements written in pixels, and `40px` against `40px auto`.
+
+Properties **86 → 87**, checked end to end rather than assumed: the row
+was already one Chromium can tell from the initial value, `styleDigest`
+gained the three fields, and the count moved when the implementation
+landed.
+
+**It costs a page without a background image nothing, and the reason is
+structural rather than a measurement.** `computeStyleValues` runs once
+per *distinct* style, not once per element — 24 times on the benchmark
+page's 2,728 elements — so one more property read is 24 map lookups for
+the whole document. The paired run agrees: a median of 0.0 ms over 25
+interleaved runs, with the mean leaning 0.4 ms in a timer that counts
+whole milliseconds.
+
 ### The properties instrument could not grade two thirds of its own rows
 
 `tests/conformance/css-properties.txt` lists every property Chromium

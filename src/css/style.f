@@ -86,6 +86,15 @@ const int FLEXWRAP_NOWRAP = 0
 const int FLEXWRAP_WRAP = 1
 const int FLEXWRAP_WRAP_REVERSE = 2
 
+// background-size (Backgrounds and Borders 3 §3.9). `auto` is the
+// initial value, so it is 0 and a style that never mentions the
+// property needs no work -- and neither do the two `Len` fields, whose
+// zero value is already `auto`.
+const int BGSIZE_AUTO = 0
+const int BGSIZE_COVER = 1
+const int BGSIZE_CONTAIN = 2
+const int BGSIZE_EXPLICIT = 3
+
 // object-fit (CSS Images 3 §5.5): how a replaced element's content is
 // sized inside the content box the element's own width and height gave
 // it. `fill` is the initial value and stretches to the box, so it is 0
@@ -220,6 +229,9 @@ struct Style {
     backgroundRepeatY:bool
     backgroundPosX:Len
     backgroundPosY:Len
+    backgroundSizeKind:int
+    backgroundSizeW:Len
+    backgroundSizeH:Len
     // object-fit and object-position, which move a replaced element's
     // content inside its content box and change no geometry.
     objectFit:int

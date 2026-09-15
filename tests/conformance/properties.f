@@ -54,6 +54,7 @@ text func styleDigest(s:Style) {
         + `|${gradientKey(s.backgroundImage)}|${s.overflowHidden}`
         + `|${s.backgroundUrl}|${s.backgroundRepeatX}|${s.backgroundRepeatY}`
         + `|${lenKey(s.backgroundPosX)}|${lenKey(s.backgroundPosY)}`
+        + `|${s.backgroundSizeKind}|${lenKey(s.backgroundSizeW)}|${lenKey(s.backgroundSizeH)}`
         + `|${s.objectFit}|${lenKey(s.objectPosX)}|${lenKey(s.objectPosY)}`
 }
 

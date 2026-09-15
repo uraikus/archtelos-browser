@@ -121,6 +121,110 @@ paintPage(p9, 0, 0, 300)
 check(getPixelColor(2, 2) == grey, 'a box with no background image is its colour')
 check(getPixelColor(50, 30) == grey, 'throughout')
 
+// ---- background-size ----------------------------------------------------
+// The tile is drawn at the size this gives it, and that size is then
+// what `background-position` distributes the leftover of and what
+// `background-repeat` steps by.
+
+// Two explicit lengths: the 10x10 tile is drawn at 20x20, so each half
+// is ten pixels wide instead of five. Samples stay three pixels clear of
+// the seam and the edges, because a scaled blit is filtered.
+Page s1 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-size:20px 20px"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s1, 0, 0, 300)
+check(getPixelColor(4, 4) == blue, 'background-size: 20px 20px doubles the tile, blue half first')
+check(getPixelColor(15, 4) == green, 'with the green half from x=10')
+check(getPixelColor(4, 16) == blue, 'and twice as tall')
+check(getPixelColor(25, 4) == grey, 'past the tile the background colour shows')
+check(getPixelColor(4, 25) == grey, 'below it too')
+
+// `contain` fits the image inside the box keeping its ratio: 20x10 in a
+// 100x40 box scales by min(100/20, 40/10) = 4, giving 80x40.
+Page s2 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:contain"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s2, 0, 0, 300)
+check(getPixelColor(20, 20) == blue, 'contain scales 20x10 by 4 to 80x40')
+check(getPixelColor(60, 20) == green, 'so the halves meet at x=40')
+check(getPixelColor(90, 20) == grey, 'and the last 20 pixels of the box are uncovered')
+
+// `cover` fills the box instead: the same image scales by 5 to 100x50,
+// which is wider than contain and taller than the box.
+Page s3 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:cover"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s3, 0, 0, 300)
+check(getPixelColor(20, 20) == blue, 'cover scales the same image by 5 to 100x50')
+check(getPixelColor(70, 20) == green, 'so the halves meet at x=50')
+check(getPixelColor(90, 20) == green, 'and the box is covered to its right edge')
+check(getPixelColor(90, 35) == green, 'and to its bottom')
+
+// A percentage is of the box, and `100% 100%` must mean the same as the
+// box's own measurements written out.
+Page s4 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:100% 100%"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s4, 0, 0, 300)
+color pctMid = getPixelColor(20, 20)
+color pctRight = getPixelColor(80, 20)
+Page s5 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:100px 40px"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s5, 0, 0, 300)
+check(pctMid == blue, 'background-size: 100% 100% stretches the image over the box')
+check(pctRight == green, 'both halves')
+check(pctMid == getPixelColor(20, 20), 'and means the same as the box size written in pixels')
+check(pctRight == getPixelColor(80, 20), 'to the pixel')
+
+// `auto` on one axis takes the ratio from the other: 40px across on a
+// 20x10 image is 20px down.
+Page s6 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:40px auto"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s6, 0, 0, 300)
+check(getPixelColor(8, 8) == blue, '40px auto keeps the 2:1 ratio, so the image is 40x20')
+check(getPixelColor(30, 8) == green, 'with the halves at 20 each')
+check(getPixelColor(8, 30) == grey, 'and nothing below y=20')
+
+// One value means that width and `auto` for the height.
+Page s7 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(fit.png);background-repeat:no-repeat;'
+    + 'background-size:40px"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s7, 0, 0, 300)
+check(getPixelColor(8, 8) == blue, 'one value means that width and auto for the height')
+check(getPixelColor(30, 8) == green, 'the same as writing auto out')
+check(getPixelColor(8, 30) == grey, 'to the pixel')
+
+// The size is what repeat steps by.
+Page s8 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-size:20px 20px"></div></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s8, 0, 0, 300)
+check(getPixelColor(4, 4) == blue, 'repeat steps by the scaled size, not the intrinsic one')
+check(getPixelColor(24, 4) == blue, 'so the second tile starts at x=20')
+check(getPixelColor(35, 4) == green, 'with its green half from x=30')
+
+// And what position distributes the leftover of: a 20px tile in a 100px
+// box leaves 80, so `right` starts it at x=80.
+Page s9 = pageFromHtml(head + '<div style="width:100px;height:40px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-size:20px 20px;background-position:right top"></div></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(s9, 0, 0, 300)
+check(getPixelColor(84, 4) == blue, 'position leaves over the scaled size, so right is x=80')
+check(getPixelColor(95, 4) == green, 'with the green half at the box edge')
+check(getPixelColor(70, 4) == grey, 'and nothing to its left')
+
 // ---- a percentage position, not just a keyword -------------------------
 // A percentage is a fraction of the space the image leaves over, the
 // same rule the keywords are shorthand for. In a 50px box a 10px tile
