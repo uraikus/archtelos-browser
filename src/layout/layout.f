@@ -471,10 +471,33 @@ Box func buildBox(n:Node, parentStyle:Style) {
 }
 
 void func buildChildren(b:Box, n:Node, s:Style) {
+    addGeneratedBox(b, n, 'before')
     for int i = 0, i < n.children.length, i++ {
         Box c = buildBox(n.children[i], s)
         if c != null { addChildBox(b, c) }
     }
+    addGeneratedBox(b, n, 'after')
+}
+
+// A ::before or ::after box: the generated content as a text box inside
+// a box of the pseudo-element's own style, so `display`, `color` and the
+// rest apply to it rather than to the element (CSS2 §12.1). Nothing is
+// generated unless the cascade resolved a `content` for it.
+void func addGeneratedBox(b:Box, n:Node, which:text) {
+    if n == null || n.id <= 0 { return }
+    if !hasPseudo(n.id, which) { return }
+    Style ps = pseudoStyleOf(n.id, which)
+    if ps.display == DISPLAY_NONE { return }
+    text content = pseudoContentOf(n.id, which)
+
+    Box box = newBox(displayIsBlockLevel(ps.display) ? BOX_BLOCK : BOX_INLINE, n, ps)
+    box.blockLevel = displayIsBlockLevel(ps.display)
+    if content != null && content != '' {
+        Node fake = newTextNode(content)
+        fake.style = ps
+        addChildBox(box, buildTextBox(fake, ps))
+    }
+    addChildBox(b, box)
 }
 
 // Rows of a table, flattening thead/tbody/tfoot; anything else (a

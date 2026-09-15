@@ -71,6 +71,39 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### ::before and ::after generate boxes
+
+A rule naming `::before` or `::after` describes a box generated inside
+the element, before or after its content, and it exists only when
+`content` computes to something other than `none` (CSS2 §12.1). Both
+the two-colon spelling and the one-colon spelling CSS2 used are parsed;
+`::first-line` and `::first-letter` still make their rule unusable
+rather than silently matching the element, which is what the old parser
+did with every `::` selector.
+
+`content` takes quoted strings and `attr()`, in any sequence, and any
+other component -- a counter, `open-quote`, `url()` -- makes the whole
+value invalid rather than dropping part of it silently.
+
+The generated box carries the pseudo-element's own computed style,
+inheriting from the element rather than from the element's parent, so
+`display: block` on a `::before` puts the generated content on its own
+line and a `color` on it does not touch the element's text. A rule that
+sets a colour but no `content` generates nothing at all.
+
+Rules with a pseudo-element are collected in a separate pass with the
+opposite filter, so they never style the element they match and ordinary
+rules never style the generated box. The pass runs only when some rule
+somewhere names a pseudo-element, which almost no document does.
+
+Twenty-one checks, the geometry read out of Chromium 141. They are
+written as relations -- the width a two-character `::before` adds is to
+the width a three-character one adds as 2 is to 3 -- because this
+engine's font metrics differ from Chromium's by a pixel every few
+characters and the relations are what the feature promises. The inline
+case goes to the line fragments rather than the box, because an inline
+box has no width of its own here.
+
 ### Selectors, measured against Chromium and then completed
 
 A third instrument joins the two that grade CSS properties and default

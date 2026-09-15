@@ -98,6 +98,10 @@ list markers and opacity. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops.
 
+**`::before` and `::after`** generate boxes from `content`, which takes
+quoted strings and `attr()`. Counters and quotes do not exist, and
+`::first-line` and `::first-letter` are not implemented.
+
 **Flex containers** are single-line: `flex-direction`, `order`,
 `flex-grow`, `flex-shrink`, `flex-basis` and the `flex` shorthand,
 `justify-content`, `align-items`, `align-self` and the `gap` family.

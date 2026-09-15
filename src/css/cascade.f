@@ -58,6 +58,12 @@ struct Bucket {
 map[Bucket] ruleIndex = {}
 map[int] bucketSizes = {}       // key -> number of refs, so existence is a scalar lookup
 
+// Whether any rule anywhere names a pseudo-element. Almost no document
+// has one, and computing ::before and ::after for every element would
+// be two extra rule walks per element on every page (CLAUDE.md §3, "a
+// feature must not cost anything to the pages that do not use it").
+bool anyPseudoRules = false
+
 void func cascadeReset() {
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
@@ -65,6 +71,8 @@ void func cascadeReset() {
     // map forever. A page load starts with an empty one.
     map[Style] emptyStyleCache = {}
     styleCache = emptyStyleCache
+    anyPseudoRules = false
+    resetPseudoElements()
     cascadeSheets = []
     cascadeOrigins = []
     ruleIndex = {}
@@ -109,6 +117,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.rule = rule
             ref.sel = sel
             ref.origin = origin
+            if sel.pseudoElement != '' { anyPseudoRules = true }
             addToBucket(selectorKey(sel), ref)
         }
     }
@@ -501,6 +510,13 @@ void func addDimensionHint(matches:arr[Match], prop:text, value:text, w:int) {
 // locals: the rule graph is cycle-capable (a Compound holds a
 // Compound), and releasing a local alias of any part of it costs a
 // collector walk of everything reachable from it (FINDINGS.md).
+// Which generated box the current collection is for: '' for the element
+// itself, 'before' or 'after' for one of its pseudo-elements. A rule
+// with a pseudo-element does not style the element it matches, and a
+// rule without one does not style the generated box, so the two passes
+// are the same walk with opposite filters.
+text collectingPseudo = ''
+
 void func collectFromBucket(n:Node, key:text, matches:arr[Match]) {
     if bucketSizes[key] == null { return }
     // the bucket travels as a borrowed parameter: a struct read out of
@@ -513,6 +529,7 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
     int count = b.refs.length
     int nid = n.id
     for int i = 0, i < count, i++ {
+        if b.refs[i].sel.pseudoElement != collectingPseudo { continue }
         profSelectorTests++
         if !matchSelector(nid, b.refs[i].sel) { continue }
         int decls = b.refs[i].rule.decls.length
@@ -557,6 +574,120 @@ arr[Match] func collectMatches(n:Node) {
     matches.sort(compareMatches)
     if archtelosTiming { profSortMs = profSortMs + (now() - t0) }
     return matches
+}
+
+// ---- generated boxes (CSS2 §12.1) ------------------------------------
+//
+// `::before` and `::after` describe a box generated inside the element,
+// before or after its content. The box exists only when `content`
+// computes to something other than `none`, and it inherits from the
+// element rather than from the element's parent.
+//
+// The results live in two maps keyed by `<node id>:b` / `<node id>:a`
+// rather than in fields on Node: almost no element has one, and a Style
+// field on every node would cost every document for the few that do.
+map[Style] pseudoStyles = {}
+map[text] pseudoContents = {}
+
+void func resetPseudoElements() {
+    map[Style] emptyStyles = {}
+    map[text] emptyContents = {}
+    pseudoStyles = emptyStyles
+    pseudoContents = emptyContents
+}
+
+text func pseudoKey(nid:int, which:text) {
+    return `${nid}:${which}`
+}
+
+bool func hasPseudo(nid:int, which:text) {
+    return pseudoContents[pseudoKey(nid, which)] != null
+}
+
+Style func pseudoStyleOf(nid:int, which:text) {
+    return pseudoStyles[pseudoKey(nid, which)]
+}
+
+text func pseudoContentOf(nid:int, which:text) {
+    return pseudoContents[pseudoKey(nid, which)]
+}
+
+arr[Match] func collectPseudoMatches(n:Node, which:text) {
+    arr[Match] matches = []
+    collectingPseudo = which
+    collectFromBucket(n, '*', matches)
+    collectFromBucket(n, n.tag, matches)
+    text id = getAttr(n, 'id')
+    if id != null { collectFromBucket(n, `#${id}`, matches) }
+    arr[text] classes = nodeClasses(n)
+    for int i = 0, i < classes.length, i++ {
+        collectFromBucket(n, `.${classes[i]}`, matches)
+    }
+    collectingPseudo = ''
+    // an inline style attribute cannot name a pseudo-element, so it is
+    // deliberately not consulted here
+    matches.sort(compareMatches)
+    return matches
+}
+
+// `content`: a sequence of strings and attr() references, or `none`.
+// Answers null when nothing should be generated.
+text func resolveContent(v:ascii, n:Node) {
+    if v == null { return null }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return null }
+    ascii low = asciiLower(t)
+    if low == 'none' || low == 'normal' { return null }
+    text out = ''
+    int i = 0
+    int len = t.length
+    while i < len {
+        int c = t.charCodeAt(i)
+        if isSpaceCode(c) { i++  continue }
+        if c == CH_QUOTE || c == CH_APOS {
+            int close = i + 1
+            while close < len && t.charCodeAt(close) != c { close++ }
+            if close >= len { return null }          // unterminated
+            out = out + t.slice(i + 1, close).toText()
+            i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'attr(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            text name = asciiLower(asciiTrim(t.slice(i + 5, close))).toText()
+            text got = getAttr(n, name)
+            out = out + (got == null ? '' : got)
+            i = close + 1
+            continue
+        }
+        // counters, url(), open-quote and the rest are not implemented;
+        // an unrecognized component makes the whole value invalid rather
+        // than silently dropping part of it
+        return null
+    }
+    return out
+}
+
+void func computePseudoFor(n:Node, own:Style, which:text) {
+    arr[Match] matches = collectPseudoMatches(n, which)
+    if matches.length == 0 { return }
+    map[text] props = {}
+    for int i = 0, i < matches.length, i++ {
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    text content = resolveContent(styleProp(props, 'content'), n)
+    if content == null { return }
+    // a generated box inherits from the element it is generated in
+    Style s = computeStyleValues(n, own, false, props)
+    pseudoStyles[pseudoKey(n.id, which)] = s
+    pseudoContents[pseudoKey(n.id, which)] = content
+}
+
+void func computePseudoElements(n:Node, own:Style) {
+    if !anyPseudoRules { return }
+    computePseudoFor(n, own, 'before')
+    computePseudoFor(n, own, 'after')
 }
 
 // A style attribute holding non-ASCII (a font name, say): rewrite the
@@ -1853,6 +1984,7 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
     }
     Style s = computeStyle(n, parent, isRoot)
     n.style = s
+    computePseudoElements(n, s)
     for int i = 0, i < n.children.length, i++ {
         computeStylesFrom(n.children[i], s, false)
     }

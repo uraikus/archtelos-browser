@@ -40,12 +40,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    it is; `baseline` alignment; and auto margins inside a flex
    container, which absorb the free space before `justify-content` sees
    it.
-3. **Pseudo-elements**: `::before`, `::after`, `::first-line`,
-   `::first-letter`. The rest of Selectors 3 is done and measured;
-   these are what is left of it, and generated content needs them
-   anyway. They are also the one part of Selectors 3 the instrument
-   cannot grade, because they select part of an element rather than an
-   element, so `querySelectorAll` has no answer to compare against.
+3. **`::first-line` and `::first-letter`**, and the rest of generated
+   content: counters with `counter-reset` and `counter-increment`,
+   `open-quote` and `close-quote`, and `url()` in `content`. `::before`
+   and `::after` generate boxes from strings and `attr()` already. None
+   of this is gradeable by the selector instrument -- a pseudo-element
+   selects part of an element rather than an element, so
+   `querySelectorAll` has no answer to compare against -- so it is
+   measured by geometry against Chromium, as tests/unit/test_pseudo.f
+   does.
 4. **CSS Images 3, completed**: `radial-gradient()` and
    `conic-gradient()`, gradient interpolation hints, `object-fit` and
    `object-position`. Linear gradients are done; a radial one needs the

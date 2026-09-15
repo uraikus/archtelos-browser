@@ -5,13 +5,15 @@ Stylesheet s1 = parseStylesheet('/* c */ p, div.note > b { color: red; margin : 
 checkEq(dumpStylesheet(s1), 'p{1}, div.note > b{1026} { color: red; margin: 1px 2px !important; }\n*#x a[href3http]:first-child{1050625} { display: none; }\n', 'rules, specificity, important')
 
 Stylesheet s2 = parseStylesheet('a:hover { x: 1 } li:nth-child(odd) { y: 2 } p::before { z: 3 } h1 + p ~ em { w: 4 } div:not(.a) { v: 5 } .a.b#c { u: 6 }')
-// `a:hover` and `p::before` use constructs this engine does not
-// support, so those two rules are dropped entirely rather than kept
-// with a selector that can never match (Selectors 3 §4).
+// `a:hover` names a state this engine cannot know, so that rule is
+// dropped entirely rather than kept with a selector that can never
+// match (Selectors 3 §4). `p::before` is kept: it names a box to
+// generate, and its specificity counts the pseudo-element as a type,
+// so `p::before` weighs two types.
 //
 // `:nth-child(odd)` keeps its An+B form -- 2n+1 -- rather than the word
 // it was written as, because that is what the matcher works from.
-checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{0}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
+checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\np::before{2} { z: 3; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{0}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
 
 cssViewportWidth = 500
 Stylesheet s3 = parseStylesheet('@charset "utf-8"; @import url(x.css); @media screen and (max-width: 600px) { p { a: 1 } } @media print { p { b: 2 } } @media (min-width: 900px), all { p { c: 3 } } @font-face { font-family: X; src: url(x) } @media not screen { p { d: 4 } } q { e: 5 }')

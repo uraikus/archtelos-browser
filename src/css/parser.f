@@ -35,7 +35,8 @@ struct Compound {
     id:text                 // '' = none
     classes:arr[text]
     attrs:arr[AttrSel]
-    pseudos:arr[text]       // e.g. 'first-child', 'nth-child:3'
+    pseudos:arr[text]       // e.g. 'first-child', 'nth-child:2:1'
+    pseudoElement:text      // '' = none; 'before' or 'after'
     notSel:Compound         // the argument of :not(); meaningful only when hasNot
     hasNot:bool             // a struct field can never read as null (see FINDINGS.md), hence the flag
     combinator:int          // relation to the compound on its LEFT
@@ -44,8 +45,13 @@ struct Compound {
 
 struct Selector {
     parts:arr[Compound]     // left to right
-    specificity:int         // ids * 10000 + classes/attrs/pseudos * 100 + types
+    specificity:int         // packed base 1024: see packSpecificity
     unsupported:bool
+    // The pseudo-element of the rightmost compound, if any. A rule with
+    // one does not style the element it matches: it describes a box
+    // generated before or after that element's content (CSS2 §12.1),
+    // so the cascade collects it separately.
+    pseudoElement:text
 }
 
 int declSerialNext = 1
@@ -268,6 +274,7 @@ Compound func newCompound() {
     Compound c
     c.tag = ''
     c.id = ''
+    c.pseudoElement = ''
     c.combinator = COMB_NONE
     return c
 }
@@ -315,14 +322,30 @@ Compound func parseCompound() {
             any = true
         } else if c == CH_COLON {
             int start = selPos + 1
+            bool doubleColon = false
             if start < n && selSrc.charCodeAt(start) == CH_COLON {
-                // a pseudo-element: nothing here renders ::before/::after
-                comp.unsupported = true
+                doubleColon = true
                 start++
             }
             int end = scanIdent(start)
             ascii name = asciiLower(selSrc.slice(start, end))
             selPos = end
+            // `::before` and `::after`, and the one-colon spellings CSS2
+            // used, name a generated box rather than a state of this
+            // element. Only these two generate anything here; the others
+            // (`::first-line`, `::first-letter`) still make the rule
+            // unusable rather than silently matching the element.
+            bool isElementPseudo = name == 'before' || name == 'after'
+                || name == 'first-line' || name == 'first-letter'
+            if doubleColon || isElementPseudo {
+                if name == 'before' || name == 'after' {
+                    comp.pseudoElement = name.toText()
+                } else {
+                    comp.unsupported = true
+                }
+                any = true
+                continue
+            }
             if selPos < n && selSrc.charCodeAt(selPos) == CH_LPAREN {
                 int close = matchParen(selSrc, selPos)
                 ascii arg = asciiTrim(selSrc.slice(selPos + 1, close))
@@ -469,6 +492,14 @@ Selector func parseSelector(src:ascii) {
         sel.parts.push(comp)
     }
     if sel.parts.length == 0 { sel.unsupported = true }
+    // The pseudo-element may only be on the rightmost compound, and it
+    // makes the rule describe a generated box rather than the element.
+    sel.pseudoElement = ''
+    for int i = 0, i < sel.parts.length, i++ {
+        if sel.parts[i].pseudoElement == '' { continue }
+        if i == sel.parts.length - 1 { sel.pseudoElement = sel.parts[i].pseudoElement }
+        else { sel.unsupported = true }
+    }
     sel.specificity = computeSpecificity(sel)
     return sel
 }
@@ -505,7 +536,9 @@ int func specAdd(a:int, b:int) {
 int func compoundSpecificity(c:Compound) {
     int ids = c.id != '' ? 1 : 0
     int classes = c.classes.length + c.attrs.length + c.pseudos.length
-    int types = c.tag != '' ? 1 : 0
+    // A pseudo-element counts as a type, not a pseudo-class
+    // (Selectors 3 §9).
+    int types = (c.tag != '' ? 1 : 0) + (c.pseudoElement != '' ? 1 : 0)
     int s = packSpecificity(ids, classes, types)
     if c.hasNot { s = specAdd(s, compoundSpecificity(c.notSel)) }
     return s
@@ -841,6 +874,7 @@ text func dumpSelector(sel:Selector) {
             out = a.op == ATTR_EXISTS ? `${out}[${a.name}]` : `${out}[${a.name}${a.op}${a.value}]`
         }
         for int j = 0, j < c.pseudos.length, j++ { out = `${out}:${c.pseudos[j]}` }
+        if c.pseudoElement != '' { out = `${out}::${c.pseudoElement}` }
         if c.hasNot {
             Selector inner
             inner.parts.push(c.notSel)
