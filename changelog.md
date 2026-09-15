@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Floats and clear
+
+`float` was parsed, computed and never read; every floated box laid out
+as an ordinary block. CSS2 §9.5 works now, which leaves `overflow`
+clipping and generated content as the CSS2 chapters still missing.
+
+- A float is placed at the edge of its containing block, as high as it
+  fits, after any float already there, and two floats on the same side
+  sit beside each other until the line runs out.
+- **The line boxes beside a float are shortened**, which is how text
+  wraps around one. A line below the float gets the full width back.
+- A block box's own position and width ignore floats entirely, so a
+  block sits underneath one, which is what the standard says and what
+  Chromium does.
+- `clear: left`, `right` and `both` move a box below the floats on that
+  side, and a float can clear too.
+- A float does not add to its parent's height.
+
+Every expected number in the 21 new checks was read out of Chromium with
+`getBoundingClientRect` on the same markup rather than reasoned about,
+and a page with both kinds of float was rendered in both engines to
+compare.
+
+Two more properties change what renders: 58 of 373 to **60 of 373**.
+
+What is missing is the block formatting context. A float belongs to one
+and cannot escape it; there is one float list for the document instead,
+so `overflow: hidden` does not contain a float and a float does not grow
+the parent that holds it. todo.md records it.
+
 ### Positioning
 
 `position` did not appear in `src/css/` at all and every box was static.

@@ -97,7 +97,7 @@ buffered-rendering	initial
 caption-side	initial
 caret-animation	initial
 caret-color	#123456
-clear	initial
+clear	both
 clip	initial
 clip-path	initial
 clip-rule	initial

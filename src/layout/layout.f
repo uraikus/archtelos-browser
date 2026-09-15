@@ -708,7 +708,7 @@ bool func hasInlineContent(b:Box) {
         Box c = b.children[i]
         // An out-of-flow box is neither: it does not decide whether its
         // parent runs an inline formatting context.
-        if boxIsOutOfFlow(c) { continue }
+        if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
         any = true
         if !isInlineLevelBox(c) { return false }
     }
@@ -947,6 +947,16 @@ int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
         // space here and is laid out by the positioning pass once the
         // containing block it resolves against is known (CSS2 §9.3).
         if boxIsOutOfFlow(c) { continue }
+        if boxIsFloated(c) {
+            placeFloat(c, cx, cx + cw, y)
+            continue
+        }
+        // `clear` moves this box below the floats on that side. It does
+        // not change the float list, so a later box is unaffected.
+        if c.style.clearSide != CLEAR_NONE {
+            int cl = clearanceY(c.style.clearSide)
+            if cl > y { y = cl  prevBottomMargin = 0 }
+        }
         int topM = collapsedTopMargin(c, cw)
         bool applied = false
         if first && parentAbsorbsTop {
@@ -987,6 +997,12 @@ int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
 // fragments, its pen position and the pending collapsible space.
 Box ifcBox
 int ifcX = 0            // pen x, document coordinates
+// The content edges of the block running the inline formatting
+// context, kept so a line can be re-measured against the floats beside
+// it. Globals are not hoisted, so these live with the rest of the ifc
+// state rather than beside the function that uses them.
+int ifcCbLeft = 0
+int ifcCbRight = 0
 int ifcLineStart = 0    // left edge of the line
 int ifcLineRight = 0    // right edge
 int ifcY = 0            // top of the current line
@@ -1013,6 +1029,8 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
 
     ifcBox = b
     b.lines = []
+    ifcCbLeft = cx
+    ifcCbRight = cx + cw
     ifcLineStart = cx
     ifcLineRight = cx + cw
     ifcY = cy
@@ -1044,8 +1062,24 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     return h
 }
 
+// A line box is shortened by the floats it sits beside. The band used
+// is the block's line height, not the finished line's own height, which
+// the line does not know until it is closed; they differ only for a
+// line with something unusually tall on it.
+void func applyFloatsToLine() {
+    int band = ifcBox == null ? 0 : lineHeightOf(ifcBox.style)
+    if band <= 0 { band = 1 }
+    int l = floatLeftEdge(ifcCbLeft, ifcY, ifcY + band)
+    int r = floatRightEdge(ifcCbRight, ifcY, ifcY + band)
+    if r < l { r = l }
+    ifcLineStart = l
+    ifcLineRight = r
+    if ifcX < l { ifcX = l }
+}
+
 void func beginLine() {
     ifcFrags = []
+    applyFloatsToLine()
     ifcX = ifcLineStart
     if ifcLineCount == 0 && ifcBox.style.textIndent != 0 { ifcX = ifcX + ifcBox.style.textIndent }
     ifcPendingSpace = false
@@ -1251,6 +1285,12 @@ void func breakLine() {
 
 void func placeInline(b:Box) {
     if boxIsOutOfFlow(b) { return }
+    if boxIsFloated(b) {
+        placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+        // the float may have narrowed the line that is open
+        applyFloatsToLine()
+        return
+    }
     if b.kind == BOX_TEXT {
         placeText(b)
         return
@@ -1689,6 +1729,124 @@ void func layoutCell(cell:Box, x:int, y:int, w:int) {
 
 // Lays out a styled document in a viewport `width` px wide. Returns
 // the root box; its height is the document height.
+// ---- floats -----------------------------------------------------------
+//
+// A float is taken out of the flow but not out of the picture: it is
+// placed at an edge of its containing block, and the LINE boxes beside
+// it are shortened so text wraps around it. A block box's own position
+// and width ignore floats entirely, which is why a block can sit
+// underneath one, and `clear` is what moves a block below them
+// (CSS2 §9.5).
+//
+// Every rectangle here is in document coordinates, like every other
+// box, so one list serves the whole block formatting context.
+
+struct FloatRect {
+    left:int
+    top:int
+    right:int
+    bottom:int
+    side:int
+}
+
+arr[FloatRect] bfcFloats = []
+
+void func resetFloats() {
+    bfcFloats = []
+}
+
+// The left edge available to content in the band [top, bottom).
+int func floatLeftEdge(cbLeft:int, top:int, bottom:int) {
+    int edge = cbLeft
+    for int i = 0, i < bfcFloats.length, i++ {
+        FloatRect f = bfcFloats[i]
+        if f.side != FLOAT_LEFT { continue }
+        if f.bottom <= top || f.top >= bottom { continue }
+        if f.right > edge { edge = f.right }
+    }
+    return edge
+}
+
+int func floatRightEdge(cbRight:int, top:int, bottom:int) {
+    int edge = cbRight
+    for int i = 0, i < bfcFloats.length, i++ {
+        FloatRect f = bfcFloats[i]
+        if f.side != FLOAT_RIGHT { continue }
+        if f.bottom <= top || f.top >= bottom { continue }
+        if f.left < edge { edge = f.left }
+    }
+    return edge
+}
+
+// The next y at which the band gets wider than it is at `top`.
+int func nextFloatBottom(top:int) {
+    int best = -1
+    for int i = 0, i < bfcFloats.length, i++ {
+        FloatRect f = bfcFloats[i]
+        if f.bottom <= top { continue }
+        if best < 0 || f.bottom < best { best = f.bottom }
+    }
+    return best
+}
+
+// The lowest bottom edge of the floats on the given side, which is
+// where `clear` puts a box.
+int func clearanceY(side:int) {
+    int y = -1
+    for int i = 0, i < bfcFloats.length, i++ {
+        FloatRect f = bfcFloats[i]
+        if side == CLEAR_LEFT && f.side != FLOAT_LEFT { continue }
+        if side == CLEAR_RIGHT && f.side != FLOAT_RIGHT { continue }
+        if f.bottom > y { y = f.bottom }
+    }
+    return y
+}
+
+// Lays a floated box out and places it: at the top of the band it fits
+// in, against the near edge, after anything already floated there.
+void func placeFloat(b:Box, cbLeft:int, cbRight:int, startY:int) {
+    int avail = cbRight - cbLeft
+    layoutBlock(b, cbLeft, startY, avail, false)
+    int w = b.w + b.ml + b.mr
+    int h = b.h + b.mt + b.mb
+    int y = startY
+    // `clear` on a float applies to the float itself.
+    if b.style.clearSide != CLEAR_NONE {
+        int c = clearanceY(b.style.clearSide)
+        if c > y { y = c }
+    }
+    int guard = 0
+    while guard < 100 {
+        guard++
+        int bandBottom = h > 0 ? y + h : y + 1
+        int l = floatLeftEdge(cbLeft, y, bandBottom)
+        int r = floatRightEdge(cbRight, y, bandBottom)
+        if r - l >= w || r - l >= avail {
+            int x = b.style.floatSide == FLOAT_LEFT ? l : r - w
+            shiftBoxTree(b, x + b.ml - b.x, y + b.mt - b.y)
+            FloatRect rect
+            rect.left = x
+            rect.top = y
+            rect.right = x + w
+            rect.bottom = y + h
+            rect.side = b.style.floatSide
+            bfcFloats.push(rect)
+            return
+        }
+        int nb = nextFloatBottom(y)
+        if nb <= y { nb = y + 1 }
+        y = nb
+    }
+}
+
+bool func boxIsFloated(b:Box) {
+    if b == null { return false }
+    if b.kind == BOX_TEXT || b.kind == BOX_BR || b.kind == BOX_ANON { return false }
+    if b.node == null { return false }
+    if boxIsOutOfFlow(b) { return false }
+    return b.style.floatSide != FLOAT_NONE
+}
+
 // ---- positioned boxes -------------------------------------------------
 //
 // Everything above lays out the ordinary flow. This pass walks the
@@ -1792,6 +1950,11 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
 Box func layoutDocument(doc:Node, width:int) {
     nextBoxId = 1
     boxRegistry = [null]
+    // One float list for the document. Properly a float belongs to its
+    // block formatting context and cannot escape it, but nothing here
+    // establishes one yet (todo.md); what matters for now is that a
+    // second layout does not inherit the first one's floats.
+    resetFloats()
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')
     if html == null { return null }

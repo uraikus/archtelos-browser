@@ -1356,6 +1356,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'bottom' || t == 'text-bottom' || t == 'sub' { s.verticalAlign = VALIGN_BOTTOM }
         else if t == 'inherit' && !isRoot { s.verticalAlign = parent.verticalAlign }
     }
+    s.clearSide = CLEAR_NONE
+    ascii cl = styleProp(props, 'clear')
+    if cl != null {
+        ascii t = asciiLower(cl)
+        if t == 'left' { s.clearSide = CLEAR_LEFT }
+        else if t == 'right' { s.clearSide = CLEAR_RIGHT }
+        else if t == 'both' { s.clearSide = CLEAR_BOTH }
+    }
     s.position = POS_STATIC
     ascii pos = styleProp(props, 'position')
     if pos != null {

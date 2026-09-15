@@ -31,10 +31,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **The CSS2 chapters that are still missing**, in this order: floats
-   and `clear` (§9.5), `overflow` clipping (§11), and generated content
-   with counters (§12). `float` and `overflow` are computed and never
-   read. Positioning (§9.3) is done.
+1. **The CSS2 chapters that are still missing**: `overflow` clipping
+   (§11), which needs a clip region the canvas does not have, and
+   generated content with counters (§12), which needs pseudo-elements.
+   Positioning (§9.3) and floats (§9.5) are done.
 2. **Flexbox.** Accepted as a `display` value and laid out as a block,
    which is why a modern page renders as one column.
 3. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
@@ -72,7 +72,7 @@ than their prominence suggests.
 
 **Two measurements exist now**, both with floors in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 373 CSS
-properties Chromium knows change what this engine renders (58), and
+properties Chromium knows change what this engine renders (60), and
 `tests/conformance/elements.f` how many of the 121 HTML elements get
 the default `display` Chromium gives them (121 of 121). Each entry in
 the work above should move the first number, and the runner names every
@@ -147,10 +147,12 @@ ancestor's border box and so depends on it.
 The layout engine handles normal flow well and does not attempt the
 rest. In rough order of how often real pages need it:
 
-- **Floats.** `float: left/right` is parsed and computed but laid out
-  as if static. This is the most visible gap on older pages.
-- **Positioning.** `position: relative/absolute/fixed/sticky` are all
-  laid out as static.
+- **Block formatting contexts.** A float belongs to one and cannot
+  escape it; there is a single float list for the document instead, so
+  `overflow: hidden` or an inline-block does not contain a float, and a
+  float does not grow the parent that holds it.
+- **`position: sticky`**, which computes as `relative` because nothing
+  in layout knows the scroll offset.
 - **Flexbox**, then **Grid**. Both currently fall back to block layout,
   which is why a modern page lays out as a single column.
 - **`overflow: hidden`** clips nothing: the canvas has no clip region,

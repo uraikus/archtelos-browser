@@ -56,6 +56,12 @@ const int VALIGN_MIDDLE = 1
 const int VALIGN_TOP = 2
 const int VALIGN_BOTTOM = 3
 
+// clear
+const int CLEAR_NONE = 0
+const int CLEAR_LEFT = 1
+const int CLEAR_RIGHT = 2
+const int CLEAR_BOTH = 3
+
 // position
 const int POS_STATIC = 0
 const int POS_RELATIVE = 1
@@ -111,6 +117,7 @@ struct Style {
     listStyle:int
     verticalAlign:int
     floatSide:int
+    clearSide:int
     position:int
     top:Len
     right:Len

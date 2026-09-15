@@ -494,6 +494,7 @@ arr[text] supportedProperties = [
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
     'list-style', 'list-style-type',
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
+    'float', 'clear',
     // `overflow` and `float` are deliberately absent: the cascade
     // computes them and nothing reads them, so claiming support would
     // be the lie @supports exists to prevent (css-2026.md).

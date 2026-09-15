@@ -29,11 +29,10 @@ arr[text] func blobLines(f:blob) {
 }
 
 // Every field of a computed Style that something reads, in one string.
-// `floatSide` and `overflowHidden` are deliberately left out: the
-// cascade computes them and neither layout nor paint looks, so a page
-// renders the same with or without them and counting `float` as
-// implemented would overstate this engine -- the same rule css-2026.md
-// applies.
+// `overflowHidden` is deliberately left out: the cascade computes it
+// and neither layout nor paint looks, so a page renders the same with
+// or without it and counting `overflow` as implemented would overstate
+// this engine -- the same rule css-2026.md applies.
 text func styleDigest(s:Style) {
     return `${s.display}|${s.color}|${s.background}|${s.fontSize}|${s.fontBold}|${s.fontItalic}`
         + `|${s.fontFamily}|${s.lineHeight}|${s.textAlign}|${s.textDecoration}|${s.inheritedDecoration}`
@@ -47,6 +46,7 @@ text func styleDigest(s:Style) {
         + `|${s.borderStyle}|${s.borderRadius}|${s.borderSpacing}|${s.borderCollapse}`
         + `|${s.textIndent}|${s.letterSpacing}|${s.hidden}|${s.fontKey}`
         + `|${s.position}|${lenKey(s.top)}|${lenKey(s.right)}|${lenKey(s.bottom)}|${lenKey(s.left)}|${s.zIndex}`
+        + `|${s.floatSide}|${s.clearSide}`
 }
 
 text func lenKey(l:Len) {
