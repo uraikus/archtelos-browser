@@ -10,6 +10,12 @@
 # declarations where one is not enough -- a border width needs a border
 # style beside it or it computes to zero.
 #
+# A value must differ from the initial value on every Chromium build,
+# not just the one it was chosen against. A width of 3px does not:
+# `medium` is 3px, so a build reporting the computed rather than the
+# used width sees no difference, and `outline-width: 3px` passed here
+# and failed in CI. The widths are 10px, which is neither 0 nor medium.
+#
 # A third tab-separated column marks a row this instrument cannot grade
 # whatever value it carries, and says why. Those are excluded from the
 # denominator and named by --verbose, rather than counted as properties
@@ -88,7 +94,7 @@ border-bottom-color	#123456
 border-bottom-left-radius	10px
 border-bottom-right-radius	10px
 border-bottom-style	solid
-border-bottom-width	3px; border-style: solid
+border-bottom-width	10px; border-style: solid
 border-collapse	collapse
 border-end-end-radius	10px
 border-end-start-radius	10px
@@ -105,17 +111,17 @@ border-inline-start-style	solid
 border-inline-start-width	10px; border-inline-start-style: solid
 border-left-color	#123456
 border-left-style	solid
-border-left-width	3px; border-style: solid
+border-left-width	10px; border-style: solid
 border-right-color	#123456
 border-right-style	solid
-border-right-width	3px; border-style: solid
+border-right-width	10px; border-style: solid
 border-start-end-radius	10px
 border-start-start-radius	10px
 border-top-color	#123456
 border-top-left-radius	10px
 border-top-right-radius	10px
 border-top-style	solid
-border-top-width	3px; border-style: solid
+border-top-width	10px; border-style: solid
 bottom	11px
 box-decoration-break	clone
 box-shadow	0 0 2px red
@@ -281,8 +287,8 @@ order	2
 orphans	700
 outline-color	#123456
 outline-offset	3px
-outline-style	solid; outline-width: 3px
-outline-width	3px; outline-style: solid
+outline-style	solid; outline-width: 10px
+outline-width	10px; outline-style: solid
 overflow-anchor	visible
 overflow-block	hidden
 overflow-clip-margin	border-box

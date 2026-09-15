@@ -5,6 +5,24 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The audit pinned the rows to one Chromium and turned CI red
+
+The properties audit passed here and failed in CI on its first run,
+which is the audit working and the rows being wrong: `outline-width`
+carried `3px`, and `medium` *is* 3px, so a build that reports the
+computed width rather than the used one sees no difference. This
+container's Chromium 141 reports `0px` for a bare element and saw one.
+
+The row was pre-existing; the audit is what made it visible, and made it
+fatal. The fix is a value that cannot be the initial one on any build
+rather than one checked against the browser to hand: the four
+`border-*-width` rows and `outline-width` are 10px now, which is neither
+zero nor `medium`.
+
+The audit names the browser it asked — "all 369 rows can register
+against Chromium 141.0.7390.37" — so the next disagreement between two
+builds says so in the failure rather than looking like a broken row.
+
 ### background-size
 
 `background-size` takes `cover`, `contain`, lengths, percentages and

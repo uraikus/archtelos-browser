@@ -467,11 +467,17 @@ report(bad);
     if bad is None:
         print("properties audit: FAILED -- no result from chromium")
         return 1
+    version = "unknown"
+    try:
+        version = subprocess.run([chrome, "--version"], capture_output=True,
+                                 text=True, timeout=30).stdout.strip() or "unknown"
+    except Exception:
+        pass
     unexpected = [b for b in bad if b[0] not in excused]
     stale = [p for p in excused if p not in {b[0] for b in bad}]
     for prop, val in unexpected:
-        print("properties audit: %s = %r cannot register -- Chromium computes it "
-              "no differently from the initial value" % (prop, val))
+        print("properties audit: %s = %r cannot register -- %s computes it "
+              "no differently from the initial value" % (prop, val, version))
     for prop in stale:
         print("properties audit: %s is marked ungradeable but Chromium can now "
               "tell it from the initial value -- drop the third column" % prop)
@@ -479,8 +485,9 @@ report(bad);
         print("properties audit: FAILED -- %d row(s) measure nothing"
               % (len(unexpected) + len(stale)))
         return 1
-    print("properties audit: all %d rows can register (%d declared ungradeable)"
-          % (len(rows) - len(excused), len(excused)))
+    print("properties audit: all %d rows can register against %s "
+          "(%d declared ungradeable)"
+          % (len(rows) - len(excused), version, len(excused)))
     return 0
 
 
