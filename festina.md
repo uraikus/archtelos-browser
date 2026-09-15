@@ -222,6 +222,30 @@ computed by hand.
 
 ---
 
+## 3d Open the audio device lazily
+
+**Today.** A program that uses `aud` gets ALSA and libmpg123 on its link
+line, dynamically, so the binary carries `libasound.so.2` and
+`libmpg123.so.0` as runtime `NEEDED` entries. It will not start on a
+machine that lacks them, whether or not it ever plays a sound. The
+feature split in `festina/cli.py` already keeps these off the link line
+for programs that do not use audio at all — the remaining gap is
+programs that use it conditionally.
+
+**Proposal.** Load the audio device through `dlopen` at the first
+`.play()`, and answer false from `.isPlaying()` and do nothing on
+`.play()` when it is unavailable. The same argument applies to Cairo and
+X11 for a program that only ever renders offscreen, but audio is the
+sharpest case: a browser can be fully useful with no sound at all.
+
+**What it removes here.** This browser draws an `<audio>` element's
+controls and cannot play it, because playing would make a sound library
+a condition of the browser starting. With a lazy open it would play
+where a device exists and stay silent where none does, which is what a
+browser should do anyway.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

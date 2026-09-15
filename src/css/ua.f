@@ -10,7 +10,12 @@ frameset, optgroup, option, select { display: block }
 iframe { display: inline; border: 1px solid #808080 }
 frame { display: block; border: 1px solid #808080 }
 head, script, style, title, meta, link, template, base, param,
-datalist, audio, dialog, rp, [hidden], input[type=hidden] { display: none }
+datalist, dialog, rp, [hidden], input[type=hidden] { display: none }
+/* An audio element is invisible until it is asked for controls, which
+   is what Chromium's own user-agent sheet says. Expressing it needs an
+   attribute selector inside :not(), which this engine gained with
+   Selectors 3. */
+audio:not([controls]) { display: none }
 area, noscript { display: inline }
 marquee, meter, progress { display: inline-block }
 slot { display: contents }

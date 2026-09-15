@@ -40,15 +40,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    it is; `baseline` alignment; and auto margins inside a flex
    container, which absorb the free space before `justify-content` sees
    it.
-3. **`::first-line` and `::first-letter`**, and the rest of generated
-   content: counters with `counter-reset` and `counter-increment`,
-   `open-quote` and `close-quote`, and `url()` in `content`. `::before`
-   and `::after` generate boxes from strings and `attr()` already. None
-   of this is gradeable by the selector instrument -- a pseudo-element
-   selects part of an element rather than an element, so
-   `querySelectorAll` has no answer to compare against -- so it is
-   measured by geometry against Chromium, as tests/unit/test_pseudo.f
-   does.
+3. **`::first-line` and `::first-letter`**, and what is left of
+   generated content: `open-quote` and `close-quote` with the `quotes`
+   property, and `url()` in `content`. `::before` and `::after`
+   generate boxes from strings, `attr()`, `counter()` and `counters()`
+   already. None of this is gradeable by the selector instrument -- a
+   pseudo-element selects part of an element rather than an element, so
+   `querySelectorAll` has no answer to compare against -- nor by the
+   property instrument, which cannot see `counter-reset`,
+   `counter-increment` or `quotes` because Chromium does not enumerate
+   them on a computed style. It is measured by geometry and by the
+   generated text, as tests/unit/test_counters.f does.
 4. **CSS Images 3, completed**: `radial-gradient()` and
    `conic-gradient()`, gradient interpolation hints, `object-fit` and
    `object-position`. Linear gradients are done; a radial one needs the
@@ -214,6 +216,17 @@ instead of 800x600 costs 336 ms instead of 120 ms, and all of that
 difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work
+
+- **Playing audio.** `<audio>` lays out and draws its controls, and it
+  does not play. Festina has real audio — `aud`, `.play()`, `.stop()`,
+  `.isPlaying()` — but using it links ALSA and libmpg123, and Festina
+  links them dynamically, so the produced binary would carry
+  `libasound.so.2` and `libmpg123.so.0` as runtime `NEEDED` entries the
+  way it already carries `libcairo.so.2`. A browser that cannot start on
+  a machine without a sound library is a worse browser, and this is two
+  new system dependencies rather than one. festina.md proposes the fix:
+  open the audio device lazily, so a program that merely *can* play
+  audio does not hard-require the library to start.
 
 - **JavaScript.** Out of scope permanently. It is a second language
   implementation, not a renderer feature, and its absence is what makes

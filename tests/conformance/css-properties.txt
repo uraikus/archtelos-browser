@@ -2,6 +2,15 @@
 # a value that a working implementation must visibly change the
 # computed style for.
 #
+# Chromium enumerates 406; the 33 not here are all `-webkit-` prefixed,
+# which the CSS Snapshot does not define and this engine deliberately
+# drops. The denominator is therefore standard properties, on purpose.
+#
+# Some properties cannot appear here at all, because Chromium does not
+# enumerate them on a computed style: `counter-reset`,
+# `counter-increment` and `quotes` are implemented or not without this
+# count moving. They are measured by tests/unit/test_counters.f.
+#
 #     property <TAB> value
 #
 # A value may be several declarations where one alone cannot show the

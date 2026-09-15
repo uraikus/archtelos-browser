@@ -171,6 +171,11 @@ Gradient func noGradient() {
 struct Style {
     serial:int
     backgroundImage:Gradient
+    // The declared values, not the running counts: two elements that
+    // matched the same rules share this Style and still stand at
+    // different counts, which live in the cascade's counter stack.
+    counterReset:text
+    counterIncrement:text
     display:int
     color:int
     background:int

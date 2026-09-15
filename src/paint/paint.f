@@ -428,6 +428,56 @@ void func paintImage(b:Box) {
     }
 }
 
+// An audio element's controls. Chromium draws a rounded bar with a play
+// button, a timeline and a volume control; this draws the same shape at
+// the same size, so a page laid out around it looks right, without
+// pretending to be pixel-identical to another browser's widget.
+void func paintAudioControls(b:Box) {
+    int x = b.x + b.bl + b.pl
+    int y = b.y + b.bt + b.pt
+    int w = b.w - b.bl - b.br - b.pl - b.pr
+    int h = b.h - b.bt - b.bb - b.pt - b.pb
+    if w <= 0 || h <= 0 { return }
+
+    fillStyle(241, 243, 244)
+    roundedRectPath(x, y, w, h, Math.floorDiv(h, 2))
+    fillPath()
+
+    // the play triangle
+    int cy = y + Math.floorDiv(h, 2)
+    int px = x + 16
+    int r = 7
+    fillStyle(60, 64, 67)
+    beginPath()
+    moveTo(px, cy - r)
+    lineTo(px + 12, cy)
+    lineTo(px, cy + r)
+    closePath()
+    fillPath()
+
+    // the timeline, and the elapsed part of it
+    int tx = px + 26
+    int tw = w - (tx - x) - 60
+    if tw > 0 {
+        fillStyle(189, 193, 198)
+        drawRect(tx, cy - 1, tw, 3)
+        fillStyle(60, 64, 67)
+        drawCircle(tx, cy, 5)
+    }
+
+    // the speaker
+    int vx = x + w - 34
+    fillStyle(60, 64, 67)
+    drawRect(vx, cy - 4, 5, 8)
+    beginPath()
+    moveTo(vx + 5, cy - 4)
+    lineTo(vx + 11, cy - 9)
+    lineTo(vx + 11, cy + 9)
+    lineTo(vx + 5, cy + 4)
+    closePath()
+    fillPath()
+}
+
 void func paintFormControl(b:Box) {
     Node n = b.node
     if n.tag != 'input' { return }
@@ -495,6 +545,10 @@ void func paintBox(b:Box) {
     }
     if b.kind == BOX_IMAGE {
         if !s.hidden { paintImage(b) }
+        return
+    }
+    if b.kind == BOX_AUDIO {
+        paintAudioControls(b)
         return
     }
     if b.kind == BOX_IFRAME {

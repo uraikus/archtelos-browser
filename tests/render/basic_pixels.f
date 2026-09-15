@@ -78,4 +78,18 @@ paintPage(p6, 0, 0, 300)
 check(getPixelColor(370, 20) == red, 'flex-end paints the item against the far edge')
 check(getPixelColor(30, 20) == white, 'and nothing at the start')
 
+// an audio element with controls paints a bar; one without paints
+// nothing at all
+Page p7 = pageFromHtml('<body style="margin:0"><audio src="x.mp3" controls></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p7, 0, 0, 300)
+check(getPixelColor(150, 27) != white, 'the audio controls paint a bar')
+check(getPixelColor(150, 100) == white, 'and nothing below it')
+check(getPixelColor(350, 27) == white, 'and nothing past its 300px width')
+
+Page p8 = pageFromHtml('<body style="margin:0"><audio src="x.mp3"></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p8, 0, 0, 300)
+check(getPixelColor(150, 27) == white, 'an audio without controls paints nothing')
+
 finish('render')

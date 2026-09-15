@@ -61,7 +61,7 @@ else
 fi
 
 # Every HTML element's default display, against Chromium's own answer.
-ELEMENTS_MIN=121
+ELEMENTS_MIN=122
 if compile tests/conformance/elements.f "$BUILD/elements" >/dev/null; then
     if ! run "$BUILD/elements" --min "$ELEMENTS_MIN"; then
         echo "FAILED: tests/conformance/elements.f"; failed=1

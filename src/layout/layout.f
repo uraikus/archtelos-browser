@@ -24,6 +24,12 @@ const int BOX_CELL = 9
 const int BOX_BR = 10
 const int BOX_IFRAME = 11
 const int BOX_FLEX = 12
+const int BOX_AUDIO = 13
+
+// The size Chromium draws an audio element's controls at, which is what
+// a page laid out against it expects to find.
+const int AUDIO_CONTROLS_W = 300
+const int AUDIO_CONTROLS_H = 54
 
 const int FRAG_TEXT = 1
 const int FRAG_ATOMIC = 2
@@ -310,7 +316,7 @@ bool func boxIsPositioned(b:Box) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_AUDIO
 }
 
 // Whether a text box holds nothing but white space, which is the test
@@ -397,6 +403,15 @@ Box func buildBox(n:Node, parentStyle:Style) {
     if tag == 'iframe' || tag == 'frame' {
         Box b = newBox(BOX_IFRAME, n, s)
         b.frameKey = getAttr(n, 'data-frame-src')
+        b.blockLevel = displayIsBlockLevel(d)
+        return b
+    }
+    // An <audio> asking for controls is a replaced element: it draws a
+    // control bar of its own and its children are fallback content for
+    // a user agent that cannot play it, so they are not rendered --
+    // the same rule as an iframe's children.
+    if tag == 'audio' {
+        Box b = newBox(BOX_AUDIO, n, s)
         b.blockLevel = displayIsBlockLevel(d)
         return b
     }
@@ -960,6 +975,16 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if topMarginApplied { b.mt = 0 }
     if b.kind == BOX_TABLE {
         layoutTable(b, cx, y, cw)
+        return
+    }
+    if b.kind == BOX_AUDIO {
+        int aw = lenIsAuto(s.width) ? AUDIO_CONTROLS_W : maxInt(resolveLen(s.width, cw, 0), 0)
+        int ah = s.height.kind == LEN_PX ? maxInt(roundPx(s.height.v), 0) : AUDIO_CONTROLS_H
+        b.w = aw + b.pl + b.pr + b.bl + b.br
+        b.h = ah + b.pt + b.pb + b.bt + b.bb
+        b.x = cx + b.ml
+        b.y = y + b.mt
+        b.baseline = b.h
         return
     }
     if b.kind == BOX_IFRAME {

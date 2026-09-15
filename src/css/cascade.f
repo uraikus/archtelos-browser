@@ -64,6 +64,12 @@ map[int] bucketSizes = {}       // key -> number of refs, so existence is a scal
 // feature must not cost anything to the pages that do not use it").
 bool anyPseudoRules = false
 
+// Whether any rule anywhere sets a counter, and how deep the style walk
+// is. Almost no document uses counters, and maintaining the stack for
+// every element would cost every page (CLAUDE.md §3).
+bool anyCounters = false
+int styleDepth = 0
+
 void func cascadeReset() {
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
@@ -72,7 +78,9 @@ void func cascadeReset() {
     map[Style] emptyStyleCache = {}
     styleCache = emptyStyleCache
     anyPseudoRules = false
+    anyCounters = false
     resetPseudoElements()
+    resetCounters()
     cascadeSheets = []
     cascadeOrigins = []
     ruleIndex = {}
@@ -118,6 +126,12 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.sel = sel
             ref.origin = origin
             if sel.pseudoElement != '' { anyPseudoRules = true }
+            if !anyCounters {
+                for int d = 0, d < rule.decls.length, d++ {
+                    text dn = rule.decls[d].name
+                    if dn == 'counter-reset' || dn == 'counter-increment' { anyCounters = true  break }
+                }
+            }
             addToBucket(selectorKey(sel), ref)
         }
     }
@@ -576,6 +590,107 @@ arr[Match] func collectMatches(n:Node) {
     return matches
 }
 
+// ---- counters (CSS2 §12.4) -------------------------------------------
+//
+// A counter is a stack of instances. `counter-reset` on an element
+// creates a new instance, in scope for that element, its descendants
+// and its following siblings; `counter-increment` adds to the innermost
+// instance, creating one on the root if none exists (§12.4.3).
+// `counter()` reads the innermost instance and `counters()` joins them
+// all, outermost first.
+//
+// The stack is walked in document order alongside the style computation,
+// which already visits elements in that order. It is deliberately not
+// part of the computed-style cache: two elements can match exactly the
+// same declarations and still stand at different counts, and the cache
+// shares a Style between them. What differs is the generated *content*,
+// which is resolved per element and stored per node, so the two do not
+// collide.
+
+struct CounterInstance {
+    name:text
+    value:int
+    depth:int       // the depth at which counter-reset created it
+}
+
+arr[CounterInstance] counterStack = []
+
+void func resetCounters() {
+    arr[CounterInstance] empty = []
+    counterStack = empty
+}
+
+// Drops every instance created at or below `depth`, which happens once
+// the parent whose children created them has been left.
+void func popCountersBelow(depth:int) {
+    int n = counterStack.length
+    while n > 0 && counterStack[n - 1].depth >= depth { n-- }
+    if n == counterStack.length { return }
+    arr[CounterInstance] kept = []
+    for int i = 0, i < n, i++ { kept.push(counterStack[i]) }
+    counterStack = kept
+}
+
+void func counterReset(name:text, value:int, depth:int) {
+    CounterInstance c
+    c.name = name
+    c.value = value
+    c.depth = depth
+    counterStack.push(c)
+}
+
+void func counterIncrement(name:text, by:int, depth:int) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name != name { continue }
+        counterStack[i].value = counterStack[i].value + by
+        return
+    }
+    // no instance in scope: the standard creates one on the root
+    CounterInstance c
+    c.name = name
+    c.value = by
+    c.depth = 0
+    counterStack.push(c)
+}
+
+int func counterValue(name:text) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name == name { return counterStack[i].value }
+    }
+    return 0
+}
+
+text func counterValues(name:text, sep:text) {
+    arr[text] parts = []
+    for int i = 0, i < counterStack.length, i++ {
+        if counterStack[i].name == name { parts.push(`${counterStack[i].value}`) }
+    }
+    if parts.length == 0 { return '0' }
+    return parts.join(sep)
+}
+
+// `counter-reset: a 2 b` / `counter-increment: x` -- a list of names,
+// each optionally followed by an integer.
+void func applyCounterProperty(v:ascii, depth:int, isReset:bool) {
+    if v == null { return }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return }
+    if asciiLower(t) == 'none' { return }
+    arr[ascii] toks = cssTokens(t)
+    int i = 0
+    while i < toks.length {
+        text name = asciiLower(toks[i]).toText()
+        int value = isReset ? 0 : 1
+        if i + 1 < toks.length {
+            int got = toks[i + 1].toText().toInt()
+            if got != null { value = got  i++ }
+        }
+        if isReset { counterReset(name, value, depth) }
+        else { counterIncrement(name, value, depth) }
+        i++
+    }
+}
+
 // ---- generated boxes (CSS2 §12.1) ------------------------------------
 //
 // `::before` and `::after` describe a box generated inside the element,
@@ -661,8 +776,36 @@ text func resolveContent(v:ascii, n:Node) {
             i = close + 1
             continue
         }
-        // counters, url(), open-quote and the rest are not implemented;
-        // an unrecognized component makes the whole value invalid rather
+        if asciiStartsWithLower(t, 'counters(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            arr[ascii] args = splitTopLevelCommas(t.slice(i + 9, close))
+            if args.length < 2 { return null }
+            text name = asciiLower(asciiTrim(args[0])).toText()
+            ascii sepRaw = asciiTrim(args[1])
+            if sepRaw.length < 2 { return null }
+            int q = sepRaw.charCodeAt(0)
+            if q != CH_QUOTE && q != CH_APOS { return null }
+            text sep = sepRaw.slice(1, sepRaw.length - 1).toText()
+            if sep == null { sep = '' }
+            out = out + counterValues(name, sep)
+            i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'counter(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            arr[ascii] args = splitTopLevelCommas(t.slice(i + 8, close))
+            if args.length < 1 { return null }
+            text name = asciiLower(asciiTrim(args[0])).toText()
+            // a list style as the second argument is not implemented;
+            // only decimal is produced (todo.md, Counter Styles 3)
+            out = out + `${counterValue(name)}`
+            i = close + 1
+            continue
+        }
+        // url(), open-quote and the rest are not implemented; an
+        // unrecognized component makes the whole value invalid rather
         // than silently dropping part of it
         return null
     }
@@ -1749,6 +1892,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // A background image paints over the background colour. Only
     // gradients are supported; `url()` needs a fetch the cascade cannot
     // do, and is left for Backgrounds and Borders 3 (todo.md).
+    s.counterReset = ''
+    s.counterIncrement = ''
+    if anyCounters {
+        ascii cr = styleProp(props, 'counter-reset')
+        ascii ci = styleProp(props, 'counter-increment')
+        if cr != null { s.counterReset = cr.toText() }
+        if ci != null { s.counterIncrement = ci.toText() }
+    }
     s.backgroundImage = noGradient()
     ascii bgimg = styleProp(props, 'background-image')
     if bgimg != null { s.backgroundImage = parseLinearGradient(bgimg, s.color, s.fontSize) }
@@ -1984,14 +2135,27 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
     }
     Style s = computeStyle(n, parent, isRoot)
     n.style = s
+    // The counters an element resets or increments are in force for its
+    // own generated content, so they are applied before it is resolved.
+    if anyCounters {
+        applyCounterProperty(s.counterReset.toAscii(), styleDepth, true)
+        applyCounterProperty(s.counterIncrement.toAscii(), styleDepth, false)
+    }
     computePseudoElements(n, s)
+    styleDepth++
     for int i = 0, i < n.children.length, i++ {
         computeStylesFrom(n.children[i], s, false)
     }
+    styleDepth--
+    // An instance created by a child is in scope for that child's
+    // following siblings, so it lives until the children are done.
+    if anyCounters { popCountersBelow(styleDepth + 1) }
 }
 
 void func computeStyles(doc:Node) {
     Style none
+    styleDepth = 0
+    resetCounters()
     computeStylesFrom(doc, none, true)
     if archtelosTiming { log(cascadeProfile()) }
 }

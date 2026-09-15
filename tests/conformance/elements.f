@@ -83,9 +83,15 @@ for int i = 0, i < lines.length, i++ {
     if line.split('')[0] == '#' { continue }
     arr[text] parts = line.split('\t')
     if parts.length < 3 { continue }
-    text tag = parts[0]
+    text label = parts[0]
     text markup = parts[1]
     text want = parts[2]
+    // A row may distinguish two cases of the same element by writing
+    // the attribute that separates them -- `audio[controls]` -- and the
+    // element to look up is the part before the bracket.
+    text tag = label
+    int bracket = label.split('[').length > 1 ? label.split('[')[0].length : -1
+    if bracket > 0 { tag = label.split('[')[0] }
     total++
     cascadeReset()
     Node doc = parseHtmlText(markup)
@@ -94,12 +100,12 @@ for int i = 0, i < lines.length, i++ {
     arr[Node] found = []
     collectElements(doc, tag, found)
     if found.length == 0 {
-        misses.push(`${tag}: no element in the tree (expected ${want})`)
+        misses.push(`${label}: no element in the tree (expected ${want})`)
         continue
     }
     text got = displayName(found[0].style.display)
     if got == want { passed++ }
-    else { misses.push(`${tag}: expected ${want}, got ${got}`) }
+    else { misses.push(`${label}: expected ${want}, got ${got}`) }
 }
 
 if verbose {

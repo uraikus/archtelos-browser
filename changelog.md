@@ -71,6 +71,69 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### The audio element draws its controls
+
+`<audio>` was in the user-agent stylesheet's `display: none` list, so an
+`<audio controls>` rendered nothing where Chromium draws a 300x54
+control bar. The rule is `audio:not([controls]) { display: none }` now,
+which is what Chromium's own stylesheet says and which this engine could
+not express until Selectors 3 gained attribute selectors inside `:not()`.
+
+An `<audio controls>` is a replaced element of that size, drawn as a
+rounded bar with a play triangle, a timeline and a speaker. Its children
+are fallback content for a user agent that cannot play it, so they are
+not rendered — the same rule as an iframe's children.
+
+The elements instrument gains a second row for the element: its first
+column may now name a variant, `audio[controls]`, and the element looked
+up is the part before the bracket. Default displays matching Chromium
+go from 121 of 121 to **122 of 122**.
+
+**It does not play, and that is a decision rather than an omission.**
+Festina has real audio — `aud`, `.play()`, `.stop()`, `.isPlaying()` —
+but using it links ALSA and libmpg123, and it links them dynamically, so
+the binary would carry `libasound.so.2` and `libmpg123.so.0` as runtime
+`NEEDED` entries the way it already carries `libcairo.so.2`. A browser
+that will not start on a machine without a sound library is a worse
+browser. todo.md records it as deliberate non-work and festina.md
+proposes the fix: open the device lazily, so a program that merely can
+play audio does not hard-require the library to start.
+
+### Counters
+
+`counter-reset`, `counter-increment`, and `counter()` and `counters()`
+inside `content` (CSS2 §12.4). A counter is a stack of instances: a
+reset creates one, in force for the element that reset it, its
+descendants and its following siblings; an increment adds to the
+innermost instance, creating one on the root if none is in scope.
+`counter()` reads the innermost and `counters()` joins them all with a
+separator, outermost first. The stack is walked in document order
+alongside the style computation, which already visits elements that way.
+
+The counters are deliberately not part of the computed-style cache, and
+it is worth saying why, because the two look like they should collide.
+Two elements that matched exactly the same declarations share one Style,
+and they can still stand at different counts. What differs between them
+is the generated *content*, which is resolved per element and stored per
+node; what they share is the *declaration*, which is the same for both.
+So `counter-reset` and `counter-increment` live on the Style and the
+running counts live in the cascade's stack.
+
+Thirteen checks. The values were confirmed against Chromium 141 by
+measuring the width the generated content adds to an inline-block span,
+which reveals how many characters it produced -- `getComputedStyle` on a
+pseudo-element returns the specified `content`, `counter(sec) ". "`, not
+the resolved text, so it cannot be the ground truth here.
+
+Two notes on what the instruments can and cannot see. `counter-reset`,
+`counter-increment` and `quotes` are not in css-properties.txt because
+Chromium does not enumerate them on a computed style, so implementing
+them moves no count; they are measured by tests/unit/test_counters.f
+instead. And the denominator of that file is 373 where Chromium
+enumerates 406: the 33 not there are all `-webkit-` prefixed, which the
+CSS Snapshot does not define. Both facts are now written in the file
+rather than inferable from it.
+
 ### ::before and ::after generate boxes
 
 A rule naming `::before` or `::after` describes a box generated inside

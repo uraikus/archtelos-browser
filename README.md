@@ -99,13 +99,20 @@ list markers and opacity. `linear-gradient()` and
 and with any number of colour stops.
 
 **`::before` and `::after`** generate boxes from `content`, which takes
-quoted strings and `attr()`. Counters and quotes do not exist, and
-`::first-line` and `::first-letter` are not implemented.
+quoted strings, `attr()`, `counter()` and `counters()`.
+`counter-reset` and `counter-increment` maintain counters with the
+standard's scoping. Quotes, `url()` in `content`, `::first-line` and
+`::first-letter` are not implemented, and a counter always renders in
+decimal.
 
 **Flex containers** are single-line: `flex-direction`, `order`,
 `flex-grow`, `flex-shrink`, `flex-basis` and the `flex` shorthand,
 `justify-content`, `align-items`, `align-self` and the `gap` family.
 `flex-wrap` is not implemented, so nothing wraps onto a second line.
+
+**`<audio>`** draws its controls at the size Chromium draws them, and is
+invisible without a `controls` attribute, as the standard's own
+stylesheet says. It does not play: see todo.md.
 
 Grid is laid out as a static block; `overflow: hidden` clips nothing;
 there is no JavaScript. See [todo.md](todo.md) for what is planned and

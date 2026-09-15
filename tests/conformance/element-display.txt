@@ -1,6 +1,11 @@
 # Default `display` for every HTML element, one per line:
 #     tag <TAB> markup <TAB> expected
 #
+# The first column may name a variant of an element rather than a bare
+# tag -- `audio[controls]` -- when the same element has two default
+# displays depending on an attribute. The element looked up is the part
+# before the bracket.
+#
 # The expected value is Chromium 141's own computed display for the
 # element, read with getComputedStyle after creating it in a host that
 # makes it valid. It is a measurement, not an opinion: the HTML
@@ -16,6 +21,7 @@ area	<body><map><area></map></body>	inline
 article	<body><article></article></body>	block
 aside	<body><aside></aside></body>	block
 audio	<body><audio></audio></body>	none
+audio[controls]	<body><audio controls></audio></body>	inline
 b	<body><b></b></body>	inline
 base	<body><base></base></body>	none
 bdi	<body><bdi></bdi></body>	inline
