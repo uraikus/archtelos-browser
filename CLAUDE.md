@@ -147,6 +147,29 @@ worked; the count did not move. So the check is end to end — set the
 property, run the instrument, watch the number go up — and it is done
 when the implementation lands, not once the suite is green.
 
+**When two things must agree, test them against each other.** A check
+against a number you worked out yourself only catches the case you
+thought of. A check that two ways of saying the same thing land on the
+same pixel catches the case you did not, because it does not depend on
+either answer being known in advance. Every bug found here that the
+suite had already been given a chance to catch was of that shape:
+
+- `background-position: 50%` was a hundred times too far, because a
+  percentage `Len` holds a number out of a hundred and the position code
+  read it as a fraction. The keywords were written to match the wrong
+  convention, so keywords worked, pixel lengths worked, and only a real
+  percentage was broken. `50%` against `center` fails immediately.
+- A background image ignored `opacity` and `object-fit`'s clip layer
+  applied it twice. The same content painted through the clipped path
+  and the unclipped path, at the same opacity, must give the same pixel;
+  neither bug survives that.
+
+So when a feature adds a second way to reach an existing result — a
+keyword beside a length, a shorthand beside its longhands, a clipped
+path beside an unclipped one, a new syntax beside the old one — the test
+that earns its place asserts they agree, not that each one matches a
+number.
+
 **Run the benchmarks on an idle machine, and check a number you did not
 change.** "Best of N" does not rescue a contended run, because every one
 of the N runs is contended: a benchmark run here beside a valgrind job

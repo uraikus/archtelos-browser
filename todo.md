@@ -54,11 +54,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `counter-increment` or `quotes` because Chromium does not enumerate
    them on a computed style. It is measured by geometry and by the
    generated text, as tests/unit/test_counters.f and tests/unit/test_quotes.f do.
-4. **CSS Images 3, completed**: `radial-gradient()` and
-   `conic-gradient()`, and gradient interpolation hints. Linear
-   gradients are done, and so are `object-fit` and `object-position`; a
-   radial gradient needs the same band machinery with circles instead of
-   strips.
+4. **CSS Images 3, completed**: `conic-gradient()`, gradient
+   interpolation hints, and the one degenerate case left — an ellipse
+   with zero height and non-zero width, which the standard renders as a
+   mirrored linear gradient and this renders as the last stop, the same
+   as every other degenerate shape. Linear and radial gradients,
+   `object-fit` and `object-position` are done.
 
    **Headless Chromium cannot supply pixel ground truth in this
    container**, which is what anything graded in pixels rather than

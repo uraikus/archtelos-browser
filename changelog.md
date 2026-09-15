@@ -5,6 +5,71 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Radial gradients
+
+`radial-gradient()` and `repeating-radial-gradient()` paint, which
+completes the gradient half of CSS Images 3.
+
+- **`circle` and `ellipse`**, with all four extent keywords —
+  `closest-side`, `closest-corner`, `farthest-side` and the initial
+  `farthest-corner` — explicit radii, and `at <position>`.
+- **A degenerate ending shape is a solid fill of the last stop**
+  (§3.4.2.3 via §3.4.1), which is what `closest-side` centred on an edge
+  produces. Painting nothing there is the obvious wrong answer and was
+  the first one this got.
+- **Painted as concentric bands**, one per pixel of the longer radius,
+  each drawn as one-pixel-tall horizontal runs — the same shape the
+  off-axis linear gradient uses, and for the same reason: every
+  rectangle covers whole pixels, so abutting bands are not
+  anti-aliased against each other into a stipple.
+- **Nothing per element.** The four `Len` fields the radial shape needs
+  have zero values that already mean the initial value, so `noGradient()`
+  — which runs for every element on every page — writes none of them.
+  Paired over 25 interleaved runs on the benchmark page, the cascade
+  phase moved a median of 0.0 ms, the new build faster in 8 and slower
+  in 5.
+
+Forty-seven pixel checks in the new `tests/render/radial.f`. Chromium
+cannot supply the colours here, so the gradient under test is
+`red 0%, red 50%, blue 50%, blue 100%` — two hard stops, so every
+expectation is an exact colour and every check is really a question
+about where the boundary is, which is the whole content of the sizing
+algorithm.
+
+### A percentage position was a hundred times too far
+
+`background-position: 50% 0` put the image off the box entirely, and
+`object-position` with a percentage did the same.
+
+A percentage `Len` holds the number out of a hundred — `resolveLen`
+divides by 100 wherever the layout reads one. The position code read it
+as a fraction instead, and the keywords were written to match: `center`
+was stored as `lenPercent(0.5)`, meaning half of one percent, which
+`resolveLen`'s own convention would have placed one pixel in from the
+edge. The two wrongs cancelled for a keyword and for a length in pixels,
+which is everything the tests used, and nothing else worked at all.
+
+Both now hold the standard convention and both readers divide by a
+hundred. The regression tests pin the two against each other: a
+percentage and the keyword that means the same thing must land on the
+same pixel.
+
+This is the second bug of the shape found in two commits — a value that
+two pieces of code agree about only because neither was ever given a
+case where the disagreement shows. The defence is the same one that
+caught it: test the new way of saying a thing against the old way of
+saying the same thing, not just against a number.
+
+### One line of a parser, two features broken
+
+`radial-gradient(red, blue)` — the plain form, with no shape, size or
+position — painted nothing at all, because the prelude parser asked
+whether a word was a length by testing for `LEN_AUTO`. `parseLength`
+answers `LEN_INVALID` for a word that is not a length at all; `LEN_AUTO`
+is only for the literal `auto`. So `red` parsed as a radius, the first
+colour stop was eaten as part of the prelude, and the gradient came out
+with a zero-length ray.
+
 ### object-fit and object-position
 
 A replaced element's content was always stretched to its box, which is

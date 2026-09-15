@@ -165,13 +165,32 @@ const int GSTOP_AUTO = 0
 const int GSTOP_PERCENT = 1
 const int GSTOP_PX = 2
 
+// How far a radial gradient's ray reaches (CSS Images 3 §3.4.2).
+// `farthest-corner` is the initial value, so it is 0 and a gradient that
+// names no size needs no work.
+const int RADEXT_FARTHEST_CORNER = 0
+const int RADEXT_CLOSEST_SIDE = 1
+const int RADEXT_CLOSEST_CORNER = 2
+const int RADEXT_FARTHEST_SIDE = 3
+const int RADEXT_EXPLICIT = 4
+
 struct Gradient {
     present:bool
     repeating:bool
-    angle:float          // degrees, clockwise from pointing up
+    angle:float          // degrees, clockwise from pointing up; linear only
     stops:arr[int]       // packed colours
     posKind:arr[int]     // GSTOP_*
     posVal:arr[float]    // a fraction for PERCENT, pixels for PX
+    // A radial gradient runs out from a centre rather than along a
+    // line. The stop list above means the same thing either way: a
+    // fraction of the ray instead of a fraction of the line.
+    radial:bool
+    radialCircle:bool    // `circle`; otherwise an ellipse, the initial shape
+    radialExtent:int     // RADEXT_*
+    radialRx:Len         // RADEXT_EXPLICIT only
+    radialRy:Len
+    radialPosX:Len       // the centre, as a fraction of the box, not of any leftover
+    radialPosY:Len
 }
 
 Gradient func noGradient() {
@@ -182,6 +201,12 @@ Gradient func noGradient() {
     g.stops = []
     g.posKind = []
     g.posVal = []
+    // The radial fields are left at their zero values, which are already
+    // the initial ones: not radial, not a circle, farthest-corner, and a
+    // centre that `resolveGradientCenter` reads an unset length as. This
+    // runs once per element, so four `Len` structs written here to say
+    // what the zero value already says would be four allocations on
+    // every element of every page.
     return g
 }
 

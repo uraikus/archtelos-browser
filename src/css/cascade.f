@@ -1291,13 +1291,98 @@ void func parseGradientStop(t:ascii, currentColor:int, fontSize:int) {
 // Parses a whole `linear-gradient(...)` / `repeating-linear-gradient(...)`
 // value. An unparseable one comes back with present = false, which makes
 // the declaration do nothing, as an invalid value should.
-Gradient func parseLinearGradient(v:ascii, currentColor:int, fontSize:int) {
+// The `[ <shape> || <size> ]? [ at <position> ]?` that may precede a
+// radial gradient's stops. Everything in it is optional, and what is
+// absent keeps the initial value -- an ellipse reaching the farthest
+// corner, centred. Returns false when the component is not a prelude at
+// all, which is how the caller learns the first component was a stop.
+bool radPreludeCircle = false
+int radPreludeExtent = RADEXT_FARTHEST_CORNER
+Len radPreludeRx = lenAuto()
+Len radPreludeRy = lenAuto()
+Len radPreludePosX = lenPercent(50.0)
+Len radPreludePosY = lenPercent(50.0)
+
+bool func parseRadialPrelude(t:ascii, fontSize:int) {
+    radPreludeCircle = false
+    radPreludeExtent = RADEXT_FARTHEST_CORNER
+    radPreludeRx = lenAuto()
+    radPreludeRy = lenAuto()
+    radPreludePosX = lenPercent(50.0)
+    radPreludePosY = lenPercent(50.0)
+    if t == null { return false }
+    // The lowered string is held in a local, because the words the
+    // split returns alias it and a temporary would be released out from
+    // under them (FINDINGS.md, "ascii aliases are not retained").
+    ascii low = asciiLower(asciiTrim(t))
+    if low.length == 0 { return false }
+    arr[ascii] w = asciiSplitSpace(low)
+    if w.length == 0 { return false }
+
+    bool any = false
+    arr[Len] radii = []
+    int i = 0
+    // The words are indexed rather than bound to a local, for the same
+    // reason (FINDINGS.md, "ascii aliases are not retained").
+    while i < w.length {
+        if w[i] == 'at' {
+            i++
+            arr[ascii] pos = []
+            while i < w.length { pos.push(w[i])  i++ }
+            if pos.length >= 2 {
+                radPreludePosX = parsePositionAxis(pos[0], true, fontSize)
+                radPreludePosY = parsePositionAxis(pos[1], false, fontSize)
+            } else if pos.length == 1 {
+                if pos[0] == 'top' { radPreludePosY = lenPercent(0.0) }
+                else if pos[0] == 'bottom' { radPreludePosY = lenPercent(100.0) }
+                else { radPreludePosX = parsePositionAxis(pos[0], true, fontSize) }
+            } else {
+                return false
+            }
+            any = true
+            break
+        }
+        if w[i] == 'circle' { radPreludeCircle = true  any = true  i++  continue }
+        if w[i] == 'ellipse' { radPreludeCircle = false  any = true  i++  continue }
+        if w[i] == 'closest-side' { radPreludeExtent = RADEXT_CLOSEST_SIDE  any = true  i++  continue }
+        if w[i] == 'closest-corner' { radPreludeExtent = RADEXT_CLOSEST_CORNER  any = true  i++  continue }
+        if w[i] == 'farthest-side' { radPreludeExtent = RADEXT_FARTHEST_SIDE  any = true  i++  continue }
+        if w[i] == 'farthest-corner' { radPreludeExtent = RADEXT_FARTHEST_CORNER  any = true  i++  continue }
+        Len got = parseLength(w[i], fontSize)
+        // Anything that is not a length ends the prelude and is a
+        // colour stop instead. `parseLength` says so with LEN_INVALID,
+        // not LEN_AUTO -- reading only for LEN_AUTO here swallowed the
+        // first stop of every gradient that named no size.
+        if got.kind != LEN_PX && got.kind != LEN_PERCENT { return false }
+        radii.push(got)
+        any = true
+        i++
+    }
+    if radii.length > 0 {
+        radPreludeExtent = RADEXT_EXPLICIT
+        radPreludeRx = radii[0]
+        radPreludeRy = radii.length > 1 ? radii[1] : radii[0]
+        // One length is a circle's radius; two are an ellipse's.
+        if radii.length == 1 { radPreludeCircle = true }
+    }
+    return any
+}
+
+// `linear-gradient()`, `radial-gradient()` and their repeating forms.
+// The stop list is parsed the same way for all four: a stop's position
+// is a fraction of the gradient line for a linear gradient and of the
+// gradient ray for a radial one, which is the same number either way.
+Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     Gradient g = noGradient()
     if v == null { return g }
     ascii low = asciiLower(asciiTrim(v))
-    bool repeating = asciiStartsWithLower(low, 'repeating-linear-gradient(', 0)
-    bool plain = asciiStartsWithLower(low, 'linear-gradient(', 0)
-    if !repeating && !plain { return g }
+    bool repLinear = asciiStartsWithLower(low, 'repeating-linear-gradient(', 0)
+    bool plainLinear = asciiStartsWithLower(low, 'linear-gradient(', 0)
+    bool repRadial = asciiStartsWithLower(low, 'repeating-radial-gradient(', 0)
+    bool plainRadial = asciiStartsWithLower(low, 'radial-gradient(', 0)
+    if !repLinear && !plainLinear && !repRadial && !plainRadial { return g }
+    bool radial = repRadial || plainRadial
+    bool repeating = repLinear || repRadial
     int open = asciiIndexOf(v, '('.toAscii(), 0)
     if open < 0 || v.charCodeAt(v.length - 1) != CH_RPAREN { return g }
     ascii inside = asciiTrim(v.slice(open + 1, v.length - 1))
@@ -1306,8 +1391,18 @@ Gradient func parseLinearGradient(v:ascii, currentColor:int, fontSize:int) {
 
     int first = 0
     float angle = 180.0                 // `to bottom` when none is given
-    float dir = parseGradientDirection(parts[0])
-    if dir >= 0.0 { angle = dir  first = 1 }
+    if radial {
+        if parseRadialPrelude(parts[0], fontSize) { first = 1 }
+        g.radialCircle = radPreludeCircle
+        g.radialExtent = radPreludeExtent
+        g.radialRx = radPreludeRx
+        g.radialRy = radPreludeRy
+        g.radialPosX = radPreludePosX
+        g.radialPosY = radPreludePosY
+    } else {
+        float dir = parseGradientDirection(parts[0])
+        if dir >= 0.0 { angle = dir  first = 1 }
+    }
 
     arr[int] colors = []
     arr[int] kinds = []
@@ -1323,6 +1418,7 @@ Gradient func parseLinearGradient(v:ascii, currentColor:int, fontSize:int) {
 
     g.present = true
     g.repeating = repeating
+    g.radial = radial
     g.angle = angle
     g.stops = colors
     g.posKind = kinds
@@ -1900,14 +1996,19 @@ text func parseUrlValue(v:ascii) {
 // `object-position`. A keyword is a percentage of the space the image
 // leaves over, which is what makes `right` mean the right edge rather
 // than an offset of the box's width.
+//
+// A percentage `Len` holds the number out of a hundred, as `resolveLen`
+// reads it everywhere else, so the keywords are written that way too. A
+// keyword that stored a fraction instead read as a hundredth of itself
+// the moment a real percentage appeared beside it.
 Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     if t == 'left' { return lenPercent(0.0) }
-    if t == 'right' { return lenPercent(1.0) }
+    if t == 'right' { return lenPercent(100.0) }
     if t == 'top' { return lenPercent(0.0) }
-    if t == 'bottom' { return lenPercent(1.0) }
-    if t == 'center' || t == 'centre' { return lenPercent(0.5) }
+    if t == 'bottom' { return lenPercent(100.0) }
+    if t == 'center' || t == 'centre' { return lenPercent(50.0) }
     Len got = parseLength(t, fontSize)
-    if got.kind == LEN_AUTO { return lenPercent(0.0) }
+    if got.kind == LEN_AUTO || got.kind == LEN_INVALID { return lenPercent(0.0) }
     return got
 }
 
@@ -2100,7 +2201,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.backgroundUrl = ''
     ascii bgimg = styleProp(props, 'background-image')
     if bgimg != null {
-        s.backgroundImage = parseLinearGradient(bgimg, s.color, s.fontSize)
+        s.backgroundImage = parseGradient(bgimg, s.color, s.fontSize)
         if !s.backgroundImage.present {
             s.backgroundUrl = parseUrlValue(bgimg)
             if s.backgroundUrl != '' { anyBackgroundUrl = true }
@@ -2141,17 +2242,17 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if parts.length == 1 {
             // one value positions the horizontal axis and centres the
             // other, unless it is a vertical keyword
-            if parts[0] == 'top' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(0.0) }
-            else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(1.0) }
-            else { s.backgroundPosY = lenPercent(0.5) }
+            if parts[0] == 'top' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(0.0) }
+            else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(100.0) }
+            else { s.backgroundPosY = lenPercent(50.0) }
         }
     }
     // object-fit and object-position (CSS Images 3 §5.5, §5.6). The
     // initial position is `50% 50%`, unlike background-position's
     // `0% 0%`, so the centre is written in rather than left at the
     // zero value.
-    s.objectPosX = lenPercent(0.5)
-    s.objectPosY = lenPercent(0.5)
+    s.objectPosX = lenPercent(50.0)
+    s.objectPosY = lenPercent(50.0)
     ascii objfit = styleProp(props, 'object-fit')
     if objfit != null {
         // The lowered string is held in a local and its words indexed
@@ -2176,7 +2277,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             // one value positions the horizontal axis and centres the
             // other, unless it is a vertical keyword
             if parts[0] == 'top' { s.objectPosY = lenPercent(0.0) }
-            else if parts[0] == 'bottom' { s.objectPosY = lenPercent(1.0) }
+            else if parts[0] == 'bottom' { s.objectPosY = lenPercent(100.0) }
             else { s.objectPosX = parsePositionAxis(parts[0], true, s.fontSize) }
         }
     }

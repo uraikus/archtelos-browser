@@ -135,6 +135,17 @@ check(getPixelColor(4, 5) == grey, 'exactly, not approximately')
 check(getPixelColor(24, 14) == green, 'the whole 20x10 moves with it')
 check(getPixelColor(8, 2) == grey, 'leaving background above')
 
+// ---- a percentage position -----------------------------------------------
+// none gives 20x10 and leftovers of 20 and 30, so 50% 50% -- the initial
+// value -- puts it at (10, 15), and writing that percentage out must
+// mean the same as leaving it off.
+Page pPct = shot(box + ';object-fit:none;object-position:50% 50%')
+check(getPixelColor(10, 15) == blue, 'object-position: 50% 50% is the initial value written out')
+check(getPixelColor(9, 15) == grey, 'to the pixel')
+Page pPct2 = shot(box + ';object-fit:none;object-position:25% 0%')
+check(getPixelColor(5, 0) == blue, '25% of the 20 leftover is 5, and 0% of 30 is 0')
+check(getPixelColor(4, 0) == grey, 'exactly')
+
 // ---- object-position does nothing under fill ---------------------------
 // `fill` always covers the box exactly, so there is no leftover space
 // for a position to distribute.

@@ -111,7 +111,11 @@ void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
     }
     // the background image paints over the colour
     if s.backgroundImage.present {
-        paintLinearGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
+        if s.backgroundImage.radial {
+            paintRadialGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
+        } else {
+            paintLinearGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
+        }
     } else if s.backgroundUrl != '' {
         paintBackgroundImage(x, y, w, h, s)
     }
@@ -124,7 +128,7 @@ void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
 // `object-position` are the same computation over different leftovers
 // -- the box minus the tile, and the box minus the fitted object.
 int func resolvePositionAxis(l:Len, leftover:int, fontSize:int) {
-    if l.kind == LEN_PERCENT { return roundPx(leftover.toFloat() * l.v) }
+    if l.kind == LEN_PERCENT { return roundPx(leftover.toFloat() * l.v / 100.0) }
     if l.kind == LEN_PX { return roundPx(l.v) }
     return 0
 }
@@ -372,6 +376,165 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
             int xa = maxInt(roundPx(lo), x)
             int xb = minInt(roundPx(hi), x + w)
             if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
+        }
+    }
+    fillAlpha(1.0)
+}
+
+// ---- radial gradients (CSS Images 3 §3.4.2) --------------------------
+//
+// The ray runs from the centre outwards, and a stop's position is a
+// fraction of it exactly as it is a fraction of the line for a linear
+// gradient, so the stop machinery above is shared unchanged. What
+// differs is the geometry: how long the ray is, which the size keyword
+// decides, and what shape its ends trace.
+//
+// It is painted as concentric bands for the same reason the linear one
+// is painted as parallel ones -- the canvas's own gradient fill takes
+// only literal colours (FINDINGS.md, "a gradient cannot be built at run
+// time"). A band is drawn as one-pixel-tall horizontal runs, one per
+// row, for the same reason the off-axis linear bands are: every
+// rectangle then covers whole pixels, so abutting bands are not
+// anti-aliased against each other into a stipple.
+
+// The centre of a radial gradient. A percentage here is a fraction of
+// the box, not of any leftover space -- `at 50% 50%` is the middle of
+// the box whatever the gradient's size, which is why this is not
+// resolvePositionAxis.
+float func resolveGradientCenter(l:Len, extent:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return extent.toFloat() * l.v / 100.0 }
+    if l.kind == LEN_PX { return l.v }
+    return extent.toFloat() / 2.0
+}
+
+// The ray's two radii, from the size keyword and the centre's distance
+// to the sides. An ellipse takes each axis on its own; a circle takes
+// one radius for both. A corner keyword is the side one scaled so the
+// ellipse passes through that corner, which for equal aspect ratios is
+// the side distance times the square root of two.
+float radRx = 0.0
+float radRy = 0.0
+
+void func radialRadii(g:Gradient, cx:float, cy:float, x:int, y:int, w:int, h:int, fontSize:int) {
+    float leftD = cx - x.toFloat()
+    float rightD = (x + w).toFloat() - cx
+    float topD = cy - y.toFloat()
+    float bottomD = (y + h).toFloat() - cy
+    float closeX = minFloat(absFloat(leftD), absFloat(rightD))
+    float farX = maxFloat(absFloat(leftD), absFloat(rightD))
+    float closeY = minFloat(absFloat(topD), absFloat(bottomD))
+    float farY = maxFloat(absFloat(topD), absFloat(bottomD))
+    float root2 = 1.41421356237309
+
+    if g.radialExtent == RADEXT_EXPLICIT {
+        radRx = lenToPx(g.radialRx, w, fontSize)
+        radRy = lenToPx(g.radialRy, h, fontSize)
+        return
+    }
+    if g.radialCircle {
+        float r = 0.0
+        if g.radialExtent == RADEXT_CLOSEST_SIDE { r = minFloat(closeX, closeY) }
+        else if g.radialExtent == RADEXT_FARTHEST_SIDE { r = maxFloat(farX, farY) }
+        else if g.radialExtent == RADEXT_CLOSEST_CORNER {
+            r = Math.sqrt(closeX * closeX + closeY * closeY)
+        } else {
+            r = Math.sqrt(farX * farX + farY * farY)
+        }
+        radRx = r
+        radRy = r
+        return
+    }
+    if g.radialExtent == RADEXT_CLOSEST_SIDE { radRx = closeX  radRy = closeY }
+    else if g.radialExtent == RADEXT_FARTHEST_SIDE { radRx = farX  radRy = farY }
+    else if g.radialExtent == RADEXT_CLOSEST_CORNER { radRx = closeX * root2  radRy = closeY * root2 }
+    else { radRx = farX * root2  radRy = farY * root2 }
+}
+
+// A length against the axis it is measured along; a percentage of that
+// axis, as an explicit radius takes.
+float func lenToPx(l:Len, extent:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return extent.toFloat() * l.v / 100.0 }
+    if l.kind == LEN_PX { return l.v }
+    return 0.0
+}
+
+void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
+    if g.stops.length < 2 || w <= 0 || h <= 0 { return }
+    float cx = x.toFloat() + resolveGradientCenter(g.radialPosX, w, 0)
+    float cy = y.toFloat() + resolveGradientCenter(g.radialPosY, h, 0)
+    radialRadii(g, cx, cy, x, y, w, h, 0)
+    float rx = radRx
+    float ry = radRy
+    // A degenerate gradient -- one whose ending shape has a zero radius,
+    // which `closest-side` centred on an edge produces -- renders as a
+    // gradient line of zero length, and that is a solid fill of the last
+    // stop (CSS Images 3 §3.4.2.3, via §3.4.1).
+    if rx <= 0.0 || ry <= 0.0 {
+        int last = g.stops[g.stops.length - 1]
+        if colorAlpha(last) == 0 { return }
+        fillAlpha(opacity)
+        applyFillColor(last)
+        pDrawRect(x, y, w, h)
+        fillAlpha(1.0)
+        return
+    }
+
+    // A stop given in pixels is a distance along the ray, so the ray's
+    // own length is what a percentage is measured against. The ray runs
+    // to the ellipse, so it is rx long in the horizontal direction; that
+    // is the length the standard resolves a length-valued stop against.
+    resolveGradientStops(g, rx)
+    arr[float] offsets = gradOffsets
+    fillAlpha(opacity)
+
+    // How far out the box reaches, in ray fractions: the largest
+    // normalised distance to any corner. Bands beyond 1 paint the last
+    // stop for a plain gradient and repeat for a repeating one, so both
+    // are covered by running the bands all the way out.
+    float tMax = 0.0
+    for int i = 0, i < 4, i++ {
+        float px = i < 2 ? x.toFloat() : (x + w).toFloat()
+        float py = (i == 0 || i == 2) ? y.toFloat() : (y + h).toFloat()
+        float ndx = (px - cx) / rx
+        float ndy = (py - cy) / ry
+        float d = Math.sqrt(ndx * ndx + ndy * ndy)
+        if d > tMax { tMax = d }
+    }
+    if tMax <= 0.0 { return }
+
+    // One band per pixel of the longer radius, so a band is about a
+    // pixel wide where the gradient is widest.
+    int steps = roundPx(maxFloat(rx, ry) * tMax)
+    if steps < 1 { steps = 1 }
+    if steps > 4096 { steps = 4096 }
+
+    for int i = 0, i < steps, i++ {
+        float t0 = tMax * i.toFloat() / steps.toFloat()
+        float t1 = tMax * (i + 1).toFloat() / steps.toFloat()
+        int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
+        if colorAlpha(c) == 0 { continue }
+        applyFillColor(c)
+        // On each row the band is the pair of intervals where the
+        // normalised distance falls between t0 and t1: solving
+        // ((px-cx)/rx)^2 + ((row-cy)/ry)^2 = t^2 for px gives a half
+        // width of rx*sqrt(t^2 - ndy^2), one interval each side of the
+        // centre.
+        for int row = y, row < y + h, row++ {
+            float ndy = (row.toFloat() + 0.5 - cy) / ry
+            float sq = ndy * ndy
+            float in0 = t0 * t0 - sq
+            float in1 = t1 * t1 - sq
+            if in1 <= 0.0 { continue }
+            float half1 = rx * Math.sqrt(in1)
+            float half0 = in0 > 0.0 ? rx * Math.sqrt(in0) : 0.0
+            // right of the centre
+            int xa = maxInt(roundPx(cx + half0), x)
+            int xb = minInt(roundPx(cx + half1), x + w)
+            if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
+            // and left of it
+            int xc = maxInt(roundPx(cx - half1), x)
+            int xd = minInt(roundPx(cx - half0), x + w)
+            if xd > xc { pDrawRect(xc, row, xd - xc, 1) }
         }
     }
     fillAlpha(1.0)

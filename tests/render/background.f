@@ -121,6 +121,29 @@ paintPage(p9, 0, 0, 300)
 check(getPixelColor(2, 2) == grey, 'a box with no background image is its colour')
 check(getPixelColor(50, 30) == grey, 'throughout')
 
+// ---- a percentage position, not just a keyword -------------------------
+// A percentage is a fraction of the space the image leaves over, the
+// same rule the keywords are shorthand for. In a 50px box a 10px tile
+// leaves 40 over, so 50% starts it at x=20 -- which is also where
+// `center` puts it, and the two must agree.
+Page pA = pageFromHtml(head + '<div style="width:50px;height:20px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-position:50% 0"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pA, 0, 0, 300)
+check(getPixelColor(22, 2) == blue, 'background-position: 50% starts the tile at x=20')
+check(getPixelColor(27, 2) == green, 'with its green half beside it')
+check(getPixelColor(2, 2) == grey, 'and the background showing to its left')
+check(getPixelColor(47, 2) == grey, 'and to its right')
+
+Page pB = pageFromHtml(head + '<div style="width:50px;height:20px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-position:center 0"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pB, 0, 0, 300)
+check(getPixelColor(22, 2) == blue, 'and `center` means exactly the same thing')
+check(getPixelColor(2, 2) == grey, 'to the pixel')
+
 // ---- opacity reaches the image, not just the colour --------------------
 // A background image is painted through a layer, and a layer is blitted
 // by a call of its own: the element's opacity has to be applied to that
