@@ -347,6 +347,30 @@ do.
 
 ---
 
+## 3j Start a thread when it is first used
+
+**Today.** Every declared thread starts before the first top-level
+statement, whether the program goes on to use it or not. Because glibc's
+`malloc` gives up its single-threaded fast path permanently at the first
+`pthread_create`, that start makes allocation-heavy code about 9% slower
+for the life of the process — measured on an allocation-only probe, and
+not reproduced on an allocation-free one. Killing the threads
+afterwards does not give it back.
+
+**Proposal.** Create a declared thread lazily, on the first
+`postMessage`, `giveRequest` or `live` addressed to it. `on load()`
+runs then rather than at start-up, which is the only visible change and
+is what "the thread started" already means. A program that declares a
+worker for a case that does not arise would pay nothing.
+
+**What it removes here.** The preload scanner's four workers cost the
+51 KB benchmark page 4 ms, and that page is a local file that dispatches
+no prefetch at all. Every `file://` page in this browser pays for a
+network feature it never reaches. There is no way to write around it:
+the declaration is what starts the thread.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

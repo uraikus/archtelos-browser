@@ -7,7 +7,7 @@ The project has two purposes, equally weighted: render real pages
 correctly, and keep finding the places where Festina is insufficient.
 The renderer is real — its own HTML tokenizer and tree builder, a CSS
 parser and cascade, block, inline and table layout, painting on
-Festina's canvas, and an HTTP(S) client — all in one 2.3 MB native
+Festina's canvas, and an HTTP(S) client — all in one 2.4 MB native
 binary that links nothing Festina does not already link. What building
 it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
 Festina should gain as a result is in [festina.md](festina.md).
@@ -119,6 +119,17 @@ painting them into an offscreen image — the canvas has no clip region
 and an image clips at its own bounds. A `border-radius` inside such a
 box is drawn square, because an image has no path API.
 
+**Subresources are prefetched while the page is parsed.** A preload
+scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>` and
+`<script src>` before tree construction and hands the absolute URLs to
+four worker threads, so the network overlaps the parse rather than
+following it. `ARCHTELOS_NO_PRELOAD=1` turns it off.
+
+Two Festina bugs stand between this and the live web: an HTTP response
+larger than 64 KiB takes thirty seconds, and the query string is dropped
+from every request. Both are in FINDINGS.md with reproductions and in
+todo.md with their consequences.
+
 Grid is laid out as a static block, and there is no JavaScript. See [todo.md](todo.md) for what is planned and
 what is deliberately not.
 
@@ -133,13 +144,13 @@ what is deliberately not.
 | `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f` |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, floats, positioning, flex |
 | `src/paint/paint.f` | painting and hit testing |
-| `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
+| `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and its worker threads) |
 | `src/util/` | `text.f`, `color.f`, `named_colors.f` |
 | `tests/` | unit suites, offscreen pixel checks, the conformance runner, the runners |
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-12,978 lines of Festina in `src/` and `browser.f`.
+14,659 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -149,13 +160,15 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twelve unit suites (utilities, HTML, CSS parser,
+The runner covers sixteen unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
-positioning, floats, flex, iframes), an offscreen render suite that
-checks real pixels with `getPixelColor`, three conformance runners that
-measure the engine against Chromium — CSS properties, default element
-displays, and which elements a selector matches — the HTML conformance
-suite, and a headless render of every example. There is no test framework: `tests/assert.f` is
+positioning, floats, flex, iframes, pseudo-elements, counters, audio,
+the preload scanner), three offscreen render suites that check real
+pixels with `getPixelColor` — general rendering, gradients and overflow
+clipping — three conformance runners that measure the engine against
+Chromium — CSS properties, default element displays, and which elements
+a selector matches — the HTML conformance suite, and a headless render
+of every example. There is no test framework: `tests/assert.f` is
 a dozen lines and every suite is an ordinary Festina program.
 
 The conformance suite needs the standard's corpus:
@@ -185,13 +198,13 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Parse, style and lay out 51 KB | 85 ms | 25.5 ms |
+| Parse, style and lay out 51 KB | 93 ms | 25.3 ms |
 | Parse 51 KB of HTML | 8 ms | 2.1–3.9 ms |
-| Peak memory, 51 KB page | 17.5 MB | 194.8 MB |
-| Binary | 2.3 MB | 463 MB |
-| Screenshot a one-line page | 28 ms | 469 ms |
+| Peak memory, 51 KB page | 17.9 MB | 194.8 MB |
+| Binary | 2.4 MB | 463 MB |
+| Screenshot a one-line page | 38 ms | 453 ms |
 
-**Chromium renders about three and a third times faster.** The first row is
+**Chromium renders about three and three quarter times faster.** The first row is
 the one that describes the engines: both sides are timed from inside,
 with process start-up and PNG encoding outside the timer, because
 Chromium spends about 450 ms starting up, and subtracting a baseline
@@ -211,6 +224,21 @@ sandbox, a network stack, ICU — is most of what Chromium is carrying.
 Chromium's footprint is flat across all three benchmark pages because it
 is almost entirely fixed cost, while this browser's grows with the
 document, from 13 MB to 18 MB as the page goes from 4 KB to 51 KB.
+
+**Subresources are prefetched while the page is parsed.** A preload
+scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>`
+and `<script src>` before tree construction and fetches them on four
+worker threads. Against a server answering in 50 ms, a page with
+sixteen subresources loads **3.77 times faster** than the same page with
+the scanner turned off, and one large enough to parse waits for nothing
+at all.
+
+It is not free to pages that never prefetch: its four worker threads
+cost the 51 KB local benchmark page 4 ms, because glibc's `malloc`
+gives up its single-threaded fast path at the first `pthread_create`
+and Festina allocates constantly. Festina cannot start a thread on
+demand, so there is nowhere to put the fix — FINDINGS.md and
+benchmarks.md carry the measurement.
 
 ## Working on this
 

@@ -35,8 +35,14 @@ threads and fetched while the main thread parses.
   prefetches is 0 ms because both fetches finish inside the 127 ms
   parse. benchmarks.md reports both separately rather than quoting the
   flattering total.
-- **It costs pages that do not use it** 0.5 ms of process start-up and
-  30 KB of binary. A `file://` page dispatches nothing.
+- **It costs pages that do not use it 4 ms**, which the first draft of
+  this entry recorded as "nothing measurable" and was wrong about. Not
+  the scan, which is skipped outright for a non-HTTP base: the four
+  worker threads *existing*. glibc's `malloc` gives up its
+  single-threaded fast path at the first `pthread_create` and never
+  takes it back, and Festina allocates on almost every operation. The
+  number is a paired median over twenty interleaved runs of the build
+  before and the build after, positive in 17 of 20.
 - **`ARCHTELOS_NO_PRELOAD=1`** turns it off, so the benchmark measures
   one binary on one page rather than comparing two builds.
 - Clean under valgrind and under helgrind — no invalid access, no leak,
@@ -66,6 +72,12 @@ Two of them block this browser from the live web.
 - **A declared thread makes the program non-terminating**, because a
   live thread keeps the program alive. `tests/assert.f`'s `finish()` and
   every conformance runner now end in an explicit `close()`.
+- **Declaring a thread taxes every allocation in the program.** Four
+  workers that are asleep and have never been sent anything slow an
+  allocation-heavy probe by 9%; an allocation-free one does not move.
+  Killing them does not give it back. This is the one place this branch
+  breaks the project's rule that a feature must not cost the pages that
+  do not use it, and Festina offers nowhere to put the fix.
 
 ### SIMD: measured rather than asserted
 

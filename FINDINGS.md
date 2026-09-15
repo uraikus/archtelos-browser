@@ -665,6 +665,57 @@ statements that are finished, not the process.
 
 ---
 
+## 29 Declaring a thread taxes every allocation in the program
+
+Four worker threads that are asleep, and have never been sent anything,
+make allocation-heavy code about 9% slower — everywhere, for the life of
+the process.
+
+The probe builds 300 arrays of 400 structs and a map over each,
+allocating and releasing throughout. The two programs are identical
+except that one declares four threads none of the work touches:
+
+| program | best | median |
+|---|---|---|
+| no threads | 53 ms | 54 ms |
+| four idle threads declared | 58 ms | 63 ms |
+| four threads declared and immediately `kill()`ed | 57 ms | 58 ms |
+
+The third row is the one that closes the door: killing the workers
+before the work starts does not give the speed back. Whatever changes,
+changes when the thread is *created*, and never changes back.
+
+It is not atomic reference counting. The generated code gains no `lock`
+prefixes, and the runtime says so itself — "keeps festina_retain/
+festina_release non-atomic plain increments" (`festina_runtime.h`). Nor
+is it scheduling: the same experiment on an allocation-free arithmetic
+loop shows no difference at all.
+
+| program | best | median |
+|---|---|---|
+| arithmetic only, no threads | 40 ms | 41 ms |
+| arithmetic only, four idle threads | 40 ms | 42 ms |
+
+Allocation slows and computation does not, which is the signature of
+the C allocator beneath: glibc's `malloc` takes a lock-free path while
+a process is single-threaded and abandons it permanently at the first
+`pthread_create`. Festina allocates on almost every operation, so the
+whole program pays.
+
+What this costs here is measurable and was nearly missed. The preload
+scanner's four workers make the 51 KB benchmark page — a local file
+that dispatches no prefetch at all — **4 ms slower to render**, a
+paired median over twenty interleaved runs of each build, positive in
+17 of 20. That is a feature charging the pages that do not use it,
+which this project's own rules forbid, and there is no way to avoid it
+from Festina: threads start before the first top-level statement and
+cannot be created on demand.
+
+A thread that is created when it is first used would cost nothing until
+then. That is the fix, and it is not available.
+
+---
+
 ## 15–19 Smaller
 
 - **`ascii.toInt()`**: the semantic analyzer accepts it, codegen rejects

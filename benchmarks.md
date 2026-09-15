@@ -12,7 +12,9 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
 
 ## Method
 
-- **Machine**: x86-64 container, Linux 6.18, 4 CPUs. Ubuntu 24.04 with
+- **Machine**: x86-64 container, Linux 6.18, 4 CPUs. The preload
+  scanner uses four worker threads, so it is scheduled against that
+  same core count rather than on top of it. Ubuntu 24.04 with
   DejaVu fonts, Cairo 1.18.
 - **Builds**: this browser compiled natively by Festina 0.44 through
   `bin/festina compile` (not the generic-CPU build that
@@ -58,10 +60,10 @@ encoding. `tests/bench.sh` gives both engines 800x600.
 
 ## Start-up is not a rendering result, and subtracting it does not work
 
-Chromium takes **469 ms** to screenshot a one-line page at 800x600, and
-this browser takes **28 ms**. That difference is process start-up — a
+Chromium takes **453 ms** to screenshot a one-line page at 800x600, and
+this browser takes **38 ms**. That difference is process start-up — a
 browser engine bringing up a multi-process architecture, a JavaScript
-engine, a compositor and a network stack, against a 2.3 MB native binary
+engine, a compositor and a network stack, against a 2.4 MB native binary
 that opens a Cairo surface. It is real if what you want is a screenshot
 from a shell script, and it says nothing about rendering speed.
 
@@ -89,9 +91,9 @@ What a shell script waiting for a PNG actually experiences:
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 37 ms | 469 ms |
-| css.html | 3 KB | 38 ms | 494 ms |
-| generated.html | 51 KB | 118 ms | 526 ms |
+| hello.html | 4 KB | 38 ms | 453 ms |
+| css.html | 3 KB | 36 ms | 497 ms |
+| generated.html | 51 KB | 124 ms | 516 ms |
 
 This browser is done before Chromium has finished starting. That is a
 true statement about the command and a false one about the engine, which
@@ -108,15 +110,21 @@ page, both measured from inside.
 
 | Page | Size | This browser | Chromium | Ratio |
 |---|---|---|---|---|
-| hello.html | 4 KB | 9 ms | 1.2 ms | 8x |
-| css.html | 3 KB | 9 ms | 0.9 ms | 10x |
-| generated.html | 51 KB | 85 ms | 25.5 ms | **3.3x** |
+| hello.html | 4 KB | 11 ms | 1.2 ms | 9x |
+| css.html | 3 KB | 10 ms | 0.9 ms | 11x |
+| generated.html | 51 KB | 93 ms | 25.3 ms | **3.7x** |
 
-**Chromium renders the 51 KB page about three and a third times faster**,
-and the gap is wider on small pages because a fixed cost of about 10 ms
-has nothing to amortize against. This is the honest headline, and it is
-a worse one than this file used to carry. The cascade and layout are
+**Chromium renders the 51 KB page about three and three quarter times
+faster**, and the gap is wider on small pages because a fixed cost of
+about 10 ms has nothing to amortize against. The cascade and layout are
 where it lives; the section after next says where inside them.
+
+Four of our 93 ms are the preload scanner's worker threads taxing every
+allocation in the process, on a page that prefetches nothing — see
+"what the preload scanner is worth" below. The rest of the movement
+from the 85 ms this file carried before is the machine, not the code:
+the revision that predates both the overflow and preload work rebuilds
+and measures at 90 to 94 ms in the same minutes.
 
 ## HTML parsing alone
 
@@ -127,9 +135,9 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | <1 ms | 0.3 ms |
+| hello.html | 4 KB | <1 ms | 0.2 ms |
 | css.html | 3 KB | <1 ms | 0.2 ms |
-| generated.html | 51 KB | 8 ms | 3.9 ms |
+| generated.html | 51 KB | 8 ms | 3.8 ms |
 
 **Between two and four times slower** on the large page. Ours is 8 ms
 run after run; Chromium's has been measured between 2.1 and 3.9 ms
@@ -137,7 +145,7 @@ across runs, so a single ratio would be reporting that spread rather
 than a difference — the row gives the run this table came from. Call it
 6 MB/s against 13 to 25. For a tokenizer and tree builder written in a
 young language against one of the most optimized parsers in software
-that is a reasonable place to be, and at 8 ms of an 85 ms render it is
+that is a reasonable place to be, and at 8 ms of a 93 ms render it is
 not where the time goes.
 
 ## Where the time actually goes
@@ -150,25 +158,25 @@ not where the time goes.
 | parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 29 ms |
-| layout | 47 ms |
+| cascade | 34 ms |
+| layout | 51 ms |
 | paint | 6 ms |
 
 The cascade and layout are **88%** of it. Parsing is 9%, and paint —
 once it is not also encoding six megapixels — is 6 ms. Chromium does the
-first four of those phases in 25.5 ms against our 85; the whole gap is
+first four of those phases in 25.3 ms against our 93; the whole gap is
 here, and **layout is now the larger half of it**.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements. Collecting them is 7 ms, applying
-12 ms and computing 8 ms — the last of those because only **24 distinct
+declarations across 2,728 elements. Collecting them is 8 ms, applying
+12 ms and computing 6 ms — the last of those because only **24 distinct
 styles** are computed for the 2,728 elements, and the rest are handed a
 style a previous element already produced. Computing styles is the phase worth
 attacking next, and the one that grows with every property implemented.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (9 ms total); building the box tree is 14 ms and
-inline placement 12 ms.
+cache and reach Cairo (6 ms total); building the box tree is 19 ms and
+inline placement 11 ms.
 
 ## What the CSS work cost, measured
 
@@ -315,6 +323,135 @@ Both figures are measured at 800x600, which is the viewport, so most of
 the 4,080-pixel-tall page is culled. A page whose angled gradients are
 all on screen pays more.
 
+## What the preload scanner is worth
+
+The preload scanner reads the raw bytes for `<link rel=stylesheet>`,
+`<img src>` and `<script src>` before tree construction and prefetches
+them on four worker threads, so the requests overlap the parse instead
+of following it.
+
+Latency is the only thing it hides, and a local file has none, so this
+is measured against `tests/latencyserver.py` — a real socket answering
+every request after a fixed 50 ms. `ARCHTELOS_NO_PRELOAD=1` turns the
+scanner off, so both columns come from one binary on one page.
+
+| Subresources | Scanner off | Scanner on | |
+|---|---|---|---|
+| 2 | 315 ms | 175 ms | 1.80x |
+| 8 | 827 ms | 234 ms | 3.53x |
+| 16 | 1558 ms | 413 ms | **3.77x** |
+
+Where the time goes, on the 16-subresource page:
+
+| Phase | Off | On |
+|---|---|---|
+| waiting for prefetches | 0 ms | 327 ms |
+| stylesheets | 739 ms | 1 ms |
+| images | 744 ms | 0 ms |
+
+**Two separate effects, and only one of them is the scanner's.** Most of
+what this table shows is parallelism: sixteen requests at 50 ms cost
+1,483 ms one after another and 327 ms across four threads, and that
+would be true of any concurrent fetch, scanned for or not. The scanner's
+own contribution is the overlap with parsing, and on these pages the
+parse is 1 ms, so there is nothing to overlap and the overlap is worth
+nothing.
+
+Isolating it needs a page big enough to parse. On a 640 KB document with
+two subresources:
+
+| Phase | Off | On |
+|---|---|---|
+| parse | 125 ms | 127 ms |
+| waiting for prefetches | 0 ms | **0 ms** |
+| stylesheets | 69 ms | 12 ms |
+| images | 77 ms | 16 ms |
+
+Nothing is waited for, because both 50 ms fetches finish inside the
+127 ms parse. That is the scanner proper, and it is bounded by the parse
+time: it can hide one parse worth of latency and not a millisecond more.
+
+That page is not in the table above because it cannot be fairly timed
+end to end — at 640 KB its own HTML costs 30.7 seconds to fetch, in both
+columns, for the 64 KiB reason below. The phase timings are unaffected
+by that and are what is quoted.
+
+**What it costs the pages that do not use it**, which is the part this
+file got wrong first time: **4 ms on the 51 KB page**, plus 0.5 ms of
+process start-up and 30 KB of binary (2,370,912 → 2,401,552). A
+`file://` page dispatches no prefetch at all and still pays.
+
+The 4 ms is a paired median over twenty interleaved runs of the build
+before this change and the build after, positive in 17 of 20 — not a
+difference against a number written down on another day. It is not the
+scan, which is 0 ms and skipped outright for a non-HTTP base; it is the
+four worker threads *existing*. glibc's `malloc` abandons its
+single-threaded fast path permanently at the first `pthread_create`, and
+Festina allocates on almost every operation, so an allocation-heavy
+probe slows 9% from four threads that are asleep and have never been
+sent anything, while an allocation-free one does not move at all.
+Killing the workers does not give it back (FINDINGS.md, "declaring a
+thread taxes every allocation in the program").
+
+This project's rules say a feature must not cost anything to the pages
+that do not use it, and this one does. The fix — create a thread when it
+is first used — is not available in Festina, so what is left is to say
+so here rather than to round it to zero.
+
+The 64 KiB ceiling in the table above is not a choice. An HTTP response
+larger than that takes thirty seconds, because the client reads to EOF
+rather than to `Content-Length` and a keep-alive server never sends one
+(FINDINGS.md, "an HTTP response larger than 64 KiB takes thirty
+seconds"). The latency server stays under the limit so that this
+benchmark measures prefetching rather than that.
+
+## What the autovectorizer reached
+
+Festina has no SIMD types and no intrinsics, so whatever vector code
+this binary contains was put there by LLVM's autovectorizer working on
+the IR the compiler generated. The question worth answering is not
+whether the binary contains vector instructions — it links Cairo and
+libc, which are full of hand-written SIMD — but whether the browser's
+own loops were vectorized. So this counts **packed** instructions in
+named functions, against the **scalar** float instructions that also
+live in `%xmm` registers and are not vectorization at all.
+
+| Function | Packed | Scalar | Widest register |
+|---|---|---|---|
+| `paintLinearGradient` | 14 | 45 | `%xmm` |
+| `gradientColorAt` | 4 | 21 | `%xmm` |
+| `layoutBlock` | 5 | 5 | `%xmm` |
+| `asciiIndexOf` | 0 | 0 | — |
+| `cascadeMatches` | 0 | 0 | — |
+
+**The vectorizer works, and this browser's hot loops mostly defeat it.**
+That it works is not in doubt — a clean elementwise integer loop
+compiles to four unrolled `vpmullq`/`vpaddq` pairs on `%ymm` registers,
+with a `vextracti128` reduction tail:
+
+```
+vpbroadcastq %rsi,%ymm0
+vpmullq      (%rdx,%rax,8),%ymm0,%ymm5     ; four 64-bit lanes
+vpaddq       %ymm1,%ymm5,%ymm1
+```
+
+The browser's own loops do not get that treatment because they are not
+that shape: `asciiIndexOf` exits early, `cascadeMatches` walks a tree
+through pointers, and the paint loops carry a branch per pixel. What
+`paintLinearGradient` does get — 14 packed double operations against 45
+scalar ones — is the vectorizer catching the arithmetic between the
+branches, not the loop.
+
+This is a host-CPU build, which is why the numbers here are not portable
+and why `tools/festina-generic` exists: the generic build compiles the
+same loop to SSE2, with `%xmm` two lanes wide and no 64-bit multiply
+instruction at all, so it synthesises one out of `pmuludq`, `psrlq`,
+`psllq` and `paddq`. Same source, same compiler, roughly half the width.
+
+Making the gradient row fill vectorizable — a branch-free pass over a
+row of pixels — is the one place here where it would plainly pay;
+todo.md carries it.
+
 ## Peak memory
 
 Peak resident set size, rendering the same 800x600 PNG. Measured with
@@ -328,16 +465,16 @@ Chromium column understates total system memory for that run.
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 12.8 MB | 195.8 MB |
-| css.html | 3 KB | 12.9 MB | 195.1 MB |
-| generated.html | 51 KB | 17.5 MB | 194.8 MB |
+| hello.html | 4 KB | 12.9 MB | 194.7 MB |
+| css.html | 3 KB | 13.1 MB | 194.8 MB |
+| generated.html | 51 KB | 17.9 MB | 194.8 MB |
 
 **About 15x less on a small page and 10x less on the large one**, and
 the shape differs as much as the size: Chromium's footprint is flat
 across all three pages because it is almost entirely fixed cost —
 process architecture, a JavaScript heap, a compositor — while this
-browser's grows with the document, from 12.8 MB to 17.5 MB as the page
-goes from 4 KB to 51 KB. The 4.7 MB of growth is the DOM and the box
+browser's grows with the document, from 12.9 MB to 17.9 MB as the page
+goes from 4 KB to 51 KB. The 5.0 MB of growth is the DOM and the box
 tree for 2,728 elements — about 1.5 KB per element across both. The
 computed styles are no longer part of it: there are 24 of them, however
 many elements the page has.
@@ -350,29 +487,29 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 12,978 lines of Festina across `browser.f` and `src/` |
-| Compile | 9.5 s, whole program, no incremental build |
-| Binary | 2.3 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
+| Source | 14,659 lines of Festina across `browser.f` and `src/` |
+| Compile | 9.7 s, whole program, no incremental build |
+| Binary | 2.4 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
 Against Chromium, whose binary this browser is compared with everywhere
 else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,344,064 |
-| This browser, all `.f` source | 445,734 |
+| This browser, the whole program | 2,401,552 |
+| This browser, all `.f` source | 487,715 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
 **The binary is about 200 times smaller than Chromium's executable
 alone**, and 269 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
-absent from the 2.3 MB — a JavaScript engine, a compositor, a sandbox,
+absent from the 2.4 MB — a JavaScript engine, a compositor, a sandbox,
 a network stack, an extension system, ICU — is most of what is in the
 463 MB. The figure is a fair measure of *this* program's size and a poor
 measure of how much cheaper a browser could be.
 
-Of that 9.1 s, **4.2 s is the single generated map literal** holding the
+Of that 9.7 s, **4.2 s is the single generated map literal** holding the
 standard's 2,231 named character references: a one-line program compiles
 in 0.6 s, and the same program importing only that table takes 4.8 s.
 The table is the right data structure — it looks up in constant time and

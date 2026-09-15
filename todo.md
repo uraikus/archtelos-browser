@@ -223,8 +223,8 @@ local server.
 
 ## Performance
 
-Chromium parses, styles and lays out the 51 KB page about **3.3 times
-faster** — 25.5 ms against 85 — with both sides measured from inside and
+Chromium parses, styles and lays out the 51 KB page about **3.7 times
+faster** — 25.3 ms against 93 — with both sides measured from inside and
 start-up outside the timer (benchmarks.md). The cascade and layout are
 88% of our time and all of the gap, and **layout is now the larger half
 of the two**. In order:
@@ -259,6 +259,14 @@ of the two**. In order:
   28: building the box tree is 14 ms, placing text 12, measuring it 9.
   The box tree is rebuilt from scratch on every relayout even when only
   the viewport width changed.
+- **Four of those 93 ms are the preload scanner's worker threads**, on a
+  page that prefetches nothing: glibc's `malloc` abandons its
+  single-threaded fast path at the first `pthread_create` and never
+  takes it back, and Festina allocates on almost every operation
+  (FINDINGS.md). Festina cannot create a thread on demand, so this is
+  not fixable here — festina.md proposes the lazy start that would fix
+  it, and until then it is the one place this project breaks its own
+  rule that a feature must not cost the pages that do not use it.
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
