@@ -48,10 +48,17 @@ struct Selector {
     unsupported:bool
 }
 
+int declSerialNext = 1
+
 struct Decl {
     name:text
     value:ascii
     important:bool
+    // Identifies this declaration for the computed-style cache. A
+    // declaration parsed from a stylesheet gets a serial and keeps it;
+    // one synthesized per element (a presentational hint, an inline
+    // style) keeps 0, and the cache keys on its name and value instead.
+    serial:int
 }
 
 struct Rule {
@@ -199,6 +206,8 @@ Decl func parseOneDeclaration(piece:ascii) {
     d.name = name.toText()
     d.value = value
     d.important = important
+    d.serial = declSerialNext
+    declSerialNext++
     return d
 }
 

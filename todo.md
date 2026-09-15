@@ -169,31 +169,37 @@ rest. In rough order of how often real pages need it:
 
 ## Performance
 
-Chromium parses, styles and lays out the 51 KB page about **4.3 times
-faster** — 27.2 ms against 117 — with both sides measured from inside
-and start-up outside the timer (benchmarks.md). The cascade and layout
-are 90% of our time and all of the gap. In order:
+Chromium parses, styles and lays out the 51 KB page about **3.2 times
+faster** — 25.5 ms against 81 — with both sides measured from inside and
+start-up outside the timer (benchmarks.md). The cascade and layout are
+88% of our time and all of the gap, and **layout is now the larger half
+of the two**. In order:
 
-- **Share computed styles between elements whose matched declarations
-  are identical.** Computing is 37 ms, the single largest sub-phase and
-  the one that grows with every property implemented, and most elements
-  in a real document match exactly what a sibling matches. The benchmark
-  page has 1,560 table cells that all match the same four rules.
+- **Collecting and applying declarations, now that computing them is
+  cheap.** Matching is 7 ms and applying 13 ms of a 31 ms cascade, and
+  both are still paid per element: 8,578 selector tests and 11,614
+  declarations applied into a fresh map. The same insight that made
+  computing cheap applies again — an element whose matched rule set is
+  identical to a sibling's could share the merged declaration map too,
+  and then the whole cascade would be paid once per distinct style
+  rather than once per element.
 - **Read the declarations an element has, rather than asking for every
-  property it might have.** `computeStyle` looks up about 120 named
-  properties per element; a typical element declares a few dozen.
-  Iterating the merged map once and dispatching on the name would make
-  the phase cost what the page declares instead of what CSS defines,
-  which is the only shape that stays flat as more properties land.
-- **Cache the box tree across relayouts** when only the viewport width
-  changed, instead of rebuilding it. Building it is 14 ms.
+  property it might have.** `computeStyle` looks up about 73 named
+  properties per element and 83% of them find nothing. This matters much
+  less now that a distinct style is computed only 24 times on the
+  benchmark page, but it is still the shape that keeps the phase flat as
+  more properties land.
+- **Layout, which is now the bigger half.** 48 ms against the cascade's
+  28: building the box tree is 14 ms, placing text 12, measuring it 9.
+  The box tree is rebuilt from scratch on every relayout even when only
+  the viewport width changed.
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
 
 **Do not compare unequal canvases again.** PNG encoding is linear in
 pixels and dominates at this page size: the same page onto 800x8000
-instead of 800x600 costs 365 ms instead of 147 ms, and all of that
+instead of 800x600 costs 330 ms instead of 115 ms, and all of that
 difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work

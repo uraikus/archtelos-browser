@@ -392,6 +392,33 @@ descent 0.24 em), and any other font is laid out slightly wrong.
 
 ---
 
+## 20 Two struct references cannot be compared
+
+```festina
+struct P { x:int }
+P a
+P c = a
+log(a == c ? 'same' : 'different')
+// error: LLVM object emission failed:
+// LLVM IR parse error: '%t7' defined with type 'ptr' but expected 'i64'
+//   %t10 = icmp eq i64 %t7, %t8
+```
+
+Structs are references — assigning one and mutating through the copy is
+visible through the original — so asking whether two names denote the
+same object is a reasonable thing to want. `==` accepts it in the
+analyzer and emits `icmp eq i64` against a `ptr`, which is not valid
+IR, so the compile dies in the backend naming neither the expression nor
+the line. The workaround here is an explicit identity field:
+`Style.serial`, assigned from a counter when a style is computed, which
+the cache needs anyway.
+
+A reference type needs either a working `==` on identity or a documented
+refusal at the point of use. Silently emitting invalid IR is the worst
+of the three.
+
+---
+
 ## 15–19 Smaller
 
 - **`ascii.toInt()`**: the semantic analyzer accepts it, codegen rejects

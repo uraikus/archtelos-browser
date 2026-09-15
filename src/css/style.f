@@ -133,6 +133,7 @@ struct Len {
 }
 
 struct Style {
+    serial:int
     display:int
     color:int
     background:int

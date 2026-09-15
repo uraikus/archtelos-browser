@@ -43,6 +43,12 @@ arr[Box] boxRegistry = [null]
 struct Box {
     id:int
     kind:int
+    // A flex item's main size, decided by the flex algorithm rather than
+    // by the element's own `width`. -1 when unset. This lives on the box
+    // rather than being written into the style, because a computed Style
+    // is shared between every element that matched the same
+    // declarations: writing to one would write to all of them.
+    forcedWidthPx:int
     node:Node               // the element; id 0 for anonymous boxes
     style:Style
     children:arr[Box]
@@ -218,6 +224,7 @@ Box func newBox(kind:int, node:Node, style:Style) {
     b.colspan = 1
     b.minContent = -1
     b.maxContent = -1
+    b.forcedWidthPx = -1
     if node != null && kind != BOX_TEXT && kind != BOX_BR && kind != BOX_ANON {
         if positionIsPositioned(style.position) { docHasPositioned = true }
         if style.floatSide != FLOAT_NONE { docHasFloats = true }
@@ -935,7 +942,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // width
     int edges = b.pl + b.pr + b.bl + b.br
     int width = 0
-    bool autoWidth = lenIsAuto(s.width)
+    bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
     if autoWidth {
         if (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX) && !b.blockLevel {
             computeIntrinsic(b)
@@ -949,7 +956,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
             if width < 0 { width = 0 }
         }
     } else {
-        width = maxInt(resolveLen(s.width, cw, 0), 0)
+        width = b.forcedWidthPx >= 0 ? b.forcedWidthPx : maxInt(resolveLen(s.width, cw, 0), 0)
         // `box-sizing: border-box` means the declared width IS the
         // border box, so the padding and border come out of it.
         if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
@@ -1998,10 +2005,9 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
         if row {
             // give the item its main size as a width, and let the block
             // machinery do the rest
-            Len saved = item.style.width
-            item.style.width = lenPx(size.toFloat())
+            item.forcedWidthPx = size
             layoutBlock(item, flexOriginX, flexOriginY, size + item.ml + item.mr, false)
-            item.style.width = saved
+            item.forcedWidthPx = -1
             if align == BOXALIGN_STRETCH && lenIsAuto(item.style.height) && crossAvail > 0 {
                 item.h = crossAvail - item.mt - item.mb
             }

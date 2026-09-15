@@ -167,6 +167,25 @@ thousand lines from the mistake.
 
 ---
 
+## 3b Make `==` on two struct references work, or refuse it
+
+**Today.** Structs are references. `a == c` for two struct values passes
+the analyzer and emits `icmp eq i64` against a `ptr`; the compile dies
+in the LLVM backend with `'%t7' defined with type 'ptr' but expected
+'i64'`, naming neither the expression nor the source line.
+
+**Proposal.** Compare the references, which is what a reference type
+makes natural and what the emitted code was reaching for anyway. If
+identity comparison is meant to be unavailable, reject `==` on struct
+operands in the analyzer with a real diagnostic.
+
+**What it removes here.** The `Style.serial` field exists partly so the
+cascade's tests can ask whether two elements were handed the same
+computed style. The cache needs a serial regardless, but the tests
+should not have had to learn that.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

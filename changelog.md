@@ -71,6 +71,44 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### One computed style per distinct match, not one per element
+
+Computing styles had become the largest phase of the cascade — 37 ms of
+the 59 — and the one that grew with every property implemented, because
+every element paid to parse every declaration that matched it. Two
+elements that matched the same declarations under the same parent
+compute the same style, and on a real document most elements do: this
+benchmark page's 1,560 table cells all match the same four rules.
+
+`computeStyle` now keys on what the computation reads — the parent
+style, the tag, and the matched declarations in order with their weights
+— and hands back a style it has already produced. **The 2,728 elements
+of the benchmark page have 24 distinct computed styles between them.**
+
+| | Before | After |
+|---|---|---|
+| Computing styles | 37 ms | 8 ms |
+| Property reads | 200,128 | 1,725 |
+| Cascade | 59 ms | 28 ms |
+| Parse, style and lay out | 117 ms | 81 ms |
+| Peak memory, 51 KB page | 20.5 MB | 17.0 MB |
+
+Chromium's lead on the rendering work goes from 4.3x to **3.2x**, and
+layout is now the larger half of what is left.
+
+Sharing a computed style means many elements hold the same `Style`, so
+nothing may write to one after the cascade. One place did: `layoutFlex`
+put a flex item's main size into `style.width` for the duration of the
+item's layout. That is `Box.forcedWidthPx` now, which is where a value
+decided by layout belonged.
+
+Eleven checks pin the cache key, most of them negative — a different
+class, a different parent, an inline style of its own, a different tag,
+a different inherited colour — because the failure mode of a cache key
+is two elements sharing a style they should not. The rendered output is
+byte-identical to the previous revision on every example, at two canvas
+heights, including a framed document.
+
 ### Three standing rules, each bought with a mistake
 
 CLAUDE.md §3 gains three rules. None is a preference; each is the

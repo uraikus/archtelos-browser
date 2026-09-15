@@ -22,9 +22,14 @@ int profElements = 0
 int profMatchesTotal = 0
 int profHintsMs = 0
 int profSelectorTests = 0
+map[Style] styleCache = {}
+int profShareTotal = 0
+int profShareDistinct = 0
+int styleSerialNext = 1
+int profPropReads = 0
 
 text func cascadeProfile() {
-    return `[timing] cascade detail: ${profElements} elements, ${profMatchesTotal} matched decls; collect ${profCollectMs} ms (hints ${profHintsMs} ms, ${profSelectorTests} selector tests), sort ${profSortMs} ms, apply ${profApplyMs} ms, compute ${profComputeMs} ms`
+    return `[timing] cascade detail: ${profElements} elements, ${profMatchesTotal} matched decls; collect ${profCollectMs} ms (hints ${profHintsMs} ms, ${profSelectorTests} selector tests), sort ${profSortMs} ms, apply ${profApplyMs} ms, compute ${profComputeMs} ms; property reads ${profPropReads}; ${profShareDistinct} distinct styles for ${profShareTotal} elements`
 }
 
 
@@ -54,6 +59,12 @@ map[Bucket] ruleIndex = {}
 map[int] bucketSizes = {}       // key -> number of refs, so existence is a scalar lookup
 
 void func cascadeReset() {
+    // The computed-style cache is keyed partly on declaration serials,
+    // which are unique for the life of the process, so a stale entry
+    // could never be returned for a new page -- but it would sit in the
+    // map forever. A page load starts with an empty one.
+    map[Style] emptyStyleCache = {}
+    styleCache = emptyStyleCache
     cascadeSheets = []
     cascadeOrigins = []
     ruleIndex = {}
@@ -591,6 +602,7 @@ ascii func substituteVars(v:ascii) {
 }
 
 ascii func styleProp(props:map[text], name:text) {
+    profPropReads++
     text v = props[name]
     if v == null { return null }
     ascii a = v.toAscii()
@@ -1155,13 +1167,59 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
         profMatchesTotal = profMatchesTotal + matches.length
     }
     int t2 = archtelosTiming ? now() : 0
+    // Two elements that matched the same declarations in the same order,
+    // under the same parent, compute the same style -- and on a real
+    // document most elements do: this page's 1,560 table cells all match
+    // the same four rules. Parsing those values once and handing out the
+    // same Style is what keeps this phase from being paid per element.
+    // The Style is never written to after this point, which is what
+    // makes sharing one safe (see Box.forcedWidthPx for the one place
+    // that used to).
+    text key = styleCacheKey(n, parent, isRoot, matches)
+    Style cached = styleCache[key]
+    if cached != null {
+        profShareTotal++
+        if archtelosTiming { profComputeMs = profComputeMs + (now() - t2) }
+        return cached
+    }
     Style s = computeStyleValues(n, parent, isRoot, props)
+    styleCache[key] = s
+    profShareTotal++
+    profShareDistinct++
     if archtelosTiming { profComputeMs = profComputeMs + (now() - t2) }
     return s
 }
 
+// The identity of a computed style: what it was computed from. The
+// parent is named by its serial rather than by its contents, which is
+// sound because an identical parent is itself shared and so carries the
+// same serial.
+text func styleCacheKey(n:Node, parent:Style, isRoot:bool, matches:arr[Match]) {
+    arr[text] parts = []
+    parts.push(`${parentSerialOf(parent)}`)
+    parts.push(isRoot ? 'r' : 'e')
+    parts.push(n.tag)
+    for int i = 0, i < matches.length, i++ {
+        Decl d = matches[i].decl
+        if d.serial > 0 {
+            parts.push(`${d.serial}:${matches[i].weight}`)
+        } else {
+            // synthesized for this element: key on what it says
+            parts.push(`${d.name}=${d.value == null ? '' : d.value.toText()}:${matches[i].weight}`)
+        }
+    }
+    return parts.join('|')
+}
+
+int func parentSerialOf(parent:Style) {
+    if parent == null { return 0 }
+    return parent.serial
+}
+
 Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]) {
     Style s
+    s.serial = styleSerialNext
+    styleSerialNext++
     cascadeParentStyle = parent
     cascadeParentIsRoot = isRoot
 

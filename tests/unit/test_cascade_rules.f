@@ -110,4 +110,50 @@ Node p7 = findElement(d7, 'p')
 checkEqInt(p7.style.color, COLOR_BLACK, 'an unparseable selector in the list drops the whole rule')
 checkEqInt(p7.style.background, packColor(0, 255, 0, 255), 'a later valid rule still applies')
 
+
+// ---- the computed-style cache ----------------------------------------
+// Two elements that matched the same declarations under the same parent
+// compute the same style, so they are handed the same Style rather than
+// parsing the same values twice. These checks exist to pin what belongs
+// in that cache key: everything the computation reads. A key that is
+// missing a term shows up here as two elements sharing a style they
+// should not.
+cascadeReset()
+Node sc = parseHtmlText('<html><head><style>.a { color: #ff0000 } .b { color: #0000ff }</style></head><body>'
+    + '<div id="p1" style="color:#00ff00"><span class="a">x</span><span class="a">y</span><span class="b">z</span></div>'
+    + '<div id="p2" style="color:#123456"><span class="a">q</span></div>'
+    + '<span class="a" style="margin:1px">inline</span>'
+    + '<em class="a">tag differs</em>'
+    + '</body></html>')
+cascadeAddDocumentStyles(sc)
+computeStyles(sc)
+arr[Node] spans = []
+collectElements(sc, 'span', spans)
+arr[Node] ems = []
+collectElements(sc, 'em', ems)
+
+// Two computed styles are the same object when they carry the same
+// serial. Comparing the references directly is not available: `==` on
+// two struct values emits invalid IR (FINDINGS.md, "two struct
+// references cannot be compared").
+checkEqInt(spans[0].style.serial, spans[1].style.serial, 'two identical siblings share one computed style')
+check(spans[0].style.serial != spans[2].style.serial, 'a different class does not share')
+check(spans[0].style.serial != spans[3].style.serial, 'the same class under a different parent does not share')
+check(spans[0].style.serial != spans[4].style.serial, 'an inline style of its own does not share')
+check(spans[0].style.serial != ems[0].style.serial, 'a different tag does not share')
+checkEqInt(spans[0].style.color, packColor(255, 0, 0, 255), 'and the shared style is the right one')
+checkEqInt(spans[2].style.color, packColor(0, 0, 255, 255), 'as is the unshared one')
+checkEqInt(spans[3].style.color, packColor(255, 0, 0, 255), 'and the one under the other parent')
+
+// Inheritance is part of the key by way of the parent: two elements
+// declaring nothing inherit different colours from different parents.
+cascadeReset()
+Node sc2 = parseHtmlText('<html><body><div style="color:#ff0000"><i>a</i></div><div style="color:#0000ff"><i>b</i></div></body></html>')
+cascadeAddDocumentStyles(sc2)
+computeStyles(sc2)
+arr[Node] is2 = []
+collectElements(sc2, 'i', is2)
+check(is2[0].style.serial != is2[1].style.serial, 'inheriting a different colour does not share')
+checkEqInt(is2[0].style.color, packColor(255, 0, 0, 255), 'the first inherits red')
+checkEqInt(is2[1].style.color, packColor(0, 0, 255, 255), 'the second inherits blue')
 finish('cascade rules')
