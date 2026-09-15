@@ -246,6 +246,29 @@ browser should do anyway.
 
 ---
 
+## 3e Give an image the canvas's path API
+
+**Today.** An `img` is a drawable surface — `drawRect`, `drawText`,
+`drawCircle`, `drawImage`, transforms, a state stack — and it clips at
+its own bounds, which makes it the clip region the canvas does not have.
+It has no path API at all: `beginPath`, `moveTo`, `lineTo`, `curveTo`,
+`closePath`, `fillPath` and `strokePath` exist only at the canvas level.
+
+**Proposal.** Put the same seven calls on `img`, as `_IMAGE_LAYER_OPS`
+already does for `translate`, `saveState` and the rest. They are the
+same Cairo calls against a different surface.
+
+**What it removes here.** `overflow: hidden` is implemented by painting
+the clipped subtree into an image, and inside such a subtree a
+`border-radius` is drawn square because the rounded rectangle is a
+bezier path. Nothing else about the clipped subtree is approximate.
+
+A canvas-level clip region would solve the same problem from the other
+end, and would be faster — no intermediate surface to allocate and
+blit — but the path API is the smaller change and unlocks more.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

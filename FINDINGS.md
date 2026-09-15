@@ -475,6 +475,37 @@ dithers gradients and Cairo does not.
 
 ---
 
+## 23 An image is a drawable surface with a smaller API
+
+An `img` in Festina is not only a picture: it is a surface a program can
+draw on, with `drawRect`, `drawText`, `drawCircle`, `drawPixel`,
+`drawImage`, a transform and a state stack, and it **clips at its own
+bounds** — rectangles and text alike, a glyph cut in half at the edge.
+That is how this browser implements `overflow: hidden` even though the
+canvas has no clip region: the subtree is painted into an image the size
+of the box and blitted back.
+
+What an image does not have is the path API. There is no `beginPath`,
+`moveTo`, `lineTo`, `curveTo`, `fillPath` or `strokePath` on one:
+
+```festina
+img layer = blankImage(10, 10)
+layer.beginPath()
+// error: img has no field 'beginPath'
+//        (img has .width, .height, .clip() and .resize())
+```
+
+So everything drawn through a path is unavailable inside a clipped
+subtree, and here that means rounded corners: a `border-radius` inside
+an `overflow: hidden` box is drawn square. The fill state *is* shared —
+a `fillStyle` set on the canvas applies to a later `img.drawText` — so
+it is the geometry that is missing rather than the colour.
+
+The asymmetry is the whole finding. Two surfaces that are drawn on the
+same way should be drawn on the same way.
+
+---
+
 ## 15–19 Smaller
 
 - **`ascii.toInt()`**: the semantic analyzer accepts it, codegen rejects

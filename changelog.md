@@ -71,6 +71,40 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### overflow: hidden clips, through an offscreen image
+
+The canvas has no clip region, and todo.md said for that reason that
+`overflow` clipping needed one. It does not. A Festina `img` is itself a
+drawable surface — `drawRect`, `drawText`, `drawCircle`, `drawImage`, a
+transform and a state stack — and it **clips at its own bounds**, cutting
+a glyph in half at the edge like any clip should. So a clipped subtree is
+painted into an image the size of the box's padding box, with the image's
+own `translate` carrying the offset so everything still speaks document
+coordinates, and the result is blitted back.
+
+Every primitive in the painter now goes through a wrapper that sends it
+to the canvas or to the current layer. The box itself is not clipped —
+its background and border paint normally — and only its descendants go
+to the layer, which is what §11.1.1 says.
+
+**One thing is approximate, and it is recorded rather than hidden.** An
+image has no path API at all: no `beginPath`, `moveTo`, `lineTo`,
+`curveTo` or `fillPath`. So inside a clipped subtree a `border-radius`
+is drawn square, and a bordered box's rounded stroke becomes four
+straight sides. The fill state is shared between the two surfaces, so it
+is the geometry that is missing rather than the colour. FINDINGS.md has
+the asymmetry and festina.md proposes the fix: the same seven calls on
+`img` that `translate` and `saveState` already have.
+
+Eleven pixel checks, including the case a rectangle-by-rectangle clip
+could never do — text cut off mid-glyph at the container's edge.
+
+`overflow-x` and `overflow-y` now change what renders: 78 of 373 to
+**80**. `overflow` joins the `@supports` list, which it was kept out of
+on the ground that the cascade computed it and nothing read it — the
+rule that keeps this project's numbers honest, applied in the direction
+that costs it something and now in the direction that pays.
+
 ### The audio element draws its controls
 
 `<audio>` was in the user-agent stylesheet's `display: none` list, so an

@@ -604,9 +604,11 @@ arr[text] supportedProperties = [
     'justify-content', 'align-items', 'align-self', 'gap', 'row-gap',
     'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
-    // `overflow` and `float` are deliberately absent: the cascade
-    // computes them and nothing reads them, so claiming support would
-    // be the lie @supports exists to prevent (css-2026.md).
+    // A property belongs here when something reads it, not when the
+    // cascade merely computes it: claiming otherwise is the lie
+    // @supports exists to prevent (css-2026.md). `overflow` was absent
+    // on exactly that ground until the painter began clipping by it.
+    'overflow', 'overflow-x', 'overflow-y',
 
     'inline-size', 'block-size',
     'margin-inline', 'margin-inline-start', 'margin-inline-end',

@@ -13,6 +13,70 @@ int paintBottom = 1000000000
 
 const float KAPPA = 0.5523
 
+// ---- where the painting goes -----------------------------------------
+//
+// `overflow: hidden` needs a clip region and the canvas has none. What
+// Festina does have is images that are themselves drawable surfaces and
+// that clip at their own bounds -- rectangles and text alike -- so a
+// clipped subtree is painted into one and blitted back.
+//
+// Every primitive below therefore goes through a wrapper that sends it
+// to the canvas or to the current layer. An image's own translate()
+// carries the offset, so the wrappers pass document coordinates
+// unchanged.
+//
+// An image is not the canvas's equal: it has no path API at all -- no
+// beginPath, moveTo, lineTo or fillPath (FINDINGS.md, "an image is a
+// drawable surface with a smaller API"). Inside a clipped subtree a
+// rounded rectangle is therefore drawn square. That is recorded rather
+// than hidden, and it is why the wrappers for the path calls exist at
+// all: they turn a path into its rectangular approximation on a layer
+// and leave it exact on the canvas.
+img paintLayer = null
+
+bool func paintingToLayer() {
+    return paintLayer != null
+}
+
+void func pDrawRect(x:int, y:int, w:int, h:int) {
+    if paintLayer == null { drawRect(x, y, w, h) }
+    else { paintLayer.drawRect(x, y, w, h) }
+}
+
+void func pDrawCircle(x:int, y:int, r:int) {
+    if paintLayer == null { drawCircle(x, y, r) }
+    else { paintLayer.drawCircle(x, y, r) }
+}
+
+void func pDrawText(t:text, x:int, y:int) {
+    if paintLayer == null { drawText(t, x, y) }
+    else { paintLayer.drawText(t, x, y) }
+}
+
+void func pDrawImage(i:img, x:int, y:int) {
+    if paintLayer == null { drawImage(i, x, y) }
+    else { paintLayer.drawImage(i, x, y) }
+}
+
+void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
+    if paintLayer == null { drawImage(i, x, y, w, h) }
+    else { paintLayer.drawImage(i, x, y, w, h) }
+}
+
+
+// A filled rounded rectangle. On the canvas this is a bezier path; on a
+// layer there is no path API, so the corners are square. The shape is
+// wrong by a few pixels at each corner and the box is still there,
+// which is the better of the two failures available.
+void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
+    if paintLayer == null {
+        roundedRectPath(x, y, w, h, r)
+        fillPath()
+    } else {
+        paintLayer.drawRect(x, y, w, h)
+    }
+}
+
 void func paintFill(c:int, opacity:float) {
     applyFillColor(colorWithOpacity(c, opacity))
 }
@@ -39,10 +103,9 @@ void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
     if colorIsPaintable(s.background) {
         paintFill(s.background, s.effectiveOpacity)
         if s.borderRadius > 0 {
-            roundedRectPath(x, y, w, h, s.borderRadius)
-            fillPath()
+            pFillRounded(x, y, w, h, s.borderRadius)
         } else {
-            drawRect(x, y, w, h)
+            pDrawRect(x, y, w, h)
         }
         fillAlpha(1.0)
     }
@@ -207,13 +270,13 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
                 int hi = roundPx(maxFloat(a0, a1))
                 int bx = maxInt(lo, x)
                 int bw = minInt(hi, x + w) - bx
-                if bw > 0 { drawRect(bx, y, bw, h) }
+                if bw > 0 { pDrawRect(bx, y, bw, h) }
             } else {
                 int lo = roundPx(minFloat(b0, b1))
                 int hi = roundPx(maxFloat(b0, b1))
                 int by = maxInt(lo, y)
                 int bh = minInt(hi, y + h) - by
-                if bh > 0 { drawRect(x, by, w, bh) }
+                if bh > 0 { pDrawRect(x, by, w, bh) }
             }
             continue
         }
@@ -241,7 +304,7 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
             if hi < lo { float t = lo  lo = hi  hi = t }
             int xa = maxInt(roundPx(lo), x)
             int xb = minInt(roundPx(hi), x + w)
-            if xb > xa { drawRect(xa, row, xb - xa, 1) }
+            if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
         }
     }
     fillAlpha(1.0)
@@ -265,26 +328,34 @@ void func paintBorders(b:Box) {
         borderColor(colorRed(c), colorGreen(c), colorBlue(c))
         lineWidth(b.bt)
         int half = Math.floorDiv(b.bt, 2)
-        roundedRectPath(x + half, y + half, w - b.bt, h - b.bt, maxInt(s.borderRadius - half, 1))
-        strokePath()
+        if paintLayer == null {
+            roundedRectPath(x + half, y + half, w - b.bt, h - b.bt, maxInt(s.borderRadius - half, 1))
+            strokePath()
+        } else {
+            // no path API on a layer: the border is drawn as four sides
+            paintLayer.drawRect(x, y, w, b.bt)
+            paintLayer.drawRect(x, y + h - b.bb, w, b.bb)
+            paintLayer.drawRect(x, y, b.bl, h)
+            paintLayer.drawRect(x + w - b.br, y, b.br, h)
+        }
         borderColor(-1, -1, -1)
         return
     }
     if b.bt > 0 && colorIsPaintable(s.borderTopColor) && !skipTop {
         paintFill(s.borderTopColor, s.effectiveOpacity)
-        drawRect(x, y, w, b.bt)
+        pDrawRect(x, y, w, b.bt)
     }
     if b.bb > 0 && colorIsPaintable(s.borderBottomColor) {
         paintFill(s.borderBottomColor, s.effectiveOpacity)
-        drawRect(x, y + h - b.bb, w, b.bb)
+        pDrawRect(x, y + h - b.bb, w, b.bb)
     }
     if b.bl > 0 && colorIsPaintable(s.borderLeftColor) && !skipLeft {
         paintFill(s.borderLeftColor, s.effectiveOpacity)
-        drawRect(x, y, b.bl, h)
+        pDrawRect(x, y, b.bl, h)
     }
     if b.br > 0 && colorIsPaintable(s.borderRightColor) {
         paintFill(s.borderRightColor, s.effectiveOpacity)
-        drawRect(x + w - b.br, y, b.br, h)
+        pDrawRect(x + w - b.br, y, b.br, h)
     }
     fillAlpha(1.0)
 }
@@ -313,10 +384,10 @@ void func paintOutline(b:Box) {
     int w = s.outlineWidth
     if w <= 0 || b.w <= 0 || b.h <= 0 { return }
     applyFillColor(colorWithOpacity(s.outlineColor, s.effectiveOpacity))
-    drawRect(b.x - w, b.y - w, b.w + w + w, w)
-    drawRect(b.x - w, b.y + b.h, b.w + w + w, w)
-    drawRect(b.x - w, b.y, w, b.h)
-    drawRect(b.x + b.w, b.y, w, b.h)
+    pDrawRect(b.x - w, b.y - w, b.w + w + w, w)
+    pDrawRect(b.x - w, b.y + b.h, b.w + w + w, w)
+    pDrawRect(b.x - w, b.y, w, b.h)
+    pDrawRect(b.x + b.w, b.y, w, b.h)
     fillAlpha(1.0)
 }
 
@@ -332,22 +403,22 @@ void func paintListMarker(b:Box) {
         text label = `${b.listIndex}.`
         setFontFor(s)
         int w = measureTextWidth(label)
-        drawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)
+        pDrawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)
     } else {
         int r = maxInt(roundPx(fs.toFloat() * 0.19), 2)
         int cx = edge - roundPx(fs.toFloat() * 0.9)
         int cy = baseline - roundPx(fs.toFloat() * 0.33)
         if s.listStyle == LIST_DISC {
-            drawCircle(cx, cy, r)
+            pDrawCircle(cx, cy, r)
         } else if s.listStyle == LIST_CIRCLE {
             int c = colorWithOpacity(s.color, s.effectiveOpacity)
             borderColor(colorRed(c), colorGreen(c), colorBlue(c))
             lineWidth(1)
             fillStyle(-1, -1, -1)
-            drawCircle(cx, cy, r)
+            pDrawCircle(cx, cy, r)
             borderColor(-1, -1, -1)
         } else {
-            drawRect(cx - r, cy - r, r * 2, r * 2)
+            pDrawRect(cx - r, cy - r, r * 2, r * 2)
         }
     }
     fillAlpha(1.0)
@@ -359,14 +430,14 @@ void func paintTextFragment(f:Fragment) {
     setFontFor(s)
     paintFill(s.color, s.effectiveOpacity)
     if s.letterSpacing == 0 {
-        drawText(f.content, f.x, f.baseline)
+        pDrawText(f.content, f.x, f.baseline)
     } else {
         // letter-spacing: one glyph at a time, each advanced by its
         // own width plus the spacing (drawText has no spacing itself)
         arr[text] chars = f.content.split('')
         int x = f.x
         for int i = 0, i < chars.length, i++ {
-            drawText(chars[i], x, f.baseline)
+            pDrawText(chars[i], x, f.baseline)
             x = x + measureTextWidth(chars[i]) + s.letterSpacing
         }
     }
@@ -374,10 +445,10 @@ void func paintTextFragment(f:Fragment) {
     if deco > 0 {
         int thickness = maxInt(1, Math.floorDiv(s.fontSize, 16))
         if deco == DECO_UNDERLINE || deco == DECO_UNDERLINE + DECO_LINE_THROUGH {
-            drawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
+            pDrawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
         }
         if deco >= DECO_LINE_THROUGH {
-            drawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
+            pDrawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
         }
     }
     fillAlpha(1.0)
@@ -391,11 +462,11 @@ void func paintInlineBackground(f:Fragment) {
     if s.borderStyle != BORDER_NONE {
         if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
             paintFill(s.borderTopColor, s.effectiveOpacity)
-            drawRect(f.x, f.y, f.w, ib.bt)
+            pDrawRect(f.x, f.y, f.w, ib.bt)
         }
         if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
             paintFill(s.borderBottomColor, s.effectiveOpacity)
-            drawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
+            pDrawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
         }
         fillAlpha(1.0)
     }
@@ -409,21 +480,21 @@ void func paintImage(b:Box) {
     if w <= 0 || h <= 0 { return }
     if b.image != null {
         fillAlpha(b.style.opacity)
-        drawImage(b.image, x, y, w, h)
+        pDrawImageScaled(b.image, x, y, w, h)
         fillAlpha(1.0)
         return
     }
     // a broken image: a thin frame and the alt text
     fillStyle(192, 192, 192)
-    drawRect(x, y, w, 1)
-    drawRect(x, y + h - 1, w, 1)
-    drawRect(x, y, 1, h)
-    drawRect(x + w - 1, y, 1, h)
+    pDrawRect(x, y, w, 1)
+    pDrawRect(x, y + h - 1, w, 1)
+    pDrawRect(x, y, 1, h)
+    pDrawRect(x + w - 1, y, 1, h)
     text alt = getAttr(b.node, 'alt')
     if alt != null && alt != '' && h >= b.style.fontSize {
         setFontFor(b.style)
         paintFill(b.style.color, b.style.opacity)
-        drawText(alt, x + 2, y + fontAscent(b.style) + 1)
+        pDrawText(alt, x + 2, y + fontAscent(b.style) + 1)
         fillAlpha(1.0)
     }
 }
@@ -440,8 +511,7 @@ void func paintAudioControls(b:Box) {
     if w <= 0 || h <= 0 { return }
 
     fillStyle(241, 243, 244)
-    roundedRectPath(x, y, w, h, Math.floorDiv(h, 2))
-    fillPath()
+    pFillRounded(x, y, w, h, Math.floorDiv(h, 2))
 
     // the play triangle
     int cy = y + Math.floorDiv(h, 2)
@@ -460,15 +530,15 @@ void func paintAudioControls(b:Box) {
     int tw = w - (tx - x) - 60
     if tw > 0 {
         fillStyle(189, 193, 198)
-        drawRect(tx, cy - 1, tw, 3)
+        pDrawRect(tx, cy - 1, tw, 3)
         fillStyle(60, 64, 67)
-        drawCircle(tx, cy, 5)
+        pDrawCircle(tx, cy, 5)
     }
 
     // the speaker
     int vx = x + w - 34
     fillStyle(60, 64, 67)
-    drawRect(vx, cy - 4, 5, 8)
+    pDrawRect(vx, cy - 4, 5, 8)
     beginPath()
     moveTo(vx + 5, cy - 4)
     lineTo(vx + 11, cy - 9)
@@ -493,11 +563,11 @@ void func paintFormControl(b:Box) {
             borderColor(118, 118, 118)
             lineWidth(1)
             fillStyle(255, 255, 255)
-            drawCircle(x + r, y + r, r - 1)
+            pDrawCircle(x + r, y + r, r - 1)
             borderColor(-1, -1, -1)
             if checked {
                 fillStyle(0, 0, 0)
-                drawCircle(x + r, y + r, maxInt(r - 4, 2))
+                pDrawCircle(x + r, y + r, maxInt(r - 4, 2))
             }
         } else if checked {
             fillStyle(0, 0, 0)
@@ -531,9 +601,58 @@ void func paintLines(b:Box) {
     }
 }
 
+// Whether a box with `overflow: hidden` has anything inside worth
+// clipping. A box whose content fits needs no layer, and a layer is the
+// expensive part -- an image the size of the box, painted and blitted.
+bool func boxClipsAnything(b:Box) {
+    int w = b.w - b.bl - b.br
+    int h = b.h - b.bt - b.bb
+    if w <= 0 || h <= 0 { return true }
+    return b.children.length > 0
+}
+
+// Paints a box whose descendants are clipped: the box itself onto the
+// current target, then its children into a layer the size of its
+// padding box, which is blitted back. An image clips at its own bounds,
+// which is the clip region the canvas does not have.
+void func paintClipped(b:Box) {
+    Style s = b.style
+    if b.kind != BOX_ANON && !s.hidden {
+        paintBackground(b.x, b.y, b.w, b.h, s)
+        paintBorders(b)
+    }
+    int px = b.x + b.bl
+    int py = b.y + b.bt
+    int pw = b.w - b.bl - b.br
+    int ph = b.h - b.bt - b.bb
+    if pw <= 0 || ph <= 0 { return }
+
+    img layer = blankImage(pw, ph)
+    // the layer's own transform carries the offset, so everything
+    // painted into it still speaks document coordinates
+    layer.translate(0 - px, 0 - py)
+    paintLayer = layer
+    paintLines(b)
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        paintBox(c)
+    }
+    paintLayer = null
+    pDrawImage(layer, px, py)
+}
+
 void func paintBox(b:Box) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
+    // `overflow: hidden` clips this box's descendants to its padding box
+    // (CSS2 §11.1.1). The box itself -- its background and border -- is
+    // not clipped, so it paints normally and only the inside goes to a
+    // layer.
+    if b.style.overflowHidden && !paintingToLayer() && boxClipsAnything(b) {
+        paintClipped(b)
+        return
+    }
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
         if b.kind == BOX_ROW {
@@ -617,7 +736,7 @@ void func paintFrame(b:Box) {
     int ch = b.h - b.bt - b.bb - b.pt - b.pb
     if cw <= 0 || ch <= 0 { return }
     applyFillColor(COLOR_WHITE)
-    drawRect(cx, cy, cw, ch)
+    pDrawRect(cx, cy, cw, ch)
     fillAlpha(1.0)
     if b.frameKey == null { return }
     Box inner = loadedFrames[b.frameKey]

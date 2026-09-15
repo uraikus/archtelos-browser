@@ -29,10 +29,9 @@ arr[text] func blobLines(f:blob) {
 }
 
 // Every field of a computed Style that something reads, in one string.
-// `overflowHidden` is deliberately left out: the cascade computes it
-// and neither layout nor paint looks, so a page renders the same with
-// or without it and counting `overflow` as implemented would overstate
-// this engine -- the same rule css-2026.md applies.
+// Every field here is one something reads. `overflowHidden` was left
+// out while the cascade computed it and nothing looked; the painter
+// clips by it now, so it counts.
 text func styleDigest(s:Style) {
     return `${s.display}|${s.color}|${s.background}|${s.fontSize}|${s.fontBold}|${s.fontItalic}`
         + `|${s.fontFamily}|${s.lineHeight}|${s.textAlign}|${s.textDecoration}|${s.inheritedDecoration}`
@@ -51,7 +50,7 @@ text func styleDigest(s:Style) {
         + `|${s.outlineWidth}|${s.outlineColor}`
         + `|${s.flexDirection}|${s.justifyContent}|${s.alignItems}|${s.alignSelf}`
         + `|${s.flexGrow}|${s.flexShrink}|${lenKey(s.flexBasis)}|${s.rowGap}|${s.columnGap}|${s.order}`
-        + `|${gradientKey(s.backgroundImage)}`
+        + `|${gradientKey(s.backgroundImage)}|${s.overflowHidden}`
 }
 
 text func gradientKey(g:Gradient) {

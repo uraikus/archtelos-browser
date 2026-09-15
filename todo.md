@@ -31,10 +31,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **The CSS2 chapters that are still missing**: `overflow` clipping
-   (§11), which needs a clip region the canvas does not have, and
-   generated content with counters (§12), which needs pseudo-elements.
-   Positioning (§9.3) and floats (§9.5) are done.
+1. **What is left of the CSS2 chapters**: `overflow: scroll` and
+   `auto`, which need a scrollable area rather than only a clip, and
+   paged media (§13). Positioning (§9.3), floats (§9.5), generated
+   content (§12) and `overflow: hidden` clipping (§11) are done.
 2. **Flexbox, completed**: `flex-wrap`, so a container can be
    multi-line, and the `align-content` that only means something once
    it is; `baseline` alignment; and auto margins inside a flex

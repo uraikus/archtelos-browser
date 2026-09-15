@@ -114,8 +114,12 @@ decimal.
 invisible without a `controls` attribute, as the standard's own
 stylesheet says. It does not play: see todo.md.
 
-Grid is laid out as a static block; `overflow: hidden` clips nothing;
-there is no JavaScript. See [todo.md](todo.md) for what is planned and
+**`overflow: hidden`** clips a box's descendants, text included, by
+painting them into an offscreen image — the canvas has no clip region
+and an image clips at its own bounds. A `border-radius` inside such a
+box is drawn square, because an image has no path API.
+
+Grid is laid out as a static block, and there is no JavaScript. See [todo.md](todo.md) for what is planned and
 what is deliberately not.
 
 ## Repository
