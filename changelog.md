@@ -99,6 +99,16 @@ one-pixel-tall horizontal runs, one per row of the box, so every
 rectangle has integer coordinates and covers whole pixels exactly and
 nothing is blended with anything.
 
+That is not free, and the benchmark now says so. Along an axis a band is
+one rectangle, so painting is proportional to the gradient line's length
+and sixty gradient boxes cost a millisecond. Off the axis a band becomes
+one rectangle per row, so the work is the line's length times the box's
+height, and the same sixty boxes cost 14 ms of paint and take the page
+from 24 ms to 60 end to end. The commit that introduced this called an
+axis-aligned figure a general one; benchmarks.md carries both, and
+todo.md carries the fix — render a gradient once into an offscreen image
+and draw that image.
+
 ### Linear gradients, painted a band at a time
 
 `linear-gradient()` and `repeating-linear-gradient()` work as a

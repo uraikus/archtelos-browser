@@ -49,16 +49,16 @@ size, so that difference was being charged to layout:
 
 | Canvas | This browser | Pixels |
 |---|---|---|
-| 800x600 | 115 ms | 480,000 |
-| 800x2000 | 154 ms | 1,600,000 |
-| 800x8000 | 330 ms | 6,400,000 |
+| 800x600 | 120 ms | 480,000 |
+| 800x2000 | 159 ms | 1,600,000 |
+| 800x8000 | 336 ms | 6,400,000 |
 
 Same page, same layout, same paint — 215 ms of the difference is
 encoding. `tests/bench.sh` gives both engines 800x600.
 
 ## Start-up is not a rendering result, and subtracting it does not work
 
-Chromium takes **446 ms** to screenshot a one-line page at 800x600, and
+Chromium takes **469 ms** to screenshot a one-line page at 800x600, and
 this browser takes **28 ms**. That difference is process start-up — a
 browser engine bringing up a multi-process architecture, a JavaScript
 engine, a compositor and a network stack, against a 2.3 MB native binary
@@ -89,9 +89,9 @@ What a shell script waiting for a PNG actually experiences:
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 36 ms | 446 ms |
-| css.html | 3 KB | 36 ms | 481 ms |
-| generated.html | 51 KB | 115 ms | 470 ms |
+| hello.html | 4 KB | 37 ms | 469 ms |
+| css.html | 3 KB | 38 ms | 494 ms |
+| generated.html | 51 KB | 118 ms | 526 ms |
 
 This browser is done before Chromium has finished starting. That is a
 true statement about the command and a false one about the engine, which
@@ -108,11 +108,11 @@ page, both measured from inside.
 
 | Page | Size | This browser | Chromium | Ratio |
 |---|---|---|---|---|
-| hello.html | 4 KB | 10 ms | 1.2 ms | 8x |
-| css.html | 3 KB | 10 ms | 0.9 ms | 11x |
-| generated.html | 51 KB | 81 ms | 25.5 ms | **3.2x** |
+| hello.html | 4 KB | 9 ms | 1.2 ms | 8x |
+| css.html | 3 KB | 9 ms | 0.9 ms | 10x |
+| generated.html | 51 KB | 85 ms | 25.5 ms | **3.3x** |
 
-**Chromium renders the 51 KB page about three times faster**,
+**Chromium renders the 51 KB page about three and a third times faster**,
 and the gap is wider on small pages because a fixed cost of about 10 ms
 has nothing to amortize against. This is the honest headline, and it is
 a worse one than this file used to carry. The cascade and layout are
@@ -137,7 +137,7 @@ across runs, so a single ratio would be reporting that spread rather
 than a difference — the row gives the run this table came from. Call it
 6 MB/s against 13 to 25. For a tokenizer and tree builder written in a
 young language against one of the most optimized parsers in software
-that is a reasonable place to be, and at 8 ms of an 81 ms render it is
+that is a reasonable place to be, and at 8 ms of an 85 ms render it is
 not where the time goes.
 
 ## Where the time actually goes
@@ -150,13 +150,13 @@ not where the time goes.
 | parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 28 ms |
-| layout | 48 ms |
+| cascade | 29 ms |
+| layout | 47 ms |
 | paint | 6 ms |
 
 The cascade and layout are **88%** of it. Parsing is 9%, and paint —
 once it is not also encoding six megapixels — is 6 ms. Chromium does the
-first four of those phases in 25.5 ms against our 81; the whole gap is
+first four of those phases in 25.5 ms against our 85; the whole gap is
 here, and **layout is now the larger half of it**.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
@@ -282,6 +282,39 @@ corners and a few adoption-agency cases here, and on Chromium's side
 mostly cases where its scripting flag is enabled. todo.md tracks the
 ones worth closing.
 
+## What painting a gradient costs
+
+A gradient is painted as a run of one-pixel bands of flat colour,
+because the canvas's own `fillLinearGradient` cannot be called with
+colours that are not literals (FINDINGS.md, "a gradient cannot be built
+at run time"). The control is the same page with flat backgrounds: same
+sixty boxes, same layout, only the painting differs.
+
+| Page | Paint | End to end |
+|---|---|---|
+| flat colours (the control) | 0 ms | 24 ms |
+| gradients, along an axis | 1 ms | 26 ms |
+| gradients, at 37 degrees | **14 ms** | **60 ms** |
+
+**An axis-aligned gradient is nearly free and an angled one is not**, and
+the difference is structural rather than incidental. Along an axis each
+band is one rectangle, so the work is proportional to the gradient
+line's length — about 500 rectangles for one of these boxes. Off the
+axis a band is not a rectangle, and drawing it as a polygon stipples the
+result, so each band is drawn as one-pixel-tall horizontal runs: the
+work becomes the line's length times the box's height, about 30,000
+rectangles for the same box.
+
+That is the honest cost of not having the two things that would do this
+properly — a gradient fill that takes runtime colours, and a clip region
+— and it is written down here rather than discovered later. Rendering
+the gradient once into an offscreen image and drawing that image would
+collapse it back; todo.md carries the idea.
+
+Both figures are measured at 800x600, which is the viewport, so most of
+the 4,080-pixel-tall page is culled. A page whose angled gradients are
+all on screen pays more.
+
 ## Peak memory
 
 Peak resident set size, rendering the same 800x600 PNG. Measured with
@@ -295,16 +328,16 @@ Chromium column understates total system memory for that run.
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 12.9 MB | 195.5 MB |
-| css.html | 3 KB | 13.0 MB | 195.5 MB |
-| generated.html | 51 KB | 17.0 MB | 194.6 MB |
+| hello.html | 4 KB | 12.8 MB | 195.8 MB |
+| css.html | 3 KB | 12.9 MB | 195.1 MB |
+| generated.html | 51 KB | 17.5 MB | 194.8 MB |
 
 **About 15x less on a small page and 10x less on the large one**, and
 the shape differs as much as the size: Chromium's footprint is flat
 across all three pages because it is almost entirely fixed cost —
 process architecture, a JavaScript heap, a compositor — while this
-browser's grows with the document, from 12.9 MB to 17.0 MB as the page
-goes from 4 KB to 51 KB. The 4.1 MB of growth is the DOM and the box
+browser's grows with the document, from 12.8 MB to 17.5 MB as the page
+goes from 4 KB to 51 KB. The 4.7 MB of growth is the DOM and the box
 tree for 2,728 elements — about 1.5 KB per element across both. The
 computed styles are no longer part of it: there are 24 of them, however
 many elements the page has.
@@ -326,8 +359,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,330,728 |
-| This browser, all `.f` source | 430,389 |
+| This browser, the whole program | 2,344,064 |
+| This browser, all `.f` source | 445,734 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 

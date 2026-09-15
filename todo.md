@@ -171,8 +171,8 @@ rest. In rough order of how often real pages need it:
 
 ## Performance
 
-Chromium parses, styles and lays out the 51 KB page about **3.2 times
-faster** — 25.5 ms against 81 — with both sides measured from inside and
+Chromium parses, styles and lays out the 51 KB page about **3.3 times
+faster** — 25.5 ms against 85 — with both sides measured from inside and
 start-up outside the timer (benchmarks.md). The cascade and layout are
 88% of our time and all of the gap, and **layout is now the larger half
 of the two**. In order:
@@ -191,6 +191,11 @@ of the two**. In order:
   less now that a distinct style is computed only 24 times on the
   benchmark page, but it is still the shape that keeps the phase flat as
   more properties land.
+- **An angled gradient is painted a rectangle per band per row**, which
+  is 14 ms for sixty boxes where an axis-aligned one is 1 ms
+  (benchmarks.md). Rendering the gradient once into an offscreen image
+  and drawing that image would make the angle free; `blankImage` and
+  image drawing exist, so this needs no new language feature.
 - **Layout, which is now the bigger half.** 48 ms against the cascade's
   28: building the box tree is 14 ms, placing text 12, measuring it 9.
   The box tree is rebuilt from scratch on every relayout even when only
@@ -201,7 +206,7 @@ of the two**. In order:
 
 **Do not compare unequal canvases again.** PNG encoding is linear in
 pixels and dominates at this page size: the same page onto 800x8000
-instead of 800x600 costs 330 ms instead of 115 ms, and all of that
+instead of 800x600 costs 336 ms instead of 120 ms, and all of that
 difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work

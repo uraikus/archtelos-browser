@@ -168,13 +168,13 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Parse, style and lay out 51 KB | 81 ms | 25.5 ms |
+| Parse, style and lay out 51 KB | 85 ms | 25.5 ms |
 | Parse 51 KB of HTML | 8 ms | 2.1–3.9 ms |
-| Peak memory, 51 KB page | 17.0 MB | 194.6 MB |
+| Peak memory, 51 KB page | 17.5 MB | 194.8 MB |
 | Binary | 2.3 MB | 463 MB |
-| Screenshot a one-line page | 28 ms | 446 ms |
+| Screenshot a one-line page | 28 ms | 469 ms |
 
-**Chromium renders about three times faster.** The first row is
+**Chromium renders about three and a third times faster.** The first row is
 the one that describes the engines: both sides are timed from inside,
 with process start-up and PNG encoding outside the timer, because
 Chromium spends about 450 ms starting up, and subtracting a baseline
@@ -193,7 +193,7 @@ what is absent from this browser — a JavaScript engine, a compositor, a
 sandbox, a network stack, ICU — is most of what Chromium is carrying.
 Chromium's footprint is flat across all three benchmark pages because it
 is almost entirely fixed cost, while this browser's grows with the
-document, from 13 MB to 17 MB as the page goes from 4 KB to 51 KB.
+document, from 13 MB to 18 MB as the page goes from 4 KB to 51 KB.
 
 ## Working on this
 
