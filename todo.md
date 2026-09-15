@@ -150,13 +150,11 @@ With both engines given the same 800x600 canvas, Chromium renders the
 51 KB page about 1.15 times faster (benchmarks.md). The cascade and
 layout are 90% of our time. In order:
 
-- **Skip the presentational-attribute pass for elements that have no
-  presentational attributes.** It is 8 ms of the cascade's 15 ms
-  collection phase, run for all 2,728 elements, though almost none carry
-  `bgcolor`, `align`, `width` or a `<font>` attribute.
 - **Share computed styles between elements whose matched declarations
-  are identical.** Computing is 25 ms, the single largest sub-phase, and
+  are identical.** Computing is 21 ms, the single largest sub-phase, and
   most elements in a real document match exactly what a sibling matches.
+  The benchmark page has 1,560 table cells that all match the same four
+  rules.
 - **Cache the box tree across relayouts** when only the viewport width
   changed, instead of rebuilding it. Building it is 15 ms.
 - **A string interner.** A large share of both phases is comparing and

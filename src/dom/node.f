@@ -57,6 +57,7 @@ struct Node {
                         // are one value in Festina, so presence needs
                         // its own record (FINDINGS.md, "empty text")
     children:arr[Node]
+    hasPresHint:bool    // carries at least one presentational attribute
     parentId:int        // 0 = no parent; see nodeRegistry
     childIndex:int      // position in the parent's children (set by appendChild)
     data:text           // text node contents, comment data, or doctype name
@@ -259,9 +260,22 @@ bool func hasAttr(n:Node, name:text) {
     return n.present[name] == true
 }
 
+// The HTML attributes that map to a CSS declaration. Recording the fact
+// once, here, turns the cascade's presentational pass from a dozen map
+// lookups on every element into one boolean read: on a real page almost
+// nothing carries one of these.
+bool func isPresentationalAttr(name:text) {
+    return name == 'align' || name == 'bgcolor' || name == 'background'
+        || name == 'color' || name == 'face' || name == 'size'
+        || name == 'width' || name == 'height' || name == 'border'
+        || name == 'cellspacing' || name == 'cellpadding' || name == 'nowrap'
+        || name == 'noshade' || name == 'valign' || name == 'type'
+}
+
 void func setAttr(n:Node, name:text, value:text) {
     n.attrs[name] = value
     n.present[name] = true
+    if isPresentationalAttr(name) { n.hasPresHint = true }
 }
 
 bool func hasParent(n:Node) {

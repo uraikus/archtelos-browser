@@ -298,8 +298,16 @@ void func addMatch(matches:arr[Match], name:text, value:ascii, weight:int) {
 // HTML's presentational attributes, expressed as author declarations
 // of zero specificity.
 void func presentationalHints(n:Node, matches:arr[Match]) {
-    int w = matchWeight(false, ORIGIN_AUTHOR, 0, 0)
+    // Almost no element carries one of these, and this used to be a
+    // dozen map lookups on every element in the document -- 8 ms of the
+    // cascade's 15 ms collection phase on the benchmark page. A cell is
+    // the exception: `border` and `cellpadding` on the table it sits in
+    // style the cell, so a cell has to look even when it carries
+    // nothing itself.
     text tag = n.tag
+    bool isCell = tag == 'td' || tag == 'th'
+    if !n.hasPresHint && !isCell { return }
+    int w = matchWeight(false, ORIGIN_AUTHOR, 0, 0)
     text align = getAttr(n, 'align')
     if align != null {
         ascii a = asciiLower(align.toAscii())
@@ -357,9 +365,9 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
         text cs = getAttr(n, 'cellspacing')
         if cs != null && cs.toInt() != null { addMatch(matches, 'border-spacing', `${cs.toInt()}px`.toAscii(), w) }
     }
-    if tag == 'td' || tag == 'th' {
+    if isCell {
         int tbl = closestElementId(n, 'table')
-        if tbl > 0 {
+        if tbl > 0 && nodeRegistry[tbl].hasPresHint {
             text border = getAttr(nodeRegistry[tbl], 'border')
             if border != null && border.toInt() != null && border.toInt() > 0 {
                 addMatch(matches, 'border', '1px solid #808080', w)

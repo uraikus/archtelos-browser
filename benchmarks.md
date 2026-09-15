@@ -112,9 +112,16 @@ The cascade and layout are **90%** of it. Parsing is 7%, and paint —
 once it is not also encoding six megapixels — is 4 ms.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements. Collecting them is 15 ms, of which
-**8 ms is HTML presentational attributes** — computed for every element,
-though almost none carry one. Applying is 10 ms and computing 25 ms.
+declarations across 2,728 elements. Collecting them is 10 ms, applying
+14 ms and computing 21 ms.
+
+The presentational-attribute pass inside collection was 8 ms of that; it
+is 3 ms now that an element records at parse time whether it carries
+such an attribute, so the pass can skip the ones that do not. The saving
+is real and measured at the sub-phase, and it is **inside the noise end
+to end**: best-of-seven for the whole page moved from 132 ms to 135 ms,
+which is to say it did not move. Computing styles is the phase worth
+attacking next.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
 cache and reach Cairo (9 ms total); building the box tree is 15 ms and

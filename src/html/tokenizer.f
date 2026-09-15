@@ -40,6 +40,7 @@ struct Token {
     systemId:text
     hasExternalId:bool
     forceQuirks:bool
+    hasPresHint:bool    // carries an attribute that maps to a CSS declaration
 }
 
 ascii tokSrc = ''
@@ -155,6 +156,7 @@ int func scanAttributes(from:int, tok:Token) {
         if name != '' && tok.present[name] != true {
             tok.attrs[name] = value
             tok.present[name] = true
+            if isPresentationalAttr(name) { tok.hasPresHint = true }
         }
     }
     tokTagUnterminated = true
