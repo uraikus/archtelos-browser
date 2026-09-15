@@ -39,17 +39,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    min-content floor that keeps an item from shrinking below its own
    content, and nested flex containers as flex items. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
-3. **`::first-line` and `::first-letter`**, and what is left of
-   generated content: `open-quote` and `close-quote` with the `quotes`
-   property, and `url()` in `content`. `::before` and `::after`
-   generate boxes from strings, `attr()`, `counter()` and `counters()`
-   already. None of this is gradeable by the selector instrument -- a
+3. **`::first-line` and `::first-letter`**, and the `url()` in
+   `content` that would let generated content carry an image.
+   `::before` and `::after` generate boxes from strings, `attr()`,
+   `counter()`, `counters()` and the four quote keywords already.
+
+   None of this is gradeable by the selector instrument -- a
    pseudo-element selects part of an element rather than an element, so
    `querySelectorAll` has no answer to compare against -- nor by the
    property instrument, which cannot see `counter-reset`,
    `counter-increment` or `quotes` because Chromium does not enumerate
    them on a computed style. It is measured by geometry and by the
-   generated text, as tests/unit/test_counters.f does.
+   generated text, as tests/unit/test_counters.f and tests/unit/test_quotes.f do.
 4. **CSS Images 3, completed**: `radial-gradient()` and
    `conic-gradient()`, gradient interpolation hints, `object-fit` and
    `object-position`. Linear gradients are done; a radial one needs the

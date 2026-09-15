@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### open-quote and close-quote
+
+The last of CSS2 §12 that was missing. `quotes` gives the strings,
+`open-quote` and `close-quote` choose from them, and `no-open-quote` and
+`no-close-quote` move the level without printing.
+
+- **The depth runs over the document, not the tree.** An element three
+  containers deep is still at depth zero until something has actually
+  emitted an open-quote; an unclosed quote deepens everything that
+  follows it in document order. Past the end of the list every deeper
+  level repeats the last pair. All three were read out of Chromium 141
+  by giving each level a string of a length nothing else shares and
+  measuring the width it added.
+- **A close-quote at depth zero prints nothing and stays there.** The
+  first implementation decremented anyway and printed the level-one
+  closing string; Chromium renders no characters at all, which the
+  measurement said and the guess did not.
+- **`<q>` gets a pair from the user-agent stylesheet**, so it renders
+  quotation marks the way it should.
+
+Twenty checks in the new `tests/unit/test_quotes.f`. The property
+instrument cannot see any of this — Chromium does not enumerate `quotes`
+on a computed style — so it is measured by the generated text, with
+Chromium's widths as the corroboration.
+
+### A user-agent rule that cost every page 8 ms
+
+Adding `q::before` to the user-agent stylesheet turned the
+pseudo-element pass on for every document, because the only gate was
+"does any rule anywhere name a pseudo-element" — and the user-agent
+sheet is registered for every page. The 51 KB benchmark page, which
+contains no `<q>`, got 8 ms slower.
+
+The gate is now per tag: registration records which tags have a
+pseudo-element rule, and whether any such rule is keyed on something
+other than a tag. A page whose only pseudo rule is the user agent's own
+`q::before` rules out every element with one map lookup. Back to a
+paired median of 0.0 ms against the build before the rule landed.
+
+This is the rule in CLAUDE.md working as intended — a feature must not
+cost anything to the pages that do not use it — and it is the second
+time on this branch that a cost was found by measuring rather than by a
+benchmark noticing later.
+
 ### Flex containers wrap
 
 `flex-wrap` was the largest hole left in Flexible Box 1: every container

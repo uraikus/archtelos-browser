@@ -182,6 +182,7 @@ struct Style {
     // matched the same rules share this Style and still stand at
     // different counts, which live in the cascade's counter stack.
     counterReset:text
+    quotes:text
     counterIncrement:text
     display:int
     color:int

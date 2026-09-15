@@ -63,11 +63,23 @@ map[int] bucketSizes = {}       // key -> number of refs, so existence is a scal
 // be two extra rule walks per element on every page (CLAUDE.md §3, "a
 // feature must not cost anything to the pages that do not use it").
 bool anyPseudoRules = false
+// Which tags have a ::before or ::after rule, and whether any such rule
+// is keyed on something other than a tag. The user-agent sheet styles
+// q::before, so without this every document would run the pseudo-
+// element pass over every element for a rule almost no page can match:
+// measured at 8 ms on the 51 KB benchmark page, which has no <q>.
+map[bool] pseudoTagSet = {}
+bool pseudoNonTag = false
 
 // Whether any rule anywhere sets a counter, and how deep the style walk
 // is. Almost no document uses counters, and maintaining the stack for
 // every element would cost every page (CLAUDE.md §3).
 bool anyCounters = false
+// The quote depth is a running count over the whole document, not a
+// measure of nesting: an element three containers deep is still at
+// depth zero until something has emitted an open-quote.
+bool anyQuotes = false
+int quoteDepth = 0
 int styleDepth = 0
 
 void func cascadeReset() {
@@ -78,7 +90,11 @@ void func cascadeReset() {
     map[Style] emptyStyleCache = {}
     styleCache = emptyStyleCache
     anyPseudoRules = false
+    pseudoTagSet = {}
+    pseudoNonTag = false
     anyCounters = false
+    anyQuotes = false
+    quoteDepth = 0
     resetPseudoElements()
     resetCounters()
     cascadeSheets = []
@@ -125,11 +141,24 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.rule = rule
             ref.sel = sel
             ref.origin = origin
-            if sel.pseudoElement != '' { anyPseudoRules = true }
+            if sel.pseudoElement != '' {
+                anyPseudoRules = true
+                text pk = selectorKey(sel)
+                if pk == '*' || pk.charCodeAt(0) == CH_HASH || pk.charCodeAt(0) == CH_DOT {
+                    pseudoNonTag = true
+                } else {
+                    pseudoTagSet[pk] = true
+                }
+            }
             if !anyCounters {
                 for int d = 0, d < rule.decls.length, d++ {
                     text dn = rule.decls[d].name
                     if dn == 'counter-reset' || dn == 'counter-increment' { anyCounters = true  break }
+                }
+            }
+            if !anyQuotes {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'quotes' { anyQuotes = true  break }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -747,6 +776,60 @@ arr[Match] func collectPseudoMatches(n:Node, which:text) {
 
 // `content`: a sequence of strings and attr() references, or `none`.
 // Answers null when nothing should be generated.
+// The `quotes` list of the element whose generated content is being
+// resolved. Festina has no closures and globals are not hoisted, so
+// this is set just before resolveContent is called rather than passed
+// -- see FINDINGS.md, "one global namespace, and globals are not
+// hoisted".
+arr[text] contentQuotePairs = []
+
+// Splits a `quotes` value into its strings: pairs of open and close,
+// outermost first. Anything that is not a quoted string invalidates the
+// whole list, which is what makes `quotes: none` produce nothing.
+arr[text] func parseQuotePairs(v:ascii) {
+    arr[text] out = []
+    if v == null { return out }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return out }
+    int i = 0
+    int len = t.length
+    while i < len {
+        int c = t.charCodeAt(i)
+        if isSpaceCode(c) { i++  continue }
+        if c != CH_QUOTE && c != CH_APOS {
+            arr[text] empty = []
+            return empty
+        }
+        int close = i + 1
+        while close < len && t.charCodeAt(close) != c { close++ }
+        if close >= len {
+            arr[text] empty = []
+            return empty
+        }
+        text one = t.slice(i + 1, close).toText()
+        out.push(one == null ? '' : one)
+        i = close + 1
+    }
+    // An odd number of strings is not a list of pairs.
+    if out.length % 2 != 0 {
+        arr[text] empty = []
+        return empty
+    }
+    return out
+}
+
+// The string for one end of the quote at `depth`. Past the end of the
+// list every deeper level repeats the last pair, which is what Chromium
+// does and what keeps a runaway nesting from printing nothing.
+text func quoteStringAt(pairs:arr[text], depth:int, open:bool) {
+    if pairs.length < 2 { return '' }
+    int levels = Math.floorDiv(pairs.length, 2)
+    int lv = depth
+    if lv < 0 { lv = 0 }
+    if lv >= levels { lv = levels - 1 }
+    return pairs[lv + lv + (open ? 0 : 1)]
+}
+
 text func resolveContent(v:ascii, n:Node) {
     if v == null { return null }
     ascii t = asciiTrim(v)
@@ -765,6 +848,35 @@ text func resolveContent(v:ascii, n:Node) {
             if close >= len { return null }          // unterminated
             out = out + t.slice(i + 1, close).toText()
             i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'no-open-quote', i) {
+            quoteDepth++
+            i = i + 13
+            continue
+        }
+        if asciiStartsWithLower(t, 'no-close-quote', i) {
+            if quoteDepth > 0 { quoteDepth-- }
+            i = i + 14
+            continue
+        }
+        if asciiStartsWithLower(t, 'open-quote', i) {
+            out = out + quoteStringAt(contentQuotePairs, quoteDepth, true)
+            quoteDepth++
+            i = i + 10
+            continue
+        }
+        if asciiStartsWithLower(t, 'close-quote', i) {
+            // The level comes back up first, so an open and a close at
+            // the same level print the two halves of one pair. Closing
+            // what was never opened prints nothing at all and leaves
+            // the level where it was -- measured against Chromium 141,
+            // which renders no characters for it.
+            if quoteDepth > 0 {
+                quoteDepth--
+                out = out + quoteStringAt(contentQuotePairs, quoteDepth, false)
+            }
+            i = i + 11
             continue
         }
         if asciiStartsWithLower(t, 'attr(', i) {
@@ -819,6 +931,12 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     for int i = 0, i < matches.length, i++ {
         applyDecl(props, matches[i].decl.name, matches[i].decl.value)
     }
+    // open-quote and close-quote read the element's own `quotes` list,
+    // and move a document-wide depth as a side effect, so the list has
+    // to be in place before the value is resolved.
+    arr[text] noQuotes = []
+    contentQuotePairs = noQuotes
+    if anyQuotes { contentQuotePairs = parseQuotePairs(own.quotes.toAscii()) }
     text content = resolveContent(styleProp(props, 'content'), n)
     if content == null { return }
     // a generated box inherits from the element it is generated in
@@ -829,6 +947,10 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
 
 void func computePseudoElements(n:Node, own:Style) {
     if !anyPseudoRules { return }
+    // One map lookup rules out every element no pseudo rule names,
+    // which is all of them on a page whose only such rule is the user
+    // agent's own q::before.
+    if !pseudoNonTag && pseudoTagSet[n.tag] == null { return }
     computePseudoFor(n, own, 'before')
     computePseudoFor(n, own, 'after')
 }
@@ -1839,6 +1961,9 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'capitalize' { s.textTransform = TT_CAPITALIZE }
         else if t == 'none' { s.textTransform = TT_NONE }
     }
+    s.quotes = isRoot ? '' : parent.quotes
+    ascii qv = styleProp(props, 'quotes')
+    if qv != null { s.quotes = qv.toText() }
     s.whiteSpace = isRoot ? WS_NORMAL : parent.whiteSpace
     ascii ws = styleProp(props, 'white-space')
     if ws != null {

@@ -70,4 +70,7 @@ textarea { white-space: pre-wrap; display: inline-block }
 img { display: inline }
 nobr { white-space: nowrap }
 abbr[title], acronym[title] { text-decoration: underline }
+q { quotes: '"' '"' "'" "'" }
+q::before { content: open-quote }
+q::after { content: close-quote }
 `
