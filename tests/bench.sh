@@ -65,16 +65,25 @@ PAGES="examples/hello.html examples/css.html $BENCH/generated.html"
 human_size() { awk 'BEGIN{printf "%.0f KB", '"$(wc -c < "$1")"'/1024}'; }
 
 # ---- end to end: html file in, rendered PNG out -------------------------
+# Both engines are given the SAME canvas: 800x600. Headless Chromium's
+# --screenshot captures the viewport, so asking this browser for its
+# default full-document canvas compared a 6.4-megapixel encode against a
+# 0.48-megapixel one and charged the difference to layout. Encoding is
+# linear in pixels and dominates both, so the canvas has to match for the
+# number to mean anything.
 CHROME="$(python3 tests/chromium.py which 2>/dev/null)"
+CANVAS_W=800
+CANVAS_H=600
 echo
-echo "## End to end: parse, style, lay out and write a PNG (best of $RUNS, ms)"
+echo "## End to end: parse, style, lay out and write a ${CANVAS_W}x${CANVAS_H} PNG (best of $RUNS, ms)"
 echo
 printf "%-26s %8s %12s %12s\n" "page" "size" "this browser" "chromium"
 for page in $PAGES; do
     best=999999
     for _ in $(seq "$RUNS"); do
         start=$(date +%s%N)
-        "$BENCH/browser" "$page" --screenshot "$BENCH/out.png" --width 800 >/dev/null 2>&1
+        "$BENCH/browser" "$page" --screenshot "$BENCH/out.png" \
+            --width "$CANVAS_W" --height "$CANVAS_H" >/dev/null 2>&1
         end=$(date +%s%N)
         ms=$(( (end - start) / 1000000 ))
         [ "$ms" -lt "$best" ] && best=$ms
@@ -85,7 +94,7 @@ for page in $PAGES; do
         for _ in $(seq "$RUNS"); do
             start=$(date +%s%N)
             "$CHROME" --headless --disable-gpu --no-sandbox --hide-scrollbars \
-                --window-size=800,600 --screenshot="$BENCH/chrome.png" \
+                --window-size="$CANVAS_W,$CANVAS_H" --screenshot="$BENCH/chrome.png" \
                 "file://$PWD/$page" >/dev/null 2>&1
             end=$(date +%s%N)
             ms=$(( (end - start) / 1000000 ))
@@ -106,7 +115,7 @@ for page in $PAGES; do
     best=999999
     for _ in $(seq "$RUNS"); do
         ms=$(ARCHTELOS_TIMING=1 "$BENCH/browser" "$page" --screenshot "$BENCH/out.png" \
-             --width 800 2>&1 | awk '/\[timing\] parse:/ {print $3}')
+             --width "$CANVAS_W" --height "$CANVAS_H" 2>&1 | awk '/\[timing\] parse:/ {print $3}')
         [ -z "$ms" ] && ms=999999
         [ "$ms" -lt "$best" ] && best=$ms
     done
@@ -115,12 +124,33 @@ for page in $PAGES; do
     printf "%-26s %8s %12s %12s\n" "$(basename "$page")" "$(human_size "$page")" "$best" "$cms"
 done
 
+# ---- what a full-document canvas costs -------------------------------------
+# Not a comparison: headless Chromium will not produce this. It is here
+# because the difference is almost all PNG encoding, and that is worth
+# knowing before reading the table above as a layout result.
+echo
+echo "## The same page onto a full-document canvas (this browser only, best of $RUNS, ms)"
+echo
+printf "%-26s %12s %12s\n" "canvas" "ms" "pixels"
+for h in 600 2000 8000; do
+    best=999999
+    for _ in $(seq "$RUNS"); do
+        start=$(date +%s%N)
+        "$BENCH/browser" "$BENCH/generated.html" --screenshot "$BENCH/out.png" \
+            --width "$CANVAS_W" --height "$h" >/dev/null 2>&1
+        end=$(date +%s%N)
+        ms=$(( (end - start) / 1000000 ))
+        [ "$ms" -lt "$best" ] && best=$ms
+    done
+    printf "%-26s %12s %12s\n" "${CANVAS_W}x${h}" "$best" "$(( CANVAS_W * h ))"
+done
+
 # ---- per phase, for the generated page --------------------------------------
 echo
 echo "## Phases of this browser, generated.html at 800px"
 echo
 ARCHTELOS_TIMING=1 "$BENCH/browser" "$BENCH/generated.html" --screenshot "$BENCH/out.png" \
-    --width 800 2>&1 | grep '^\[timing\]' | sed 's/^\[timing\] /  /'
+    --width "$CANVAS_W" --height "$CANVAS_H" 2>&1 | grep '^\[timing\]' | sed 's/^\[timing\] /  /'
 
 # ---- conformance, both engines ------------------------------------------------
 if [ -n "${WPT_HTML_TESTS:-}" ]; then

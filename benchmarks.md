@@ -21,38 +21,60 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
 - **Statistic**: best of 5 runs. The best run is the one least
   disturbed by whatever else the machine was doing; medians and means
   on a shared container mostly measure the neighbours.
+- **Both engines get the same canvas**, 800x600. This is the whole
+  ballgame and it is easy to get wrong — see below.
 - **Pages**: the two examples in this repository, plus
   `generated.html`, which `tests/bench.sh` generates deterministically
   (40 sections, each a heading, a bordered card with a wrapping
   paragraph and a six-item list, and a twelve-row table: 2,728
   elements, 51 KB). Nobody else's HTML is vendored here.
 
-Everything below was measured on 2026-09-14.
+Everything below was measured on 2026-09-15.
+
+## The canvas has to match, or the number means nothing
+
+Headless Chromium's `--screenshot` captures the **viewport**. This
+browser's `--screenshot` defaults to a canvas the height of the whole
+**document**. On `generated.html` that is 800x600 against 800x8000:
+Chromium encodes 480,000 pixels and this browser encodes 6,400,000, more
+than thirteen times as many.
+
+PNG encoding is linear in pixels and dominates both engines at this page
+size, so that difference was being charged to layout:
+
+| Canvas | This browser | Pixels |
+|---|---|---|
+| 800x600 | 134 ms | 480,000 |
+| 800x2000 | 174 ms | 1,600,000 |
+| 800x8000 | 354 ms | 6,400,000 |
+
+Same page, same layout, same paint — 220 ms of the difference is
+encoding. `tests/bench.sh` now gives both engines 800x600.
 
 ## Start-up is not a rendering result
 
-Chromium takes **458 ms** to screenshot a one-line page, and this
-browser takes **6 ms**. That difference is process start-up — a browser
-engine bringing up a multi-process architecture, a JavaScript engine, a
-compositor and a network stack, against a 2.2 MB native binary that
-opens a Cairo surface. It is real if what you want is a screenshot from
-a shell script, and it says nothing at all about rendering speed.
+Chromium takes **457 ms** to screenshot a one-line page at 800x600, and
+this browser takes **27 ms**. That difference is process start-up — a
+browser engine bringing up a multi-process architecture, a JavaScript
+engine, a compositor and a network stack, against a 2.2 MB native binary
+that opens a Cairo surface. It is real if what you want is a screenshot
+from a shell script, and it says nothing about rendering speed.
 
-So the end-to-end table below is reported with that baseline subtracted
-in the last two columns, which is the only honest way to compare the
-work rather than the start-up.
+So the table below is also reported with that baseline subtracted, which
+is the only honest way to compare the work rather than the start-up.
 
-## End to end: HTML file in, rendered PNG out
+## End to end: HTML file in, 800x600 PNG out
 
 | Page | Size | This browser | Chromium | Minus start-up: this | Minus start-up: Chromium |
 |---|---|---|---|---|---|
-| hello.html | 4 KB | 49 ms | 486 ms | 43 ms | 28 ms |
-| css.html | 3 KB | 35 ms | 488 ms | 29 ms | 30 ms |
-| generated.html | 51 KB | 317 ms | 530 ms | 311 ms | 72 ms |
+| hello.html | 4 KB | 36 ms | 497 ms | 9 ms | 40 ms |
+| css.html | 3 KB | 36 ms | 476 ms | 9 ms | 19 ms |
+| generated.html | 51 KB | 132 ms | 548 ms | 105 ms | 91 ms |
 
-On pages of a few kilobytes the two are level once start-up is removed.
-On the 51 KB page Chromium does the same work about **four times
-faster**. That gap is the honest headline, and it grows with page size.
+On the 51 KB page Chromium does the same work about **1.15 times
+faster**. On pages of a few kilobytes this browser is ahead. That is the
+honest headline, and it is a very different one from what an unequal
+canvas produced.
 
 ## HTML parsing alone
 
@@ -63,18 +85,18 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 1 ms | 0.1 ms |
+| hello.html | 4 KB | <1 ms | 0.1 ms |
 | css.html | 3 KB | <1 ms | 0.1 ms |
-| generated.html | 51 KB | 8 ms | 1.7 ms |
+| generated.html | 51 KB | 8 ms | 2.1 ms |
 
-About **5x slower** on the large page, or roughly 6 MB/s against
-30 MB/s. For a tokenizer and tree builder written in a young language
+About **4x slower** on the large page, or roughly 6 MB/s against
+25 MB/s. For a tokenizer and tree builder written in a young language
 against one of the most optimized parsers in software, that is a
 reasonable place to be, and it is not where the remaining time goes.
 
 ## Where the time actually goes
 
-`generated.html` at 800 px, 2,728 elements:
+`generated.html` at 800x600, 2,728 elements:
 
 | Phase | Time |
 |---|---|
@@ -82,24 +104,24 @@ reasonable place to be, and it is not where the remaining time goes.
 | parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 52 ms |
-| layout | 52 ms |
-| paint | 15 ms |
+| cascade | 54 ms |
+| layout | 43 ms |
+| paint | 4 ms |
 
-Parsing is 6% of the total. The cascade and layout are 82% of it, so
-that is where any further work belongs — not in the parser.
+The cascade and layout are **90%** of it. Parsing is 7%, and paint —
+once it is not also encoding six megapixels — is 4 ms.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements, and the three sub-phases (collect
-15 ms, apply 18 ms, compute 16 ms) are evenly matched, which means
-there is no single hot spot left to remove — only the constant factor
-of doing it in a language with no hash-consed strings.
+declarations across 2,728 elements. Collecting them is 15 ms, of which
+**8 ms is HTML presentational attributes** — computed for every element,
+though almost none carry one. Applying is 10 ms and computing 25 ms.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (9 ms total); building the box tree is 19 ms and
-inline placement 13 ms.
+cache and reach Cairo (9 ms total); building the box tree is 15 ms and
+inline placement 12 ms.
 
 ## Conformance, measured on both engines
+
 
 The same 1,652 cases of the WHATWG HTML standard's own tree-construction
 corpus, run through both parsers and compared against the same expected

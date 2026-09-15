@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The benchmark was comparing unequal work
+
+Headless Chromium's `--screenshot` captures the viewport; this browser's
+defaults to a canvas the height of the whole document. On the 51 KB
+benchmark page that is 800x600 against 800x8000 — Chromium encoding
+480,000 pixels and this browser 6,400,000. PNG encoding is linear in
+pixels and dominates both engines at that size, so thirteen times the
+pixels were being charged to layout.
+
+`tests/bench.sh` now pins both engines to 800x600. On equal terms
+Chromium renders the page about **1.15 times faster**, where the old
+table said four times. The same page onto 800x8000 costs 354 ms against
+134 ms, and all of that difference is encoding; the run records it as
+its own row rather than as a comparison.
+
+Correcting the canvas also moved paint from 15 ms to 4 ms and exposed
+the real hot spots: the cascade and layout are 90% of the time, and 8 ms
+of the cascade's 15 ms collection phase is the HTML presentational
+attribute pass, run for all 2,728 elements though almost none carry such
+an attribute. todo.md is ordered by that now.
+
 ### The CSS gap, measured against the snapshot
 
 `css-2026.md` states where the style engine stands against the CSS

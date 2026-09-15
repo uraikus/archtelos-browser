@@ -153,18 +153,27 @@ rest. In rough order of how often real pages need it:
 
 ## Performance
 
-Parsing is 6% of the time to render a 51 KB page; the cascade is 34%
-and layout 31% (benchmarks.md). Neither has an obvious hot spot left —
-they are constant-factor costs spread evenly. Worth trying, in order:
+With both engines given the same 800x600 canvas, Chromium renders the
+51 KB page about 1.15 times faster (benchmarks.md). The cascade and
+layout are 90% of our time. In order:
 
+- **Skip the presentational-attribute pass for elements that have no
+  presentational attributes.** It is 8 ms of the cascade's 15 ms
+  collection phase, run for all 2,728 elements, though almost none carry
+  `bgcolor`, `align`, `width` or a `<font>` attribute.
 - **Share computed styles between elements whose matched declarations
-  are identical.** Most elements in a real document have the same
-  declarations as a sibling.
+  are identical.** Computing is 25 ms, the single largest sub-phase, and
+  most elements in a real document match exactly what a sibling matches.
 - **Cache the box tree across relayouts** when only the viewport width
-  changed, instead of rebuilding it.
+  changed, instead of rebuilding it. Building it is 15 ms.
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
+
+**Do not compare unequal canvases again.** PNG encoding is linear in
+pixels and dominates at this page size: the same page onto 800x8000
+instead of 800x600 costs 354 ms instead of 134 ms, and all of that
+difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work
 
