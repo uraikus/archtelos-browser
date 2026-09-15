@@ -10,6 +10,23 @@ Ordered by how much a fix would be worth here.
 
 ---
 
+## Enums
+
+Every small value type in this renderer is a run of `const int`:
+`DISPLAY_*`, `BOX_*`, `ALIGN_*`, `DECO_*`, `WS_*`, `LIST_*`, `VALIGN_*`,
+`BORDER_*`, `TT_*`, `COMB_*`, `ATTR_*`, `FRAG_*`, `ORIGIN_*`,
+`CSSWIDE_*`. They are prefixed by hand because nothing scopes them, and
+two of them can quietly share a value: `BOX_IFRAME = 10` was added next
+to `BOX_IMAGE = 5` and collided with `BOX_BR = 10` further down the same
+run, so every frame was laid out as a line break.
+
+**Proposal.** `enum Box { Block, Inline, Text, ... }`, with values
+distinct by construction, the name scoped to the type, and a switch over
+one required to be exhaustive.
+
+**What it would delete here.** About sixty `const int` declarations and
+every naming prefix on them, plus the class of bug above.
+
 ## Integer division and bitwise operators
 
 `/` is float division whatever its operands and there are no bitwise

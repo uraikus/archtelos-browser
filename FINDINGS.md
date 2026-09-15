@@ -8,6 +8,19 @@ repository uses. What Festina should *gain* as a result is
 
 Measured against Festina 0.44 on Linux x86-64, clang 18, Cairo 1.18.
 
+## Constants with the same value collide silently
+
+There are no enums, so every small value type here is a run of
+`const int` with a naming prefix. Adding one in the middle of such a run
+is how `BOX_IFRAME = 10` came to share its value with `BOX_BR = 10`.
+Nothing warned: every frame box was then treated as a line break, laid
+out as nothing, and the failure showed up four call levels away as a box
+with a width of zero.
+
+A type whose values are named and distinct by construction would have
+made it a compile error. The cost is not hypothetical — it is the whole
+debugging session that found it.
+
 ## No integer division, and no bitwise operators
 
 `/` is float division whatever its operands, so integer division is

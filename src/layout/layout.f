@@ -22,6 +22,7 @@ const int BOX_TABLE = 7
 const int BOX_ROW = 8
 const int BOX_CELL = 9
 const int BOX_BR = 10
+const int BOX_IFRAME = 11
 
 const int FRAG_TEXT = 1
 const int FRAG_ATOMIC = 2
@@ -66,6 +67,7 @@ struct Box {
     image:img               // BOX_IMAGE
     imgW:int
     imgH:int
+    frameKey:text           // BOX_IFRAME: key into loadedFrames
     isListItem:bool
     listIndex:int
     baseline:int            // distance from the top border edge to the last baseline
@@ -102,6 +104,27 @@ struct Line {
 // Images the shell has loaded, keyed by resolved URL; buildBox reads
 // them through the node's 'data-resolved-src' attribute.
 map[img] loadedImages = {}
+
+// Laid-out documents for the frames on this page, keyed by resolved URL
+// exactly as loadedImages is. The box tree is built once per URL and
+// shared by every frame naming it.
+map[Box] loadedFrames = {}
+
+// The size a frame takes when nothing says otherwise (HTML §14.3.3).
+const int FRAME_DEFAULT_W = 300
+const int FRAME_DEFAULT_H = 150
+
+int func frameBoxWidth(b:Box, cw:int) {
+    Len w = b.style.width
+    if !lenIsAuto(w) { return maxInt(resolveLen(w, cw, -1), 0) }
+    return FRAME_DEFAULT_W
+}
+
+int func frameBoxHeight(b:Box) {
+    Len h = b.style.height
+    if !lenIsAuto(h) { return maxInt(resolveLen(h, 0, -1), 0) }
+    return FRAME_DEFAULT_H
+}
 
 // ---- fonts and measurement -------------------------------------------
 
@@ -238,7 +261,7 @@ Style func anonymousStyle(parent:Style) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_BR
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR
 }
 
 bool func textIsCollapsibleBlank(t:text) {
@@ -305,6 +328,15 @@ Box func buildBox(n:Node, parentStyle:Style) {
                 b.imgH = loaded.height
             }
         }
+        b.blockLevel = displayIsBlockLevel(d)
+        return b
+    }
+    // A frame renders the document its src names, never its own child
+    // nodes: those are fallback content for a UA with no nested
+    // browsing context, and this one has one.
+    if tag == 'iframe' || tag == 'frame' {
+        Box b = newBox(BOX_IFRAME, n, s)
+        b.frameKey = getAttr(n, 'data-frame-src')
         b.blockLevel = displayIsBlockLevel(d)
         return b
     }
@@ -577,6 +609,12 @@ void func computeIntrinsicUncounted(b:Box) {
         b.maxContent = b.minContent
         return
     }
+    if b.kind == BOX_IFRAME {
+        int w = frameBoxWidth(b, 0)
+        b.minContent = w + horizontalExtras(b, 0)
+        b.maxContent = b.minContent
+        return
+    }
     if b.kind == BOX_BR {
         b.minContent = 0
         b.maxContent = 0
@@ -789,6 +827,14 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if topMarginApplied { b.mt = 0 }
     if b.kind == BOX_TABLE {
         layoutTable(b, cx, y, cw)
+        return
+    }
+    if b.kind == BOX_IFRAME {
+        int w = frameBoxWidth(b, cw)
+        b.w = w + b.pl + b.pr + b.bl + b.br
+        b.h = frameBoxHeight(b) + b.pt + b.pb + b.bt + b.bb
+        b.x = cx + b.ml
+        b.y = y + b.mt
         return
     }
     if b.kind == BOX_IMAGE {
@@ -1694,4 +1740,30 @@ text func dumpInlineAtomics(b:Box, indent:int) {
         }
     }
     return out
+}
+
+
+// ---- helpers for the tests --------------------------------------------
+
+Box func findBoxForTag(root:Box, tag:text) {
+    if root == null { return null }
+    if root.node != null && htmlTagOf(root.node.id) == tag { return root }
+    for int i = 0, i < root.children.length, i++ {
+        Box f = findBoxForTag(root.children[i], tag)
+        if f != null { return f }
+    }
+    return null
+}
+
+bool func boxTreeHasText(root:Box, needle:text) {
+    if root == null { return false }
+    if root.kind == BOX_TEXT && root.content != null {
+        ascii hay = root.content.toAscii()
+        ascii nd = needle.toAscii()
+        if hay != null && nd != null && asciiIndexOf(hay, nd, 0) >= 0 { return true }
+    }
+    for int i = 0, i < root.children.length, i++ {
+        if boxTreeHasText(root.children[i], needle) { return true }
+    }
+    return false
 }

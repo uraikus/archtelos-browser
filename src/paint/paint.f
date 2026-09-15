@@ -281,6 +281,10 @@ void func paintBox(b:Box) {
         if !s.hidden { paintImage(b) }
         return
     }
+    if b.kind == BOX_IFRAME {
+        if !s.hidden { paintFrame(b) }
+        return
+    }
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
     paintLines(b)
@@ -289,6 +293,39 @@ void func paintBox(b:Box) {
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
         paintBox(c)
     }
+}
+
+// A frame paints the document it loaded, translated into its content
+// box. The tree is reached through loadedFrames by key rather than held
+// on the box: a field of the box's own type is the back-pointer shape
+// CLAUDE.md §6 rules out. There is no clip region on the canvas
+// (todo.md), so the vertical extent is enforced by the same cull
+// paintDocument already does and wider content can still spill.
+void func paintFrame(b:Box) {
+    int cx = b.x + b.bl + b.pl
+    int cy = b.y + b.bt + b.pt
+    int cw = b.w - b.bl - b.br - b.pl - b.pr
+    int ch = b.h - b.bt - b.bb - b.pt - b.pb
+    if cw <= 0 || ch <= 0 { return }
+    applyFillColor(COLOR_WHITE)
+    drawRect(cx, cy, cw, ch)
+    fillAlpha(1.0)
+    if b.frameKey == null { return }
+    Box inner = loadedFrames[b.frameKey]
+    if inner == null { return }
+    int savedTop = paintTop
+    int savedBottom = paintBottom
+    text savedFont = currentFontKey
+    saveState()
+    translate(cx, cy)
+    paintTop = 0
+    paintBottom = ch
+    currentFontKey = ''
+    paintBox(inner)
+    restoreState()
+    paintTop = savedTop
+    paintBottom = savedBottom
+    currentFontKey = savedFont
 }
 
 // The document's canvas background: the body's background propagates

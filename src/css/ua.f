@@ -6,7 +6,8 @@ text uaStylesheetText = `
 html, body, div, p, h1, h2, h3, h4, h5, h6, ul, ol, dl, dt, dd, blockquote, pre,
 hr, table, form, fieldset, legend, address, article, aside, footer, header, main,
 nav, section, figure, figcaption, details, summary, center, menu, dir, hgroup,
-frameset, frame, iframe, optgroup, option, select { display: block }
+frameset, optgroup, option, select { display: block }
+frame, iframe { display: inline-block; border: 1px solid #808080 }
 head, script, style, title, meta, link, template, base, area, param,
 datalist, [hidden], input[type=hidden] { display: none }
 li { display: list-item }
