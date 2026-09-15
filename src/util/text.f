@@ -26,6 +26,7 @@ const int CH_STAR = 42
 const int CH_PLUS = 43
 const int CH_COMMA = 44
 const int CH_MINUS = 45
+const int CH_N_LOWER = 110
 const int CH_DOT = 46
 const int CH_SLASH = 47
 const int CH_0 = 48

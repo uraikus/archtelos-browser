@@ -127,13 +127,16 @@ whether the feature occurs at all. Anything that adds a pass over the
 tree, or a test inside a loop over every box or every declaration, gets
 that flag before it lands, not after a benchmark notices.
 
-**Give a property's row in `tests/conformance/css-properties.txt` a real
-value before implementing it.** A row reading `initial` computes to the
-initial value, so the property can never register as implemented however
-complete the implementation is. Most rows still read `initial`, which is
-correct for a property nothing implements and silently wrong the moment
-one does. Fixing the row is part of the work, not an afterthought — the
-count in README.md and css-2026.md is the deliverable.
+**An instrument must be able to fail.** A property row reading `initial`
+computes to the initial value, so the property can never register as
+implemented however complete the implementation is. A selector that
+matches nothing in the fixture is graded the same way whether it is
+implemented or dropped. Both of those shipped here and had to be found.
+Before implementing something, check that the thing measuring it would
+notice — give the property's row in `tests/conformance/css-properties.txt`
+a real value, and the selector something to match — because the count in
+README.md and css-2026.md is the deliverable, and a measurement that
+cannot move is not one.
 
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
@@ -231,7 +234,7 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f` |
 | `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade rules, values, layout geometry, box properties, positioning, floats, flex, iframes |
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor` |
-| `tests/conformance/` | the WPT tree-construction runner |
+| `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
 | `tests/maxrss.py` | peak resident set size of a command, for the memory benchmark |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |

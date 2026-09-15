@@ -70,6 +70,25 @@ else
     echo "COMPILE FAILED: tests/conformance/elements.f"; failed=1
 fi
 
+# Which CSS selectors match the same elements Chromium matches, on one
+# fixture document. The expectations are checked in; when Chromium is
+# present they are regenerated first, so a selector whose meaning this
+# project got wrong cannot be frozen into the file it is graded against.
+SELECTORS_MIN=56
+if [ -n "$(python3 tests/chromium.py which 2>/dev/null)" ]; then
+    python3 tests/chromium.py selectors tests/fixtures/selectors.html \
+        tests/conformance/css-selectors.txt > "$BUILD/chromium-selectors.txt" 2>/dev/null \
+        && [ -s "$BUILD/chromium-selectors.txt" ] \
+        && cp "$BUILD/chromium-selectors.txt" tests/conformance/chromium-selectors.txt
+fi
+if compile tests/conformance/selectors.f "$BUILD/selectors" >/dev/null; then
+    if ! run "$BUILD/selectors" --min "$SELECTORS_MIN"; then
+        echo "FAILED: tests/conformance/selectors.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/selectors.f"; failed=1
+fi
+
 if compile tests/conformance/html5lib.f "$BUILD/conformance" >/dev/null; then
     if ! run "$BUILD/conformance" --min "$CONFORMANCE_MIN"; then
         echo "FAILED: tests/conformance/html5lib.f"; failed=1

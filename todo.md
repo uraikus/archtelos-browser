@@ -40,11 +40,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    it is; `baseline` alignment; and auto margins inside a flex
    container, which absorb the free space before `justify-content` sees
    it.
-3. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
-   `:nth-last-child` / `:nth-of-type` / `:nth-last-of-type` /
-   `:only-of-type` family, `:empty`, `:target`, `:enabled`, `:disabled`,
-   `:checked`, `:lang()`, and pseudo-elements — which generated content
-   needs anyway.
+3. **Pseudo-elements**: `::before`, `::after`, `::first-line`,
+   `::first-letter`. The rest of Selectors 3 is done and measured;
+   these are what is left of it, and generated content needs them
+   anyway. They are also the one part of Selectors 3 the instrument
+   cannot grade, because they select part of an element rather than an
+   element, so `querySelectorAll` has no answer to compare against.
 4. **CSS Images 3, completed**: `radial-gradient()` and
    `conic-gradient()`, gradient interpolation hints, `object-fit` and
    `object-position`. Linear gradients are done; a radial one needs the

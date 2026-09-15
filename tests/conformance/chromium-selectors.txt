@@ -1,0 +1,61 @@
+*	? ? ? ? body d1 p1 p2 p3 s1 p4 d2 h1 p5 u1 l1 l2 l3 l4 l5 l6 d3 p6 p7 d4 a1 a2 f1 i1 i2 i3 i4 sel1 o1 o2 t1 b1 d5 s2 sec1 p8 p9
+p	p1 p2 p3 p4 p5 p6 p7 p8 p9
+#p1	p1
+.lead	p1 p3
+.lead.tail	p3
+p.lead	p1 p3
+div p	p1 p2 p3 p4 p5 p6 p7
+div > p	p1 p2 p3 p4 p5 p6 p7
+h2 + p	p5
+h2 ~ ul	u1
+p, span	p1 p2 p3 s1 p4 p5 p6 p7 s2 p8 p9
+[data-kind]	d1 d2 d3
+[data-kind="alpha"]	d1
+[data-kind~="alpha"]	d1
+[data-kind|="alpha"]	d1 d2
+[data-kind^="alpha"]	d1 d2
+[data-kind$="beta"]	d2
+[data-kind*="pha"]	d1 d2
+[title]	d1
+:root	?
+p:first-child	p1 p6 p8
+p:last-child	p4 p9
+span:only-child	s2
+li:nth-child(1)	l1
+li:nth-child(odd)	l1 l3 l5
+li:nth-child(even)	l2 l4 l6
+li:nth-child(2n)	l2 l4 l6
+li:nth-child(2n+1)	l1 l3 l5
+li:nth-child(3n+2)	l2 l5
+li:nth-child(-n+3)	l1 l2 l3
+li:nth-child(n)	l1 l2 l3 l4 l5 l6
+li:nth-child(n+3)	l3 l4 l5 l6
+li:nth-last-child(1)	l6
+li:nth-last-child(2)	l5
+li:nth-last-child(odd)	l2 l4 l6
+li:nth-last-child(2n+1)	l2 l4 l6
+p:first-of-type	p1 p5 p6 p8
+p:last-of-type	p4 p5 p7 p9
+p:only-of-type	p5
+p:nth-of-type(2)	p2 p7 p9
+p:nth-of-type(2n)	p2 p4 p7 p9
+p:nth-last-of-type(1)	p4 p5 p7 p9
+p:nth-last-of-type(2n+1)	p2 p4 p5 p7 p9
+:empty	? p7 d4 i1 i2 i3 i4
+p:empty	p7
+div:empty	d4
+a:link	a1
+:lang(fr)	d3 p6 p7 d4 a1 a2 f1 i1 i2 i3 i4 sel1 o1 o2 t1 b1
+input:enabled	i1 i3 i4
+input:disabled	i2
+input:checked	i3
+option:checked	o1
+p:not(.lead)	p2 p4 p5 p6 p7 p8 p9
+div:not(.box)	d4 d5
+li:not(:first-child)	l2 l3 l4 l5 l6
+:not(p)	? ? ? ? body d1 s1 d2 h1 u1 l1 l2 l3 l4 l5 l6 d3 d4 a1 a2 f1 i1 i2 i3 i4 sel1 o1 o2 t1 b1 d5 s2 sec1
+:is(h2, span)	s1 h1 s2
+:where(h2, span)	s1 h1 s2
+div:has(.lead)	d1
+li:not(:first-child, :last-child)	l2 l3 l4 l5
+[data-kind="ALPHA" i]	d1

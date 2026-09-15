@@ -213,6 +213,57 @@ Decl func parseOneDeclaration(piece:ascii) {
 
 // ---- selectors -----------------------------------------------------
 
+// `An+B` (Selectors 3 SS6.6.5): `odd`, `even`, an integer, `n`, `2n`,
+// `2n+1`, `-n+3`, `+3`. Answers false for anything else, which matters:
+// the old parser read `2n` with toInt() and got 2, so `:nth-child(2n)`
+// silently matched the second child instead of every even one.
+//
+// Two results out of one function, through globals: see FINDINGS.md,
+// "one value out of a function".
+int anbA = 0
+int anbB = 0
+
+bool func parseAnPlusB(argIn:ascii) {
+    ascii a = asciiTrim(argIn)
+    if a == null || a.length == 0 { return false }
+    if a == 'odd' { anbA = 2  anbB = 1  return true }
+    if a == 'even' { anbA = 2  anbB = 0  return true }
+
+    int i = 0
+    int n = a.length
+    int sign = 1
+    if a.charCodeAt(i) == CH_PLUS { i++ }
+    else if a.charCodeAt(i) == CH_MINUS { sign = -1  i++ }
+
+    int digitsStart = i
+    while i < n && isDigitCode(a.charCodeAt(i)) { i++ }
+    bool hadDigits = i > digitsStart
+    int lead = hadDigits ? a.slice(digitsStart, i).toText().toInt() : 1
+
+    if i >= n {
+        // a plain integer: An+B with A = 0
+        if !hadDigits { return false }
+        anbA = 0
+        anbB = sign * lead
+        return true
+    }
+    if a.charCodeAt(i) != CH_N_LOWER { return false }
+    i++
+    anbA = sign * lead
+
+    if i >= n { anbB = 0  return true }
+    int bSign = 1
+    if a.charCodeAt(i) == CH_PLUS { i++ }
+    else if a.charCodeAt(i) == CH_MINUS { bSign = -1  i++ }
+    else { return false }
+    while i < n && isSpaceCode(a.charCodeAt(i)) { i++ }
+    int bStart = i
+    while i < n && isDigitCode(a.charCodeAt(i)) { i++ }
+    if i == bStart || i < n { return false }
+    anbB = bSign * a.slice(bStart, i).toText().toInt()
+    return true
+}
+
 Compound func newCompound() {
     Compound c
     c.tag = ''
@@ -286,10 +337,17 @@ Compound func parseCompound() {
                     if selPos < arg.length { comp.unsupported = true }
                     selSrc = savedSrc
                     selPos = savedPos
-                } else if name == 'nth-child' {
-                    ascii a = asciiLower(arg)
-                    if a == 'odd' || a == 'even' || (a.length > 0 && isDigitCode(a.charCodeAt(0)) && a.toText().toInt() > 0) {
-                        comp.pseudos.push(`nth-child:${a.toText()}`)
+                } else if name == 'nth-child' || name == 'nth-last-child'
+                    || name == 'nth-of-type' || name == 'nth-last-of-type' {
+                    if parseAnPlusB(asciiLower(arg)) {
+                        comp.pseudos.push(`${name}:${anbA}:${anbB}`)
+                    } else {
+                        comp.unsupported = true
+                    }
+                } else if name == 'lang' {
+                    ascii a = asciiLower(asciiTrim(arg))
+                    if a != null && a.length > 0 {
+                        comp.pseudos.push(`lang:${a.toText()}`)
                     } else {
                         comp.unsupported = true
                     }
@@ -298,10 +356,13 @@ Compound func parseCompound() {
                 }
             } else {
                 if name == 'first-child' || name == 'last-child' || name == 'only-child'
-                    || name == 'root' || name == 'link' || name == 'any-link' || name == 'first-of-type' || name == 'last-of-type' {
+                    || name == 'root' || name == 'link' || name == 'any-link'
+                    || name == 'first-of-type' || name == 'last-of-type' || name == 'only-of-type'
+                    || name == 'empty' || name == 'enabled' || name == 'disabled'
+                    || name == 'checked' || name == 'target' {
                     comp.pseudos.push(name.toText())
                 } else {
-                    // :hover, :focus, :visited, :checked ... never match here
+                    // :hover, :focus, :visited ... never match here
                     comp.unsupported = true
                 }
             }

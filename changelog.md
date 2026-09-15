@@ -71,6 +71,50 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### Selectors, measured against Chromium and then completed
+
+A third instrument joins the two that grade CSS properties and default
+element displays. `tests/conformance/css-selectors.txt` lists 61
+selectors; each is run against one fixture document and the elements it
+matches are compared with the elements Chromium's `querySelectorAll`
+matches on the same document. A selector counts only when the two sets
+are identical -- parsing it, or matching some of the right elements, is
+not implementing it.
+
+It started at **34 of 61** and found a bug in the first run.
+`:nth-child(2n)` matched the second child: the argument was read with
+`toInt()`, which answers 2 for `2n`, so a selector that should match
+every even child silently matched exactly one. That is worse than not
+supporting it, and nothing in the suite could see it.
+
+What the measurement then drove:
+
+- **The `An+B` grammar**, properly parsed -- `odd`, `even`, an integer,
+  `n`, `2n`, `2n+1`, `-n+3`, `+3` -- and rejected when it is not one of
+  those, rather than mis-read. Seventeen unit checks pin the forms, and
+  five more pin that `An+B` decides membership rather than a position.
+- **`:nth-last-child()`, `:nth-of-type()`, `:nth-last-of-type()` and
+  `:only-of-type`**, which share one index-and-match routine with
+  `:nth-child()`.
+- **`:empty`**, **`:enabled`**, **`:disabled`**, **`:checked`** and
+  **`:lang()`**, the last of which walks to the nearest ancestor with a
+  `lang` attribute and matches `fr` against `fr-CA`.
+- **`:target`**, which parses and matches nothing -- correct for a
+  document that was never navigated to a fragment.
+
+The count is **56 of 61**, and the five that remain are all Selectors 4:
+`:is()`, `:where()`, `:has()`, a selector list inside `:not()`, and the
+attribute case-sensitivity flag. Every Selectors 3 entry passes.
+
+Two things about the instrument itself, because both were nearly wrong.
+A comment marker of `#` silently dropped every id selector from the
+list, since `#p1` is a selector and not a comment; a comment is `# `
+now, with the space required. And `:has()` counted as working, because
+the selector chosen for it matched nothing in the fixture and an engine
+that drops a selector agrees with one that implements it. Every selector
+in the list now matches at least one element, and the runner fails the
+run if that stops being true.
+
 ### An off-axis gradient was stippled, and the tests said it was fine
 
 A gradient at an angle was drawn as a run of bands, each the polygon

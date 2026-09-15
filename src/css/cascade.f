@@ -201,20 +201,104 @@ bool func pseudoMatches(nid:int, name:text) {
         }
         return true
     }
-    ascii a = name.toAscii()
-    if asciiStartsWith(a, 'nth-child:', 0) {
-        ascii arg = a.slice(10, a.length)
-        int pos = 1
-        int sib = prevElementSiblingOf(nid)
-        while sib > 0 {
-            pos++
-            sib = prevElementSiblingOf(sib)
+    if name == 'only-of-type' {
+        return pseudoMatches(nid, 'first-of-type') && pseudoMatches(nid, 'last-of-type')
+    }
+    if name == 'empty' {
+        // Selectors 3 SS6.6.5.7: no children at all, not even text.
+        // A comment is not a child for this purpose; whitespace is.
+        Node e = nodeRegistry[nid]
+        for int i = 0, i < e.children.length, i++ {
+            Node c = e.children[i]
+            if c.kind == NODE_ELEMENT { return false }
+            if c.kind == NODE_TEXT && c.data != null && c.data.length > 0 { return false }
         }
-        if arg == 'odd' { return pos % 2 == 1 }
-        if arg == 'even' { return pos % 2 == 0 }
-        return pos == arg.toText().toInt()
+        return true
+    }
+    if name == 'enabled' || name == 'disabled' {
+        if !isEnableableTag(nodeRegistry[nid].tag) { return false }
+        bool off = hasAttrOf(nid, 'disabled')
+        return name == 'disabled' ? off : !off
+    }
+    if name == 'checked' {
+        text tag = nodeRegistry[nid].tag
+        if tag == 'option' { return hasAttrOf(nid, 'selected') }
+        if tag != 'input' { return false }
+        text t = attrOf(nid, 'type')
+        text lower = t == null ? '' : asciiLower(t.toAscii()).toText()
+        if lower != 'checkbox' && lower != 'radio' { return false }
+        return hasAttrOf(nid, 'checked')
+    }
+    if name == 'target' {
+        // No fragment is ever navigated to, so nothing is the target.
+        // Matching nothing is what the standard says for that state.
+        return false
+    }
+
+    ascii a = name.toAscii()
+    if asciiStartsWith(a, 'lang:', 0) {
+        ascii want = a.slice(5, a.length)
+        // the nearest ancestor with a lang attribute decides
+        int cur = nid
+        while cur > 0 {
+            text got = attrOf(cur, 'lang')
+            if got != null && got != '' {
+                ascii have = asciiLower(got.toAscii())
+                if have == want { return true }
+                // `:lang(fr)` also matches `fr-CA`
+                if have.length > want.length && asciiStartsWith(have, want, 0)
+                    && have.charCodeAt(want.length) == CH_MINUS { return true }
+                return false
+            }
+            cur = nodeRegistry[cur].parentId
+        }
+        return false
+    }
+
+    // the nth family: `<name>:<A>:<B>`, matching when the element's
+    // index is A*n + B for some integer n >= 0 (Selectors 3 SS6.6.5).
+    bool fromEnd = asciiStartsWith(a, 'nth-last-child:', 0) || asciiStartsWith(a, 'nth-last-of-type:', 0)
+    bool ofType = asciiStartsWith(a, 'nth-of-type:', 0) || asciiStartsWith(a, 'nth-last-of-type:', 0)
+    bool isNth = ofType || asciiStartsWith(a, 'nth-child:', 0) || asciiStartsWith(a, 'nth-last-child:', 0)
+    if isNth {
+        int colon = asciiIndexOf(a, ':'.toAscii(), 0)
+        int colon2 = asciiIndexOf(a, ':'.toAscii(), colon + 1)
+        if colon < 0 || colon2 < 0 { return false }
+        int stepA = a.slice(colon + 1, colon2).toText().toInt()
+        int offB = a.slice(colon2 + 1, a.length).toText().toInt()
+        int pos = nthIndexOf(nid, fromEnd, ofType)
+        return nthMatches(pos, stepA, offB)
     }
     return false
+}
+
+// Whether `disabled` means anything on this element (HTML's own list of
+// form controls). `:enabled` matches only elements that could be
+// disabled, so a <div> is neither enabled nor disabled.
+bool func isEnableableTag(tag:text) {
+    return tag == 'input' || tag == 'button' || tag == 'select' || tag == 'textarea'
+        || tag == 'option' || tag == 'optgroup' || tag == 'fieldset'
+}
+
+// The element's 1-based index among its siblings, counted from the end
+// when `fromEnd`, and among siblings of the same tag when `ofType`.
+int func nthIndexOf(nid:int, fromEnd:bool, ofType:bool) {
+    text tag = nodeRegistry[nid].tag
+    int pos = 1
+    int sib = fromEnd ? nextElementSiblingOf(nid) : prevElementSiblingOf(nid)
+    while sib > 0 {
+        if !ofType || nodeRegistry[sib].tag == tag { pos++ }
+        sib = fromEnd ? nextElementSiblingOf(sib) : prevElementSiblingOf(sib)
+    }
+    return pos
+}
+
+// Is there an integer n >= 0 with pos == stepA * n + offB?
+bool func nthMatches(pos:int, stepA:int, offB:int) {
+    if stepA == 0 { return pos == offB }
+    int diff = pos - offB
+    if diff % stepA != 0 { return false }
+    return Math.floorDiv(diff, stepA) >= 0
 }
 
 bool func matchCompound(nid:int, c:Compound) {

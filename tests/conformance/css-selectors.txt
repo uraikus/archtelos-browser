@@ -1,0 +1,89 @@
+# Selectors this instrument asks both engines about, one per line, run
+# against tests/fixtures/selectors.html. A selector counts as
+# implemented when it matches exactly the elements Chromium matches --
+# not merely when it parses.
+#
+# The list is Selectors 3's own feature set plus the parts of Selectors
+# 4 the snapshot's lowest class mentions, so the count says what is left
+# rather than only what works. It may not go down (CLAUDE.md §2).
+#
+# A selector that matches nothing in the fixture proves nothing: an
+# engine that drops it agrees with one that implements it. Every
+# selector here matches at least one element in Chromium, and
+# tests/run.sh fails the run if that stops being true.
+#
+# A blank line is skipped, and so is a comment -- which is "# " or a
+# bare "#", with the space required, because "#p1" is an id selector.
+
+# --- Selectors 3: simple selectors
+*
+p
+#p1
+.lead
+.lead.tail
+p.lead
+div p
+div > p
+h2 + p
+h2 ~ ul
+p, span
+
+# --- Selectors 3: attribute selectors
+[data-kind]
+[data-kind="alpha"]
+[data-kind~="alpha"]
+[data-kind|="alpha"]
+[data-kind^="alpha"]
+[data-kind$="beta"]
+[data-kind*="pha"]
+[title]
+
+# --- Selectors 3: structural pseudo-classes
+:root
+p:first-child
+p:last-child
+span:only-child
+li:nth-child(1)
+li:nth-child(odd)
+li:nth-child(even)
+li:nth-child(2n)
+li:nth-child(2n+1)
+li:nth-child(3n+2)
+li:nth-child(-n+3)
+li:nth-child(n)
+li:nth-child(n+3)
+li:nth-last-child(1)
+li:nth-last-child(2)
+li:nth-last-child(odd)
+li:nth-last-child(2n+1)
+p:first-of-type
+p:last-of-type
+p:only-of-type
+p:nth-of-type(2)
+p:nth-of-type(2n)
+p:nth-last-of-type(1)
+p:nth-last-of-type(2n+1)
+:empty
+p:empty
+div:empty
+
+# --- Selectors 3: other pseudo-classes
+a:link
+:lang(fr)
+input:enabled
+input:disabled
+input:checked
+option:checked
+
+# --- Selectors 3: negation
+p:not(.lead)
+div:not(.box)
+li:not(:first-child)
+:not(p)
+
+# --- Selectors 4, in the snapshot's lowest class
+:is(h2, span)
+:where(h2, span)
+div:has(.lead)
+li:not(:first-child, :last-child)
+[data-kind="ALPHA" i]

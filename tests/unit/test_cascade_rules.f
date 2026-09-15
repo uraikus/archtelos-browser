@@ -156,4 +156,12 @@ collectElements(sc2, 'i', is2)
 check(is2[0].style.serial != is2[1].style.serial, 'inheriting a different colour does not share')
 checkEqInt(is2[0].style.color, packColor(255, 0, 0, 255), 'the first inherits red')
 checkEqInt(is2[1].style.color, packColor(0, 0, 255, 255), 'the second inherits blue')
+// An+B decides membership, not a position: `pos` matches when there is
+// an integer n >= 0 with pos == A*n + B.
+check(nthMatches(1, 2, 1) && nthMatches(3, 2, 1) && !nthMatches(2, 2, 1), '2n+1 is the odd ones')
+check(nthMatches(2, 2, 0) && !nthMatches(1, 2, 0), '2n is the even ones')
+check(nthMatches(3, 0, 3) && !nthMatches(4, 0, 3), '0n+3 is only the third')
+check(nthMatches(1, -1, 3) && nthMatches(3, -1, 3) && !nthMatches(4, -1, 3), '-n+3 is the first three')
+check(nthMatches(3, 1, 3) && nthMatches(9, 1, 3) && !nthMatches(2, 1, 3), 'n+3 is the third onwards')
+
 finish('cascade rules')

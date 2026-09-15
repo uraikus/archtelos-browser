@@ -14,6 +14,11 @@ Two modes, both used by tests/bench.sh:
   parse        Times Chromium's HTML parser on a set of pages, using
                DOMParser inside the page and reporting milliseconds.
 
+  selectors    Reports which element ids each selector in a list matches
+               in a fixture document, using querySelectorAll, so this
+               project's selector engine can be compared against the
+               browser's own rather than against an opinion.
+
   render       Times parse, style and layout on a set of pages, inside
                the page, so the number excludes process start-up. The
                alternative -- timing the whole command and subtracting a
@@ -364,6 +369,61 @@ report(res);
     return 0
 
 
+def selector_matches(fixture, selector_file):
+    """Which element ids each selector matches, according to Chromium.
+
+    The fixture is loaded as a real document and each selector is run
+    through querySelectorAll, so the answer is the browser's own
+    matching rather than a reimplementation of it. Prints one line per
+    selector: the selector, a tab, then the matched ids separated by
+    spaces (empty when none matched, the word INVALID when Chromium
+    rejects the selector).
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("chromium: not found; skipping", file=sys.stderr)
+        return 1
+    with open(fixture, "rb") as fh:
+        doc = fh.read().decode("utf-8", "replace")
+    selectors = []
+    with open(selector_file, "rb") as fh:
+        for raw in fh.read().decode("utf-8", "replace").split("\n"):
+            line = raw.strip()
+            # A comment is "# " or a bare "#": an id selector is "#name"
+            # with no space, and treating every leading # as a comment
+            # silently dropped every id selector from the list.
+            if not line or line == "#" or line.startswith("# "):
+                continue
+            selectors.append(line)
+    harness = """<!doctype html><body><pre id=out></pre><script>
+%s
+var PAYLOAD = "%s";
+var DATA = %s, res = {};
+var parser = new DOMParser();
+var doc = parser.parseFromString(DATA.doc, 'text/html');
+for (var i = 0; i < DATA.selectors.length; i++) {
+  var sel = DATA.selectors[i];
+  try {
+    var hits = doc.querySelectorAll(sel);
+    var ids = [];
+    for (var j = 0; j < hits.length; j++) ids.push(hits[j].id || '?');
+    res[sel] = ids.join(' ');
+  } catch (e) {
+    res[sel] = 'INVALID';
+  }
+}
+report(res);
+</script>""" % (REPORT_JS, encode_payload({"doc": doc, "selectors": selectors}), DECODE_JS)
+    dom = run_chrome(chrome, harness)
+    result = read_result(dom)
+    if result is None:
+        print("chromium: no result from the harness", file=sys.stderr)
+        return 1
+    for sel in selectors:
+        print("%s\t%s" % (sel, result.get(sel, "INVALID")))
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -376,6 +436,8 @@ def main():
         return parse_timing(sys.argv[3:], int(sys.argv[2]))
     if sys.argv[1] == "render":
         return render_timing(sys.argv[3:], int(sys.argv[2]))
+    if sys.argv[1] == "selectors":
+        return selector_matches(sys.argv[2], sys.argv[3])
     if sys.argv[1] == "which":
         chrome = find_chrome()
         print(chrome or "")

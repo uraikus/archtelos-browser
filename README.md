@@ -16,7 +16,9 @@ Festina should gain as a result is in [festina.md](festina.md).
 [WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
 the standard's own tree-construction corpus it passes **1,535 of 1,652**
 cases — the same number Chromium 141 passes on the same corpus, and 84
-of the 117 each fails are the same cases. CSS targets the
+of the 117 each fails are the same cases. **CSS selectors match the same
+elements Chromium matches in 56 of 61 cases**, the five exceptions all
+being Selectors 4. CSS targets the
 [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose official
 definition of CSS is 24 specifications; the engine implements no part of
 8 of them. Where it stands on each is in [css-2026.md](css-2026.md).
@@ -135,10 +137,10 @@ FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chrom
 The runner covers twelve unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, iframes), an offscreen render suite that
-checks real pixels with `getPixelColor`, two conformance runners that
-measure the engine against Chromium — CSS properties and default element
-displays — the HTML conformance suite, and a headless render of every
-example. There is no test framework: `tests/assert.f` is
+checks real pixels with `getPixelColor`, three conformance runners that
+measure the engine against Chromium — CSS properties, default element
+displays, and which elements a selector matches — the HTML conformance
+suite, and a headless render of every example. There is no test framework: `tests/assert.f` is
 a dozen lines and every suite is an ordinary Festina program.
 
 The conformance suite needs the standard's corpus:
