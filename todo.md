@@ -176,12 +176,13 @@ rest. In rough order of how often real pages need it:
 
 ## Performance
 
-With both engines given the same 800x600 canvas, Chromium renders the
-51 KB page about 1.15 times faster (benchmarks.md). The cascade and
-layout are 90% of our time. In order:
+Chromium parses, styles and lays out the 51 KB page about **4.3 times
+faster** — 27.2 ms against 117 — with both sides measured from inside
+and start-up outside the timer (benchmarks.md). The cascade and layout
+are 90% of our time and all of the gap. In order:
 
 - **Share computed styles between elements whose matched declarations
-  are identical.** Computing is 29 ms, the single largest sub-phase and
+  are identical.** Computing is 37 ms, the single largest sub-phase and
   the one that grows with every property implemented, and most elements
   in a real document match exactly what a sibling matches. The benchmark
   page has 1,560 table cells that all match the same four rules.
@@ -212,7 +213,7 @@ within the same few minutes.
 
 **Do not compare unequal canvases again.** PNG encoding is linear in
 pixels and dominates at this page size: the same page onto 800x8000
-instead of 800x600 costs 382 ms instead of 166 ms, and all of that
+instead of 800x600 costs 365 ms instead of 147 ms, and all of that
 difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work

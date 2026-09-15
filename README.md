@@ -166,20 +166,24 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Start-up (screenshot a one-line page) | 27 ms | 457 ms |
+| Parse, style and lay out 51 KB | 117 ms | 27.2 ms |
 | Parse 51 KB of HTML | 8 ms | 2.1 ms |
-| Render 51 KB, start-up subtracted | 105 ms | 91 ms |
-| Peak memory, 51 KB page | 20 MB | 194 MB |
+| Peak memory, 51 KB page | 20.5 MB | 195.4 MB |
 | Binary | 2.3 MB | 463 MB |
+| Screenshot a one-line page | 28 ms | 515 ms |
 
-Both engines are given the same 800x600 canvas, which matters more than
-anything else in the table: PNG encoding is linear in pixels and
-dominates at this page size, so comparing this browser's default
-full-document canvas against Chromium's viewport screenshot charged
-thirteen times the pixels to layout. On equal terms Chromium does the
-rendering work about 1.15 times faster, and a native binary starts an
-order of magnitude and a half faster. The cascade and layout are 90% of
-our time; parsing is 7%.
+**Chromium renders about four and a third times faster.** The first row is
+the one that describes the engines: both sides are timed from inside,
+with process start-up and PNG encoding outside the timer, because
+Chromium spends about 500 ms starting up and subtracting a baseline that
+varies by 106 ms run to run measures the variance rather than the work.
+The cascade and layout are 90% of our time and all of the gap; parsing
+is 7%.
+
+The last row is a different question with a different answer: a native
+binary is finished before Chromium has started, which matters if what
+you want is a screenshot from a shell script and matters not at all as a
+statement about rendering.
 
 The memory and binary rows are the same trade seen from the other side:
 what is absent from this browser — a JavaScript engine, a compositor, a

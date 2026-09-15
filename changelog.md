@@ -67,9 +67,33 @@ benchmarks.md has the per-revision table.
   `'var('` needle `styleProp` scans for was rebuilt on every property
   read of every element.
 
-The page now renders in 145 ms. The 14 ms that remain are the real cost
+The page now renders in 152 ms end to end. The 14 ms that remain are the real cost
 of computing about thirty more properties per element, which is the next
 thing to attack.
+
+### The benchmark was subtracting noise, and said so
+
+benchmarks.md reported that Chromium rendered the 51 KB page "about
+1.15 times faster". That number came from timing the whole command for both
+engines and subtracting each one's start-up baseline. Twelve consecutive
+start-up measurements of Chromium on one machine span 436 to 542 ms — a
+spread of 106 ms around a quantity of 30 to 90. Subtracting a number
+near 500 from a number near 510 measures the variance of the baseline:
+the same method gives 1.15x on one run and 3.8x on the next.
+
+`tests/chromium.py` gains a `render` mode that times parse, style and
+layout **inside** the page with `performance.now()`, the way its `parse`
+mode already did, and `tests/bench.sh` compares it against the sum of
+this browser's own parse, stylesheet, cascade and layout phases. Same
+work, same page, start-up and PNG encoding outside the timer on both
+sides.
+
+Measured that way, **Chromium renders the 51 KB page 4.3 times faster**,
+117 ms against 27.2, and about ten times faster on pages of a few
+kilobytes where a fixed 10 ms has nothing to amortize against. That is
+the real headline and it is a worse one. What remains true is the other
+question: this browser produces the PNG in 152 ms against 558, because
+Chromium spends about 515 of those starting up.
 
 ### Benchmarks record memory and size
 
@@ -239,7 +263,9 @@ pixels were being charged to layout.
 
 `tests/bench.sh` now pins both engines to 800x600. On equal terms
 Chromium renders the page about **1.15 times faster**, where the old
-table said four times. The same page onto 800x8000 costs 354 ms against
+table said four times. (That 1.15 was itself wrong, for a different
+reason, and a later entry above corrects it to 4.5: it came from
+subtracting a start-up baseline that varies by more than 100 ms.) The same page onto 800x8000 costs 354 ms against
 134 ms, and all of that difference is encoding; the run records it as
 its own row rather than as a comparison.
 

@@ -21,8 +21,10 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
 - **Statistic**: best of 5 runs. The best run is the one least
   disturbed by whatever else the machine was doing; medians and means
   on a shared container mostly measure the neighbours.
-- **Both engines get the same canvas**, 800x600. This is the whole
-  ballgame and it is easy to get wrong — see below.
+- **Both engines get the same canvas**, 800x600, and the rendering
+  comparison is measured from inside both engines rather than by
+  subtracting a start-up baseline. Both of those are easy to get wrong
+  and this file has got both of them wrong — see below.
 - **Memory** is peak resident set size from `tests/maxrss.py`, and
   **size** is `wc -c` on the binaries. Both are described where they
   are reported.
@@ -47,37 +49,74 @@ size, so that difference was being charged to layout:
 
 | Canvas | This browser | Pixels |
 |---|---|---|
-| 800x600 | 134 ms | 480,000 |
-| 800x2000 | 174 ms | 1,600,000 |
-| 800x8000 | 354 ms | 6,400,000 |
+| 800x600 | 147 ms | 480,000 |
+| 800x2000 | 189 ms | 1,600,000 |
+| 800x8000 | 365 ms | 6,400,000 |
 
-Same page, same layout, same paint — 220 ms of the difference is
-encoding. `tests/bench.sh` now gives both engines 800x600.
+Same page, same layout, same paint — 218 ms of the difference is
+encoding. `tests/bench.sh` gives both engines 800x600.
 
-## Start-up is not a rendering result
+## Start-up is not a rendering result, and subtracting it does not work
 
-Chromium takes **457 ms** to screenshot a one-line page at 800x600, and
-this browser takes **27 ms**. That difference is process start-up — a
+Chromium takes **515 ms** to screenshot a one-line page at 800x600, and
+this browser takes **28 ms**. That difference is process start-up — a
 browser engine bringing up a multi-process architecture, a JavaScript
 engine, a compositor and a network stack, against a 2.3 MB native binary
 that opens a Cairo surface. It is real if what you want is a screenshot
 from a shell script, and it says nothing about rendering speed.
 
-So the table below is also reported with that baseline subtracted, which
-is the only honest way to compare the work rather than the start-up.
+The obvious repair is to subtract that baseline from every row. **That
+repair does not work, and this file used to report a headline that came
+out of it.** Twelve consecutive start-up measurements of Chromium on
+this machine:
+
+```
+436 470 476 483 487 493 505 511 511 516 521 542
+```
+
+A spread of 106 ms, around a quantity of about 30 to 90 ms. Subtracting
+a number near 500 from a number near 510 to obtain the rendering work
+measures the variance of the baseline and almost nothing else: on one
+run it says Chromium is 1.15 times faster on the 51 KB page, on the next
+3.8 times. Both were noise.
+
+So the comparison worth making is measured directly, on both sides, with
+start-up outside the timer.
 
 ## End to end: HTML file in, 800x600 PNG out
 
-| Page | Size | This browser | Chromium | Minus start-up: this | Minus start-up: Chromium |
-|---|---|---|---|---|---|
-| hello.html | 4 KB | 36 ms | 497 ms | 9 ms | 40 ms |
-| css.html | 3 KB | 36 ms | 476 ms | 9 ms | 19 ms |
-| generated.html | 51 KB | 132 ms | 548 ms | 105 ms | 91 ms |
+What a shell script waiting for a PNG actually experiences:
 
-On the 51 KB page Chromium does the same work about **1.15 times
-faster**. On pages of a few kilobytes this browser is ahead. That is the
-honest headline, and it is a very different one from what an unequal
-canvas produced.
+| Page | Size | This browser | Chromium |
+|---|---|---|---|
+| hello.html | 4 KB | 38 ms | 515 ms |
+| css.html | 3 KB | 38 ms | 516 ms |
+| generated.html | 51 KB | 152 ms | 558 ms |
+
+This browser is done before Chromium has finished starting. That is a
+true statement about the command and a false one about the engine, which
+is what the next table is for.
+
+## The rendering work itself
+
+Parse, style and lay out, with no process start-up and no PNG encode on
+either side. Chromium's number is `DOMParser`, adoption into an 800px
+container, and a forced layout, timed inside the page with
+`performance.now()`; ours is the sum of the parse, stylesheet, cascade
+and layout phases that `ARCHTELOS_TIMING=1` reports. Same work, same
+page, both measured from inside.
+
+| Page | Size | This browser | Chromium | Ratio |
+|---|---|---|---|---|
+| hello.html | 4 KB | 10 ms | 1.2 ms | 8x |
+| css.html | 3 KB | 10 ms | 1.0 ms | 10x |
+| generated.html | 51 KB | 117 ms | 27.2 ms | **4.3x** |
+
+**Chromium renders the 51 KB page about four and a third times faster**,
+and the gap is wider on small pages because a fixed cost of about 10 ms
+has nothing to amortize against. This is the honest headline, and it is
+a worse one than this file used to carry. The cascade and layout are
+where it lives; the section after next says where inside them.
 
 ## HTML parsing alone
 
@@ -88,14 +127,15 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | <1 ms | 0.1 ms |
+| hello.html | 4 KB | <1 ms | 0.2 ms |
 | css.html | 3 KB | <1 ms | 0.1 ms |
 | generated.html | 51 KB | 8 ms | 2.1 ms |
 
 About **4x slower** on the large page, or roughly 6 MB/s against
 25 MB/s. For a tokenizer and tree builder written in a young language
 against one of the most optimized parsers in software, that is a
-reasonable place to be, and it is not where the remaining time goes.
+reasonable place to be — and at 8 ms of a 117 ms render it is not where
+the time goes.
 
 ## Where the time actually goes
 
@@ -107,20 +147,22 @@ reasonable place to be, and it is not where the remaining time goes.
 | parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 58 ms |
-| layout | 47 ms |
-| paint | 6 ms |
+| cascade | 59 ms |
+| layout | 52 ms |
+| paint | 7 ms |
 
 The cascade and layout are **90%** of it. Parsing is 7%, and paint —
-once it is not also encoding six megapixels — is 6 ms.
+once it is not also encoding six megapixels — is 7 ms. Chromium does the
+first four of those phases in 27.2 ms against our 117; the whole gap is
+here.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements. Collecting them is 8 ms, applying
-10 ms and computing 29 ms. Computing styles is the phase worth
-attacking next.
+declarations across 2,728 elements. Collecting them is 7 ms, applying
+12 ms and computing 37 ms. Computing styles is the phase worth
+attacking next, and the one that grows with every property implemented.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (9 ms total); building the box tree is 14 ms and
+cache and reach Cairo (8 ms total); building the box tree is 16 ms and
 inline placement 12 ms.
 
 ## What the CSS work cost, measured
@@ -128,6 +170,13 @@ inline placement 12 ms.
 Every revision below was rebuilt and re-run on the same machine within
 the same few minutes, so the column is a comparison between builds and
 not between days. Best of seven, `generated.html` at 800x600.
+
+Read the column against itself, not against the tables above: those come
+from a different run, and this machine's whole-command numbers drift by
+several milliseconds between runs. The final row is 145 ms here and
+152 ms in the end-to-end table for that reason. What the column
+establishes is the *shape* — which change cost what — and that is not
+sensitive to the drift, because every row moved together.
 
 | Revision | What it added | End to end |
 |---|---|---|
@@ -233,15 +282,15 @@ Chromium column understates total system memory for that run.
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 12.7 MB | 195.1 MB |
-| css.html | 3 KB | 12.9 MB | 195.9 MB |
-| generated.html | 51 KB | 20.4 MB | 194.2 MB |
+| hello.html | 4 KB | 12.7 MB | 195.3 MB |
+| css.html | 3 KB | 12.9 MB | 195.5 MB |
+| generated.html | 51 KB | 20.5 MB | 195.4 MB |
 
 **About 15x less on a small page and 10x less on the large one**, and
 the shape differs as much as the size: Chromium's footprint is flat
 across all three pages because it is almost entirely fixed cost —
 process architecture, a JavaScript heap, a compositor — while this
-browser's grows with the document, from 12.7 MB to 20.4 MB as the page
+browser's grows with the document, from 12.7 MB to 20.5 MB as the page
 goes from 4 KB to 51 KB. The 7.7 MB of growth is the DOM, the computed
 styles and the box tree for 2,728 elements, which is about 2.8 KB per
 element across all three trees.
@@ -263,8 +312,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,325,800 |
-| This browser, all `.f` source | 422,548 |
+| This browser, the whole program | 2,330,048 |
+| This browser, all `.f` source | 426,729 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 

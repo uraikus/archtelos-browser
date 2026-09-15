@@ -14,6 +14,13 @@ Two modes, both used by tests/bench.sh:
   parse        Times Chromium's HTML parser on a set of pages, using
                DOMParser inside the page and reporting milliseconds.
 
+  render       Times parse, style and layout on a set of pages, inside
+               the page, so the number excludes process start-up. The
+               alternative -- timing the whole command and subtracting a
+               start-up baseline -- subtracts two numbers near 500 ms to
+               get one near 50, and Chromium's start-up varies by over
+               100 ms run to run, so the answer was mostly noise.
+
 Chromium is found via CHROME, or the Playwright browser directory that
 ships in this container. Nothing here is part of the browser: it is
 benchmark tooling, and it only ever reads the corpus and the pages.
@@ -301,6 +308,62 @@ report(res);
     return 0
 
 
+def render_timing(paths, iterations):
+    """Parse, style and lay out each page, inside the page.
+
+    The document is parsed with DOMParser, adopted into a sized
+    container in the live document, and then a layout is forced by
+    reading offsetHeight -- which is what makes style resolution and
+    layout actually happen rather than being deferred. Painting and PNG
+    encoding are not included, and neither is process start-up: this is
+    the phase this project's cascade and layout are compared against.
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("chromium: not found; skipping", file=sys.stderr)
+        return 1
+    docs = {}
+    for p in paths:
+        with open(p, "rb") as fh:
+            docs[os.path.basename(p)] = fh.read().decode("utf-8", "replace")
+    harness = """<!doctype html><body><pre id=out></pre><div id=host style="width:800px"></div><script>
+%s
+var PAYLOAD = "%s";
+var DOCS = %s, N = %d, res = {};
+var host = document.getElementById('host');
+for (var name in DOCS) {
+  var html = DOCS[name], best = Infinity;
+  for (var i = 0; i < N; i++) {
+    host.textContent = '';
+    var t0 = performance.now();
+    var d = new DOMParser().parseFromString(html, 'text/html');
+    if (!d.documentElement) throw new Error('parse failed');
+    // adopting the body's children keeps the page's own <style> rules,
+    // so the cascade has the same work to do as the real load
+    var head = d.head ? Array.prototype.slice.call(d.head.children) : [];
+    for (var h = 0; h < head.length; h++) {
+      if (head[h].tagName === 'STYLE') host.appendChild(document.adoptNode(head[h]));
+    }
+    while (d.body && d.body.firstChild) host.appendChild(document.adoptNode(d.body.firstChild));
+    var h2 = host.offsetHeight;          // forces style and layout
+    var t1 = performance.now();
+    if (!h2) throw new Error('laid out to nothing');
+    if (t1 - t0 < best) best = t1 - t0;
+  }
+  res[name] = best;
+}
+report(res);
+</script>""" % (REPORT_JS, encode_payload(docs), DECODE_JS, iterations)
+    dom = run_chrome(chrome, harness)
+    result = read_result(dom)
+    if result is None:
+        print("chromium: no result from the harness", file=sys.stderr)
+        return 1
+    for name, ms in result.items():
+        print("chromium-render %s %.3f" % (name, ms))
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -311,6 +374,8 @@ def main():
         return detail(sys.argv[2], sys.argv[3:])
     if sys.argv[1] == "parse":
         return parse_timing(sys.argv[3:], int(sys.argv[2]))
+    if sys.argv[1] == "render":
+        return render_timing(sys.argv[3:], int(sys.argv[2]))
     if sys.argv[1] == "which":
         chrome = find_chrome()
         print(chrome or "")

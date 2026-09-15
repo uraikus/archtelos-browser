@@ -124,6 +124,40 @@ for page in $PAGES; do
     printf "%-26s %8s %12s %12s\n" "$(basename "$page")" "$(human_size "$page")" "$best" "$cms"
 done
 
+# ---- the rendering work itself, both engines ----------------------------
+# Parse, style and lay out, with no process start-up and no PNG encode on
+# either side. This is the comparison that means something: timing the
+# whole command and subtracting a start-up baseline subtracts two numbers
+# near 500 ms to get one near 50, and Chromium's start-up varies by more
+# than 100 ms run to run, so that answer was mostly noise.
+#
+# Chromium's number is DOMParser + adoption into a sized container + a
+# forced layout, timed inside the page with performance.now(). Ours is
+# the sum of the parse, stylesheet, cascade and layout phases reported by
+# ARCHTELOS_TIMING, which is the same work.
+echo
+echo "## Parse, style and lay out -- no start-up, no encode (best of $RUNS, ms)"
+echo
+printf "%-26s %8s %12s %12s\n" "page" "size" "this browser" "chromium"
+CHROME_RENDER="$(python3 tests/chromium.py render "$RUNS" $PAGES 2>/dev/null)"
+for page in $PAGES; do
+    best=999999
+    for _ in $(seq "$RUNS"); do
+        ms=$(ARCHTELOS_TIMING=1 "$BENCH/browser" "$page" --screenshot "$BENCH/out.png" \
+             --width "$CANVAS_W" --height "$CANVAS_H" 2>&1 | awk '
+             /\[timing\] parse:/       { t += $3 }
+             /\[timing\] stylesheets:/ { t += $3 }
+             /\[timing\] cascade:/     { t += $3 }
+             /\[timing\] layout:/      { t += $3 }
+             END { print t }')
+        [ -z "$ms" ] && ms=999999
+        [ "$ms" -lt "$best" ] && best=$ms
+    done
+    cms=$(echo "$CHROME_RENDER" | awk -v n="$(basename "$page")" '$2 == n {printf "%.1f", $3}')
+    [ -z "$cms" ] && cms="-"
+    printf "%-26s %8s %12s %12s\n" "$(basename "$page")" "$(human_size "$page")" "$best" "$cms"
+done
+
 # ---- what a full-document canvas costs -------------------------------------
 # Not a comparison: headless Chromium will not produce this. It is here
 # because the difference is almost all PNG encoding, and that is worth
