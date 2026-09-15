@@ -175,6 +175,52 @@ rest. In rough order of how often real pages need it:
   parser already recognizes and refuses to match.
 - **Vertical writing modes**, **multi-column**, **`aspect-ratio`**.
 
+## Networking is blocked on two Festina bugs
+
+Neither is a design decision and neither has a workaround in this
+repository. Both are written up in FINDINGS.md with minimal
+reproductions and proposed in festina.md.
+
+1. **An HTTP response over 64 KiB takes thirty seconds.** The runtime's
+   client reads to EOF rather than to `Content-Length`, and a keep-alive
+   server never sends EOF, so the read ends when the 30 second socket
+   timeout fires. The bytes are correct; only the wait is wrong. Most
+   real pages are over 64 KiB, so this is the single thing standing
+   between this browser and the live web. `tests/latencyserver.py`
+   serves under the limit to keep the preload benchmark measuring
+   prefetching instead of this.
+2. **The query string is dropped from every request.** `GET /page?a=1`
+   goes out as `GET /page`, with `req.code` 200 and `req.url`
+   unchanged, so nothing can detect it. Half the web is behind a query
+   string and the URL is the only input `send()` takes.
+
+Until the first is fixed there is no honest end-to-end benchmark against
+a real site, and the numbers in benchmarks.md are all local files or a
+local server.
+
+## Networking, once it is unblocked
+
+- **Prefetch across a navigation, not only within one.** The preload
+  scanner's cache is cleared at the start of every load, so a resource
+  shared by two pages is fetched twice. A cache keyed by URL with the
+  response's own validators would fix it, and would need the
+  conditional-request headers the fetch layer does not send yet.
+- **Teach the scanner `media`.** `gatherStylesheets` skips a
+  `<link rel=stylesheet media=print>`; the scanner does not, so one gets
+  prefetched and thrown away. That is a request nobody wanted, which is
+  the one kind of mistake a scanner is not allowed to make. Evaluating
+  the query needs `evaluateMediaQuery`, which lives in the CSS layer,
+  and `src/net/` does not import the CSS layer — so this is a layering
+  question before it is a code one.
+- **Let a worker fetch a local file.** A preload worker speaks HTTP and
+  nothing else, so a `file://` page dispatches nothing. That is the
+  right trade today, because a local read is microseconds, but it makes
+  the scanner untestable without a server.
+- **Follow redirects on a worker.** A worker cannot call `resolveUrl`
+  (a thread body may not call a top-level function, FINDINGS.md), so a
+  prefetch that redirects is abandoned and refetched on the main thread.
+  Correct, and one round trip wasted.
+
 ## Performance
 
 Chromium parses, styles and lays out the 51 KB page about **3.3 times
@@ -202,6 +248,13 @@ of the two**. In order:
   (benchmarks.md). Rendering the gradient once into an offscreen image
   and drawing that image would make the angle free; `blankImage` and
   image drawing exist, so this needs no new language feature.
+- **Give the vectorizer a loop it can take.** LLVM autovectorizes
+  Festina's IR and reaches almost none of this browser's hot loops:
+  `paintLinearGradient` gets 14 packed operations against 45 scalar
+  ones, `asciiIndexOf` and `cascadeMatches` get none, because they exit
+  early or chase pointers (benchmarks.md). The gradient row fill is the
+  one that could plainly be rewritten branch-free over a row of pixels,
+  and it is the same rewrite the offscreen-image item above wants.
 - **Layout, which is now the bigger half.** 48 ms against the cascade's
   28: building the box tree is 14 ms, placing text 12, measuring it 9.
   The box tree is rebuilt from scratch on every relayout even when only

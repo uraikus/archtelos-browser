@@ -5,6 +5,7 @@
 // relative to it.
 
 import ../util/text.f
+import preload.f
 
 struct Resource {
     ok:bool
@@ -16,6 +17,7 @@ struct Resource {
 }
 
 text userAgent = 'Mozilla/5.0 (X11; Linux x86_64) ArchtelosBrowser/0.1 Festina'
+preloadUserAgent = userAgent
 
 bool func hasScheme(u:ascii) {
     int colon = asciiIndexOf(u, ':', 0)
@@ -156,6 +158,17 @@ Resource func fetchUrl(urlIn:text) {
     res.contentType = ''
     res.error = ''
     text url = withoutFragment(urlIn)
+    // The preload scanner may already have this: it was asked for
+    // before the parse and fetched while the parse ran.
+    if preloadBodies[url] != null {
+        preloadServed++
+        res.ok = true
+        res.status = preloadStatus[url]
+        res.data = preloadBodies[url]
+        res.finalUrl = url
+        res.contentType = preloadTypes[url]
+        return res
+    }
     if !isHttpUrl(url) {
         text path = url
         ascii a = url.toAscii()

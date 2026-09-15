@@ -506,6 +506,165 @@ same way should be drawn on the same way.
 
 ---
 
+## 24 An HTTP response larger than 64 KiB takes thirty seconds
+
+```festina
+http req = {'url': 'http://127.0.0.1:8731/bytes65535', 'method': 'GET',
+            'headers': {'accept': '*/*'}}
+req.send()
+log(`${req.toBlob().length} bytes`)
+```
+
+Against a local `http.server` answering with `Content-Length` and
+HTTP/1.1 keep-alive, the same program measured across a size sweep:
+
+| body | `req.send()` |
+|---|---|
+| 65 000 bytes | 2 ms |
+| 65 535 bytes | 30 521 ms |
+| 65 536 bytes | 30 720 ms |
+| 320 073 bytes | 31 253 ms |
+
+`curl` fetches the 640 KB case from the same server in 53 ms. The bytes
+that come back are correct in every case — it is only the wait that is
+wrong, and it is wrong by a factor of about six hundred.
+
+The boundary lies between a 65,000-byte body and a 65,535-byte one,
+which is consistent with a 64 KiB limit on the **whole response**,
+headers included — the headers here are about 130 bytes. The stall
+itself is the runtime's own 30 second socket timeout (`SO_RCVTIMEO`, set
+in `runtime/festina_runtime_http.c`). A response that fits in the first
+read is returned at once; one that does not is read to completion and
+then waited on until the socket times out, because the read loop ends at
+EOF rather than at `Content-Length`, and a keep-alive server never sends
+EOF.
+
+There is no workaround from Festina. `Connection` is one of the four
+headers the runtime always computes itself and never takes from
+`headers` (api.md), so a program cannot ask the server to close the
+socket, and there is no other lever. For a browser the consequence is
+total: the median real web page is well over 64 KiB, so every real page
+this browser loads over HTTP costs half a minute. The benchmark server
+in `tests/bench.sh` serves under the limit for exactly this reason,
+which is a measurement working around a bug rather than measuring it.
+
+---
+
+## 25 The query string is dropped from every outbound request
+
+```festina
+http req = {'url': 'http://127.0.0.1:8731/page?a=1&b=2', 'method': 'GET',
+            'headers': {'accept': '*/*'}}
+req.send()
+// the server logs:  GET /page
+```
+
+`req.url` is left untouched and `req.code` is 200, so nothing in the
+program can tell that the request it made was not the request it asked
+for; the server simply answers a different URL. The runtime parses the
+URL into components, keeps the query in one of them
+(`festina_url_search_params`), and then builds the request line out of
+`festina_url_pathname` alone
+(`runtime/festina_runtime_http.c:3893`), so the query is parsed and
+discarded in the same breath.
+
+Half the web is behind a query string, and a browser cannot put one
+back: there is no path or query field on `http` to set separately, and
+the URL is the only input `send()` takes. This is not a workaround that
+costs something, it is a capability that is absent.
+
+Silence is the aggravating part. A URL the runtime cannot honour should
+throw, the way an unresolvable host does.
+
+---
+
+## 26 A worker's answer cannot be collected synchronously
+
+A thread can be given work and `drain()` blocks until it has finished
+it, so a program can wait for a worker. What it cannot do is *read what
+the worker produced*, because every route back to the caller goes
+through the main event loop:
+
+- `worker.reply(x)` runs a `.callback(fn)` on main's thread — from the
+  event loop, which straight-line code never reaches. A callback posted
+  during a page load fires after the page is laid out and painted.
+- `postMessage(x)` from a worker to main is dispatched to main's
+  `on message` handler, from the same loop, with the same consequence.
+- `drain()` blocks on the *worker's* queue and does not pump main's, so
+  it does not help.
+
+Measured: six messages posted to a pool, every instance drained, then
+the reply counter read — zero, and not one callback line logged.
+
+The escape is `T?`. A manually-managed value posted to a thread crosses
+**by reference** rather than being deep-copied (specification §20.4), so
+both sides share one object: the workers write into its arrays, `drain()`
+is the barrier, and main reads them afterwards. That is how
+`src/net/preload.f` collects prefetched bodies, and it works — but it is
+uncounted shared mutable memory reached through a hole in the ownership
+model, chosen because the supported mechanism cannot express "wait here
+for the answer".
+
+`arr[T?]` is rejected (`?` may not be an element type), so the shared
+object cannot be a list of slots; it has to be one struct whose fields
+are ordinary arrays.
+
+A blocking `worker.ask(x):Reply` would remove the need for any of this.
+
+---
+
+## 27 A thread body cannot share code, and a pool instance cannot name itself
+
+Two restrictions compose into duplication with no way out.
+
+A thread body may not call a top-level function:
+
+```festina
+void func fill(b:Batch?, me:int) { /* ... */ }
+thread w0 { on message(worker:thread, msg:Batch?) { fill(msg, 0) } }
+// error: 'fill()' cannot be called from inside a thread body
+```
+
+and a pool instance addressed as `NAME[i]` has no way to learn its own
+`i`, so a pool whose instances must divide work between them cannot
+divide it. Together they mean that N workers doing one job are N
+copies of that job's code, differing only in a literal. `src/net/preload.f`
+carries the same eleven-line HTTP fetch four times, at offsets 0, 1, 2
+and 3.
+
+Either restriction alone would be survivable. A thread body that could
+call a pure top-level function would need no duplication; a pool
+instance that knew its index would need only one body. As it stands the
+only way to write a work-dividing pool is to write it once per worker.
+
+---
+
+## 28 A declared thread makes the program non-terminating
+
+A program that declares a thread and then runs off the end of its
+top-level statements never exits:
+
+```festina
+thread t { on message(w:thread, m:int) { } }
+log('done')
+// prints 'done', then hangs forever
+```
+
+A live thread keeps the program alive (specification §12.1) and a thread
+is live from before the first top-level statement until something kills
+it. `close(0)` exits cleanly — every live thread is killed on the way
+out — so the fix is to end every program explicitly, which is why
+`tests/assert.f`'s `finish()` now calls `close()` on success as well as
+on failure, and why each conformance runner ends in `close(0)`.
+
+The cost is that declaring a thread anywhere in a program's imports
+changes the meaning of falling off the end, for every entry point that
+links it, silently. A `main` thread with nothing left to do and no
+handler registered is not waiting for anything; it is the top-level
+statements that are finished, not the process.
+
+---
+
 ## 15–19 Smaller
 
 - **`ascii.toInt()`**: the semantic analyzer accepts it, codegen rejects

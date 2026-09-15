@@ -20,6 +20,25 @@ struct Page {
 int maxImagesPerPage = 60
 int maxStylesheetsPerPage = 20
 
+// Runs the preload scanner over the decoded source and starts fetching
+// what it found. Returns immediately: the requests run on the worker
+// threads while this thread parses, which is the whole point of
+// scanning before the parse rather than after it.
+void func startPreload(base:text, src:ascii) {
+    preloadReset()
+    if archtelosNoPreload { return }
+    if !isHttpUrl(base) { return }
+    arr[PreloadHint] hints = scanPreloads(src)
+    arr[text] urls = []
+    for int i = 0, i < hints.length, i++ {
+        text abs = withoutFragment(resolveUrl(base, hints[i].url))
+        // A worker speaks HTTP and nothing else; a local file costs
+        // nothing to read on the thread that needs it.
+        if isHttpUrl(abs) { urls.push(abs) }
+    }
+    preloadDispatch(urls)
+}
+
 // Stylesheets in document order: <style> elements and
 // <link rel=stylesheet>, both honoring a media attribute.
 void func gatherStylesheets(page:Page, n:Node, count:arr[int]) {
@@ -102,7 +121,16 @@ Page func loadPage(url:text, width:int) {
         page.doc = errorDocument(url, r.error)
     } else {
         page.url = r.finalUrl
-        page.doc = parseHtmlBlob(r.data)
+        // Decoded once and used twice: the scanner reads the same
+        // bytes the tokenizer is about to.
+        ascii src = blobToAsciiSafe(r.data).toAscii()
+        int tp = now()
+        startPreload(page.url, src)
+        timing('preload scan', tp)
+        page.doc = parseHtml(src)
+        int tc = now()
+        preloadCollect()
+        timing('preload wait', tc)
     }
     timing('parse', t1)
     gatherFrames(page)
@@ -119,6 +147,10 @@ Page func pageFromHtml(html:text, baseUrl:text, width:int) {
     page.width = width
     page.error = ''
     nodeRegistryReset()
+    // No scan: there is no base to resolve against and nothing was
+    // fetched. Clearing the cache keeps a resource fetched for an
+    // earlier page from being served to this one unrevalidated.
+    preloadReset()
     page.doc = parseHtmlText(html)
     gatherFrames(page)
     preparePage(page, width)

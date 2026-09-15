@@ -116,3 +116,4 @@ if minimum >= 0 && passed < minimum {
     log(`elements: FAILED -- expected at least ${minimum}`)
     close(1)
 }
+close(0)

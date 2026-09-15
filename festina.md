@@ -269,6 +269,84 @@ blit — but the path API is the smaller change and unlocks more.
 
 ---
 
+## 3f Read an HTTP body to its `Content-Length`
+
+**Today.** `req.send()` returns the right bytes for any response, and
+takes thirty seconds to do it whenever the response exceeds 64 KiB in
+total. The read loop ends at EOF; a keep-alive server never sends one;
+the 30 second `SO_RCVTIMEO` is what actually ends the read. A 640 KB
+page that `curl` fetches in 53 ms costs 30.8 seconds.
+
+**Proposal.** End the read at `Content-Length` when the response
+declares one, and at the terminating zero-length chunk when it is
+chunked — both already parsed elsewhere in the same file. Keep the
+timeout as the backstop it was meant to be.
+
+**What it removes here.** The browser becomes able to load a real web
+page. At present every page over 64 KiB — which is most of them — costs
+half a minute, and the benchmark server has to stay under the limit to
+measure anything at all.
+
+---
+
+## 3g Send the query string
+
+**Today.** `req.send()` builds its request line from the URL's path and
+drops the query: `http://host/page?a=1` is sent as `GET /page`. The
+query is parsed into the URL value and then not used. `req.code` is 200
+and `req.url` is unchanged, so nothing observable says the request was
+altered.
+
+**Proposal.** Append the query to the request-line target. Failing that,
+throw on a URL carrying a query, the way an unresolvable host throws —
+answering a different URL silently is the worst of the options.
+
+**What it removes here.** Every search, every `?v=` cache-buster, every
+paginated link. A browser has no way to compensate, because the URL is
+the only input `send()` takes.
+
+---
+
+## 3h Let a caller wait for a worker's answer
+
+**Today.** `drain()` waits for a worker to finish but yields nothing;
+`reply`/`callback` and worker-to-main `postMessage` both deliver through
+main's event loop, which straight-line code never reaches. A program
+that wants a worker's result *here* has one option: post a
+manually-managed `T?`, which crosses by reference, let the workers write
+into it, and use `drain()` as the barrier. That is what this browser's
+preload scanner does — uncounted shared mutable memory, reached through
+a hole in the ownership model, because the supported mechanism cannot
+express the wait.
+
+**Proposal.** A blocking `worker.ask(x):Reply`, and `pool.askAll(xs):arr[Reply]`
+for the fan-out case. The runtime already has both halves: `drain()`
+blocks, and `reply` types the answer.
+
+**What it removes here.** `src/net/preload.f`'s shared `PreloadBatch?`
+and its `free`, and with them the only place in this program where two
+threads write the same memory.
+
+---
+
+## 3i Let a thread body call a pure function, and let a pool instance know its index
+
+**Today.** A thread body may not call any top-level function, and
+`NAME[i]` cannot learn its own `i`. A pool that divides work between its
+instances is therefore impossible, and the fallback — N separately named
+threads — is N copies of the same body differing in one literal.
+
+**Proposal.** Either half fixes it. Allow a thread body to call a
+top-level function that touches no global (the analyzer already knows
+which those are), or expose the instance index to the body as
+`self.index`.
+
+**What it removes here.** `src/net/preload.f` carries the same eleven
+line HTTP fetch four times, at offsets 0, 1, 2 and 3. One of them would
+do.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

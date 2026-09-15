@@ -123,3 +123,4 @@ if minimum >= 0 && implemented < minimum {
     log(`properties: FAILED -- expected at least ${minimum}`)
     close(1)
 }
+close(0)

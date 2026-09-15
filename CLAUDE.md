@@ -138,6 +138,17 @@ a real value, and the selector something to match — because the count in
 README.md and css-2026.md is the deliverable, and a measurement that
 cannot move is not one.
 
+**Run the benchmarks on an idle machine, and check a number you did not
+change.** "Best of N" does not rescue a contended run, because every one
+of the N runs is contended: a benchmark run here beside a valgrind job
+reported Chromium at 93 ms on the page where it takes 26, and the
+browser's own rows moved with it. Nothing in the output said so. So
+`tests/bench.sh` gets the machine to itself, and before any of its
+numbers are copied into benchmarks.md, at least one row that this change
+could not possibly have moved — Chromium's, usually — is checked against
+what it said last time. A row that shifted is the run disqualifying
+itself.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.
@@ -230,12 +241,13 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/css/` | `parser.f` (rules, selectors, `@media`), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values) |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, intrinsic widths |
 | `src/paint/paint.f` | painting and hit testing |
-| `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
+| `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and the worker threads that prefetch what it finds) |
 | `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f` |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade rules, values, layout geometry, box properties, positioning, floats, flex, iframes |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade rules, values, layout geometry, box properties, positioning, floats, flex, iframes, pseudo-elements, counters, audio, the preload scanner |
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor` |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
+| `tests/latencyserver.py` | a local HTTP server that answers slowly, so the preload scanner has latency to hide |
 | `tests/maxrss.py` | peak resident set size of a command, for the memory benchmark |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |
 | `.github/workflows/tests.yml` | CI: the whole suite, natively and under valgrind, on every pull request |
@@ -251,4 +263,9 @@ how a struct graph is shaped, gets a valgrind run.
   back-pointer makes every release of a live alias walk the whole
   document (FINDINGS.md, finding 1). Do not add one.
 - `ARCHTELOS_TIMING=1` makes the pipeline print per-phase timings.
+- `ARCHTELOS_NO_PRELOAD=1` turns the preload scanner off, so a benchmark
+  can measure one binary with and without it.
+- A program that declares a thread never exits on its own, so every
+  entry point ends in an explicit `close()` (FINDINGS.md, "a declared
+  thread makes the program non-terminating").
 - `WPT_HTML_TESTS` points the conformance suite at the corpus.

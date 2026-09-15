@@ -112,3 +112,4 @@ if minimum >= 0 && agreed < minimum {
     log(`selectors: FAILED -- expected at least ${minimum}`)
     close(1)
 }
+close(0)

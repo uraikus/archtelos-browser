@@ -213,6 +213,97 @@ for name in grad-flat grad-on grad-off; do
     printf "%-34s %12s %12s\n" "$label" "$bp" "$be"
 done
 
+# ---- what the preload scanner is worth -----------------------------------
+# The scanner reads the raw bytes for <link>, <img> and <script> URLs
+# before tree construction and prefetches them on four worker threads,
+# so the requests overlap the parse instead of following it. Its whole
+# value is hiding latency, and a local file has none, so this section
+# measures against tests/latencyserver.py -- a real socket with a fixed
+# 50 ms per response. ARCHTELOS_NO_PRELOAD=1 turns the scanner off, so
+# both numbers come from one binary on one page.
+PRELOAD_PORT="${PRELOAD_PORT:-8731}"
+PRELOAD_DELAY="${PRELOAD_DELAY:-0.05}"
+python3 tests/latencyserver.py "$PRELOAD_PORT" "$PRELOAD_DELAY" >/dev/null 2>&1 &
+SRV_PID=$!
+trap 'kill $SRV_PID 2>/dev/null' EXIT
+sleep 1
+
+if python3 -c "
+import socket, sys
+s = socket.socket(); s.settimeout(5)
+try:
+    s.connect(('127.0.0.1', $PRELOAD_PORT))
+except OSError:
+    sys.exit(1)
+" 2>/dev/null; then
+    echo
+    echo "## What the preload scanner is worth (50 ms per response, best of $RUNS, ms)"
+    echo
+    printf "%-36s %10s %10s %12s\n" "page" "off" "on" "speed-up"
+    for page in n2p2000 n8p400 n16p200; do
+        url="http://127.0.0.1:$PRELOAD_PORT/$page"
+        for mode in off on; do
+            best=999999
+            for _ in $(seq "$RUNS"); do
+                start=$(date +%s%N)
+                if [ "$mode" = off ]; then
+                    ARCHTELOS_NO_PRELOAD=1 "$BENCH/browser" "$url" --screenshot "$BENCH/out.png" \
+                        --width "$CANVAS_W" --height "$CANVAS_H" >/dev/null 2>&1
+                else
+                    "$BENCH/browser" "$url" --screenshot "$BENCH/out.png" \
+                        --width "$CANVAS_W" --height "$CANVAS_H" >/dev/null 2>&1
+                fi
+                end=$(date +%s%N)
+                ms=$(( (end - start) / 1000000 ))
+                [ "$ms" -lt "$best" ] && best=$ms
+            done
+            [ "$mode" = off ] && off_ms=$best || on_ms=$best
+        done
+        ratio=$(awk -v a="$off_ms" -v b="$on_ms" 'BEGIN{ printf (b>0 ? "%.2fx" : "-"), a/b }')
+        n=${page#n}; n=${n%%p*}
+        printf "%-36s %10s %10s %12s\n" "$n subresources" "$off_ms" "$on_ms" "$ratio"
+    done
+    echo
+    echo "  Phases, 16 subresources, preload off then on:"
+    for mode in off on; do
+        if [ "$mode" = off ]; then E=1; else E=""; fi
+        ARCHTELOS_NO_PRELOAD=$E ARCHTELOS_TIMING=1 "$BENCH/browser" \
+            "http://127.0.0.1:$PRELOAD_PORT/n16p200" --screenshot "$BENCH/out.png" \
+            --width "$CANVAS_W" --height "$CANVAS_H" 2>&1 \
+            | grep -E '\[timing\] (preload wait|stylesheets|images):' \
+            | sed "s/^\[timing\] /    $mode: /"
+    done
+else
+    echo
+    echo "## What the preload scanner is worth"
+    echo
+    echo "  skipped: no latency server on 127.0.0.1:$PRELOAD_PORT"
+fi
+kill $SRV_PID 2>/dev/null
+trap - EXIT
+
+# ---- what the compiler vectorizes ----------------------------------------
+# Festina has no SIMD types and no intrinsics, so whatever vector code
+# this binary contains was put there by LLVM's autovectorizer on the IR
+# the compiler generated. Which loops it reaches is worth knowing rather
+# than assuming, so this reports packed instructions in named functions
+# of the browser's own code -- not a count over the whole binary, which
+# would mostly count scalar SSE and the C libraries this links.
+if command -v objdump >/dev/null 2>&1; then
+    echo
+    echo "## What the autovectorizer reached (packed instructions per function)"
+    echo
+    printf "%-34s %10s %10s %12s\n" "function" "packed" "scalar" "widest"
+    for fn in paintLinearGradient gradientColorAt asciiIndexOf cascadeMatches layoutBlock; do
+        dis=$(objdump -d --disassemble="$fn" "$BENCH/browser" 2>/dev/null)
+        [ -z "$dis" ] && continue
+        packed=$(echo "$dis" | grep -coE '\b(v?(add|sub|mul|div|max|min)(ps|pd)|v?p(add|sub|mull|mulu|xor|or|and)[a-z]*|vpbroadcast[a-z]?)\b')
+        scalar=$(echo "$dis" | grep -coE '\bv?(add|sub|mul|div|cvt)[a-z]*s[sd]\b')
+        widest=$(echo "$dis" | grep -oE '%(zmm|ymm|xmm)' | sort -u | tail -1)
+        printf "%-34s %10s %10s %12s\n" "$fn" "$packed" "$scalar" "${widest:--}"
+    done
+fi
+
 # ---- memory and size ----------------------------------------------------
 # Peak RSS is the largest amount of memory one process needed at one
 # moment, measured with tests/maxrss.py (ru_maxrss for the child tree,

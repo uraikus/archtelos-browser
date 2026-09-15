@@ -5,6 +5,83 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A preload scanner, and prefetching on worker threads
+
+A browser that waits for tree construction to finish before it asks the
+network for a stylesheet has wasted the parse. A scanner now walks the
+raw bytes once, before the tokenizer sees them, and reports the
+`<link rel=stylesheet>`, `<img src>` and `<script src>` URLs the
+document is going to want. The absolute ones are handed to four worker
+threads and fetched while the main thread parses.
+
+- **The scanner is not a second parser** and must not become one: it
+  keeps no stack, has no opinion about nesting, and stops after 24
+  resources or 64 KB of source. Where it does read markup it agrees with
+  the tokenizer exactly — a trailing slash belongs to an unquoted
+  attribute value, raw-text element contents are skipped — because a URL
+  it reads differently from the tree builder is a request nobody wanted
+  and does not save the request somebody did. 53 checks in the new
+  `tests/unit/test_preload.f`.
+- **Writing the test first caught a wrong intention.** The first draft
+  asserted that `<img src=k.png/>` yields `k.png`. The standard's
+  unquoted attribute value state ends on whitespace and `>` and nothing
+  else, and Chromium 141 duly requests `k.png/`; the assertion was
+  corrected to match, not the code.
+- **Measured against a latency-bearing server** (`tests/latencyserver.py`,
+  50 ms per response), a page with sixteen subresources loads 3.76 times
+  faster: 1,558 ms down to 414 ms. Most of that is parallelism, which
+  any concurrent fetch would give. The scanner's own contribution is the
+  overlap with parsing, isolated on a 640 KB document where the wait for
+  prefetches is 0 ms because both fetches finish inside the 127 ms
+  parse. benchmarks.md reports both separately rather than quoting the
+  flattering total.
+- **It costs pages that do not use it** 0.5 ms of process start-up and
+  30 KB of binary. A `file://` page dispatches nothing.
+- **`ARCHTELOS_NO_PRELOAD=1`** turns it off, so the benchmark measures
+  one binary on one page rather than comparing two builds.
+- Clean under valgrind and under helgrind — no invalid access, no leak,
+  and no data race — which matters more than usual here, because
+  collecting a worker's result needs uncounted shared memory.
+
+### Findings: five more places Festina is insufficient
+
+Two of them block this browser from the live web.
+
+- **An HTTP response larger than 64 KiB takes thirty seconds.** The
+  client reads to EOF rather than to `Content-Length`; a keep-alive
+  server never sends EOF; the 30 second socket timeout ends the read.
+  `curl` fetches the same 640 KB in 53 ms.
+- **The query string is dropped from every outbound request.**
+  `GET /page?a=1` goes out as `GET /page`, with `req.code` 200 and
+  `req.url` unchanged, so nothing in the program can detect it.
+- **A worker's answer cannot be collected synchronously.** Every route
+  back — `reply`/`callback`, worker-to-main `postMessage` — goes through
+  main's event loop, which straight-line code never reaches, and
+  `drain()` does not pump it. The escape used here is a manually-managed
+  `T?`, which crosses to a thread by reference: the workers write into
+  its arrays and `drain()` is the barrier.
+- **A thread body cannot share code, and a pool instance cannot name
+  itself**, so `src/net/preload.f` carries the same eleven-line HTTP
+  fetch four times, differing only in the offset it starts at.
+- **A declared thread makes the program non-terminating**, because a
+  live thread keeps the program alive. `tests/assert.f`'s `finish()` and
+  every conformance runner now end in an explicit `close()`.
+
+### SIMD: measured rather than asserted
+
+Festina has no SIMD types and no intrinsics, so any vector code in the
+binary is LLVM's autovectorizer working on generated IR. Counting vector
+instructions over the whole binary would have answered the wrong
+question — it links Cairo and libc, and scalar float arithmetic lives in
+`%xmm` registers without being vectorization at all. Counting packed
+against scalar instructions per named function gives the real answer:
+the vectorizer works, and this browser's hot loops mostly defeat it.
+`paintLinearGradient` gets 14 packed operations against 45 scalar;
+`asciiIndexOf` and `cascadeMatches` get none. benchmarks.md carries the
+table and the disassembly, and todo.md carries the one loop worth
+rewriting for it.
+
+
 ### Flexible Box Layout 1
 
 `display: flex` was accepted and laid out as a block, which is why a
