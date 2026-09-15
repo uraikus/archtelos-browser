@@ -15,7 +15,9 @@ Stylesheet s3 = parseStylesheet('@charset "utf-8"; @import url(x.css); @media sc
 checkEq(dumpStylesheet(s3), 'p{1} { a: 1; }\np{1} { c: 3; }\nq{1} { e: 5; }\n', 'at-rules and media queries')
 
 Stylesheet s4 = parseStylesheet('p { font-family: "Helvetica; Neue", sans-serif; background: url(a;b.png) no-repeat; -webkit-x: 1; --custom: 2; color: rgb(1, 2, 3); }')
-checkEq(dumpStylesheet(s4), 'p{1} { font-family: "Helvetica; Neue", sans-serif; background: url(a;b.png) no-repeat; color: rgb(1, 2, 3); }\n', 'semicolons inside quotes and parens')
+// A custom property is kept -- var() reads it -- while a vendor prefix
+// is still dropped.
+checkEq(dumpStylesheet(s4), 'p{1} { font-family: "Helvetica; Neue", sans-serif; background: url(a;b.png) no-repeat; --custom: 2; color: rgb(1, 2, 3); }\n', 'semicolons inside quotes and parens')
 
 Stylesheet s5 = parseStylesheet('p { color: red } } div { color: blue } broken { ')
 checkEq(dumpStylesheet(s5), 'p{1} { color: red; }\ndiv{1} { color: blue; }\n', 'recovery from stray braces')

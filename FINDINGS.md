@@ -8,6 +8,50 @@ repository uses. What Festina should *gain* as a result is
 
 Measured against Festina 0.44 on Linux x86-64, clang 18, Cairo 1.18.
 
+## Slicing an ascii that came from a slice
+
+`ascii` values returned by `slice()` and `asciiTrim()` alias the buffer
+they came from rather than copying it. Taking one slice from such a
+value works; taking a second one after the first has been assigned away
+does not. In `substituteVars` it ended the program:
+
+```festina
+ascii inside = asciiTrim(out.slice(at + 4, end))
+ascii name = asciiTrim(inside.slice(0, comma))            // fine
+ascii fallback = asciiTrim(inside.slice(comma + 1, inside.length))
+// fail: out of memory allocating an ascii
+```
+
+Nothing warns, and the failure surfaces as an allocation of an absurd
+size inside `asciiTrim`, several frames from the aliasing that caused
+it. The fix is to index into the value the caller still holds and never
+slice a derived one:
+
+```festina
+ascii name = asciiTrim(out.slice(argStart, comma >= 0 ? comma : end))
+ascii fallback = comma >= 0 ? asciiTrim(out.slice(comma + 1, end)) : null
+```
+
+The same gap bites on assignment, not only on slicing. A parameter is
+an alias of the caller's value, so reassigning it releases the caller's
+buffer while the caller still holds it:
+
+```festina
+ascii func substituteVars(v:ascii) {
+    ascii out = v
+    ...
+    out = joined.toAscii()   // releases the caller's buffer
+```
+
+The tests passed; valgrind reported an invalid read of size 8 in
+`festina_ascii_release`, which is how the first two memory findings in
+this file surfaced as well. The fix is to copy into a value the
+function owns before the first reassignment.
+
+All of this is one ownership gap reached from three directions: a live
+alias outliving its buffer, a buffer released while a slice of it is
+still read, and a parameter reassigned out from under its caller.
+
 ## Constants with the same value collide silently
 
 There are no enums, so every small value type here is a run of

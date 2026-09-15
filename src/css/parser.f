@@ -179,8 +179,11 @@ Decl func parseOneDeclaration(piece:ascii) {
     if colon <= 0 { return null }
     ascii name = asciiLower(asciiTrim(piece.slice(0, colon)))
     if name.length == 0 { return null }
-    // a vendor prefix or a custom property is not something we paint
-    if name.charCodeAt(0) == CH_MINUS { return null }
+    // A custom property is kept -- it is a value other declarations
+    // read through var() -- but a vendor prefix is not something this
+    // engine paints.
+    if name.charCodeAt(0) == CH_MINUS
+        && !(name.length > 1 && name.charCodeAt(1) == CH_MINUS) { return null }
     ascii value = asciiTrim(piece.slice(colon + 1, piece.length))
     bool important = false
     int bang = asciiIndexOf(value, '!', 0)

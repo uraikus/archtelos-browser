@@ -517,10 +517,81 @@ void func setProp(props:map[text], name:text, value:ascii) {
 // Reads a property back as a fresh ascii (null when absent). The map
 // holds text because a text local made from a map entry is a private
 // copy, where an ascii one would alias the entry (FINDINGS.md).
+// The custom properties in scope while one element's style is computed.
+// A global for the same reason cascadeParentStyle is one.
+map[text] cascadeCustom = {}
+
+// Replaces every var(--name[, fallback]) in a value. A custom property
+// may itself use var(), so this runs until nothing changes, with a
+// small bound: the standard makes a cycle invalid and this is how that
+// shows up here.
+const int VAR_MAX_PASSES = 8
+
+ascii func substituteVars(v:ascii) {
+    // Work on a copy this function owns. `out` is reassigned every time
+    // a var() is replaced, and reassigning an alias of the caller's
+    // value releases the caller's buffer -- valgrind caught exactly
+    // that as an invalid read in festina_ascii_release
+    // (FINDINGS.md, "ascii aliasing").
+    text own = v.length > 0 ? v.toText() : ''
+    if own == null || own == '' { return null }
+    ascii out = own.toAscii()
+    if out == null { return null }
+    for int pass = 0, pass < VAR_MAX_PASSES, pass++ {
+        int at = asciiIndexOfLower(out, 'var('.toAscii(), 0)
+        if at < 0 { return out }
+        // find the matching close paren
+        int depth = 0
+        int end = -1
+        for int i = at + 3, i < out.length, i++ {
+            int c = out.charCodeAt(i)
+            if c == CH_LPAREN { depth++ }
+            else if c == CH_RPAREN {
+                depth--
+                if depth == 0 { end = i  break }
+            }
+        }
+        if end < 0 { return null }
+        // Indices into `out`, never into a slice of it: an ascii that
+        // came out of slice()/asciiTrim() is an alias, and taking a
+        // second slice from one is the aliasing hazard in FINDINGS.md.
+        // Doing it here cost an out-of-memory in asciiTrim.
+        int argStart = at + 4
+        int comma = -1
+        for int i = argStart, i < end, i++ {
+            if out.charCodeAt(i) == CH_COMMA { comma = i  break }
+        }
+        ascii name = asciiTrim(out.slice(argStart, comma >= 0 ? comma : end))
+        ascii fallback = comma >= 0 ? asciiTrim(out.slice(comma + 1, end)) : null
+        text got = cascadeCustom[name.toText()]
+        ascii rep = got != null ? got.toAscii() : fallback
+        // An unresolvable var() with no fallback makes the declaration
+        // invalid at computed-value time, not merely empty.
+        if rep == null { return null }
+        // An empty ascii and null are one value, so a slice that came
+        // out empty cannot go through toText() (FINDINGS.md, "empty
+        // text"); the guards keep the pieces as text throughout.
+        text head = at > 0 ? out.slice(0, at).toText() : ''
+        text mid = rep.length > 0 ? rep.toText() : ''
+        text tail = end + 1 < out.length ? out.slice(end + 1, out.length).toText() : ''
+        if head == null { head = '' }
+        if mid == null { mid = '' }
+        if tail == null { tail = '' }
+        text joined = `${head}${mid}${tail}`
+        if joined == null || joined == '' { return null }
+        out = joined.toAscii()
+        if out == null { return null }
+    }
+    return null
+}
+
 ascii func styleProp(props:map[text], name:text) {
     text v = props[name]
     if v == null { return null }
-    return v.toAscii()
+    ascii a = v.toAscii()
+    if a == null { return null }
+    if asciiIndexOfLower(a, 'var('.toAscii(), 0) < 0 { return a }
+    return substituteVars(a)
 }
 
 void func applyFourSides(props:map[text], prefix:text, suffix:text, value:ascii) {
@@ -678,12 +749,174 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
 
 // ---- computing --------------------------------------------------------
 
+// ---- calc() -----------------------------------------------------------
+//
+// A calc() expression resolves to a length that may mix pixels and a
+// percentage -- `calc(100% - 2em)` is the ordinary case -- so the result
+// carries both parts and the percentage waits for the containing block.
+//
+// The grammar is the standard's: a sum of products, where a product
+// multiplies or divides by a plain number, and a term is a number with
+// a unit, a percentage, a bare number or a parenthesised sum. Anything
+// else -- another function, a comparison, a unit this engine has no
+// answer for -- makes the whole expression invalid, which is what the
+// standard asks for and leaves the declaration to be dropped.
+
+// The running value of a sub-expression: pixels plus a percentage.
+struct CalcVal {
+    px:float
+    pct:float
+    num:float       // a plain number, when this is not a length at all
+    isNum:bool
+    ok:bool
+}
+
+CalcVal calcBad
+
+CalcVal func calcNumber(v:float) {
+    CalcVal c
+    c.num = v
+    c.isNum = true
+    c.ok = true
+    return c
+}
+
+CalcVal func calcLength(px:float, pct:float) {
+    CalcVal c
+    c.px = px
+    c.pct = pct
+    c.ok = true
+    return c
+}
+
+// The cursor the expression parser walks, as a pair of globals: Festina
+// has no tuples and no out-parameters, so a recursive-descent parser
+// either threads a struct or shares a position (FINDINGS.md, "no
+// tuples").
+ascii calcSrc
+int calcPos = 0
+
+void func calcSkipSpace() {
+    while calcPos < calcSrc.length && isSpaceCode(calcSrc.charCodeAt(calcPos)) { calcPos++ }
+}
+
+CalcVal func calcParseTerm(fontSize:int) {
+    calcSkipSpace()
+    if calcPos >= calcSrc.length { return calcBad }
+    int c = calcSrc.charCodeAt(calcPos)
+    if c == CH_LPAREN {
+        calcPos++
+        CalcVal inner = calcParseSum(fontSize)
+        calcSkipSpace()
+        if calcPos >= calcSrc.length || calcSrc.charCodeAt(calcPos) != CH_RPAREN { return calcBad }
+        calcPos++
+        return inner
+    }
+    // a nested calc() is just a parenthesised sum
+    if calcPos + 5 <= calcSrc.length && asciiLower(calcSrc.slice(calcPos, calcPos + 5)) == 'calc(' {
+        calcPos = calcPos + 5
+        CalcVal inner = calcParseSum(fontSize)
+        calcSkipSpace()
+        if calcPos >= calcSrc.length || calcSrc.charCodeAt(calcPos) != CH_RPAREN { return calcBad }
+        calcPos++
+        return inner
+    }
+    parseNumberAt(calcSrc, calcPos)
+    if !numOk { return calcBad }
+    float v = numValue
+    int after = numEnd
+    int unitEnd = after
+    while unitEnd < calcSrc.length && (isAlphaCode(calcSrc.charCodeAt(unitEnd))
+        || calcSrc.charCodeAt(unitEnd) == CH_PERCENT) { unitEnd++ }
+    ascii unit = asciiLower(calcSrc.slice(after, unitEnd))
+    calcPos = unitEnd
+    if unit == '' { return calcNumber(v) }
+    if unit == '%' { return calcLength(0.0, v) }
+    // Reuse the ordinary unit table: a term is exactly one length.
+    Len l = parseLength(`${v}${unit.toText()}`.toAscii(), fontSize)
+    if l.kind == LEN_PX { return calcLength(l.v, 0.0) }
+    return calcBad
+}
+
+CalcVal func calcParseProduct(fontSize:int) {
+    CalcVal left = calcParseTerm(fontSize)
+    if !left.ok { return calcBad }
+    while true {
+        calcSkipSpace()
+        if calcPos >= calcSrc.length { return left }
+        int c = calcSrc.charCodeAt(calcPos)
+        if c != CH_STAR && c != CH_SLASH { return left }
+        calcPos++
+        CalcVal right = calcParseTerm(fontSize)
+        if !right.ok { return calcBad }
+        if c == CH_STAR {
+            // exactly one side must be a plain number
+            if left.isNum && !right.isNum {
+                left = calcLength(right.px * left.num, right.pct * left.num)
+            } else if right.isNum && !left.isNum {
+                left = calcLength(left.px * right.num, left.pct * right.num)
+            } else if left.isNum && right.isNum {
+                left = calcNumber(left.num * right.num)
+            } else { return calcBad }
+        } else {
+            if !right.isNum || right.num == 0.0 { return calcBad }
+            if left.isNum { left = calcNumber(left.num / right.num) }
+            else { left = calcLength(left.px / right.num, left.pct / right.num) }
+        }
+    }
+    return left
+}
+
+CalcVal func calcParseSum(fontSize:int) {
+    CalcVal left = calcParseProduct(fontSize)
+    if !left.ok { return calcBad }
+    while true {
+        calcSkipSpace()
+        if calcPos >= calcSrc.length { return left }
+        int c = calcSrc.charCodeAt(calcPos)
+        if c != CH_PLUS && c != CH_MINUS { return left }
+        // `+` and `-` must be surrounded by whitespace, which is what
+        // keeps `10px -5px` from reading as a subtraction.
+        if calcPos == 0 || !isSpaceCode(calcSrc.charCodeAt(calcPos - 1)) { return calcBad }
+        if calcPos + 1 >= calcSrc.length || !isSpaceCode(calcSrc.charCodeAt(calcPos + 1)) { return calcBad }
+        calcPos++
+        CalcVal right = calcParseProduct(fontSize)
+        if !right.ok { return calcBad }
+        if left.isNum != right.isNum { return calcBad }
+        if left.isNum {
+            left = calcNumber(c == CH_PLUS ? left.num + right.num : left.num - right.num)
+        } else if c == CH_PLUS {
+            left = calcLength(left.px + right.px, left.pct + right.pct)
+        } else {
+            left = calcLength(left.px - right.px, left.pct - right.pct)
+        }
+    }
+    return left
+}
+
+// Evaluates `calc( ... )`, given the text between the parentheses.
+Len func evaluateCalc(body:ascii, fontSize:int) {
+    Len bad
+    bad.kind = LEN_INVALID
+    calcSrc = body
+    calcPos = 0
+    CalcVal r = calcParseSum(fontSize)
+    calcSkipSpace()
+    if !r.ok || r.isNum || calcPos < calcSrc.length { return bad }
+    if r.pct == 0.0 { return lenPx(r.px) }
+    if r.px == 0.0 { return lenPercent(r.pct) }
+    return lenCalc(r.px, r.pct)
+}
+
 Len func parseLength(tok:ascii, fontSize:int) {
     Len l
     l.kind = LEN_INVALID
     if tok == null { return l }
     ascii t = asciiLower(asciiTrim(tok))
     if t == 'auto' || t == 'none' || t == 'initial' || t == 'unset' { return lenAuto() }
+    if t.length > 5 && asciiLower(t.slice(0, 5)) == 'calc(' && t.charCodeAt(t.length - 1) == CH_RPAREN {
+        return evaluateCalc(t.slice(5, t.length - 1), fontSize)
+    }
     parseNumberAt(t, 0)
     if !numOk { return l }
     float v = numValue
@@ -908,6 +1141,36 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     Style s
     cascadeParentStyle = parent
     cascadeParentIsRoot = isRoot
+
+    // Custom properties inherit. An element that declares none shares
+    // its parent's map rather than copying it, which matters: on a real
+    // page almost nothing declares one.
+    map[text] emptyCustom = {}
+    map[text] inheritedCustom = isRoot ? emptyCustom : parent.customProps
+    if inheritedCustom == null { inheritedCustom = emptyCustom }
+    arr[text] declared = props.keys()
+    bool addsCustom = false
+    for int i = 0, i < declared.length, i++ {
+        text k = declared[i]
+        if k.length > 1 && k.toAscii() != null && k.toAscii().charCodeAt(0) == CH_MINUS
+            && k.toAscii().charCodeAt(1) == CH_MINUS { addsCustom = true  break }
+    }
+    if addsCustom {
+        map[text] merged = {}
+        arr[text] ik = inheritedCustom.keys()
+        for int i = 0, i < ik.length, i++ { merged[ik[i]] = inheritedCustom[ik[i]] }
+        for int i = 0, i < declared.length, i++ {
+            text k = declared[i]
+            ascii ka = k.toAscii()
+            if ka != null && ka.length > 1 && ka.charCodeAt(0) == CH_MINUS && ka.charCodeAt(1) == CH_MINUS {
+                merged[k] = props[k]
+            }
+        }
+        s.customProps = merged
+    } else {
+        s.customProps = inheritedCustom
+    }
+    cascadeCustom = s.customProps
     // inherited
     int parentFont = isRoot ? ROOT_FONT_SIZE : parent.fontSize
     s.fontSize = computeFontSize(styleProp(props, 'font-size'), parentFont)

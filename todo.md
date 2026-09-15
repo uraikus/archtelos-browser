@@ -10,7 +10,7 @@ Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 12 of them. That list, not a sense of what feels
+implements no part of 11 of them. That list, not a sense of what feels
 modern, sets the order below.
 
 ### The cascade
@@ -31,34 +31,30 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **Custom properties and `calc()`.** Both are in the official
-   definition, not a later level. Custom properties are dropped by name
-   at parse time, so `var()` can never resolve, and `calc()` has no
-   parser at all. Modern stylesheets are written in these two.
-2. **The CSS2 chapters that are missing**, in this order: positioning
+1. **The CSS2 chapters that are missing**, in this order: positioning
    and `z-index` (§9.3), floats and `clear` (§9.5), `overflow` clipping
    (§11), and generated content with counters (§12). `position` does not
    appear in `src/css/` at all, and `float` and `overflow` are computed
    and never read. These are the four largest visual gaps.
-3. **Flexbox.** Accepted as a `display` value and laid out as a block,
+2. **Flexbox.** Accepted as a `display` value and laid out as a block,
    which is why a modern page renders as one column.
-4. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
+3. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
    `:nth-last-child` / `:nth-of-type` / `:nth-last-of-type` /
    `:only-of-type` family, `:empty`, `:target`, `:enabled`, `:disabled`,
    `:checked`, `:lang()`, and pseudo-elements — which generated content
    needs anyway.
-5. **CSS Images 3**: gradients, `object-fit`, `object-position`. No CSS
+4. **CSS Images 3**: gradients, `object-fit`, `object-position`. No CSS
    image of any kind is supported today.
-6. **Backgrounds and Borders 3, completed**: background images and
+5. **Backgrounds and Borders 3, completed**: background images and
    layers with position, repeat, size and clip; `box-shadow`;
    `border-image`; and border styles that paint as something other than
    solid.
-7. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
+6. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
    `@font-face`.
-8. **Counter Styles 3**, which also fixes the list markers: today
+7. **Counter Styles 3**, which also fixes the list markers: today
    `lower-alpha`, `upper-alpha`, `lower-roman` and `upper-roman` all
    render as arabic numerals.
-9. The remainder of the official definition, lower value for this
+8. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
    User Interface 3, Multi-column 1, Transforms 1, Compositing and
    Blending 1, Containment 1, Easing 1, Namespaces 3.

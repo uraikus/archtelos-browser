@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### calc() and custom properties
+
+Both are in the official definition of CSS, not a later level, and
+neither existed. The official definition is 24 specifications and the
+engine implements no part of 11 of them now, down from 12.
+
+**`calc()`** is a sum of products over lengths and plain numbers, with
+nested parentheses and nested `calc()`. A length now carries a pixel
+part and a percentage part separately, so `calc(100% - 2em)` stays
+unresolved until the containing block is known and resolves differently
+in different places, which is the whole point of it. The standard's
+invalid cases are rejected: a `-` without spaces around it, a length
+added to a number, a length multiplied by a length, a trailing operator.
+
+**Custom properties** are kept rather than dropped by name, they
+inherit, and `var(--name, fallback)` substitutes them wherever a value
+is read, including inside another custom property. An unresolvable
+`var()` with no fallback makes the declaration invalid rather than
+empty, as the standard requires. An element that declares none shares
+its parent's map instead of copying it. A vendor prefix is still
+dropped, and a test that asserted custom properties were dropped with
+them was updated.
+
+Two Festina findings came out of it. There are no forward declarations,
+which is only a nuisance for mutually recursive functions. And slicing
+an `ascii` that itself came from a slice is a use-after-free that
+surfaces as an out-of-memory in `asciiTrim`, several frames away — the
+same ownership gap as the unretained alias already recorded, reached
+from the other direction.
+
 ### The cascade conformance bugs are fixed
 
 Seven of them, each named in css-2026.md against CSS Cascade 4, Values 3

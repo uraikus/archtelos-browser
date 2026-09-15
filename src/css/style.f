@@ -78,10 +78,14 @@ const int FLOAT_RIGHT = 2
 const int LEN_AUTO = 0
 const int LEN_PX = 1
 const int LEN_PERCENT = 2
+// calc() can mix the two -- `calc(100% - 2em)` is the common case -- and
+// neither part can be resolved until the containing block is known.
+const int LEN_CALC = 3
 
 struct Len {
     kind:int
-    v:float
+    v:float     // pixels, or the percentage for LEN_PERCENT
+    pct:float   // LEN_CALC only: the percentage part, added to v
 }
 
 struct Style {
@@ -133,6 +137,7 @@ struct Style {
     hidden:bool             // visibility: hidden
     overflowHidden:bool
     fontKey:text            // cache key for the text measurer
+    customProps:map[text]   // custom properties in scope, inherited
 }
 
 // text-decoration is a bit set built with +, so a union has to check
@@ -168,7 +173,16 @@ Len func lenPercent(pct:float) {
 int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
+    if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
     return roundPx(l.v)
+}
+
+Len func lenCalc(px:float, pct:float) {
+    Len l
+    l.kind = LEN_CALC
+    l.v = px
+    l.pct = pct
+    return l
 }
 
 bool func lenIsAuto(l:Len) {

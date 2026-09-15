@@ -10,6 +10,21 @@ Ordered by how much a fix would be worth here.
 
 ---
 
+## Forward declarations
+
+A function must be defined before the line that mentions it, which makes
+two mutually recursive functions awkward: `calcParseTerm` calls
+`calcParseSum` and `calcParseSum` calls `calcParseTerm`, and a signature
+with no body is a syntax error.
+
+**Proposal.** Either resolve function names across the whole compilation
+unit regardless of order, which is what the one global namespace already
+implies, or accept a bodiless signature as a declaration.
+
+**What it would delete here.** Nothing yet: the calc() parser is ordered
+to avoid the problem. It is a constraint on how the next recursive
+grammar can be written, not a workaround already in the tree.
+
 ## Enums
 
 Every small value type in this renderer is a run of `const int`:
