@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>CSS showcase</title>
+<style>
+  body { margin: 20px; font-family: serif; background: #fafafa }
+  .row { margin: 12px 0 }
+  .box { display: inline-block; width: 90px; height: 60px; margin: 4px; vertical-align: middle; color: white; text-align: center; line-height: 60px; font-family: sans-serif; font-size: 13px }
+  .a { background: rgb(220, 50, 50) }
+  .b { background: hsl(200, 70%, 45%); border-radius: 12px }
+  .c { background: rebeccapurple; border: 4px solid gold }
+  .d { background: rgba(0, 128, 0, 0.5); border-radius: 30px }
+  .e { background: #333; opacity: 0.4 }
+  .f { background: teal; border-radius: 6px; border: 2px dashed white }
+  p.serif { font-family: serif } p.sans { font-family: sans-serif } p.mono { font-family: monospace }
+  .sizes span { margin-right: 8px }
+  .quote { border-left: 4px solid #999; margin: 16px 40px; padding: 4px 12px; color: #444; font-style: italic }
+  #grid td { width: 33%; text-align: center; padding: 10px; border: 1px solid #aaa }
+  .nowrap { white-space: nowrap; overflow: hidden; width: 200px; border: 1px solid #ccc }
+  .upper { text-transform: uppercase; letter-spacing: 2px }
+  .right { text-align: right } .center { text-align: center }
+  .deco { text-decoration: line-through }
+  h1 { font: bold 28px/1.1 sans-serif; color: #234 }
+  ul.square { list-style-type: square } ol.none { list-style: none; padding-left: 0 }
+  .hidden { visibility: hidden }
+  .mixed { font-size: 20px } .mixed small { font-size: 60% } .mixed big { font-size: 140% }
+  @media (max-width: 600px) { body { background: #ffe } }
+  @media print { body { display: none } }
+</style>
+</head>
+<body>
+<h1>CSS showcase</h1>
+<div class="row">
+  <div class="box a">rgb()</div><div class="box b">hsl()</div><div class="box c">named</div><div class="box d">rgba()</div><div class="box e">opacity</div><div class="box f">radius</div>
+</div>
+<p class="serif">Serif paragraph: the quick brown fox jumps over the lazy dog.</p>
+<p class="sans">Sans-serif paragraph: the quick brown fox jumps over the lazy dog.</p>
+<p class="mono">Monospace paragraph: the quick brown fox jumps over the lazy dog.</p>
+<p class="sizes"><span style="font-size: 10px">10px</span><span style="font-size: 14px">14px</span><span style="font-size: 20px">20px</span><span style="font-size: 2em">2em</span><span style="font-size: 150%">150%</span><span style="font-size: 18pt">18pt</span></p>
+<p class="mixed">Mixed <small>small</small> and <big>big</big> text on one line, aligned on the baseline.</p>
+<div class="quote">A blockquote-like box with a left border, margins and italic text.</div>
+<p class="right">Right-aligned text.</p>
+<p class="center">Centered text with <span class="deco">strike-through</span> and <span class="upper">uppercase letters</span>.</p>
+<div class="nowrap">This text does not wrap and overflows its 200px box, unclipped.</div>
+<table id="grid"><tr><td>one</td><td>two</td><td>three</td></tr><tr><td>four</td><td>five</td><td>six</td></tr></table>
+<ul class="square"><li>square bullets</li><li>second item</li></ul>
+<ol class="none"><li>no markers</li><li>at all</li></ol>
+<p>Visible <span class="hidden">invisible</span> visible again.</p>
+<p><input type="text" value="a text field"> <input type="checkbox" checked> <input type="radio" checked> <button>A button</button> <select><option>Choice</option></select></p>
+</body>
+</html>
