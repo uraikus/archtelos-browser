@@ -6,51 +6,81 @@ describes the present (CLAUDE.md, §3).
 
 ## CSS: move to the 2026 snapshot
 
-Where the style engine stands against
+Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
-module by module, in [css-2026.md](css-2026.md). This section is the
-work that measurement implies, in the order it is worth doing.
+specification by specification, in [css-2026.md](css-2026.md). The
+snapshot's official definition of CSS is 24 specifications; the engine
+implements no part of 12 of them. That list, not a sense of what feels
+modern, sets the order below.
 
-1. **Fix the cascade bugs before adding anything.** Each is small, each
-   is wrong on ordinary pages today, and every feature built on top
-   inherits the error:
-   - Compare specificity as a triple rather than collapsing it into one
-     integer weighted 10000 / 100 / 1, where a hundred classes tie an id
-     and a hundred and one beat it.
-   - Make `!important` invert the origin order, so an important UA rule
-     beats an important author rule.
-   - Make `inherit` return the parent's value. It returns the initial
-     value for every property except a handful.
-   - Stop inheriting `text-decoration`; propagate it to descendants the
-     way the standard does. Stop inheriting `opacity` at all.
-   - Evaluate the `@supports` condition. Applying every block means a
-     page's fallback and its enhancement both land.
-   - Resolve `rem` against the real root font size and `vh` against the
-     real viewport height, which is still the 600 its initializer sets.
-   - Drop a whole rule when one of its selectors will not parse, rather
-     than only that selector.
-2. **Add `calc()` and custom properties.** `var()` cannot resolve at all:
-   custom properties are dropped by name at parse time. These two are
-   what modern stylesheets are written in, so the parser rejecting them
-   silently costs more than any single missing property.
-3. **Positioning.** `position` is not parsed at all and every box is
-   static. This is the single largest visual gap.
-4. **Flexbox**, then **Grid**. Both are accepted and laid out as blocks,
+### First, the cascade bugs
+
+Each is small, each is wrong on ordinary pages today, and every feature
+built on top inherits the error. All seven are official-definition
+conformance, not polish.
+
+1. Compare specificity as a triple rather than collapsing it into one
+   integer weighted 10000 / 100 / 1, where a hundred classes tie an id.
+2. Make `!important` invert the origin order. It adds the same constant
+   to every origin, so an important author rule beats an important UA
+   rule.
+3. Make `inherit` return the parent's value. It returns the initial
+   value for all but a handful of properties. Add `revert` and `all`,
+   and honour `initial` and `unset` outside lengths (CSS Cascade 4).
+4. Evaluate the `@supports` condition. Applying every block means a
+   page's fallback and its enhancement both land (CSS Conditional 3).
+5. Stop inheriting `text-decoration`; propagate it to descendants the
+   way the standard does. Stop inheriting `opacity` at all.
+6. Resolve `rem` against the real root font size and `vh` against the
+   real viewport height, which is still the 600 its initializer sets.
+7. Drop a whole rule when one of its selectors will not parse, rather
+   than only that selector (CSS Syntax 3).
+
+### Then the official definition, largest holes first
+
+1. **Custom properties and `calc()`.** Both are in the official
+   definition, not a later level. Custom properties are dropped by name
+   at parse time, so `var()` can never resolve, and `calc()` has no
+   parser at all. Modern stylesheets are written in these two.
+2. **The CSS2 chapters that are missing**, in this order: positioning
+   and `z-index` (§9.3), floats and `clear` (§9.5), `overflow` clipping
+   (§11), and generated content with counters (§12). `position` does not
+   appear in `src/css/` at all, and `float` and `overflow` are computed
+   and never read. These are the four largest visual gaps.
+3. **Flexbox.** Accepted as a `display` value and laid out as a block,
    which is why a modern page renders as one column.
-5. **Floats**, which are computed and never read, and the `clear` that
-   goes with them.
-6. **Selectors Level 4**: `:is()`, `:where()`, `:has()`, a full selector
-   list inside `:not()`, `An+B` in `:nth-child()`, and the attribute
-   case-insensitivity flag, which is parsed and thrown away.
-7. **`@layer` ordering.** Layers are flattened into the ordinary cascade
-   today, so a layered sheet competes purely on specificity.
-8. **Colors Level 4/5**: `lab()`, `lch()`, `oklab()`, `oklch()`,
-   `color-mix()`. The runtime color is already a packed RGBA integer, so
-   these are parse-and-convert rather than architecture.
-9. **`overflow: hidden`**, which is computed and clips nothing. It needs
-   a clip region the canvas does not have; see festina.md.
-10. **Generated content** (`::before`, `::after`), which needs pseudo-
-    element support the selector parser does not have.
+4. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
+   `:nth-last-child` / `:nth-of-type` / `:nth-last-of-type` /
+   `:only-of-type` family, `:empty`, `:target`, `:enabled`, `:disabled`,
+   `:checked`, `:lang()`, and pseudo-elements — which generated content
+   needs anyway.
+5. **CSS Images 3**: gradients, `object-fit`, `object-position`. No CSS
+   image of any kind is supported today.
+6. **Backgrounds and Borders 3, completed**: background images and
+   layers with position, repeat, size and clip; `box-shadow`;
+   `border-image`; and border styles that paint as something other than
+   solid.
+7. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
+   `@font-face`.
+8. **Counter Styles 3**, which also fixes the list markers: today
+   `lower-alpha`, `upper-alpha`, `lower-roman` and `upper-roman` all
+   render as arabic numerals.
+9. The remainder of the official definition, lower value for this
+   renderer but still part of the definition: Writing Modes 3, Basic
+   User Interface 3, Multi-column 1, Transforms 1, Compositing and
+   Blending 1, Containment 1, Easing 1, Namespaces 3.
+
+### After the official definition
+
+Grid; `@layer` ordering, which is discarded today (Cascade 5); the
+Media Queries 4 range syntax; Selectors 4's `:is()`, `:where()`,
+`:has()` and a selector list inside `:not()`; `color-mix()` and the
+wider colour spaces; `box-sizing`, since every box is content-box; the
+`display` corrections in Display 3; and the Text 3 and Text Decoration 3
+gaps. These sit in the snapshot's three lower classes, which is lower
+than their prominence suggests.
+
+### The instrument
 
 **Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
 against the standard's own tests, level with Chromium, and the only
@@ -61,11 +91,9 @@ harness assumes a scripting browser. A pixel comparison against Chromium
 on a fixed page set, both already wired up in `tests/chromium.py`, may be
 the more practical instrument.
 
-**The snapshot itself is not reachable from this network.** `www.w3.org`
-answers the proxy's CONNECT with 403, so css-2026.md takes its module
-axis from the test suite's own directories instead. Someone who can
-reach the snapshot should add its classification of each module as
-stable, in testing, or abandoned, and check the axis against it.
+**Re-checking the snapshot needs it supplied.** `www.w3.org` is refused
+by this network's egress policy, so a session cannot fetch the document
+itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 

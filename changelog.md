@@ -5,29 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
-### The CSS gap, measured
+### The CSS gap, measured against the snapshot
 
 `css-2026.md` states where the style engine stands against the CSS
-Snapshot 2026, module by module. The engine column is read from the
-code, counting a property as absent when the cascade computes it but
-neither layout nor paint reads it, since a page renders the same either
-way. That rule alone moves `float`, `overflow` and `max-height` out of
-the supported column.
+Snapshot 2026, taking the snapshot's own four classes in its own order.
+The engine column is read from the code, counting a property as absent
+when the cascade computes it but neither layout nor paint reads it,
+since a page renders the same either way. That rule alone moves `float`,
+`overflow` and `max-height` out of the supported column.
 
-The module axis is the 91 module directories of the W3C's own test
-suite, not the snapshot's list, because `www.w3.org` answers this
-network's proxy with 403 on CONNECT. So the file does not reproduce the
-snapshot's classification of each module as stable, in testing or
-abandoned, and says so.
+The headline is that the official definition of CSS is 24
+specifications and the engine implements no part of 12 of them.
 
-todo.md's CSS section is now the work that measurement implies rather
-than the feature list it carried before. It opens with seven cascade
-corrections, because each is small, each is wrong on ordinary pages, and
-anything built on top inherits the error: specificity collapsed into one
-integer, `!important` not inverting origin order, `inherit` returning the
-initial value, `text-decoration` and `opacity` inheriting when they
-should not, `@supports` applying every block it sees, `rem` against a
-hard-coded 16, and `vh` against a viewport height still fixed at 600.
+The classification corrects what the roadmap assumed. Custom properties,
+`calc()`, flexbox and CSS Images are official-definition work rather
+than modern extras, and positioning, floats, `overflow` clipping and
+generated content are official-definition work too, through their CSS2
+chapters. `:is()`, `:where()`, `:has()` and `@layer` ordering sit in the
+snapshot's lower classes, below their prominence. todo.md is ordered
+that way now.
+
+Ahead of all of it are seven cascade corrections, because each is small,
+each is wrong on ordinary pages, and anything built on top inherits the
+error: specificity collapsed into one integer, `!important` not
+inverting origin order, `inherit` returning the initial value,
+`text-decoration` and `opacity` inheriting when they should not,
+`@supports` applying every block it sees, `rem` against a hard-coded 16,
+and `vh` against a viewport height still fixed at 600.
+
+`www.w3.org` is refused by this network's egress policy, so the snapshot
+has to be supplied to a session rather than fetched.
 
 ### Continuous integration
 
