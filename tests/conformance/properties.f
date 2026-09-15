@@ -102,8 +102,10 @@ if !f.exists() {
 text baseline = digestFor('')
 arr[text] lines = blobLines(f)
 int total = 0
+int gradeable = 0
 int implemented = 0
 arr[text] inert = []
+arr[text] ungradeable = []
 
 for int i = 0, i < lines.length, i++ {
     text line = lines[i]
@@ -114,15 +116,39 @@ for int i = 0, i < lines.length, i++ {
     text prop = parts[0]
     text val = parts[1]
     total++
+    // A row that cannot show a difference is not a measurement of this
+    // engine at all; it is a gap in the instrument. Counted in the
+    // denominator it reads as a property this engine has not
+    // implemented, and listed among the properties that "change
+    // nothing" it hides in the work list, so it is reported separately.
+    //
+    // Two shapes of it: a CSS-wide keyword, which computes to the
+    // initial value by definition, and a row whose third column gives
+    // the reason Chromium itself cannot tell the value from the initial
+    // one on this probe.
+    if val == 'initial' || val == 'inherit' || val == 'unset' || val == 'revert' {
+        ungradeable.push(`${prop} (a CSS-wide keyword computes to the initial value)`)
+        continue
+    }
+    if parts.length >= 3 && parts[2] != '' {
+        ungradeable.push(`${prop} (${parts[2]})`)
+        continue
+    }
+    gradeable++
     if digestFor(`${prop}: ${val}`) != baseline { implemented++ }
     else { inert.push(prop) }
 }
 
 if verbose {
-    log('  properties that change nothing:')
+    log('  properties that are gradeable and change nothing -- the work list:')
     for int i = 0, i < inert.length, i++ { log(`    ${inert[i]}`) }
+    log('  rows whose value cannot show a difference -- the instrument work list:')
+    for int i = 0, i < ungradeable.length, i++ { log(`    ${ungradeable[i]}`) }
 }
-log(`properties: ${implemented}/${total} CSS properties change the computed style`)
+log(`properties: ${implemented}/${gradeable} CSS properties change the computed style`)
+if ungradeable.length > 0 {
+    log(`properties: ${ungradeable.length} of ${total} rows carry a value that could never show a difference (--verbose lists them)`)
+}
 if minimum >= 0 && implemented < minimum {
     log(`properties: FAILED -- expected at least ${minimum}`)
     close(1)

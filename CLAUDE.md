@@ -147,6 +147,20 @@ worked; the count did not move. So the check is end to end — set the
 property, run the instrument, watch the number go up — and it is done
 when the implementation lands, not once the suite is green.
 
+**Audit the whole instrument, not one row at a time.** Checking the row
+in front of you leaves every other row unexamined, and they rot
+silently: 218 of the 373 rows in `css-properties.txt` declared
+`initial`, which computes to the initial value by definition, and 24
+more carried a value equal to the initial one — a border width with no
+border style beside it computes to zero, `text-decoration-style: solid`
+*is* the initial value. Two hundred and forty-two properties could have
+been implemented perfectly and the count would not have moved, and
+`--verbose` listed them among the properties still to do, which is
+where they hid. `tests/chromium.py properties-audit` now asks Chromium
+of every row whether it can register at all, and `tests/run.sh` runs it
+before grading the engine, so the question is asked of the whole file on
+every run rather than of whichever row someone remembered.
+
 **When two things must agree, test them against each other.** A check
 against a number you worked out yourself only catches the case you
 thought of. A check that two ways of saying the same thing land on the

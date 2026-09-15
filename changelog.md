@@ -5,6 +5,54 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The properties instrument could not grade two thirds of its own rows
+
+`tests/conformance/css-properties.txt` lists every property Chromium
+reports on a computed style, each with a value an implementation must
+visibly change. **242 of the 373 rows carried a value that could not
+show a difference**, so those properties could have been implemented
+perfectly and the count would not have moved.
+
+- **218 rows declared `initial`**, which computes to the initial value by
+  definition.
+- **24 more carried a value equal to the initial one**, which no string
+  inspection would catch: a border width with no border style beside it
+  computes to zero, `text-decoration-style: solid` *is* the initial
+  value, `list-style-image: none` and `grid-template-columns: none` are
+  their own initial values.
+
+They hid in plain sight: `--verbose` listed them among "properties that
+change nothing", which is exactly where a genuinely unimplemented
+property belongs, so the work list and the instrument's own defects were
+the same list.
+
+Chromium chose the replacements — a candidate is kept only if Chromium
+computes it differently from the initial value, applied the way the
+runner applies it, which is a style attribute and so may carry two
+declarations where one is not enough. 241 rows now do; four cannot be
+graded by a probe that is an ordinary element and say so in a third
+column with the reason, and are excluded from the denominator rather
+than counted as unimplemented:
+
+| | |
+|---|---|
+| `d` | applies only to an SVG path element |
+| `grid-template-areas` | computes to `none` unless the probe is a grid container |
+| `hyphenate-character` | computes to `auto` unless hyphenation is applied |
+| `overlay` | only the user agent can set it |
+
+`tests/chromium.py properties-audit` asks Chromium of every row whether
+it can register at all, `tests/run.sh` runs it before grading the
+engine, and it fails the suite on a dead row or on a third column that
+is no longer needed. Its own failure mode was checked by breaking a row
+and watching it fail.
+
+**The score did not move: 86.** This engine implements none of the 242,
+so the reading was numerically right and measuring nothing — the
+denominator is now 369 rather than 373 because four rows are honestly
+excluded. What changed is that work on those properties can now show up
+at all.
+
 ### Radial gradients
 
 `radial-gradient()` and `repeating-radial-gradient()` paint, which

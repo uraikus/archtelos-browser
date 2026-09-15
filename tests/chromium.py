@@ -424,6 +424,66 @@ report(res);
     return 0
 
 
+
+def properties_audit(path):
+    """Checks that every row of css-properties.txt can register at all.
+
+    A row's value must be one Chromium itself computes differently from
+    the property's initial value; otherwise the property could be
+    implemented perfectly and the row would still read as missing. The
+    value is applied the way tests/conformance/properties.f applies it --
+    written into a style attribute, so a row may carry two declarations
+    where one is not enough. A row with a third column declares itself
+    ungradeable and says why; those are reported, not failed.
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("properties audit: skipped -- no chromium")
+        return 0
+    rows, excused = [], {}
+    for line in open(path):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or "\t" not in line:
+            continue
+        parts = line.split("\t")
+        rows.append([parts[0], parts[1]])
+        if len(parts) >= 3 and parts[2]:
+            excused[parts[0]] = parts[2]
+    payload = encode_payload({"rows": rows})
+    html = """<!doctype html><html><body><div id=host></div><pre id=out></pre>
+<script>%s
+var PAYLOAD = "%s"; var data = %s;
+var host = document.getElementById('host'); var bad = [];
+for (var i = 0; i < data.rows.length; i++) {
+  var prop = data.rows[i][0], val = data.rows[i][1];
+  host.innerHTML = '<p id="a"></p><p id="b" style="' + prop + ': ' + val + '"></p>';
+  var before = getComputedStyle(document.getElementById('a')).getPropertyValue(prop);
+  var after  = getComputedStyle(document.getElementById('b')).getPropertyValue(prop);
+  if (after === before) bad.push([prop, val]);
+}
+report(bad);
+</script></body></html>""" % (REPORT_JS, payload, DECODE_JS)
+    bad = read_result(run_chrome(chrome, html))
+    if bad is None:
+        print("properties audit: FAILED -- no result from chromium")
+        return 1
+    unexpected = [b for b in bad if b[0] not in excused]
+    stale = [p for p in excused if p not in {b[0] for b in bad}]
+    for prop, val in unexpected:
+        print("properties audit: %s = %r cannot register -- Chromium computes it "
+              "no differently from the initial value" % (prop, val))
+    for prop in stale:
+        print("properties audit: %s is marked ungradeable but Chromium can now "
+              "tell it from the initial value -- drop the third column" % prop)
+    if unexpected or stale:
+        print("properties audit: FAILED -- %d row(s) measure nothing"
+              % (len(unexpected) + len(stale)))
+        return 1
+    print("properties audit: all %d rows can register (%d declared ungradeable)"
+          % (len(rows) - len(excused), len(excused)))
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -438,6 +498,8 @@ def main():
         return render_timing(sys.argv[3:], int(sys.argv[2]))
     if sys.argv[1] == "selectors":
         return selector_matches(sys.argv[2], sys.argv[3])
+    if sys.argv[1] == "properties-audit":
+        return properties_audit(sys.argv[2])
     if sys.argv[1] == "which":
         chrome = find_chrome()
         print(chrome or "")

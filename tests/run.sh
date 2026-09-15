@@ -50,6 +50,13 @@ for src in tests/unit/*.f tests/render/*.f; do
         echo "FAILED: $src"; failed=1
     fi
 done
+# Before grading the engine, check the instrument can grade anything: a
+# row whose value Chromium computes no differently from the initial value
+# reads as "not implemented" however complete the implementation is.
+if ! python3 tests/chromium.py properties-audit tests/conformance/css-properties.txt; then
+    echo "FAILED: tests/conformance/css-properties.txt"; failed=1
+fi
+
 # Which CSS properties actually change what renders.
 PROPERTIES_MIN=86
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
