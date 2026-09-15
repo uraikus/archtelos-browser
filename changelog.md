@@ -5,6 +5,94 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### object-fit and object-position
+
+A replaced element's content was always stretched to its box, which is
+`object-fit: fill` — right for the initial value and wrong for every
+other one. All five fitting values work now, with `object-position`
+placing the result.
+
+- **`contain`** and **`cover`** scale by the smaller and the larger of
+  the two axis ratios; **`none`** keeps the intrinsic size; and
+  **`scale-down`** is the smaller of `none` and `contain`, which is
+  `contain` capped at a scale of 1.
+- **`object-position`** takes keywords and lengths on both axes, and
+  resolves a percentage against the space the object leaves over, the
+  same way `background-position` does. Its initial value is `50% 50%`,
+  not `0% 0%`, so an object smaller than its box centres.
+- **Content that overflows the box is clipped to it**, which `cover` and
+  `none` both cause, through an image the size of the content box — the
+  device `overflow: hidden` and background tiling already use, since the
+  canvas has no clip region.
+- **`fill` is still one blit.** It covers the box exactly, so there is
+  nothing to position and nothing to clip; a page that never mentions
+  `object-fit` reaches the same call it did before. Neither does the
+  extra cascade work show up: paired over 25 interleaved runs on the
+  benchmark page, the cascade phase moved by a median of 0.0 ms, and the
+  new build was the faster of the pair in 10 runs against 7.
+
+Forty-six pixel checks in `tests/render/objectfit.f`. The properties
+instrument reads **86/373**, up from 84.
+
+**The ground truth is the specification's algorithm, not another
+browser.** Headless Chromium in this container paints only the first
+scanline of a screenshot, so it cannot supply pixels; the sizing
+algorithm is exact, so every expectation is derived from the intrinsic
+size and the box with the derivation written beside the check.
+
+**The instrument had to be fixed before it could register anything.**
+Both properties already had real values in
+`tests/conformance/css-properties.txt`, put there ahead of the work — but
+`styleDigest` in `tests/conformance/properties.f` did not read the two
+new fields, so the count stayed at 84 with the feature fully working.
+A probe row with a real value is only half of it: the digest has to look
+at the field the row moves.
+
+**Cairo filters a scaled blit.** An unscaled `drawImage` is exact to the
+pixel, and a scaled one blends about two pixels either side of every
+edge and of any colour boundary inside the image. The pixel checks step
+three pixels clear of a scaled edge and check the `none` cases, which
+are unscaled, right on the boundary.
+
+### Opacity and the clipping layer
+
+Anything clipped here is painted into an image the size of the clip and
+blitted back, because the canvas has no clip region. That blit is a
+separate drawing call, and the element's opacity has to be applied to it
+exactly once. Neither place that does this got it right.
+
+- **A background image ignored `opacity` altogether.** `paintBackground`
+  sets the alpha for the background colour and resets it to 1 before the
+  image, so a background image on a half-transparent box painted fully
+  opaque. Shipped in the background-images commit; no test combined the
+  two.
+- **`object-fit`'s clipping layer applied it twice**, once into the
+  layer's own pixels and again as the layer was composited — and not
+  even to a value another opacity could reproduce, because the
+  intermediate is premultiplied and rounds.
+
+Both now draw into the layer at full alpha and apply the element's
+opacity to the blit. The tests compare the clipped path against the
+unclipped one at the same opacity, which is the comparison that has to
+hold and the one neither bug survived: a background image against a
+background colour of the same blue, and `object-fit: none` (which
+overflows a 10x10 box, so it clips) against `object-fit: contain`
+(which fits, so it does not).
+
+This is the hazard in using an image as a clip region rather than having
+one: a clip is not supposed to be a drawing operation, and this one is,
+so every piece of state that affects drawing has to be reasoned about
+twice.
+
+One Festina finding came out of it, number 30: the canvas takes
+`drawImage`'s nine-argument source-rectangle form and an image
+destination does not, so clipping a scaled draw inside a layer needs a
+whole extra image where the canvas would need none. festina.md carries
+the proposal, and the entry in festina.md's smaller-wants table about a
+canvas clip region is corrected with it — `overflow: hidden` is
+implemented, so what a clip region would save is an allocation and a
+composite, not the feature.
+
 ### Background images
 
 `background-image: url(...)` painted nothing: only gradients were

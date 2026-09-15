@@ -55,27 +55,23 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    them on a computed style. It is measured by geometry and by the
    generated text, as tests/unit/test_counters.f and tests/unit/test_quotes.f do.
 4. **CSS Images 3, completed**: `radial-gradient()` and
-   `conic-gradient()`, gradient interpolation hints, `object-fit` and
-   `object-position`. Linear gradients are done; a radial one needs the
-   same band machinery with circles instead of strips.
+   `conic-gradient()`, and gradient interpolation hints. Linear
+   gradients are done, and so are `object-fit` and `object-position`; a
+   radial gradient needs the same band machinery with circles instead of
+   strips.
 
-   `object-fit` and `object-position` change where an image is painted
-   inside its box and not the box itself, so they are graded in pixels
-   rather than geometry — and **headless Chromium cannot supply those
-   pixels in this container**: `--screenshot` paints only the first
+   **Headless Chromium cannot supply pixel ground truth in this
+   container**, which is what anything graded in pixels rather than
+   geometry has to work around: `--screenshot` paints only the first
    scanline of the page. A plain 40x40 block of flat colour comes back
    as one row of colour and 39 rows of white, with or without
    `--virtual-time-budget`, so it is the screenshot pipeline rather than
    anything about images. `tests/chromium.py` is unaffected because it
-   reads the DOM rather than pixels. Until there is a way round it the
-   ground truth for these two is the specification's own sizing
-   algorithm, which is exact, with this engine's pixel checks verifying
-   the implementation against it.
-
-   Their rows in `tests/conformance/css-properties.txt` read `cover` and
-   `left top` rather than `initial`, so the instrument can register them
-   when they land — the rule about an instrument being able to fail,
-   applied before the work rather than after.
+   reads the DOM rather than pixels. `object-fit` and `object-position`
+   were graded against the specification's own sizing algorithm instead,
+   which is exact; `tests/render/objectfit.f` derives every expectation
+   from the intrinsic size and the box and states the derivation beside
+   the check. A radial gradient can be graded the same way.
 5. **Backgrounds and Borders 3, completed**: `background-size`,
    `background-clip`, `background-origin` and `background-attachment`;
    more than one background layer per box; `box-shadow`;
@@ -104,13 +100,15 @@ than their prominence suggests.
 
 ### The instrument
 
-**Two measurements exist now**, both with floors in `tests/run.sh`:
+**Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 373 CSS
-properties Chromium knows change what this engine renders (67), and
-`tests/conformance/elements.f` how many of the 121 HTML elements get
-the default `display` Chromium gives them (121 of 121). Each entry in
-the work above should move the first number, and the runner names every
-property that still does nothing.
+properties Chromium knows change what this engine renders (86),
+`tests/conformance/elements.f` how many of the 122 HTML elements get
+the default `display` Chromium gives them (122 of 122), and
+`tests/conformance/selectors.f` how many of 61 selectors match the same
+elements as Chromium (56). Each entry in the work above should move the
+first number, and the runner names every property that still does
+nothing.
 
 **Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
 against the standard's own tests, level with Chromium, and the only

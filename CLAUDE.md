@@ -138,6 +138,15 @@ a real value, and the selector something to match — because the count in
 README.md and css-2026.md is the deliverable, and a measurement that
 cannot move is not one.
 
+Fixing the fixture is only half of it: check the instrument's own
+reading too. `object-fit` and `object-position` had real rows, put there
+a commit ahead of the work, and still could not register, because
+`styleDigest` in `tests/conformance/properties.f` compares a list of
+fields by name and nobody had added the two new ones. The feature
+worked; the count did not move. So the check is end to end — set the
+property, run the instrument, watch the number go up — and it is done
+when the implementation lands, not once the suite is green.
+
 **Run the benchmarks on an idle machine, and check a number you did not
 change.** "Best of N" does not rescue a contended run, because every one
 of the N runs is contended: a benchmark run here beside a valgrind job

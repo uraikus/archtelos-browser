@@ -99,7 +99,9 @@ list markers and opacity. `linear-gradient()` and
 and with any number of colour stops, and `background-image: url()`
 paints a fetched image with `background-repeat` and
 `background-position` — a tile that runs off the edge is cut off
-there.
+there. `object-fit` and `object-position` size and place a replaced
+element's own content inside its box, in all five fitting values, and
+clip it to the content box.
 
 **`::before` and `::after`** generate boxes from `content`, which takes
 quoted strings, `attr()`, `counter()`, `counters()` and the four quote
@@ -180,10 +182,10 @@ FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chrom
 The runner covers nineteen unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
-counters, quotes, first letter, audio, the preload scanner), four
+counters, quotes, first letter, audio, the preload scanner), five
 offscreen render suites that check real pixels with `getPixelColor` —
-general rendering, gradients, overflow clipping and background images —
-three conformance runners that measure the engine against
+general rendering, gradients, overflow clipping, background images and
+object fitting — three conformance runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — the HTML conformance suite, and a headless render
 of every example. There is no test framework: `tests/assert.f` is

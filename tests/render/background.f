@@ -121,4 +121,26 @@ paintPage(p9, 0, 0, 300)
 check(getPixelColor(2, 2) == grey, 'a box with no background image is its colour')
 check(getPixelColor(50, 30) == grey, 'throughout')
 
+// ---- opacity reaches the image, not just the colour --------------------
+// A background image is painted through a layer, and a layer is blitted
+// by a call of its own: the element's opacity has to be applied to that
+// blit or the image comes out fully opaque on a half-transparent box.
+// A background *colour* at the same opacity over the same white page is
+// the reference, because both are the fixture's blue over white.
+Page p10 = pageFromHtml(head + '<div style="width:20px;height:10px;opacity:0.5;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat"></div></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(p10, 0, 0, 300)
+color imageAtHalf = getPixelColor(2, 2)
+
+Page p11 = pageFromHtml(head + '<div style="width:20px;height:10px;opacity:0.5;'
+    + 'background-color:blue"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(p11, 0, 0, 300)
+color colorAtHalf = getPixelColor(2, 2)
+
+check(imageAtHalf != blue, 'a background image on a half-transparent box is not fully opaque')
+check(imageAtHalf == colorAtHalf, 'it blends exactly as the same colour at the same opacity does')
+
 finish('background images')

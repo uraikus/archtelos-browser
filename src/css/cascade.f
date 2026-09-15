@@ -1896,10 +1896,11 @@ text func parseUrlValue(v:ascii) {
     return v.slice(from, to).toText()
 }
 
-// One axis of background-position. A keyword is a percentage of the
-// space the image leaves over, which is what makes `right` mean the
-// right edge rather than an offset of the box's width.
-Len func parseBackgroundPos(t:ascii, horizontal:bool, fontSize:int) {
+// One axis of a position value, shared by `background-position` and
+// `object-position`. A keyword is a percentage of the space the image
+// leaves over, which is what makes `right` mean the right edge rather
+// than an offset of the box's width.
+Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     if t == 'left' { return lenPercent(0.0) }
     if t == 'right' { return lenPercent(1.0) }
     if t == 'top' { return lenPercent(0.0) }
@@ -2135,14 +2136,48 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if bgpos != null {
         ascii bgposLow = asciiLower(bgpos)
         arr[ascii] parts = asciiSplitSpace(bgposLow)
-        if parts.length >= 1 { s.backgroundPosX = parseBackgroundPos(parts[0], true, s.fontSize) }
-        if parts.length >= 2 { s.backgroundPosY = parseBackgroundPos(parts[1], false, s.fontSize) }
+        if parts.length >= 1 { s.backgroundPosX = parsePositionAxis(parts[0], true, s.fontSize) }
+        if parts.length >= 2 { s.backgroundPosY = parsePositionAxis(parts[1], false, s.fontSize) }
         else if parts.length == 1 {
             // one value positions the horizontal axis and centres the
             // other, unless it is a vertical keyword
             if parts[0] == 'top' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(0.0) }
             else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(1.0) }
             else { s.backgroundPosY = lenPercent(0.5) }
+        }
+    }
+    // object-fit and object-position (CSS Images 3 §5.5, §5.6). The
+    // initial position is `50% 50%`, unlike background-position's
+    // `0% 0%`, so the centre is written in rather than left at the
+    // zero value.
+    s.objectPosX = lenPercent(0.5)
+    s.objectPosY = lenPercent(0.5)
+    ascii objfit = styleProp(props, 'object-fit')
+    if objfit != null {
+        // The lowered string is held in a local and its words indexed
+        // rather than bound, because a bound slice releases an alias the
+        // compiler never retained (FINDINGS.md, "ascii aliases are not
+        // retained").
+        ascii objfitLow = asciiLower(objfit)
+        if objfitLow == 'contain' { s.objectFit = OBJECTFIT_CONTAIN }
+        else if objfitLow == 'cover' { s.objectFit = OBJECTFIT_COVER }
+        else if objfitLow == 'none' { s.objectFit = OBJECTFIT_NONE }
+        else if objfitLow == 'scale-down' { s.objectFit = OBJECTFIT_SCALE_DOWN }
+        else { s.objectFit = OBJECTFIT_FILL }
+    }
+    ascii objpos = styleProp(props, 'object-position')
+    if objpos != null {
+        ascii objposLow = asciiLower(objpos)
+        arr[ascii] parts = asciiSplitSpace(objposLow)
+        if parts.length >= 2 {
+            s.objectPosX = parsePositionAxis(parts[0], true, s.fontSize)
+            s.objectPosY = parsePositionAxis(parts[1], false, s.fontSize)
+        } else if parts.length == 1 {
+            // one value positions the horizontal axis and centres the
+            // other, unless it is a vertical keyword
+            if parts[0] == 'top' { s.objectPosY = lenPercent(0.0) }
+            else if parts[0] == 'bottom' { s.objectPosY = lenPercent(1.0) }
+            else { s.objectPosX = parsePositionAxis(parts[0], true, s.fontSize) }
         }
     }
     s.width = lenProp(props, 'width', s.fontSize, lenAuto())

@@ -86,6 +86,16 @@ const int FLEXWRAP_NOWRAP = 0
 const int FLEXWRAP_WRAP = 1
 const int FLEXWRAP_WRAP_REVERSE = 2
 
+// object-fit (CSS Images 3 §5.5): how a replaced element's content is
+// sized inside the content box the element's own width and height gave
+// it. `fill` is the initial value and stretches to the box, so it is 0
+// and a style that never mentions the property needs no work.
+const int OBJECTFIT_FILL = 0
+const int OBJECTFIT_CONTAIN = 1
+const int OBJECTFIT_COVER = 2
+const int OBJECTFIT_NONE = 3
+const int OBJECTFIT_SCALE_DOWN = 4
+
 // box-sizing
 const int BOX_CONTENT = 0
 const int BOX_BORDER = 1
@@ -185,6 +195,11 @@ struct Style {
     backgroundRepeatY:bool
     backgroundPosX:Len
     backgroundPosY:Len
+    // object-fit and object-position, which move a replaced element's
+    // content inside its content box and change no geometry.
+    objectFit:int
+    objectPosX:Len
+    objectPosY:Len
     // The declared values, not the running counts: two elements that
     // matched the same rules share this Style and still stand at
     // different counts, which live in the cascade's counter stack.

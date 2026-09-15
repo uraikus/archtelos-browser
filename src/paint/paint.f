@@ -117,11 +117,13 @@ void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
     }
 }
 
-// One axis of background-position, resolved against the space the
-// image leaves over: a percentage aligns that much of the image with
-// that much of the box, so `100%` puts its right edge on the box's
-// right edge rather than pushing it a box-width across.
-int func resolveBackgroundPos(l:Len, leftover:int, fontSize:int) {
+// One axis of a position, resolved against the space the image leaves
+// over: a percentage aligns that much of the image with that much of
+// the box, so `100%` puts its right edge on the box's right edge rather
+// than pushing it a box-width across. `background-position` and
+// `object-position` are the same computation over different leftovers
+// -- the box minus the tile, and the box minus the fitted object.
+int func resolvePositionAxis(l:Len, leftover:int, fontSize:int) {
     if l.kind == LEN_PERCENT { return roundPx(leftover.toFloat() * l.v) }
     if l.kind == LEN_PX { return roundPx(l.v) }
     return 0
@@ -140,8 +142,8 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
     int iw = src.width
     int ih = src.height
     if iw <= 0 || ih <= 0 { return }
-    int ox = resolveBackgroundPos(s.backgroundPosX, w - iw, s.fontSize)
-    int oy = resolveBackgroundPos(s.backgroundPosY, h - ih, s.fontSize)
+    int ox = resolvePositionAxis(s.backgroundPosX, w - iw, s.fontSize)
+    int oy = resolvePositionAxis(s.backgroundPosY, h - ih, s.fontSize)
 
     // Where the first tile starts. Repeating backwards from the
     // declared position keeps the tile grid anchored to it.
@@ -170,7 +172,14 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
             if ty >= h { moreY = false }
         }
     }
+    // The tiles go into the layer at full alpha and the element's
+    // opacity is applied once, to the blit. Setting it before the tiles
+    // would apply it twice -- once into the layer's own pixels and
+    // again as the layer is composited -- and leaving it unset paints a
+    // fully opaque image on a half-transparent box.
+    fillAlpha(s.effectiveOpacity)
     pDrawImage(layer, x, y)
+    fillAlpha(1.0)
 }
 
 // ---- linear gradients (CSS Images 3) ---------------------------------
@@ -530,6 +539,60 @@ void func paintInlineBackground(f:Fragment) {
     }
 }
 
+// The concrete size object-fit gives a replaced element's content,
+// from its intrinsic size and the content box (CSS Images 3 §5.5).
+// Returned as a scale factor rather than a size so the caller rounds
+// once.
+float func objectFitScale(fit:int, iw:int, ih:int, w:int, h:int) {
+    float sx = w.toFloat() / iw.toFloat()
+    float sy = h.toFloat() / ih.toFloat()
+    if fit == OBJECTFIT_CONTAIN { return sx < sy ? sx : sy }
+    if fit == OBJECTFIT_COVER { return sx > sy ? sx : sy }
+    if fit == OBJECTFIT_NONE { return 1.0 }
+    // scale-down is the smaller of `none` and `contain`, which is
+    // `contain` capped at 1: an image already inside its box is left
+    // alone, and a larger one is shrunk to fit.
+    float fitted = sx < sy ? sx : sy
+    return fitted < 1.0 ? fitted : 1.0
+}
+
+// A replaced element's content, sized by object-fit and placed by
+// object-position. The object can be larger than the box -- `cover`
+// and `none` both allow it -- and a replaced element clips its content
+// to the content box, so it is painted into an image that size and
+// blitted back, the canvas having no clip region (FINDINGS.md, "an
+// image is a drawable surface with a smaller API").
+void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
+    int iw = b.imgW
+    int ih = b.imgH
+    if iw <= 0 || ih <= 0 {
+        pDrawImageScaled(b.image, x, y, w, h)
+        return
+    }
+    float scale = objectFitScale(b.style.objectFit, iw, ih, w, h)
+    int ow = roundPx(iw.toFloat() * scale)
+    int oh = roundPx(ih.toFloat() * scale)
+    if ow <= 0 || oh <= 0 { return }
+    int ox = resolvePositionAxis(b.style.objectPosX, w - ow, b.style.fontSize)
+    int oy = resolvePositionAxis(b.style.objectPosY, h - oh, b.style.fontSize)
+    // An object that lands exactly inside the box needs no layer: the
+    // clip has nothing to cut, and a direct blit avoids allocating and
+    // compositing an image the size of the box.
+    if ox >= 0 && oy >= 0 && ox + ow <= w && oy + oh <= h {
+        pDrawImageScaled(b.image, x + ox, y + oy, ow, oh)
+        return
+    }
+    // The caller has already set the element's opacity for the direct
+    // blit above. The layer is drawn into at full alpha and composited
+    // at that opacity, so it is applied once rather than to both the
+    // layer's pixels and the blit.
+    img layer = blankImage(w, h)
+    fillAlpha(1.0)
+    layer.drawImage(b.image, ox, oy, ow, oh)
+    fillAlpha(b.style.opacity)
+    pDrawImage(layer, x, y)
+}
+
 void func paintImage(b:Box) {
     int x = contentX(b)
     int y = contentY(b)
@@ -538,7 +601,11 @@ void func paintImage(b:Box) {
     if w <= 0 || h <= 0 { return }
     if b.image != null {
         fillAlpha(b.style.opacity)
-        pDrawImageScaled(b.image, x, y, w, h)
+        // `fill` is the initial value and stretches the content to the
+        // box, which is one blit and the only thing a page that does
+        // not mention object-fit ever reaches.
+        if b.style.objectFit == OBJECTFIT_FILL { pDrawImageScaled(b.image, x, y, w, h) }
+        else { paintFittedImage(b, x, y, w, h) }
         fillAlpha(1.0)
         return
     }

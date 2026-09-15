@@ -371,6 +371,31 @@ the declaration is what starts the thread.
 
 ---
 
+## 3k Give an image `drawImage`'s source rectangle
+
+**Today.** The canvas takes three forms of `drawImage`: the whole image
+at a point, the whole image scaled into a box, and a source rectangle
+scaled into a destination rectangle. An `img` used as a destination
+takes only the first two — `img.drawImage() expects 3 or 5 argument(s),
+got 9`.
+
+**Proposal.** Add the nine-argument entry to `_IMAGE_LAYER_OPS`
+alongside the three- and five-argument ones it already has. The runtime
+call it needs is the image-surface counterpart of the canvas's own, and
+nothing about the drawing differs.
+
+**What it removes here.** The source rectangle is how a drawable surface
+paints part of an image rather than all of it, so without it on an image
+destination, clipping a scaled draw inside a layer needs a whole extra
+image to draw into and blit back. `object-fit: cover` and `object-fit:
+none` both put content outside the content box by construction and have
+to cut it off there; with the nine-argument form this would be one call
+and no allocation. Painting into an image rather than the canvas is the
+ordinary case, not the exotic one — every element inside an opacity
+group or an `overflow: hidden` ancestor is doing it.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,
@@ -509,7 +534,7 @@ file grew a function of the same name.
 |---|---|
 | `blob.toImg()` | An image fetched over HTTP can only be decoded by building an `http` literal whose body is the blob and calling `.toImg()` on it. |
 | `fontAscent()` / `fontDescent()` | Text metrics give an advance width and an inked height, and nothing else, so every baseline in `src/layout/layout.f` is placed with hard-coded DejaVu ratios. Any other font is laid out slightly wrong. |
-| A clip region on the canvas | `overflow: hidden` cannot be implemented. Everything else the canvas needs for a browser is already there. |
+| A clip region on the canvas | `overflow: hidden`, background tiling and `object-fit` all clip by painting into an intermediate image the size of the clip and blitting it back, because an image clips at its own bounds and the canvas cannot. Each one costs an allocation and a composite that a clip region would not. |
 | A settable window title | The page title has to live in the status bar. |
 | `ascii.toInt()` | The semantic analyzer accepts it; codegen rejects it with `cannot access field 'toInt' on ascii`. `a.toText().toInt()` works. |
 | Bitwise operators and hex literals | Colors are packed with `*`, `/` and `%`, and 148 CSS color constants are generated as decimal because there is no `0xRRGGBB`. |

@@ -783,3 +783,42 @@ then. That is the fix, and it is not available.
   lines in 9.5 seconds, `file:line:column` on every error, and a type checker
   that catches mismatched `?:` branches, a `void` used as a value and an
   `int`/`float` mix before anything runs.
+
+---
+
+## 30 An image destination cannot take drawImage's source rectangle
+
+The canvas takes all three forms of `drawImage`: the whole image at a
+point, the whole image scaled into a box, and a source rectangle cut out
+of the image and scaled into a destination rectangle. An `img` used as a
+destination takes only the first two.
+
+```festina
+img src = 'tests/fixtures/fit.png'
+img dst = blankImage(40, 40)
+drawImage(src, 5, 0, 10, 10, 0, 0, 40, 40)      // fine
+dst.drawImage(src, 5, 0, 10, 10, 0, 0, 40, 40)  // error
+```
+
+```
+error: img.drawImage() expects 3 or 5 argument(s), got 9
+```
+
+The source-rectangle form is how a drawable surface clips: it is the
+only call that paints part of an image rather than all of it. Because
+an image destination lacks it, and because the canvas has no clip region
+either (finding 23), clipping a scaled draw *inside a layer* needs a
+second image — one the size of the clip, drawn into and then blitted —
+where the canvas would need no intermediate at all.
+
+That is what `object-fit: cover` does here. The object is larger than
+the box by construction, so the overflow has to be cut off at the
+content box; with the nine-argument form on an image this would be one
+call and no allocation. Every element painted inside an opacity group or
+an `overflow: hidden` ancestor is painting into an image rather than the
+canvas, so this is the ordinary case on a real page, not the exotic one.
+
+The asymmetry is in the binding rather than the renderer: the canvas
+entry point and the image entry point both reach the same drawing
+library, and only the image one is missing its nine-argument
+counterpart.
