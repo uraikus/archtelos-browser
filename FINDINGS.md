@@ -8,6 +8,33 @@ repository uses. What Festina should *gain* as a result is
 
 Measured against Festina 0.44 on Linux x86-64, clang 18, Cairo 1.18.
 
+## No integer division, and no bitwise operators
+
+`/` is float division whatever its operands, so integer division is
+`Math.floor(a / b)` and there is no `a // b`. Packing a specificity
+triple into one integer and unpacking it again therefore reads as
+arithmetic on floats that happen to be exact:
+
+```festina
+int func specIds(s:int) { return Math.floor(s / (SPEC_BASE * SPEC_BASE)) }
+```
+
+There are no bitwise operators either, so a bit set is built with `+`
+and read with `%`:
+
+```festina
+int func decoUnion(a:int, b:int) {
+    int out = 0
+    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
+    if Math.floor(a / 2) % 2 == 1 || Math.floor(b / 2) % 2 == 1 { out = out + DECO_LINE_THROUGH }
+    return out
+}
+```
+
+Both are correct and both cost a reader more than `a / b` and `a | b`
+would. `text-decoration` is a bit set in every engine; so are the flags
+in a tokenizer and the class of a Unicode code point.
+
 ## Summary
 
 | # | Finding | Kind |

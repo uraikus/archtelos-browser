@@ -36,7 +36,7 @@ void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
 
 void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
     if !colorIsPaintable(s.background) || w <= 0 || h <= 0 { return }
-    paintFill(s.background, s.opacity)
+    paintFill(s.background, s.effectiveOpacity)
     if s.borderRadius > 0 {
         roundedRectPath(x, y, w, h, s.borderRadius)
         fillPath()
@@ -60,7 +60,7 @@ void func paintBorders(b:Box) {
     bool skipLeft = b.kind == BOX_CELL && s.borderCollapse && b.tableCol > 0
     if s.borderRadius > 0 && b.bt == b.br && b.bt == b.bb && b.bt == b.bl && b.bt > 0 {
         // a uniform rounded border is stroked along the path's centre
-        int c = colorWithOpacity(s.borderTopColor, s.opacity)
+        int c = colorWithOpacity(s.borderTopColor, s.effectiveOpacity)
         borderColor(colorRed(c), colorGreen(c), colorBlue(c))
         lineWidth(b.bt)
         int half = Math.floorDiv(b.bt, 2)
@@ -70,19 +70,19 @@ void func paintBorders(b:Box) {
         return
     }
     if b.bt > 0 && colorIsPaintable(s.borderTopColor) && !skipTop {
-        paintFill(s.borderTopColor, s.opacity)
+        paintFill(s.borderTopColor, s.effectiveOpacity)
         drawRect(x, y, w, b.bt)
     }
     if b.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-        paintFill(s.borderBottomColor, s.opacity)
+        paintFill(s.borderBottomColor, s.effectiveOpacity)
         drawRect(x, y + h - b.bb, w, b.bb)
     }
     if b.bl > 0 && colorIsPaintable(s.borderLeftColor) && !skipLeft {
-        paintFill(s.borderLeftColor, s.opacity)
+        paintFill(s.borderLeftColor, s.effectiveOpacity)
         drawRect(x, y, b.bl, h)
     }
     if b.br > 0 && colorIsPaintable(s.borderRightColor) {
-        paintFill(s.borderRightColor, s.opacity)
+        paintFill(s.borderRightColor, s.effectiveOpacity)
         drawRect(x + w - b.br, y, b.br, h)
     }
     fillAlpha(1.0)
@@ -110,7 +110,7 @@ void func paintListMarker(b:Box) {
     Line ln = firstLineOf(b)
     int baseline = ln != null ? ln.baseline : contentY(b) + fontAscent(s)
     int fs = s.fontSize
-    paintFill(s.color, s.opacity)
+    paintFill(s.color, s.effectiveOpacity)
     int edge = contentX(b)
     if s.listStyle == LIST_DECIMAL {
         text label = `${b.listIndex}.`
@@ -124,7 +124,7 @@ void func paintListMarker(b:Box) {
         if s.listStyle == LIST_DISC {
             drawCircle(cx, cy, r)
         } else if s.listStyle == LIST_CIRCLE {
-            int c = colorWithOpacity(s.color, s.opacity)
+            int c = colorWithOpacity(s.color, s.effectiveOpacity)
             borderColor(colorRed(c), colorGreen(c), colorBlue(c))
             lineWidth(1)
             fillStyle(-1, -1, -1)
@@ -141,7 +141,7 @@ void func paintTextFragment(f:Fragment) {
     Style s = f.box.style
     if s.hidden { return }
     setFontFor(s)
-    paintFill(s.color, s.opacity)
+    paintFill(s.color, s.effectiveOpacity)
     if s.letterSpacing == 0 {
         drawText(f.content, f.x, f.baseline)
     } else {
@@ -154,12 +154,13 @@ void func paintTextFragment(f:Fragment) {
             x = x + measureTextWidth(chars[i]) + s.letterSpacing
         }
     }
-    if s.textDecoration > 0 {
+    int deco = decoUnion(s.textDecoration, s.inheritedDecoration)
+    if deco > 0 {
         int thickness = maxInt(1, Math.floorDiv(s.fontSize, 16))
-        if s.textDecoration == DECO_UNDERLINE || s.textDecoration == DECO_UNDERLINE + DECO_LINE_THROUGH {
+        if deco == DECO_UNDERLINE || deco == DECO_UNDERLINE + DECO_LINE_THROUGH {
             drawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
         }
-        if s.textDecoration >= DECO_LINE_THROUGH {
+        if deco >= DECO_LINE_THROUGH {
             drawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
         }
     }
@@ -173,11 +174,11 @@ void func paintInlineBackground(f:Fragment) {
     paintBackground(f.x, f.y, f.w, f.h, s)
     if s.borderStyle != BORDER_NONE {
         if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
-            paintFill(s.borderTopColor, s.opacity)
+            paintFill(s.borderTopColor, s.effectiveOpacity)
             drawRect(f.x, f.y, f.w, ib.bt)
         }
         if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-            paintFill(s.borderBottomColor, s.opacity)
+            paintFill(s.borderBottomColor, s.effectiveOpacity)
             drawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
         }
         fillAlpha(1.0)

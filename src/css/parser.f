@@ -69,6 +69,15 @@ int cssRuleCounter = 0
 // browser before parsing author sheets.
 int cssViewportWidth = 800
 int cssViewportHeight = 600
+// The root element's computed font-size, which `rem` multiplies. The
+// cascade assigns it when it computes the root; 16 is the initial value
+// and the right answer before then.
+int cssRootFontSize = 16
+
+void func setCssViewport(w:int, h:int) {
+    cssViewportWidth = w
+    cssViewportHeight = h
+}
 
 // ---- comments and block skipping -----------------------------------
 
@@ -391,19 +400,48 @@ Selector func parseSelector(src:ascii) {
     return sel
 }
 
+// Specificity is the triple (ids, classes+attributes+pseudo-classes,
+// types) compared lexicographically, not a sum: any number of classes
+// loses to one id. It is packed into one int base 1024 so that a plain
+// integer comparison is the lexicographic one, with each count clamped
+// to 1023 so a pathological selector cannot carry into the field above.
+const int SPEC_BASE = 1024
+
+int func specClamp(n:int) {
+    return n > SPEC_BASE - 1 ? SPEC_BASE - 1 : n
+}
+
+int func packSpecificity(ids:int, classes:int, types:int) {
+    return specClamp(ids) * SPEC_BASE * SPEC_BASE + specClamp(classes) * SPEC_BASE + specClamp(types)
+}
+
+// `/` is float division and there is no integer-division operator, so
+// unpacking goes through Math.floor (FINDINGS.md, "no integer division").
+int func specIds(s:int) { return Math.floor(s / (SPEC_BASE * SPEC_BASE)) }
+int func specClasses(s:int) { return Math.floor(s / SPEC_BASE) % SPEC_BASE }
+int func specTypes(s:int) { return s % SPEC_BASE }
+
+// Adds two packed triples componentwise, which is what a compound or a
+// complex selector does to its parts.
+int func specAdd(a:int, b:int) {
+    return packSpecificity(specIds(a) + specIds(b),
+                           specClasses(a) + specClasses(b),
+                           specTypes(a) + specTypes(b))
+}
+
 int func compoundSpecificity(c:Compound) {
-    int s = 0
-    if c.id != '' { s = s + 10000 }
-    s = s + (c.classes.length + c.attrs.length + c.pseudos.length) * 100
-    if c.tag != '' { s = s + 1 }
-    if c.hasNot { s = s + compoundSpecificity(c.notSel) }
+    int ids = c.id != '' ? 1 : 0
+    int classes = c.classes.length + c.attrs.length + c.pseudos.length
+    int types = c.tag != '' ? 1 : 0
+    int s = packSpecificity(ids, classes, types)
+    if c.hasNot { s = specAdd(s, compoundSpecificity(c.notSel)) }
     return s
 }
 
 int func computeSpecificity(sel:Selector) {
     int s = 0
     for int i = 0, i < sel.parts.length, i++ {
-        s = s + compoundSpecificity(sel.parts[i])
+        s = specAdd(s, compoundSpecificity(sel.parts[i]))
     }
     return s
 }
@@ -425,6 +463,129 @@ arr[Selector] func parseSelectorList(prelude:ascii) {
         }
     }
     return out
+}
+
+// ---- @supports --------------------------------------------------------
+//
+// A feature query is only useful if it can say no. Evaluating it means
+// answering "would this engine accept this declaration?", which is the
+// property being one the cascade actually computes and the value being
+// one it can resolve. Applying every block unconditionally, as this used
+// to, lands a page's fallback and its enhancement on top of each other.
+
+// The properties the cascade reads. A declaration naming anything else
+// is not supported, whatever its value.
+arr[text] supportedProperties = [
+    'display', 'visibility', 'opacity', 'color', 'background-color', 'background',
+    'width', 'height', 'min-width', 'max-width', 'min-height',
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+    'border-top', 'border-right', 'border-bottom', 'border-left',
+    'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+    'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+    'border-spacing', 'border-collapse',
+    'font', 'font-size', 'font-weight', 'font-style', 'font-family', 'line-height',
+    'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
+    'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
+    'list-style', 'list-style-type', 'overflow', 'overflow-x', 'overflow-y', 'float',
+    'inline-size', 'block-size',
+    'margin-inline', 'margin-inline-start', 'margin-inline-end',
+    'margin-block', 'margin-block-start', 'margin-block-end',
+    'padding-inline', 'padding-inline-start', 'padding-inline-end', 'padding-block'
+]
+
+bool func cssKnownProperty(prop:ascii) {
+    text p = prop.toText()
+    for int i = 0, i < supportedProperties.length, i++ {
+        if supportedProperties[i] == p { return true }
+    }
+    return false
+}
+
+// The value functions this engine cannot evaluate. A declaration using
+// one of them would be dropped, so claiming support for it would be a
+// lie of exactly the kind @supports exists to prevent.
+bool func cssValueEvaluable(val:ascii) {
+    if val.length == 0 { return false }
+    ascii v = asciiLower(val)
+    if asciiIndexOf(v, 'var(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'calc(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'min(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'max(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'clamp(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'attr(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'env(', 0) >= 0 { return false }
+    return true
+}
+
+bool func supportsDeclaration(decl:ascii) {
+    int colon = asciiIndexOf(decl, ':', 0)
+    if colon < 0 { return false }
+    ascii prop = asciiLower(asciiTrim(decl.slice(0, colon)))
+    ascii val = asciiTrim(decl.slice(colon + 1, decl.length))
+    if prop.length == 0 { return false }
+    // A custom property or a vendor prefix is dropped at parse time.
+    if prop.charCodeAt(0) == CH_MINUS { return false }
+    return cssKnownProperty(prop) && cssValueEvaluable(val)
+}
+
+// Finds the next top-level occurrence of ` and ` / ` or `, outside any
+// parentheses. Returns -1 when there is none.
+int func supportsSplit(cond:ascii, word:ascii) {
+    int depth = 0
+    int n = cond.length
+    for int i = 0, i < n, i++ {
+        int c = cond.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if depth == 0 && isSpaceCode(c) {
+            int j = i
+            while j < n && isSpaceCode(cond.charCodeAt(j)) { j++ }
+            if j + word.length <= n {
+                ascii cand = asciiLower(cond.slice(j, j + word.length))
+                if cand == word && j + word.length < n && isSpaceCode(cond.charCodeAt(j + word.length)) {
+                    return i
+                }
+            }
+        }
+    }
+    return -1
+}
+
+bool func evaluateSupportsCondition(cond:ascii) {
+    ascii c = asciiTrim(cond)
+    if c.length == 0 { return false }
+
+    int andAt = supportsSplit(c, 'and'.toAscii())
+    if andAt >= 0 {
+        int rest = andAt
+        while rest < c.length && isSpaceCode(c.charCodeAt(rest)) { rest++ }
+        return evaluateSupportsCondition(c.slice(0, andAt))
+            && evaluateSupportsCondition(c.slice(rest + 3, c.length))
+    }
+    int orAt = supportsSplit(c, 'or'.toAscii())
+    if orAt >= 0 {
+        int rest = orAt
+        while rest < c.length && isSpaceCode(c.charCodeAt(rest)) { rest++ }
+        return evaluateSupportsCondition(c.slice(0, orAt))
+            || evaluateSupportsCondition(c.slice(rest + 2, c.length))
+    }
+    if c.length > 4 && asciiLower(c.slice(0, 4)) == 'not ' {
+        return !evaluateSupportsCondition(c.slice(4, c.length))
+    }
+    if c.charCodeAt(0) == CH_LPAREN && c.charCodeAt(c.length - 1) == CH_RPAREN {
+        ascii inner = asciiTrim(c.slice(1, c.length - 1))
+        // (( ... )) or (not ...) nests; ( prop: value ) is a declaration.
+        if inner.length > 0 && (inner.charCodeAt(0) == CH_LPAREN
+            || (inner.length > 4 && asciiLower(inner.slice(0, 4)) == 'not ')) {
+            return evaluateSupportsCondition(inner)
+        }
+        return supportsDeclaration(inner)
+    }
+    // selector(...) and any other unknown function: not supported.
+    return false
 }
 
 // ---- @media ---------------------------------------------------------
@@ -521,7 +682,13 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                     if close < brace + 1 { close = brace + 1 }
                     parseRulesInto(sheet, src.slice(brace + 1, close))
                 }
-            } else if atName == 'supports' || atName == 'layer' {
+            } else if atName == 'supports' {
+                if evaluateSupportsCondition(asciiTrim(src.slice(nameEnd, brace))) {
+                    int close = blockEnd - 1
+                    if close < brace + 1 { close = brace + 1 }
+                    parseRulesInto(sheet, src.slice(brace + 1, close))
+                }
+            } else if atName == 'layer' {
                 int close = blockEnd - 1
                 if close < brace + 1 { close = brace + 1 }
                 parseRulesInto(sheet, src.slice(brace + 1, close))
@@ -546,7 +713,15 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
         r.decls = parseDeclarations(body)
         r.order = cssRuleCounter
         cssRuleCounter++
-        if r.selectors.length > 0 && r.decls.length > 0 { sheet.rules.push(r) }
+        // "If any selector in the list cannot be parsed, the group of
+        // selectors is invalid" -- the whole rule goes, not just that
+        // selector, so an unknown pseudo-element cannot leave a rule
+        // half-applied (Selectors 3 §4).
+        bool anyBad = false
+        for int si = 0, si < r.selectors.length, si++ {
+            if r.selectors[si].unsupported { anyBad = true  break }
+        }
+        if !anyBad && r.selectors.length > 0 && r.decls.length > 0 { sheet.rules.push(r) }
         i = blockEnd
     }
 }

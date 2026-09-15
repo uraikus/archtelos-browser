@@ -120,11 +120,25 @@ void func cascadeAddDocumentStyles(doc:Node) {
     }
 }
 
+// The cascade sorts on origin and importance first, then specificity,
+// then source order (CSS Cascade 4 §6.1). Importance *inverts* the
+// origin order: a normal author declaration beats a normal user-agent
+// one, and an important user-agent declaration beats an important
+// author one. Inline style is author origin, ranked above author rules.
+//
+//   normal UA < normal author < normal inline
+//             < important author < important inline < important UA
+int func originRank(important:bool, origin:int) {
+    if !important { return origin }
+    if origin == ORIGIN_UA { return 5 }
+    if origin == ORIGIN_INLINE { return 4 }
+    return 3
+}
+
 int func matchWeight(important:bool, origin:int, specificity:int, order:int) {
-    int w = specificity * 10000000 + order
-    w = w + origin * 10000000000000
-    if important { w = w + 1000000000000000 }
-    return w
+    return originRank(important, origin) * 100000000000000000
+         + specificity * 10000000
+         + order
 }
 
 // ---- selector matching ------------------------------------------------
@@ -670,7 +684,7 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if unit == 'px' { return lenPx(v) }
     if unit == '%' { return lenPercent(v) }
     if unit == 'em' { return lenPx(v * fontSize.toFloat()) }
-    if unit == 'rem' { return lenPx(v * ROOT_FONT_SIZE.toFloat()) }
+    if unit == 'rem' { return lenPx(v * cssRootFontSize.toFloat()) }
     if unit == 'pt' { return lenPx(v * 4.0 / 3.0) }
     if unit == 'pc' { return lenPx(v * 16.0) }
     if unit == 'in' { return lenPx(v * 96.0) }
@@ -684,10 +698,76 @@ Len func parseLength(tok:ascii, fontSize:int) {
     return l
 }
 
+// ---- the CSS-wide keywords --------------------------------------------
+//
+// `inherit` takes the parent's computed value; `initial` takes the
+// property's initial value; `unset` is inherit for an inherited property
+// and initial for the rest. `revert` should roll back to the value the
+// previous cascade origin gave, which needs the origins kept apart after
+// the cascade -- they are not, so it behaves as `unset` here
+// (css-2026.md, "CSS Cascade 4").
+const int CSSWIDE_NONE = 0
+const int CSSWIDE_INHERIT = 1
+const int CSSWIDE_INITIAL = 2
+const int CSSWIDE_UNSET = 3
+
+int func cssWideKeyword(v:ascii) {
+    if v == null { return CSSWIDE_NONE }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'inherit' { return CSSWIDE_INHERIT }
+    if t == 'initial' { return CSSWIDE_INITIAL }
+    if t == 'unset' { return CSSWIDE_UNSET }
+    if t == 'revert' || t == 'revert-layer' { return CSSWIDE_UNSET }
+    return CSSWIDE_NONE
+}
+
+// The parent's computed style, for the properties that resolve `inherit`
+// by name. A global rather than a parameter because threading it through
+// every resolver would change a dozen signatures for one keyword, and a
+// forwarded struct parameter costs a collector walk (FINDINGS.md,
+// "cycle trials").
+Style cascadeParentStyle
+bool cascadeParentIsRoot = true
+
+Len func parentLenFor(name:text, dflt:Len) {
+    if cascadeParentIsRoot { return dflt }
+    Style p = cascadeParentStyle
+    if name == 'width' { return p.width }
+    if name == 'height' { return p.height }
+    if name == 'min-width' { return p.minWidth }
+    if name == 'max-width' { return p.maxWidth }
+    if name == 'min-height' { return p.minHeight }
+    if name == 'margin-top' { return p.marginTop }
+    if name == 'margin-right' { return p.marginRight }
+    if name == 'margin-bottom' { return p.marginBottom }
+    if name == 'margin-left' { return p.marginLeft }
+    if name == 'padding-top' { return p.paddingTop }
+    if name == 'padding-right' { return p.paddingRight }
+    if name == 'padding-bottom' { return p.paddingBottom }
+    if name == 'padding-left' { return p.paddingLeft }
+    return dflt
+}
+
+int func parentColorFor(name:text, dflt:int) {
+    if cascadeParentIsRoot { return dflt }
+    Style p = cascadeParentStyle
+    if name == 'color' { return p.color }
+    if name == 'background-color' { return p.background }
+    if name == 'border-top-color' { return p.borderTopColor }
+    if name == 'border-right-color' { return p.borderRightColor }
+    if name == 'border-bottom-color' { return p.borderBottomColor }
+    if name == 'border-left-color' { return p.borderLeftColor }
+    return dflt
+}
+
 Len func lenProp(props:map[text], name:text, fontSize:int, dflt:Len) {
     ascii v = styleProp(props, name)
     if v == null { return dflt }
-    if asciiLower(v) == 'inherit' { return dflt }
+    int kw = cssWideKeyword(v)
+    if kw == CSSWIDE_INHERIT { return parentLenFor(name, dflt) }
+    // Every length property here is non-inherited, so `initial` and
+    // `unset` both mean the initial value.
+    if kw != CSSWIDE_NONE { return dflt }
     Len l = parseLength(v, fontSize)
     if l.kind == LEN_INVALID { return dflt }
     return l
@@ -722,7 +802,14 @@ int func computeFontSize(v:ascii, parentSize:int) {
 int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     ascii v = styleProp(props, name)
     if v == null { return dflt }
-    if asciiLower(v) == 'inherit' { return dflt }
+    int kw = cssWideKeyword(v)
+    if kw == CSSWIDE_INHERIT { return parentColorFor(name, dflt) }
+    // `color` is the one inherited colour property, so its default when
+    // absent is the parent's value but its *initial* value is black;
+    // `unset` on it inherits, and on the rest is the initial value.
+    if kw == CSSWIDE_INITIAL { return name == 'color' ? COLOR_BLACK : dflt }
+    if kw == CSSWIDE_UNSET && name == 'color' { return parentColorFor(name, dflt) }
+    if kw != CSSWIDE_NONE { return dflt }
     int c = parseCssColor(v, currentColor)
     if c == COLOR_UNSET { return dflt }
     return c
@@ -805,9 +892,14 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
 
 Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]) {
     Style s
+    cascadeParentStyle = parent
+    cascadeParentIsRoot = isRoot
     // inherited
     int parentFont = isRoot ? ROOT_FONT_SIZE : parent.fontSize
     s.fontSize = computeFontSize(styleProp(props, 'font-size'), parentFont)
+    // `rem` multiplies this, and the root is computed before anything
+    // that can refer to it.
+    if isRoot { cssRootFontSize = s.fontSize }
     s.fontBold = isRoot ? false : parent.fontBold
     ascii fw = styleProp(props, 'font-weight')
     if fw != null {
@@ -856,7 +948,12 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'right' || t == 'end' { s.textAlign = ALIGN_RIGHT }
         else if t == 'justify' { s.textAlign = ALIGN_LEFT }
     }
-    s.textDecoration = isRoot ? DECO_NONE : parent.textDecoration
+    // text-decoration is NOT an inherited property: the element's own
+    // computed value starts at none. What the standard does instead is
+    // propagate the decoration of an ancestor to the boxes inside it,
+    // which is what inheritedDecoration carries for the painter.
+    s.inheritedDecoration = isRoot ? DECO_NONE : decoUnion(parent.inheritedDecoration, parent.textDecoration)
+    s.textDecoration = DECO_NONE
     ascii td = styleProp(props, 'text-decoration')
     if td != null {
         ascii t = asciiLower(td)
@@ -905,7 +1002,11 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     }
     s.letterSpacing = isRoot ? 0 : parent.letterSpacing
     s.letterSpacing = pxProp(props, 'letter-spacing', s.fontSize, s.letterSpacing)
-    s.opacity = isRoot ? 1.0 : parent.opacity
+    // opacity is not inherited either. The element's own value is its
+    // computed value; effectiveOpacity is that multiplied by every
+    // ancestor's, which is the approximation of group opacity the
+    // painter uses in the absence of an offscreen layer.
+    s.opacity = 1.0
     ascii op = styleProp(props, 'opacity')
     if op != null {
         parseNumberAt(asciiTrim(op), 0)
@@ -914,9 +1015,10 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             if numEnd < op.length && op.charCodeAt(numEnd) == CH_PERCENT { o = o / 100.0 }
             if o < 0.0 { o = 0.0 }
             if o > 1.0 { o = 1.0 }
-            s.opacity = s.opacity * o
+            s.opacity = o
         }
     }
+    s.effectiveOpacity = (isRoot ? 1.0 : parent.effectiveOpacity) * s.opacity
 
     // non-inherited
     int dfltDisplay = DISPLAY_INLINE

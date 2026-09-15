@@ -10,6 +10,32 @@ Ordered by how much a fix would be worth here.
 
 ---
 
+## Integer division and bitwise operators
+
+`/` is float division whatever its operands and there are no bitwise
+operators, so a packed integer is written and read through `Math.floor`
+and `%`:
+
+```festina
+int func specIds(s:int) { return Math.floor(s / (SPEC_BASE * SPEC_BASE)) }
+int func decoUnion(a:int, b:int) {
+    int out = 0
+    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
+    ...
+}
+```
+
+**Proposal.** `a // b` for integer division, and `&`, `|`, `^`, `~`,
+`<<`, `>>` on `int`. Both are single-instruction operations that every
+systems language has, and their absence shows up wherever a value is
+packed: a CSS specificity triple, a text-decoration bit set, a Unicode
+character class, a tokenizer's flags.
+
+**What it would delete here.** `specIds`, `specClasses`, `specTypes`
+and `decoUnion` in `src/css/style.f` and `src/css/parser.f` become one
+expression each, and the comments explaining why they are not become
+unnecessary.
+
 ## 1 Fix the memory-safety bug in `ascii` aliasing
 
 **Today.** `ascii b = a` — where `a` is another local, a parameter, an

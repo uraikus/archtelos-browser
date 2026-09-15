@@ -93,7 +93,9 @@ struct Style {
     listStyle:int
     verticalAlign:int
     floatSide:int
-    opacity:float
+    opacity:float           // the element's own computed opacity
+    effectiveOpacity:float  // it, multiplied by every ancestor's: paint uses this
+    inheritedDecoration:int // decoration propagated from ancestors, for paint
     width:Len
     height:Len
     minWidth:Len
@@ -124,6 +126,15 @@ struct Style {
     hidden:bool             // visibility: hidden
     overflowHidden:bool
     fontKey:text            // cache key for the text measurer
+}
+
+// text-decoration is a bit set built with +, so a union has to check
+// each bit rather than use an operator (FINDINGS.md, "no bitwise ops").
+int func decoUnion(a:int, b:int) {
+    int out = 0
+    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
+    if Math.floor(a / 2) % 2 == 1 || Math.floor(b / 2) % 2 == 1 { out = out + DECO_LINE_THROUGH }
+    return out
 }
 
 Len func lenPx(px:float) {

@@ -13,28 +13,21 @@ snapshot's official definition of CSS is 24 specifications; the engine
 implements no part of 12 of them. That list, not a sense of what feels
 modern, sets the order below.
 
-### First, the cascade bugs
+### The cascade
 
-Each is small, each is wrong on ordinary pages today, and every feature
-built on top inherits the error. All seven are official-definition
-conformance, not polish.
+The seven conformance bugs are fixed: specificity is compared as a
+triple, importance inverts the origin order, `inherit` takes the
+parent's computed value, `@supports` evaluates its condition,
+`text-decoration` and `opacity` no longer inherit, `rem` and `vh`
+resolve against the real root font size and viewport, and an unparseable
+selector drops its whole rule. What is left of CSS Cascade 4:
 
-1. Compare specificity as a triple rather than collapsing it into one
-   integer weighted 10000 / 100 / 1, where a hundred classes tie an id.
-2. Make `!important` invert the origin order. It adds the same constant
-   to every origin, so an important author rule beats an important UA
-   rule.
-3. Make `inherit` return the parent's value. It returns the initial
-   value for all but a handful of properties. Add `revert` and `all`,
-   and honour `initial` and `unset` outside lengths (CSS Cascade 4).
-4. Evaluate the `@supports` condition. Applying every block means a
-   page's fallback and its enhancement both land (CSS Conditional 3).
-5. Stop inheriting `text-decoration`; propagate it to descendants the
-   way the standard does. Stop inheriting `opacity` at all.
-6. Resolve `rem` against the real root font size and `vh` against the
-   real viewport height, which is still the 600 its initializer sets.
-7. Drop a whole rule when one of its selectors will not parse, rather
-   than only that selector (CSS Syntax 3).
+1. **`revert`**, which rolls a property back to the value the previous
+   cascade origin gave. It behaves as `unset` today because the origins
+   are not kept apart once the cascade has run; doing it properly means
+   keeping a per-origin computed value, or recomputing with the author
+   declarations removed.
+2. **`all`**, which sets every property at once to a CSS-wide keyword.
 
 ### Then the official definition, largest holes first
 

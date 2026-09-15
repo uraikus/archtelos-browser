@@ -135,7 +135,7 @@ void func timing(label:text, since:int) {
 void func preparePage(page:Page, width:int) {
     int t0 = now()
     cascadeReset()
-    cssViewportWidth = width
+    setCssViewport(width, cssViewportHeight)
     arr[int] count = [0]
     gatherStylesheets(page, page.doc, count)
     timing('stylesheets', t0)

@@ -272,6 +272,7 @@ on keyDown(key:text) {
 }
 
 on resize() {
+    setCssViewport(clientWidth, viewportHeight())
     if page.doc == null { return }
     layoutPage(page, clientWidth)
     clampScroll()
@@ -314,6 +315,11 @@ for int i = 1, i < argv.length, i++ {
 
 setClientWidth(requestedWidth)
 setClientHeight(requestedHeight)
+// `vh` and the height media features resolve against this. A screenshot
+// has no window, so the requested height is the viewport; the canvas may
+// later be grown to the whole document, which is a canvas, not a
+// viewport.
+setCssViewport(requestedWidth, requestedHeight)
 
 if screenshotPath != '' {
     // headless: lay out at the requested width, size the canvas to the
@@ -333,6 +339,7 @@ if screenshotPath != '' {
     close(ok ? 0 : 1)
 }
 
+setCssViewport(clientWidth, viewportHeight())
 if startUrl == '' {
     page = pageFromHtml(welcomeHtml, 'about:welcome', clientWidth)
     history.push('about:welcome')

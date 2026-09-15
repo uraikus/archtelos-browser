@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The cascade conformance bugs are fixed
+
+Seven of them, each named in css-2026.md against CSS Cascade 4, Values 3
+and Conditional 3, each with a test written before the fix.
+
+- **Specificity is a triple**, (ids, classes and attributes and
+  pseudo-classes, types), packed base 1024 so a plain integer comparison
+  is the lexicographic one. It was a sum weighted 10000 / 100 / 1, where
+  a hundred classes tied an id.
+- **Importance inverts the origin order.** It added the same constant to
+  every origin, so an important author declaration beat an important
+  user-agent one. The order is now normal UA, normal author, normal
+  inline, important author, important inline, important UA.
+- **`inherit` takes the parent's computed value**, and `initial` and
+  `unset` mean what they should outside a length context. `inherit`
+  returned the initial value for every property but a handful, so
+  `margin-left: inherit` was 0. `revert` behaves as `unset` and is
+  recorded in todo.md as unfinished.
+- **`@supports` evaluates its condition**, with `not`, `and`, `or` and
+  nesting. It applied every block it saw, so a page's fallback and its
+  enhancement both landed.
+- **`text-decoration` and `opacity` no longer inherit.** Decoration
+  propagates to descendant boxes for painting and opacity accumulates
+  into a separate value, which is what the standard asks for and what
+  the painter now reads.
+- **`rem` resolves against the root element's computed font size** and
+  **`vh` against the real viewport height**, which was never assigned at
+  runtime and stayed at its initializer of 600.
+- **An unparseable selector drops its whole rule**, not just itself.
+
+Two test expectations changed with them, both encoding the old
+behaviour: the specificity numbers the CSS parser dumps, and two rules
+that used to survive with a selector that could never match.
+
 ### The benchmark was comparing unequal work
 
 Headless Chromium's `--screenshot` captures the viewport; this browser's
