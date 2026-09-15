@@ -446,9 +446,11 @@ where CSS allows any number, and its runtime uses
 `linear-gradient()` is therefore painted here as a run of one-pixel
 bands of flat colour, each set with `fillStyle`. Off the axis it is
 worse: there is no clip region on the canvas either, so a band cannot be
-drawn as a rotated rectangle and clipped, and is instead built as the
-polygon where the band meets the box and filled as a path. Cairo is
-doing none of the work it is good at.
+drawn as a rotated rectangle and clipped. Drawing it as a polygon does
+not work -- `moveTo` and `lineTo` take integers, so abutting diagonal
+slivers are anti-aliased against each other and the ramp is stippled --
+and it is instead painted as one-pixel-tall horizontal runs, one per row
+of the box. Cairo is doing none of the work it is good at.
 
 ## 22 A color is opaque
 

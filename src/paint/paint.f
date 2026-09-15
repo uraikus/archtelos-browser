@@ -166,33 +166,6 @@ int func lerpChannel(a:int, b:int, f:float) {
     return v
 }
 
-// Clips a convex polygon to the half-plane nx*x + ny*y <= c.
-arr[float] clipOutX = []
-arr[float] clipOutY = []
-
-void func clipHalfPlane(xs:arr[float], ys:arr[float], nx:float, ny:float, c:float) {
-    arr[float] ox = []
-    arr[float] oy = []
-    int n = xs.length
-    for int i = 0, i < n, i++ {
-        int j = (i + 1) % n
-        float xi = xs[i]
-        float yi = ys[i]
-        float xj = xs[j]
-        float yj = ys[j]
-        float di = nx * xi + ny * yi - c
-        float dj = nx * xj + ny * yj - c
-        if di <= 0.0 { ox.push(xi)  oy.push(yi) }
-        if (di < 0.0 && dj > 0.0) || (di > 0.0 && dj < 0.0) {
-            float f = di / (di - dj)
-            ox.push(xi + (xj - xi) * f)
-            oy.push(yi + (yj - yi) * f)
-        }
-    }
-    clipOutX = ox
-    clipOutY = oy
-}
-
 void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
     if g.stops.length < 2 || w <= 0 || h <= 0 { return }
     gradientDirection(g.angle)
@@ -244,31 +217,32 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
             }
             continue
         }
-        // Off-axis: the band meets the box in a polygon. The polygon's
-        // vertices have to be whole pixels -- moveTo and lineTo take
-        // integers -- so a band one pixel wide rounds to a sliver with
-        // anti-aliased edges, and consecutive slivers leave seams of
-        // background showing through. Each band therefore starts a
-        // pixel earlier than it should and overwrites the tail of its
-        // predecessor, which closes the seam at the cost of biasing a
-        // boundary pixel towards the later colour by less than a unit.
-        arr[float] px = [x.toFloat(), (x + w).toFloat(), (x + w).toFloat(), x.toFloat()]
-        arr[float] py = [y.toFloat(), y.toFloat(), (y + h).toFloat(), (y + h).toFloat()]
-        float base = dx * x0 + dy * y0
-        float p0 = base + length * t0 - 1.0
-        float p1 = base + length * t1
-        // keep dx*x + dy*y >= p0, i.e. -dx*x - dy*y <= -p0
-        clipHalfPlane(px, py, 0.0 - dx, 0.0 - dy, 0.0 - p0)
-        if clipOutX.length < 3 { continue }
-        clipHalfPlane(clipOutX, clipOutY, dx, dy, p1)
-        if clipOutX.length < 3 { continue }
-        beginPath()
-        moveTo(roundPx(clipOutX[0]), roundPx(clipOutY[0]))
-        for int k = 1, k < clipOutX.length, k++ {
-            lineTo(roundPx(clipOutX[k]), roundPx(clipOutY[k]))
+        // Off-axis. Painting the band as a polygon is the obvious
+        // thing and it is wrong: the vertices have to be whole pixels,
+        // so abutting diagonal slivers are anti-aliased against each
+        // other and the result is stippled rather than smooth -- a
+        // 400x300 gradient came out as a 77 KB PNG, which is what a
+        // smooth ramp never is.
+        //
+        // Instead the band is drawn as one-pixel-tall horizontal runs,
+        // one per row of the box. Every rectangle then has integer
+        // coordinates and covers whole pixels exactly, so nothing is
+        // blended with anything, at the cost of a rectangle per band
+        // per row.
+        float base = dx * 0.5 + dy * 0.5
+        float p0 = length * t0
+        float p1 = length * t1
+        float ox = dx * x0 + dy * y0
+        for int row = y, row < y + h, row++ {
+            // p = dx*(px + 0.5) + dy*(row + 0.5) - ox, solved for px
+            float atRow = dy * (row.toFloat() + 0.5) - ox + dx * 0.5
+            float lo = (p0 - atRow) / dx
+            float hi = (p1 - atRow) / dx
+            if hi < lo { float t = lo  lo = hi  hi = t }
+            int xa = maxInt(roundPx(lo), x)
+            int xb = minInt(roundPx(hi), x + w)
+            if xb > xa { drawRect(xa, row, xb - xa, 1) }
         }
-        closePath()
-        fillPath()
     }
     fillAlpha(1.0)
 }

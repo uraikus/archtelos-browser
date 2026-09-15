@@ -71,6 +71,34 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### An off-axis gradient was stippled, and the tests said it was fine
+
+A gradient at an angle was drawn as a run of bands, each the polygon
+where the band met the box. A polygon's vertices have to be whole pixels
+-- `moveTo` and `lineTo` take integers -- so abutting diagonal slivers
+were anti-aliased against each other and the ramp came out stippled. A
+400x300 gradient wrote a 77 KB PNG; the same gradient drawn correctly
+writes 7.5 KB.
+
+**Eleven pixel checks passed on the broken rendering**, including three
+inside the gradient at the angle in question. The stipple perturbs a
+pixel by a couple of units and the tolerance was three, so sampled
+values could not see it. Neither could adjacent samples: a run of eight
+neighbouring pixels passes on both renderings.
+
+What distinguishes them is how often neighbouring pixels are the *same*
+colour. A smooth ramp advances less than one colour level per pixel, so
+most neighbours are identical; stipple makes nearly every neighbour
+differ. On this gradient it is 245 equal pairs of 360 when drawn
+correctly against 147 when stippled, and the check needs nothing but
+colour equality, which is all Festina offers. That check now exists, and
+it fails on the previous revision.
+
+The fix is to stop drawing polygons. An off-axis band is painted as
+one-pixel-tall horizontal runs, one per row of the box, so every
+rectangle has integer coordinates and covers whole pixels exactly and
+nothing is blended with anything.
+
 ### Linear gradients, painted a band at a time
 
 `linear-gradient()` and `repeating-linear-gradient()` work as a

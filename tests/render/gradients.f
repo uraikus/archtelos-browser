@@ -110,4 +110,54 @@ checkPixel(40, 50, 48, 0, 206, 'repeating: four fifths into it')
 checkPixel(60, 50, 201, 0, 53, 'repeating: and the pattern starts over')
 checkPixel(110, 50, 201, 0, 53, 'repeating: in every band')
 
+// ---- an off-axis gradient must be smooth, not stippled ---------------
+// An earlier version drew each band as a polygon whose vertices had to
+// be whole pixels, so abutting diagonal slivers were anti-aliased
+// against each other and the ramp came out stippled. A 400x300 gradient
+// came out as a 77 KB PNG, which a smooth ramp never is.
+//
+// Sampled values do not catch that, and it is worth being clear about
+// why: every check below this comment passes on the stippled rendering
+// too, because the stipple is a perturbation of a couple of units and
+// the tolerance here is three. What catches it is counting how often
+// neighbouring pixels are the *same* colour, further down.
+Page p8 = pageFromHtml(head + '<div style="width:400px;height:300px;background:linear-gradient(37deg, #ff0000, #0000ff)"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p8, 0, 0, 400)
+checkPixel(100, 150, 159, 0, 95, 'off-axis run: x=100')
+checkPixel(101, 150, 160, 0, 96, 'off-axis run: x=101')
+checkPixel(102, 150, 158, 0, 96, 'off-axis run: x=102')
+checkPixel(103, 150, 159, 0, 97, 'off-axis run: x=103')
+checkPixel(104, 150, 158, 0, 96, 'off-axis run: x=104')
+checkPixel(105, 150, 158, 0, 98, 'off-axis run: x=105')
+checkPixel(106, 150, 157, 0, 97, 'off-axis run: x=106')
+checkPixel(107, 150, 158, 0, 98, 'off-axis run: x=107')
+checkPixel(200, 150, 127, 0, 127, 'off-axis: the centre is halfway')
+checkPixel(50, 50, 133, 0, 121, 'off-axis: above the centre line')
+checkPixel(350, 250, 122, 0, 133, 'off-axis: below it')
+
+// The real check. A smooth ramp advances less than one colour level per
+// pixel, so most neighbours are identical; stipple makes nearly every
+// neighbour differ. Measured on this gradient: 245 of 360 adjacent
+// pairs equal when it is drawn correctly, 147 when it is stippled. This
+// is the only check in this file that distinguishes the two, and it
+// needs nothing but colour equality, which is all Festina offers.
+int func equalNeighbours(y:int, fromX:int, toX:int) {
+    int same = 0
+    for int x = fromX, x < toX, x++ {
+        if getPixelColor(x, y) == getPixelColor(x + 1, y) { same++ }
+    }
+    return same
+}
+
+check(equalNeighbours(20, 20, 380) > 200, 'off-axis: the top of the ramp is smooth, not stippled')
+check(equalNeighbours(150, 20, 380) > 200, 'off-axis: and the middle')
+check(equalNeighbours(280, 20, 380) > 200, 'off-axis: and the bottom')
+
+int sameDown = 0
+for int y = 20, y < 279, y++ {
+    if getPixelColor(200, y) == getPixelColor(200, y + 1) { sameDown++ }
+}
+check(sameDown > 130, 'off-axis: and down a column as well')
+
 finish('gradients')

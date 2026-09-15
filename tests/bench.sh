@@ -179,6 +179,40 @@ for h in 600 2000 8000; do
     printf "%-26s %12s %12s\n" "${CANVAS_W}x${h}" "$best" "$(( CANVAS_W * h ))"
 done
 
+# ---- what a gradient costs ----------------------------------------------
+# A gradient is painted as a run of one-pixel bands, because the canvas's
+# own fillLinearGradient cannot be called with colours that are not
+# literals (FINDINGS.md, "a gradient cannot be built at run time"). That
+# is a great many drawRect calls, and off the axis a great many polygon
+# fills, so the cost is worth knowing rather than assuming. The control
+# is the same page with flat backgrounds: same boxes, same layout, only
+# the painting differs.
+python3 tests/gradpages.py "$BENCH"
+
+echo
+echo "## What painting a gradient costs (60 boxes of 760x60, best of $RUNS, ms)"
+echo
+printf "%-34s %12s %12s\n" "page" "paint" "end to end"
+for name in grad-flat grad-on grad-off; do
+    bp=999999
+    be=999999
+    for _ in $(seq "$RUNS"); do
+        start=$(date +%s%N)
+        out=$(ARCHTELOS_TIMING=1 "$BENCH/browser" "$BENCH/$name.html" --screenshot "$BENCH/out.png" \
+              --width "$CANVAS_W" --height "$CANVAS_H" 2>&1)
+        end=$(date +%s%N)
+        ms=$(( (end - start) / 1000000 ))
+        p=$(echo "$out" | awk '/\[timing\] paint:/ {print $3}')
+        [ -n "$p" ] && [ "$p" -lt "$bp" ] && bp=$p
+        [ "$ms" -lt "$be" ] && be=$ms
+    done
+    label="$name.html"
+    [ "$name" = "grad-flat" ] && label="flat colours (the control)"
+    [ "$name" = "grad-on" ] && label="gradients, along an axis"
+    [ "$name" = "grad-off" ] && label="gradients, at 37 degrees"
+    printf "%-34s %12s %12s\n" "$label" "$bp" "$be"
+done
+
 # ---- memory and size ----------------------------------------------------
 # Peak RSS is the largest amount of memory one process needed at one
 # moment, measured with tests/maxrss.py (ru_maxrss for the child tree,
