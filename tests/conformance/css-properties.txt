@@ -86,7 +86,7 @@ border-top-left-radius	initial
 border-top-right-radius	initial
 border-top-style	solid
 border-top-width	3px; border-style: solid
-bottom	initial
+bottom	11px
 box-decoration-break	initial
 box-shadow	initial
 box-sizing	initial
@@ -198,7 +198,7 @@ isolation	initial
 justify-content	initial
 justify-items	initial
 justify-self	initial
-left	initial
+left	11px
 letter-spacing	2px
 lighting-color	#123456
 line-break	initial
@@ -275,7 +275,7 @@ paint-order	initial
 perspective	initial
 perspective-origin	initial
 pointer-events	initial
-position	initial
+position	relative
 position-anchor	initial
 position-area	initial
 position-try-fallbacks	initial
@@ -286,7 +286,7 @@ r	initial
 reading-flow	initial
 reading-order	initial
 resize	initial
-right	initial
+right	11px
 rotate	initial
 row-gap	initial
 ruby-align	initial
@@ -353,7 +353,7 @@ text-underline-position	initial
 text-wrap-mode	initial
 text-wrap-style	solid
 timeline-scope	initial
-top	initial
+top	11px
 touch-action	initial
 transform	initial
 transform-origin	initial
@@ -384,5 +384,5 @@ word-spacing	initial
 writing-mode	initial
 x	initial
 y	initial
-z-index	initial
+z-index	3
 zoom	initial

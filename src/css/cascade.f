@@ -1356,6 +1356,27 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'bottom' || t == 'text-bottom' || t == 'sub' { s.verticalAlign = VALIGN_BOTTOM }
         else if t == 'inherit' && !isRoot { s.verticalAlign = parent.verticalAlign }
     }
+    s.position = POS_STATIC
+    ascii pos = styleProp(props, 'position')
+    if pos != null {
+        ascii t = asciiLower(pos)
+        if t == 'relative' { s.position = POS_RELATIVE }
+        else if t == 'absolute' { s.position = POS_ABSOLUTE }
+        else if t == 'fixed' { s.position = POS_FIXED }
+        // `sticky` behaves as `relative` with no scroll offset applied,
+        // which is what it is until scrolling is part of layout.
+        else if t == 'sticky' { s.position = POS_RELATIVE }
+    }
+    s.top = lenProp(props, 'top', s.fontSize, lenAuto())
+    s.right = lenProp(props, 'right', s.fontSize, lenAuto())
+    s.bottom = lenProp(props, 'bottom', s.fontSize, lenAuto())
+    s.left = lenProp(props, 'left', s.fontSize, lenAuto())
+    s.zIndex = 0
+    ascii zi = styleProp(props, 'z-index')
+    if zi != null {
+        int z = asciiTrim(zi).toText().toInt()
+        if z != null { s.zIndex = z }
+    }
     s.floatSide = FLOAT_NONE
     ascii fl = styleProp(props, 'float')
     if fl != null {

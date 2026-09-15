@@ -56,6 +56,13 @@ const int VALIGN_MIDDLE = 1
 const int VALIGN_TOP = 2
 const int VALIGN_BOTTOM = 3
 
+// position
+const int POS_STATIC = 0
+const int POS_RELATIVE = 1
+const int POS_ABSOLUTE = 2
+const int POS_FIXED = 3
+const int POS_STICKY = 4
+
 // border-style
 const int BORDER_NONE = 0
 const int BORDER_SOLID = 1
@@ -104,6 +111,12 @@ struct Style {
     listStyle:int
     verticalAlign:int
     floatSide:int
+    position:int
+    top:Len
+    right:Len
+    bottom:Len
+    left:Len
+    zIndex:int
     opacity:float           // the element's own computed opacity
     effectiveOpacity:float  // it, multiplied by every ancestor's: paint uses this
     inheritedDecoration:int // decoration propagated from ancestors, for paint
@@ -197,6 +210,18 @@ bool func displayIsBlockLevel(d:int) {
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
         || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS
+}
+
+// A positioned box is one that `position` takes out of the ordinary
+// flow rules: it establishes a containing block for its absolutely
+// positioned descendants, and it paints above its in-flow siblings.
+bool func positionIsPositioned(p:int) {
+    return p != POS_STATIC
+}
+
+// Absolute and fixed are the two that leave the flow entirely.
+bool func positionIsOutOfFlow(p:int) {
+    return p == POS_ABSOLUTE || p == POS_FIXED
 }
 
 // The three row-group values differ only in where a table puts them,

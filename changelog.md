@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Positioning
+
+`position` did not appear in `src/css/` at all and every box was static.
+CSS2 §9.3 is implemented now, which is the largest of the four CSS2
+chapters the engine was missing:
+
+- **`relative`** offsets a box from where the flow put it, carrying its
+  descendants and its line fragments along, and leaves the space it
+  occupied alone.
+- **`absolute`** and **`fixed`** leave the flow entirely: they take no
+  space, and they resolve against the padding box of the nearest
+  positioned ancestor, or the viewport for `fixed`.
+- All four inset properties work, with `left` and `top` winning over
+  `right` and `bottom` when both are given.
+- **`z-index`** orders positioned siblings, and a positioned box paints
+  above its in-flow siblings whatever the document order. This is the
+  common-case painting order, not the full stacking-context algorithm.
+- `sticky` computes as `relative`, which is what it is until scrolling
+  is part of layout.
+
+Six more properties change what renders: 52 of 373 to **58 of 373**.
+
+Two things this turned up. A text box shares the computed style of the
+element around it, so `position` reads through to it, and an absolutely
+positioned element lost its own text until out-of-flow was made a
+property of the box rather than of the style. And a margin that
+collapses all the way through to the root is dropped instead of moving
+the document down — Chromium puts the div at 40 where this puts it at 0.
+That one is recorded in todo.md rather than fixed here, because the
+obvious fix double-counts the ordinary case.
+
 ### calc() and custom properties
 
 Both are in the official definition of CSS, not a later level, and

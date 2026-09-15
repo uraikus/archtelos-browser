@@ -288,10 +288,37 @@ void func paintBox(b:Box) {
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
     paintLines(b)
+    // In-flow children first, then the positioned ones in z-index order:
+    // a positioned box paints above its in-flow siblings whatever the
+    // document order (CSS2 §9.9). This is the painting order for the
+    // common case, not the full stacking-context algorithm -- there is
+    // no opacity or transform layer to sort against yet.
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) { continue }
         paintBox(c)
+    }
+    int lowest = 0
+    int highest = 0
+    bool anyPositioned = false
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if !boxIsPositioned(c) { continue }
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if !anyPositioned || c.style.zIndex < lowest { lowest = c.style.zIndex }
+        if !anyPositioned || c.style.zIndex > highest { highest = c.style.zIndex }
+        anyPositioned = true
+    }
+    if !anyPositioned { return }
+    for int z = lowest, z <= highest, z++ {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+            if !boxIsPositioned(c) { continue }
+            if c.style.zIndex != z { continue }
+            paintBox(c)
+        }
     }
 }
 

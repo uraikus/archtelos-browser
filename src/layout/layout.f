@@ -259,6 +259,24 @@ Style func anonymousStyle(parent:Style) {
     return s
 }
 
+// Whether this box is taken out of the flow. A text box shares the
+// computed style of the element around it, so `position` reads through
+// to it: only a box with a real element of its own can be out of flow,
+// or an absolutely positioned <p> would lose its own text.
+bool func boxIsOutOfFlow(b:Box) {
+    if b == null { return false }
+    if b.kind == BOX_TEXT || b.kind == BOX_BR || b.kind == BOX_ANON { return false }
+    if b.node == null { return false }
+    return positionIsOutOfFlow(b.style.position)
+}
+
+bool func boxIsPositioned(b:Box) {
+    if b == null { return false }
+    if b.kind == BOX_TEXT || b.kind == BOX_BR || b.kind == BOX_ANON { return false }
+    if b.node == null { return false }
+    return positionIsPositioned(b.style.position)
+}
+
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
     return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR
@@ -685,10 +703,16 @@ bool func textStartsWithSpace(b:Box) {
 
 bool func hasInlineContent(b:Box) {
     if b.children.length == 0 { return false }
+    bool any = false
     for int i = 0, i < b.children.length, i++ {
-        if !isInlineLevelBox(b.children[i]) { return false }
+        Box c = b.children[i]
+        // An out-of-flow box is neither: it does not decide whether its
+        // parent runs an inline formatting context.
+        if boxIsOutOfFlow(c) { continue }
+        any = true
+        if !isInlineLevelBox(c) { return false }
     }
-    return true
+    return any
 }
 
 // ---- geometry helpers ---------------------------------------------------------
@@ -919,6 +943,10 @@ int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        // An absolutely positioned box is out of flow: it takes no
+        // space here and is laid out by the positioning pass once the
+        // containing block it resolves against is known (CSS2 §9.3).
+        if boxIsOutOfFlow(c) { continue }
         int topM = collapsedTopMargin(c, cw)
         bool applied = false
         if first && parentAbsorbsTop {
@@ -1222,6 +1250,7 @@ void func breakLine() {
 }
 
 void func placeInline(b:Box) {
+    if boxIsOutOfFlow(b) { return }
     if b.kind == BOX_TEXT {
         placeText(b)
         return
@@ -1660,6 +1689,106 @@ void func layoutCell(cell:Box, x:int, y:int, w:int) {
 
 // Lays out a styled document in a viewport `width` px wide. Returns
 // the root box; its height is the document height.
+// ---- positioned boxes -------------------------------------------------
+//
+// Everything above lays out the ordinary flow. This pass walks the
+// finished tree once and does what `position` asks for (CSS2 §9.3):
+//
+//   relative  the box keeps its place in the flow and is drawn offset
+//             from it, carrying its descendants along.
+//   absolute  the box is out of flow and resolves against the padding
+//             box of its nearest positioned ancestor.
+//   fixed     the same, against the viewport.
+//
+// Left and top win over right and bottom when both are given, which is
+// what the standard says for left-to-right writing.
+
+void func shiftBoxTree(b:Box, dx:int, dy:int) {
+    if b == null { return }
+    b.x = b.x + dx
+    b.y = b.y + dy
+    for int i = 0, i < b.lines.length, i++ {
+        Line ln = b.lines[i]
+        for int j = 0, j < ln.frags.length, j++ {
+            Fragment f = ln.frags[j]
+            f.x = f.x + dx
+            f.y = f.y + dy
+            f.baseline = f.baseline + dy
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { shiftBoxTree(b.children[i], dx, dy) }
+}
+
+// The containing block an absolutely positioned box resolves against:
+// the padding box of the nearest positioned ancestor. These four are
+// threaded as globals through the recursion rather than as a struct,
+// for the reason recorded in FINDINGS.md about forwarded structs.
+int posCbX = 0
+int posCbY = 0
+int posCbW = 0
+int posCbH = 0
+
+void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
+                           viewW:int, viewH:int) {
+    if b == null { return }
+
+    // An out-of-flow box has no geometry yet: give it one against its
+    // containing block before deciding where to put it.
+    if boxIsOutOfFlow(b) {
+        int useX = b.style.position == POS_FIXED ? 0 : cbX
+        int useY = b.style.position == POS_FIXED ? 0 : cbY
+        int useW = b.style.position == POS_FIXED ? viewW : cbW
+        int useH = b.style.position == POS_FIXED ? viewH : cbH
+        layoutBlock(b, useX, useY, useW, false)
+        Style s = b.style
+        int w = b.w + b.ml + b.mr
+        int h = b.h + b.mt + b.mb
+        int wantX = b.x
+        int wantY = b.y
+        if !lenIsAuto(s.left) {
+            wantX = useX + resolveLen(s.left, useW, 0) + b.ml
+        } else if !lenIsAuto(s.right) {
+            wantX = useX + useW - resolveLen(s.right, useW, 0) - w + b.ml
+        }
+        if !lenIsAuto(s.top) {
+            wantY = useY + resolveLen(s.top, useH, 0) + b.mt
+        } else if !lenIsAuto(s.bottom) {
+            wantY = useY + useH - resolveLen(s.bottom, useH, 0) - h + b.mt
+        }
+        // The line fragments inside were placed where the box was laid
+        // out, so the whole subtree moves rather than just the box.
+        if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+    }
+
+    // A relatively positioned box moves, with everything inside it.
+    if b.style.position == POS_RELATIVE && boxIsPositioned(b) {
+        Style s = b.style
+        int dx = 0
+        int dy = 0
+        if !lenIsAuto(s.left) { dx = resolveLen(s.left, cbW, 0) }
+        else if !lenIsAuto(s.right) { dx = 0 - resolveLen(s.right, cbW, 0) }
+        if !lenIsAuto(s.top) { dy = resolveLen(s.top, cbH, 0) }
+        else if !lenIsAuto(s.bottom) { dy = 0 - resolveLen(s.bottom, cbH, 0) }
+        if dx != 0 || dy != 0 { shiftBoxTree(b, dx, dy) }
+    }
+
+    // This box becomes the containing block for its descendants if it
+    // is positioned at all.
+    int nx = cbX
+    int ny = cbY
+    int nw = cbW
+    int nh = cbH
+    if boxIsPositioned(b) {
+        nx = b.x + b.bl
+        ny = b.y + b.bt
+        nw = b.w - b.bl - b.br
+        nh = b.h - b.bt - b.bb
+    }
+    for int i = 0, i < b.children.length, i++ {
+        layoutPositioned(b.children[i], nx, ny, nw, nh, viewW, viewH)
+    }
+}
+
 Box func layoutDocument(doc:Node, width:int) {
     nextBoxId = 1
     boxRegistry = [null]
@@ -1672,8 +1801,15 @@ Box func layoutDocument(doc:Node, width:int) {
     if root == null { return null }
     root.depth = 0
     // the root box: the top margin of body collapses into it
+    // NOTE: topM is the margin that collapses into the root, and it is
+    // dropped when it collapses all the way through -- see todo.md,
+    // "a margin that collapses through to the root". Applying it here
+    // double-counts the ordinary case, where layoutBlock already does.
     int topM = collapsedTopMargin(root, width)
     layoutBlock(root, 0, 0, width, false)
+    // The initial containing block is the viewport: as wide as the
+    // layout and as tall as the document turned out to be.
+    layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
     return root
 }
 
@@ -1769,4 +1905,13 @@ bool func boxTreeHasText(root:Box, needle:text) {
         if boxTreeHasText(root.children[i], needle) { return true }
     }
     return false
+}
+
+// Collects every box generated by a given tag, in tree order.
+void func collectBoxesForTag(root:Box, tag:text, out:arr[Box]) {
+    if root == null { return }
+    if root.node != null && htmlTagOf(root.node.id) == tag { out.push(root) }
+    for int i = 0, i < root.children.length, i++ {
+        collectBoxesForTag(root.children[i], tag, out)
+    }
 }

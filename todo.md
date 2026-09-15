@@ -31,11 +31,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **The CSS2 chapters that are missing**, in this order: positioning
-   and `z-index` (§9.3), floats and `clear` (§9.5), `overflow` clipping
-   (§11), and generated content with counters (§12). `position` does not
-   appear in `src/css/` at all, and `float` and `overflow` are computed
-   and never read. These are the four largest visual gaps.
+1. **The CSS2 chapters that are still missing**, in this order: floats
+   and `clear` (§9.5), `overflow` clipping (§11), and generated content
+   with counters (§12). `float` and `overflow` are computed and never
+   read. Positioning (§9.3) is done.
 2. **Flexbox.** Accepted as a `display` value and laid out as a block,
    which is why a modern page renders as one column.
 3. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
@@ -73,7 +72,7 @@ than their prominence suggests.
 
 **Two measurements exist now**, both with floors in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 373 CSS
-properties Chromium knows change what this engine renders (52), and
+properties Chromium knows change what this engine renders (58), and
 `tests/conformance/elements.f` how many of the 121 HTML elements get
 the default `display` Chromium gives them (121 of 121). Each entry in
 the work above should move the first number, and the runner names every
@@ -129,6 +128,19 @@ standard's text is reachable.
 rather than quality: `noscript01.dat` assumes a disabled scripting flag,
 which is permanently true here. `webkit02.dat` and three other files are
 genuine leads.
+
+## A margin that collapses through to the root is dropped
+
+`<body style="margin:0"><div style="margin-top:40px">` puts the div at
+the very top. Chromium puts it at 40, and says so:
+`getBoundingClientRect().top` is 40 there and 0 here.
+
+`layoutDocument` computes the margin collapsing into the root and never
+applies it, because applying it at the root double-counts the ordinary
+case where `layoutBlock` already has. The fix is to separate the margin
+that collapses *through* the root from the one that collapses *into* it.
+Found while testing absolute positioning, which resolves against the
+ancestor's border box and so depends on it.
 
 ## Layout
 
