@@ -198,10 +198,11 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
 | `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f` |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, layout geometry |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade rules, values, layout geometry, box properties, positioning, floats, flex, iframes |
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor` |
 | `tests/conformance/` | the WPT tree-construction runner |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
+| `tests/maxrss.py` | peak resident set size of a command, for the memory benchmark |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |
 | `.github/workflows/tests.yml` | CI: the whole suite, natively and under valgrind, on every pull request |
 | `tools/festina-generic` | a Festina CLI wrapper that targets a generic CPU, for valgrind |

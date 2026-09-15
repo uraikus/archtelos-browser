@@ -65,6 +65,14 @@ A type whose values are named and distinct by construction would have
 made it a compile error. The cost is not hypothetical — it is the whole
 debugging session that found it.
 
+The second shape of the same problem is two *different* vocabularies
+under one prefix. `text-align` and `justify-content` both want a value
+called "center", so a single `ALIGN_` run would hold `ALIGN_CENTER = 1`
+and `ALIGN_CENTRE = 2` meaning different things one letter apart, and
+either would type-check in either place. The flex constants are
+`BOXALIGN_` for that reason. An enum type per property would make the
+prefix discipline unnecessary and the mistake impossible.
+
 ## No integer division, and no bitwise operators
 
 `/` is float division whatever its operands, so integer division is
@@ -246,6 +254,16 @@ LLVM IR parse error: global variable reference must have pointer type
 
 naming neither the variable nor the source line.
 
+A **builtin's** name is the one case handled well. `int func f(free:int)`
+is rejected by the parser, at the right column, with
+
+```
+error: expected a parameter name, found free('free')
+```
+
+which is what the other two should do. The machinery to reject the name
+is there; it is only consulted for builtins.
+
 ---
 
 ## 4 An empty `text` is `null`
@@ -426,7 +444,7 @@ descent 0.24 em), and any other font is laid out slightly wrong.
 - **The HTTP client** handles TLS and chunked responses without
   ceremony, and `try`/`catch` turns a network failure into an error
   page.
-- **The compiler is quick and its diagnostics are precise**: 11,289
-  lines in 9.1 seconds, `file:line:column` on every error, and a type checker
+- **The compiler is quick and its diagnostics are precise**: 12,978
+  lines in 9.5 seconds, `file:line:column` on every error, and a type checker
   that catches mismatched `?:` branches, a `void` used as a value and an
   `int`/`float` mix before anything runs.

@@ -150,12 +150,20 @@ pointer type`, naming neither the variable nor the line.
 
 **Proposal.** Resolve names innermost-first, as every other block-scoped
 language does. If shadowing a global function is meant to be forbidden,
-reject it at the declaration with a real diagnostic. Either way, a
-`func[...]` value must never satisfy a `text` parameter.
+reject it at the declaration with a real diagnostic — which the compiler
+already does for a builtin's name, and only for that: `func f(free:int)`
+is refused by the parser at the right column, while `func f(prop:int)`
+is not. Either way, a `func[...]` value must never satisfy a `text`
+parameter.
 
-**What it removes here.** Two renames made under duress (`prop` →
-`styleProp`, `newElement` → `replacement`) and the class of bug that
-cost an afternoon the first time.
+**What it removes here.** Four renames made under duress — `prop` →
+`styleProp`, `newElement` → `replacement`, and in the flex layout
+`free` → `spare` and `contentX`/`contentY` → `flexOriginX`/`flexOriginY`
+— and the class of bug that cost an afternoon the first time. The
+`contentX` case is the sharpest illustration: two locals named after two
+functions in the same file compiled to IR that named the functions where
+integers belonged, and the only diagnostic was an LLVM parse error four
+thousand lines from the mistake.
 
 ---
 
@@ -328,8 +336,8 @@ Worth saying, because this document is otherwise a list of gaps.
   check real pixels with no display.
 - **Template literals span lines**, which is how the user-agent
   stylesheet is embedded as plain readable CSS.
-- **The compiler is quick and its diagnostics are precise.** 11,289
-  lines in 9.1 seconds, over half of which is one generated table, and
+- **The compiler is quick and its diagnostics are precise.** 12,978
+  lines in 9.5 seconds, over half of which is one generated table, and
   `file:line:column` on every error.
-- **The result is one 2.2 MB native binary** that starts in 6 ms,
+- **The result is one 2.3 MB native binary** that starts in 6 ms,
   against 448 ms for the browser it is measured beside.

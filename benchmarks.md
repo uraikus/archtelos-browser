@@ -23,6 +23,9 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
   on a shared container mostly measure the neighbours.
 - **Both engines get the same canvas**, 800x600. This is the whole
   ballgame and it is easy to get wrong — see below.
+- **Memory** is peak resident set size from `tests/maxrss.py`, and
+  **size** is `wc -c` on the binaries. Both are described where they
+  are reported.
 - **Pages**: the two examples in this repository, plus
   `generated.html`, which `tests/bench.sh` generates deterministically
   (40 sections, each a heading, a bordered card with a wrapping
@@ -56,7 +59,7 @@ encoding. `tests/bench.sh` now gives both engines 800x600.
 Chromium takes **457 ms** to screenshot a one-line page at 800x600, and
 this browser takes **27 ms**. That difference is process start-up — a
 browser engine bringing up a multi-process architecture, a JavaScript
-engine, a compositor and a network stack, against a 2.2 MB native binary
+engine, a compositor and a network stack, against a 2.3 MB native binary
 that opens a Cairo surface. It is real if what you want is a screenshot
 from a shell script, and it says nothing about rendering speed.
 
@@ -104,28 +107,64 @@ reasonable place to be, and it is not where the remaining time goes.
 | parse | 8 ms |
 | stylesheets | 2 ms |
 | images | 1 ms |
-| cascade | 54 ms |
-| layout | 43 ms |
-| paint | 4 ms |
+| cascade | 58 ms |
+| layout | 47 ms |
+| paint | 6 ms |
 
 The cascade and layout are **90%** of it. Parsing is 7%, and paint —
-once it is not also encoding six megapixels — is 4 ms.
+once it is not also encoding six megapixels — is 6 ms.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements. Collecting them is 10 ms, applying
-14 ms and computing 21 ms.
-
-The presentational-attribute pass inside collection was 8 ms of that; it
-is 3 ms now that an element records at parse time whether it carries
-such an attribute, so the pass can skip the ones that do not. The saving
-is real and measured at the sub-phase, and it is **inside the noise end
-to end**: best-of-seven for the whole page moved from 132 ms to 135 ms,
-which is to say it did not move. Computing styles is the phase worth
+declarations across 2,728 elements. Collecting them is 8 ms, applying
+10 ms and computing 29 ms. Computing styles is the phase worth
 attacking next.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (9 ms total); building the box tree is 15 ms and
+cache and reach Cairo (9 ms total); building the box tree is 14 ms and
 inline placement 12 ms.
+
+## What the CSS work cost, measured
+
+Every revision below was rebuilt and re-run on the same machine within
+the same few minutes, so the column is a comparison between builds and
+not between days. Best of seven, `generated.html` at 800x600.
+
+| Revision | What it added | End to end |
+|---|---|---|
+| `39dd9c7` | the equal-canvas benchmark | 131 ms |
+| `635bea7` | the two conformance runners | 131 ms |
+| `6971286` | `calc()` and custom properties | 136 ms |
+| `1aa3126` | positioning | 154 ms |
+| `ab697dc` | floats and `clear` | 156 ms |
+| `f6fda9b` | box-sizing, max-height, outline, … | 161 ms |
+| this revision, before tuning | flexbox | 164 ms |
+| this revision | the four changes below | **145 ms** |
+
+**Positioning alone cost 18 ms of the 33**, and none of it was in the
+feature: it was work every page paid whether or not it had a positioned
+box. Four changes took 19 ms back:
+
+- **The positioned-layout pass is skipped** when the document contains
+  no positioned box. It was a second walk of the whole box tree on
+  every page.
+- **The painter's two-pass z-index child ordering is skipped** the same
+  way, for a single pass in document order. Paint went from 9 ms to
+  6 ms.
+- **`boxIsOutOfFlow` and `boxIsFloated` answer from a document-level
+  flag first.** They are asked of every child of every block, and on a
+  page with neither they now cost one boolean read instead of four
+  field reads. `applyFloatsToLine`, once per line box, likewise returns
+  the containing block's edges without scanning the float list.
+- **Two allocations came out of the cascade's inner loop**: a fresh
+  `ascii` built per declaration per element to read two characters,
+  which `text.charCodeAt` reads without allocating, and the `'var('`
+  needle that `styleProp` rebuilt on every property read of every
+  element.
+
+What is left is real work: computing a style went from 22 ms to 29 ms
+because there are about thirty more properties to compute per element.
+That is the honest cost of the features, and it is the phase to attack
+next.
 
 ## Conformance, measured on both engines
 
@@ -181,13 +220,61 @@ corners and a few adoption-agency cases here, and on Chromium's side
 mostly cases where its scripting flag is enabled. todo.md tracks the
 ones worth closing.
 
+## Peak memory
+
+Peak resident set size, rendering the same 800x600 PNG. Measured with
+`tests/maxrss.py`, which runs the command and reads `ru_maxrss` for the
+child tree, because `/usr/bin/time` is not present in every environment
+this runs in. `ru_maxrss` is a high-water mark across every descendant
+that has been reaped, so a multi-process browser is scored by its
+largest single process rather than by the sum of them — the honest
+comparison to make against a single-process engine, but the reason the
+Chromium column understates total system memory for that run.
+
+| Page | Size | This browser | Chromium |
+|---|---|---|---|
+| hello.html | 4 KB | 12.7 MB | 195.1 MB |
+| css.html | 3 KB | 12.9 MB | 195.9 MB |
+| generated.html | 51 KB | 20.4 MB | 194.2 MB |
+
+**About 15x less on a small page and 10x less on the large one**, and
+the shape differs as much as the size: Chromium's footprint is flat
+across all three pages because it is almost entirely fixed cost —
+process architecture, a JavaScript heap, a compositor — while this
+browser's grows with the document, from 12.7 MB to 20.4 MB as the page
+goes from 4 KB to 51 KB. The 7.7 MB of growth is the DOM, the computed
+styles and the box tree for 2,728 elements, which is about 2.8 KB per
+element across all three trees.
+
+This is the same trade as the start-up figure above, seen from the other
+side: what this browser does not have costs nothing to keep in memory.
+It is not a claim that the engine is frugal with what it does build.
+
 ## Build
 
 | | |
 |---|---|
-| Source | 11,289 lines of Festina across `browser.f` and `src/` |
-| Compile | 9.1 s, whole program, no incremental build |
-| Binary | 2.2 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
+| Source | 12,978 lines of Festina across `browser.f` and `src/` |
+| Compile | 9.5 s, whole program, no incremental build |
+| Binary | 2.3 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
+
+Against Chromium, whose binary this browser is compared with everywhere
+else in this file:
+
+| | Bytes |
+|---|---|
+| This browser, the whole program | 2,325,800 |
+| This browser, all `.f` source | 422,548 |
+| Chromium, main executable only | 463,227,992 |
+| Chromium, whole install tree | 624,734,779 |
+
+**The binary is about 200 times smaller than Chromium's executable
+alone**, and 269 times smaller than the tree it ships in. The comparison
+flatters this browser and should be read with that in mind: what is
+absent from the 2.3 MB — a JavaScript engine, a compositor, a sandbox,
+a network stack, an extension system, ICU — is most of what is in the
+463 MB. The figure is a fair measure of *this* program's size and a poor
+measure of how much cheaper a browser could be.
 
 Of that 9.1 s, **4.2 s is the single generated map literal** holding the
 standard's 2,231 named character references: a one-line program compiles

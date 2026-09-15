@@ -61,4 +61,21 @@ checkEq(resolveUrl(p4.url, 'https://other.org/p'), 'https://other.org/p', 'absol
 checkEq(resolveUrl('dir/page.html', 'img/a.png'), 'dir/img/a.png', 'relative file path')
 checkEq(resolveUrl('http://h.com', 'x'), 'http://h.com/x', 'host without path')
 check(linkAt(p4.root, 350, 8) == null, 'no link on empty space')
+
+// a flex row actually paints side by side, not stacked: geometry the
+// unit suite checks in numbers, checked here in pixels.
+Page p5 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px"><div style="width:60px;background:red"></div><div style="width:60px;background:blue"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p5, 0, 0, 300)
+check(getPixelColor(30, 20) == red, 'the first flex item paints at the start of the row')
+check(getPixelColor(90, 20) == blue, 'the second beside it, not below it')
+check(getPixelColor(30, 60) == white, 'and nothing is stacked underneath')
+
+// justify-content: flex-end moves the pair to the far edge
+Page p6 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px;justify-content:flex-end"><div style="width:60px;background:red"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p6, 0, 0, 300)
+check(getPixelColor(370, 20) == red, 'flex-end paints the item against the far edge')
+check(getPixelColor(30, 20) == white, 'and nothing at the start')
+
 finish('render')

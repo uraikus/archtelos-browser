@@ -496,6 +496,9 @@ arr[text] supportedProperties = [
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
     'float', 'clear',
     'box-sizing', 'max-height', 'word-spacing', 'caption-side',
+    'flex', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-basis',
+    'justify-content', 'align-items', 'align-self', 'gap', 'row-gap',
+    'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
     // `overflow` and `float` are deliberately absent: the cascade
     // computes them and nothing reads them, so claiming support would

@@ -26,6 +26,7 @@ const int DISPLAY_TABLE_HEADER_GROUP = 13
 const int DISPLAY_TABLE_FOOTER_GROUP = 14
 const int DISPLAY_RUBY = 15
 const int DISPLAY_CONTENTS = 16
+const int DISPLAY_INLINE_FLEX = 17
 
 // text-align
 const int ALIGN_LEFT = 0
@@ -55,6 +56,28 @@ const int VALIGN_BASELINE = 0
 const int VALIGN_MIDDLE = 1
 const int VALIGN_TOP = 2
 const int VALIGN_BOTTOM = 3
+
+// flex-direction
+const int FLEX_ROW = 0
+const int FLEX_ROW_REVERSE = 1
+const int FLEX_COLUMN = 2
+const int FLEX_COLUMN_REVERSE = 3
+
+// justify-content, align-items and align-self, which share a vocabulary
+// (Box Alignment 3). The prefix is not `ALIGN_`, which belongs to
+// `text-align` above: two runs of `const int` under one prefix is how
+// `ALIGN_CENTER` and `ALIGN_CENTRE` would come to mean different things
+// one letter apart. See FINDINGS.md, "constants with the same value
+// collide silently".
+const int BOXALIGN_START = 0
+const int BOXALIGN_END = 1
+const int BOXALIGN_CENTRE = 2
+const int BOXALIGN_STRETCH = 3
+const int BOXALIGN_BASELINE = 4
+const int BOXALIGN_SPACE_BETWEEN = 5
+const int BOXALIGN_SPACE_AROUND = 6
+const int BOXALIGN_SPACE_EVENLY = 7
+const int BOXALIGN_AUTO = 8
 
 // box-sizing
 const int BOX_CONTENT = 0
@@ -142,6 +165,16 @@ struct Style {
     minHeight:Len
     maxHeight:Len
     boxSizing:int
+    flexDirection:int
+    justifyContent:int
+    alignItems:int
+    alignSelf:int
+    flexGrow:float
+    flexShrink:float
+    flexBasis:Len
+    rowGap:int
+    columnGap:int
+    order:int
     captionSide:int
     wordSpacing:int
     outlineWidth:int
@@ -231,7 +264,7 @@ bool func displayIsBlockLevel(d:int) {
 
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
-        || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS
+        || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS || d == DISPLAY_INLINE_FLEX
 }
 
 // A positioned box is one that `position` takes out of the ordinary

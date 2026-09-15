@@ -145,6 +145,54 @@ for h in 600 2000 8000; do
     printf "%-26s %12s %12s\n" "${CANVAS_W}x${h}" "$best" "$(( CANVAS_W * h ))"
 done
 
+# ---- memory and size ----------------------------------------------------
+# Peak RSS is the largest amount of memory one process needed at one
+# moment, measured with tests/maxrss.py (ru_maxrss for the child tree,
+# because /usr/bin/time is not everywhere). Each run is a fresh
+# interpreter, because ru_maxrss is a high-water mark that never falls.
+echo
+echo "## Peak memory rendering the same ${CANVAS_W}x${CANVAS_H} PNG (best of $RUNS, MB)"
+echo
+printf "%-26s %8s %12s %12s\n" "page" "size" "this browser" "chromium"
+for page in $PAGES; do
+    best=99999999
+    for _ in $(seq "$RUNS"); do
+        kb=$(python3 tests/maxrss.py -- "$BENCH/browser" "$page" --screenshot "$BENCH/out.png" \
+             --width "$CANVAS_W" --height "$CANVAS_H")
+        [ -n "$kb" ] && [ "$kb" -lt "$best" ] && best=$kb
+    done
+    cbest="-"
+    if [ -n "$CHROME" ]; then
+        cb=99999999
+        for _ in $(seq "$RUNS"); do
+            kb=$(python3 tests/maxrss.py -- "$CHROME" --headless --disable-gpu --no-sandbox \
+                 --hide-scrollbars --window-size="$CANVAS_W,$CANVAS_H" \
+                 --screenshot="$BENCH/chrome.png" "file://$PWD/$page")
+            [ -n "$kb" ] && [ "$kb" -lt "$cb" ] && cb=$kb
+        done
+        cbest=$(awk "BEGIN{printf \"%.1f\", $cb/1024}")
+    fi
+    printf "%-26s %8s %12s %12s\n" "$(basename "$page")" "$(human_size "$page")" \
+        "$(awk "BEGIN{printf \"%.1f\", $best/1024}")" "$cbest"
+done
+
+# ---- what the binary costs ----------------------------------------------
+# The whole browser is one native binary with no vendored code, so its
+# size is a real number rather than the entry point of an install tree.
+# Chromium's is given for scale only: its main executable is one file of
+# many, and the install it comes from is far larger than the row says.
+echo
+echo "## Binary size"
+echo
+printf "%-40s %14s\n" "binary" "bytes"
+printf "%-40s %14s\n" "this browser (build/bench/browser)" "$(wc -c < "$BENCH/browser")"
+if [ -n "$CHROME" ]; then
+    printf "%-40s %14s\n" "chromium (main executable only)" "$(wc -c < "$CHROME")"
+    cdir="$(dirname "$CHROME")"
+    printf "%-40s %14s\n" "chromium (whole install tree)" "$(du -sb "$cdir" | cut -f1)"
+fi
+printf "%-40s %14s\n" "this browser (source, all .f files)" "$(cat browser.f $(find src -name '*.f') | wc -c)"
+
 # ---- per phase, for the generated page --------------------------------------
 echo
 echo "## Phases of this browser, generated.html at 800px"

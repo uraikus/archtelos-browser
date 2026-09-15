@@ -309,6 +309,17 @@ void func paintBox(b:Box) {
     // document order (CSS2 §9.9). This is the painting order for the
     // common case, not the full stacking-context algorithm -- there is
     // no opacity or transform layer to sort against yet.
+    // A document with no positioned box anywhere needs neither the
+    // skip test nor the second pass: one loop in document order is the
+    // whole painting order.
+    if !docHasPositioned {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+            paintBox(c)
+        }
+        return
+    }
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }

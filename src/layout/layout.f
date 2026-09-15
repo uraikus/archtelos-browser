@@ -23,6 +23,7 @@ const int BOX_ROW = 8
 const int BOX_CELL = 9
 const int BOX_BR = 10
 const int BOX_IFRAME = 11
+const int BOX_FLEX = 12
 
 const int FRAG_TEXT = 1
 const int FRAG_ATOMIC = 2
@@ -197,6 +198,14 @@ int func lineHeightOf(s:Style) {
 
 // ---- box construction ----------------------------------------------------
 
+// Whether this document contains any positioned or floated box at all.
+// Both cost an extra pass over the tree -- layoutPositioned, and the
+// two-pass z-index child ordering in the painter -- and most pages have
+// neither. The flags are set once while the box tree is built and read
+// wherever a pass can be skipped whole.
+bool docHasPositioned = false
+bool docHasFloats = false
+
 Box func newBox(kind:int, node:Node, style:Style) {
     Box b
     b.id = nextBoxId
@@ -209,6 +218,10 @@ Box func newBox(kind:int, node:Node, style:Style) {
     b.colspan = 1
     b.minContent = -1
     b.maxContent = -1
+    if node != null && kind != BOX_TEXT && kind != BOX_BR && kind != BOX_ANON {
+        if positionIsPositioned(style.position) { docHasPositioned = true }
+        if style.floatSide != FLOAT_NONE { docHasFloats = true }
+    }
     return b
 }
 
@@ -264,6 +277,10 @@ Style func anonymousStyle(parent:Style) {
 // to it: only a box with a real element of its own can be out of flow,
 // or an absolutely positioned <p> would lose its own text.
 bool func boxIsOutOfFlow(b:Box) {
+    // The document-level flag first: on a page with nothing positioned
+    // this is the whole test, and it is asked of every child of every
+    // block. See docHasPositioned.
+    if !docHasPositioned { return false }
     if b == null { return false }
     if b.kind == BOX_TEXT || b.kind == BOX_BR || b.kind == BOX_ANON { return false }
     if b.node == null { return false }
@@ -279,7 +296,7 @@ bool func boxIsPositioned(b:Box) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX
 }
 
 bool func textIsCollapsibleBlank(t:text) {
@@ -372,6 +389,12 @@ Box func buildBox(n:Node, parentStyle:Style) {
             fake.style = s
             addChildBox(b, buildTextBox(fake, s))
         }
+        return b
+    }
+    if d == DISPLAY_FLEX || d == DISPLAY_INLINE_FLEX {
+        Box b = newBox(BOX_FLEX, n, s)
+        b.blockLevel = d == DISPLAY_FLEX
+        buildChildren(b, n, s)
         return b
     }
     if d == DISPLAY_TABLE {
@@ -646,6 +669,41 @@ void func computeIntrinsicUncounted(b:Box) {
         computeTableIntrinsic(b)
         return
     }
+    if b.kind == BOX_FLEX {
+        // A row's preferred width is every item side by side with the
+        // gaps between them; a column's is the widest item. The minimum
+        // is the same shape over the items' own minima, which is what
+        // lets a row shrink rather than overflow.
+        bool fRow = flexIsRow(s)
+        int fCount = 0
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) { continue }
+            if boxIsOutOfFlow(c) { continue }
+            computeIntrinsic(c)
+            if fRow {
+                minW = minW + c.minContent
+                maxW = maxW + c.maxContent
+            } else {
+                minW = maxInt(minW, c.minContent)
+                maxW = maxInt(maxW, c.maxContent)
+            }
+            fCount++
+        }
+        if fRow && fCount > 1 {
+            int fGap = s.columnGap * (fCount - 1)
+            minW = minW + fGap
+            maxW = maxW + fGap
+        }
+        if s.width.kind == LEN_PX {
+            minW = roundPx(s.width.v)
+            maxW = minW
+        }
+        int fExtras = horizontalExtras(b, 0)
+        b.minContent = minW + fExtras
+        b.maxContent = maxW + fExtras
+        return
+    }
     bool inlineContent = hasInlineContent(b)
     if inlineContent || b.kind == BOX_INLINE {
         // inline content: max = everything on one line, min = widest piece
@@ -879,7 +937,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int width = 0
     bool autoWidth = lenIsAuto(s.width)
     if autoWidth {
-        if b.kind == BOX_INLINE_BLOCK && !b.blockLevel {
+        if (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX) && !b.blockLevel {
             computeIntrinsic(b)
             int avail = cw - b.ml - b.mr
             int pref = b.maxContent - horizontalExtras(b, 0) + edges
@@ -917,6 +975,21 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     b.w = width + edges
     b.x = cx + b.ml
     b.y = y + b.mt
+
+    // A flex container sizes its own box like a block, then hands the
+    // children to the flex algorithm rather than stacking them
+    // (Flexible Box Layout 1 §9).
+    if b.kind == BOX_FLEX {
+        int flexEdges = b.pt + b.pb + b.bt + b.bb
+        b.h = flexEdges
+        if s.height.kind == LEN_PX {
+            int fh = maxInt(roundPx(s.height.v), 0)
+            if s.boxSizing == BOX_BORDER { fh = maxInt(fh - flexEdges, 0) }
+            b.h = fh + flexEdges
+        }
+        layoutFlex(b, cx, y, cw)
+        return
+    }
 
     // children
     int innerX = contentX(b)
@@ -1083,6 +1156,15 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
 // the line does not know until it is closed; they differ only for a
 // line with something unusually tall on it.
 void func applyFloatsToLine() {
+    // Called once per line box. With no float in the document the line
+    // is simply the containing block, and the two edge scans and the
+    // line-height lookup are all skipped.
+    if !docHasFloats {
+        ifcLineStart = ifcCbLeft
+        ifcLineRight = ifcCbRight
+        if ifcX < ifcLineStart { ifcX = ifcLineStart }
+        return
+    }
     int band = ifcBox == null ? 0 : lineHeightOf(ifcBox.style)
     if band <= 0 { band = 1 }
     int l = floatLeftEdge(ifcCbLeft, ifcY, ifcY + band)
@@ -1754,10 +1836,224 @@ void func layoutCell(cell:Box, x:int, y:int, w:int) {
     cell.baseline = cell.h
 }
 
-// ---- entry points ----------------------------------------------------------------
+// ---- flex layout ------------------------------------------------------
+//
+// Flexible Box Layout 1, single-line: the items are laid along a main
+// axis chosen by flex-direction, grown or shrunk to fill it, spaced by
+// justify-content, and aligned across it by align-items. `flex-wrap` is
+// not implemented, so every item stays on one line (todo.md).
+//
+// The axes are handled by asking, once, whether the direction is a row,
+// and then reading width-or-height through that answer, which keeps one
+// copy of the algorithm rather than two.
 
-// Lays out a styled document in a viewport `width` px wide. Returns
-// the root box; its height is the document height.
+bool func flexIsRow(s:Style) {
+    return s.flexDirection == FLEX_ROW || s.flexDirection == FLEX_ROW_REVERSE
+}
+
+bool func flexIsReverse(s:Style) {
+    return s.flexDirection == FLEX_ROW_REVERSE || s.flexDirection == FLEX_COLUMN_REVERSE
+}
+
+// The item's base size along the main axis, before growing or shrinking.
+int func flexBaseSize(item:Box, row:bool, inner:int) {
+    Style s = item.style
+    if s.flexBasis.kind != LEN_AUTO {
+        return maxInt(resolveLen(s.flexBasis, inner, 0), 0)
+    }
+    Len own = row ? s.width : s.height
+    if !lenIsAuto(own) { return maxInt(resolveLen(own, inner, 0), 0) }
+    if row {
+        computeIntrinsic(item)
+        return maxInt(item.maxContent, 0)
+    }
+    return 0
+}
+
+// Where item `index` starts, relative to where the items would start if
+// they were packed flush at the main-start edge. `spare` is the space
+// left over once every item's outer main size and every gap is spent.
+// (The name avoids `free`, which is a function: see FINDINGS.md,
+// "a parameter cannot shadow a function".)
+int func flexOffsetFor(justify:int, spare:int, count:int, index:int, gap:int) {
+    if spare <= 0 || count <= 0 { return 0 }
+    if justify == BOXALIGN_END { return spare }
+    if justify == BOXALIGN_CENTRE { return Math.floorDiv(spare, 2) }
+    if justify == BOXALIGN_SPACE_BETWEEN {
+        // A single item packs to the main-start edge, unlike
+        // space-around and space-evenly, which centre it.
+        if count < 2 { return 0 }
+        return Math.floorDiv(spare * index, count - 1)
+    }
+    if justify == BOXALIGN_SPACE_AROUND {
+        return Math.floorDiv(spare * (index + index + 1), count + count)
+    }
+    if justify == BOXALIGN_SPACE_EVENLY {
+        return Math.floorDiv(spare * (index + 1), count + 1)
+    }
+    return 0
+}
+
+// True when the container has no definite height to distribute, which
+// is the case for an auto height and, because this engine resolves no
+// percentage heights, for a percentage one too.
+bool func flexHeightIndefinite(s:Style) {
+    return s.height.kind != LEN_PX
+}
+
+void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
+    Style s = b.style
+    bool row = flexIsRow(s)
+    int innerMain = row ? b.w - b.pl - b.pr - b.bl - b.br : 0
+    int flexOriginX = b.x + b.bl + b.pl
+    int flexOriginY = b.y + b.bt + b.pt
+
+    // the items, in `order`, skipping anything out of flow
+    arr[Box] items = []
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) { continue }
+        if boxIsOutOfFlow(c) { continue }
+        items.push(c)
+    }
+    // a stable insertion sort by `order`
+    for int i = 1, i < items.length, i++ {
+        Box cur = items[i]
+        int j = i - 1
+        while j >= 0 && items[j].style.order > cur.style.order {
+            items[j + 1] = items[j]
+            j--
+        }
+        items[j + 1] = cur
+    }
+
+    int gap = row ? s.columnGap : s.rowGap
+    int count = items.length
+    if count == 0 {
+        if row && flexHeightIndefinite(s) { b.h = b.pt + b.pb + b.bt + b.bb }
+        return
+    }
+
+    // a first pass to size and measure every item
+    arr[int] mainSize = []
+    int totalMain = 0
+    float totalGrow = 0.0
+    float totalShrink = 0.0
+    for int i = 0, i < count, i++ {
+        Box it = items[i]
+        resolveEdges(it, innerMain > 0 ? innerMain : cw)
+        int base = flexBaseSize(it, row, row ? innerMain : cw)
+        mainSize.push(base)
+        totalMain = totalMain + base + (row ? it.ml + it.mr : it.mt + it.mb)
+        totalGrow = totalGrow + it.style.flexGrow
+        totalShrink = totalShrink + it.style.flexShrink
+    }
+    int gapTotal = gap * (count - 1)
+
+    // grow or shrink into the free space, but only along a main axis
+    // whose size is known: a column of auto height has none to share.
+    int mainAvail = row ? innerMain : (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
+    int spare = mainAvail < 0 ? 0 : mainAvail - totalMain - gapTotal
+    if spare > 0 && totalGrow > 0.0 {
+        int handed = 0
+        for int i = 0, i < count, i++ {
+            float share = items[i].style.flexGrow / totalGrow
+            int add = i == count - 1 ? spare - handed : roundPx(spare.toFloat() * share)
+            mainSize[i] = mainSize[i] + add
+            handed = handed + add
+        }
+    } else if spare < 0 && totalShrink > 0.0 {
+        int owed = 0 - spare
+        int taken = 0
+        for int i = 0, i < count, i++ {
+            float share = items[i].style.flexShrink / totalShrink
+            int cut = i == count - 1 ? owed - taken : roundPx(owed.toFloat() * share)
+            if cut > mainSize[i] { cut = mainSize[i] }
+            mainSize[i] = mainSize[i] - cut
+            taken = taken + cut
+        }
+    }
+
+    // lay each item out at its main size, then place it
+    int used = 0
+    for int i = 0, i < count, i++ { used = used + mainSize[i] }
+    for int i = 0, i < count, i++ {
+        Box it = items[i]
+        used = used + (row ? it.ml + it.mr : it.mt + it.mb)
+    }
+    int leftover = mainAvail < 0 ? 0 : mainAvail - used - gapTotal
+    if leftover < 0 { leftover = 0 }
+
+    int crossAvail = row
+        ? (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
+        : b.w - b.pl - b.pr - b.bl - b.br
+
+    int cursor = 0
+    int maxCross = 0
+    for int i = 0, i < count, i++ {
+        int idx = flexIsReverse(s) ? count - 1 - i : i
+        Box item = items[idx]
+        int size = mainSize[idx]
+        int align = item.style.alignSelf == BOXALIGN_AUTO ? s.alignItems : item.style.alignSelf
+        if row {
+            // give the item its main size as a width, and let the block
+            // machinery do the rest
+            Len saved = item.style.width
+            item.style.width = lenPx(size.toFloat())
+            layoutBlock(item, flexOriginX, flexOriginY, size + item.ml + item.mr, false)
+            item.style.width = saved
+            if align == BOXALIGN_STRETCH && lenIsAuto(item.style.height) && crossAvail > 0 {
+                item.h = crossAvail - item.mt - item.mb
+            }
+            int outer = item.h + item.mt + item.mb
+            if outer > maxCross { maxCross = outer }
+        } else {
+            layoutBlock(item, flexOriginX, flexOriginY, crossAvail, false)
+            if !lenIsAuto(item.style.height) || item.style.flexBasis.kind != LEN_AUTO {
+                item.h = size
+            } else {
+                mainSize[idx] = item.h
+                size = item.h
+            }
+            if align == BOXALIGN_STRETCH && lenIsAuto(item.style.width) {
+                item.w = crossAvail - item.ml - item.mr
+            }
+            int outer = item.w + item.ml + item.mr
+            if outer > maxCross { maxCross = outer }
+        }
+
+        int offset = flexOffsetFor(s.justifyContent, leftover, count, i, gap)
+        int mainPos = cursor + offset
+        int crossPos = 0
+        int itemCross = row ? item.h + item.mt + item.mb : item.w + item.ml + item.mr
+        if crossAvail > 0 && itemCross < crossAvail {
+            if align == BOXALIGN_CENTRE { crossPos = Math.floorDiv(crossAvail - itemCross, 2) }
+            else if align == BOXALIGN_END { crossPos = crossAvail - itemCross }
+        }
+        if row {
+            shiftBoxTree(item, flexOriginX + mainPos + item.ml - item.x,
+                               flexOriginY + crossPos + item.mt - item.y)
+        } else {
+            shiftBoxTree(item, flexOriginX + crossPos + item.ml - item.x,
+                               flexOriginY + mainPos + item.mt - item.y)
+        }
+        cursor = cursor + size + gap + (row ? item.ml + item.mr : item.mt + item.mb)
+    }
+
+    // an auto cross size fits the items
+    if row && flexHeightIndefinite(s) {
+        b.h = maxCross + b.pt + b.pb + b.bt + b.bb
+    } else if !row && flexHeightIndefinite(s) {
+        int total = 0
+        for int i = 0, i < count, i++ {
+            Box it = items[i]
+            total = total + mainSize[i] + it.mt + it.mb
+        }
+        b.h = total + gapTotal + b.pt + b.pb + b.bt + b.bb
+    }
+    b.baseline = b.h
+}
+
 // ---- floats -----------------------------------------------------------
 //
 // A float is taken out of the flow but not out of the picture: it is
@@ -1869,6 +2165,7 @@ void func placeFloat(b:Box, cbLeft:int, cbRight:int, startY:int) {
 }
 
 bool func boxIsFloated(b:Box) {
+    if !docHasFloats { return false }
     if b == null { return false }
     if b.kind == BOX_TEXT || b.kind == BOX_BR || b.kind == BOX_ANON { return false }
     if b.node == null { return false }
@@ -1976,6 +2273,10 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
     }
 }
 
+// ---- entry points ----------------------------------------------------------------
+
+// Lays out a styled document in a viewport `width` px wide. Returns
+// the root box; its height is the document height.
 Box func layoutDocument(doc:Node, width:int) {
     nextBoxId = 1
     boxRegistry = [null]
@@ -1984,6 +2285,8 @@ Box func layoutDocument(doc:Node, width:int) {
     // establishes one yet (todo.md); what matters for now is that a
     // second layout does not inherit the first one's floats.
     resetFloats()
+    docHasPositioned = false
+    docHasFloats = false
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')
     if html == null { return null }
@@ -2000,8 +2303,11 @@ Box func layoutDocument(doc:Node, width:int) {
     int topM = collapsedTopMargin(root, width)
     layoutBlock(root, 0, 0, width, false)
     // The initial containing block is the viewport: as wide as the
-    // layout and as tall as the document turned out to be.
-    layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
+    // layout and as tall as the document turned out to be. A document
+    // with no positioned box skips the walk entirely.
+    if docHasPositioned {
+        layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
+    }
     return root
 }
 

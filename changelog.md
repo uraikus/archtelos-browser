@@ -5,6 +5,82 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Flexible Box Layout 1
+
+`display: flex` was accepted and laid out as a block, which is why a
+page built on flexbox rendered as one column. It now establishes a flex
+container. Every expected number in the 37 checks of the new flex suite
+was read out of Chromium 141 with `getBoundingClientRect` on the same
+markup, and five more checks in the render suite confirm in pixels that
+a flex row paints side by side rather than stacked.
+
+- **`flex-direction`** in all four values, with the reverse directions
+  placing the items from the other end.
+- **`order`**, applied by a stable sort so equal orders keep document
+  order.
+- **`flex-grow`, `flex-shrink` and `flex-basis`**, with the `flex`
+  shorthand and its `none`, `auto` and `initial` keywords. A bare
+  `flex: 1` zeroes the basis, which is what makes two items share the
+  whole line rather than the slack.
+- **`justify-content`** in all six values, including the three
+  space-distribution ones.
+- **`align-items` and `align-self`** with `stretch`, `flex-start`,
+  `flex-end` and `center`. `baseline` parses and falls back to
+  flex-start.
+- **`gap`, `row-gap` and `column-gap`**.
+- **`inline-flex`**, which is inline-level and shrinks to fit: its
+  intrinsic width is the items plus the gaps along its own main axis,
+  so it is placed on a line like an inline-block rather than taking the
+  full width as a block.
+- **Anonymous flex items**: text directly inside a flex container is an
+  item of its own and takes main-axis space.
+
+Not implemented: `flex-wrap`, so every container is single-line and
+`align-content` has no lines to distribute; `baseline` alignment; and
+auto margins inside a flex container.
+
+Ten more properties change what renders: 67 of 373 to **77 of 373**, and
+the suite's floor moves with it.
+
+### Nineteen milliseconds back, where no page was using the feature
+
+The CSS work of the last few changes cost 33 ms end to end on the 51 KB
+benchmark page, 131 ms to 164, and positioning alone was 18 of them.
+Almost none of that was the feature: it was work every page paid whether
+or not it had a positioned or floated box. Rebuilding each revision and
+re-running them together on one machine is what located it —
+benchmarks.md has the per-revision table.
+
+- **The positioned-layout pass is skipped** when the document contains
+  no positioned box. It was a second walk of the whole box tree on
+  every page.
+- **The painter's two-pass z-index child ordering is skipped** the same
+  way, leaving a single pass in document order.
+- **`boxIsOutOfFlow` and `boxIsFloated` answer from a document-level
+  flag first**, so on a page with neither they cost one boolean read
+  rather than four field reads, and they are asked of every child of
+  every block. `applyFloatsToLine`, once per line box, returns the
+  containing block's edges without scanning the float list.
+- **Two allocations came out of the cascade's inner loop.** Reading the
+  first two characters of a declaration name built a fresh `ascii` per
+  declaration per element, where `text.charCodeAt` needs none; and the
+  `'var('` needle `styleProp` scans for was rebuilt on every property
+  read of every element.
+
+The page now renders in 145 ms. The 14 ms that remain are the real cost
+of computing about thirty more properties per element, which is the next
+thing to attack.
+
+### Benchmarks record memory and size
+
+`tests/bench.sh` measures peak resident set size against Chromium on the
+same page and the same canvas, and reports the binary and source size.
+Peak RSS comes from `tests/maxrss.py`, which reads `ru_maxrss` for the
+child tree, because `/usr/bin/time` is not present everywhere this runs.
+This browser peaks at 12.7-20.4 MB against Chromium's flat ~195 MB, and
+its binary is 2.3 MB against Chromium's 463 MB executable. Both numbers
+are recorded in benchmarks.md with what they do and do not prove.
+
 ### A batch of properties that were computed and ignored
 
 Five that did nothing and one that was never parsed. The geometry in the

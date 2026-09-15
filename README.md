@@ -7,7 +7,7 @@ The project has two purposes, equally weighted: render real pages
 correctly, and keep finding the places where Festina is insufficient.
 The renderer is real — its own HTML tokenizer and tree builder, a CSS
 parser and cascade, block, inline and table layout, painting on
-Festina's canvas, and an HTTP(S) client — all in one 2.2 MB native
+Festina's canvas, and an HTTP(S) client — all in one 2.3 MB native
 binary that links nothing Festina does not already link. What building
 it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
 Festina should gain as a result is in [festina.md](festina.md).
@@ -19,7 +19,7 @@ cases — the same number Chromium 141 passes on the same corpus, and 84
 of the 117 each fails are the same cases. CSS targets the
 [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose official
 definition of CSS is 24 specifications; the engine implements no part of
-10 of them. Where it stands on each is in [css-2026.md](css-2026.md).
+9 of them. Where it stands on each is in [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 
@@ -94,9 +94,14 @@ controls are drawn as boxes.
 text with underline and line-through, images, broken-image placeholders,
 list markers and opacity.
 
-Floats, positioned boxes, Flexbox and Grid are laid out as static
-blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
-[todo.md](todo.md) for what is planned and what is deliberately not.
+**Flex containers** are single-line: `flex-direction`, `order`,
+`flex-grow`, `flex-shrink`, `flex-basis` and the `flex` shorthand,
+`justify-content`, `align-items`, `align-self` and the `gap` family.
+`flex-wrap` is not implemented, so nothing wraps onto a second line.
+
+Grid is laid out as a static block; `overflow: hidden` clips nothing;
+there is no JavaScript. See [todo.md](todo.md) for what is planned and
+what is deliberately not.
 
 ## Repository
 
@@ -107,7 +112,7 @@ blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
 | `src/html/` | `decode.f`, `entities.f`, `named_refs.f` (the standard's reference table), `tokenizer.f`, `parser.f` |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's serialization) |
 | `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f` |
-| `src/layout/layout.f` | the box tree, block and inline formatting, tables |
+| `src/layout/layout.f` | the box tree, block and inline formatting, tables, floats, positioning, flex |
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
 | `src/util/` | `text.f`, `color.f`, `named_colors.f` |
@@ -115,7 +120,7 @@ blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-11,289 lines of Festina in `src/` and `browser.f`.
+12,978 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -125,10 +130,13 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers five unit suites (utilities, HTML, CSS parser,
-cascade, layout geometry), an offscreen render suite that checks real
-pixels with `getPixelColor`, the conformance suite, and a headless
-render of every example. There is no test framework: `tests/assert.f` is
+The runner covers twelve unit suites (utilities, HTML, CSS parser,
+cascade, cascade rules, values, layout geometry, box properties,
+positioning, floats, flex, iframes), an offscreen render suite that
+checks real pixels with `getPixelColor`, two conformance runners that
+measure the engine against Chromium — CSS properties and default element
+displays — the HTML conformance suite, and a headless render of every
+example. There is no test framework: `tests/assert.f` is
 a dozen lines and every suite is an ordinary Festina program.
 
 The conformance suite needs the standard's corpus:
@@ -161,6 +169,8 @@ Against headless Chromium on the same pages —
 | Start-up (screenshot a one-line page) | 27 ms | 457 ms |
 | Parse 51 KB of HTML | 8 ms | 2.1 ms |
 | Render 51 KB, start-up subtracted | 105 ms | 91 ms |
+| Peak memory, 51 KB page | 20 MB | 194 MB |
+| Binary | 2.3 MB | 463 MB |
 
 Both engines are given the same 800x600 canvas, which matters more than
 anything else in the table: PNG encoding is linear in pixels and
@@ -170,6 +180,13 @@ thirteen times the pixels to layout. On equal terms Chromium does the
 rendering work about 1.15 times faster, and a native binary starts an
 order of magnitude and a half faster. The cascade and layout are 90% of
 our time; parsing is 7%.
+
+The memory and binary rows are the same trade seen from the other side:
+what is absent from this browser — a JavaScript engine, a compositor, a
+sandbox, a network stack, ICU — is most of what Chromium is carrying.
+Chromium's footprint is flat across all three benchmark pages because it
+is almost entirely fixed cost, while this browser's grows with the
+document, from 13 MB to 20 MB as the page goes from 4 KB to 51 KB.
 
 ## Working on this
 

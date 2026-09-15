@@ -6,11 +6,18 @@ describes the present (CLAUDE.md, §3).
 
 ## CSS: move to the 2026 snapshot
 
+**Before implementing a property, give its row in
+`tests/conformance/css-properties.txt` a real value.** 226 of the 373
+rows still read `initial`, which computes to the initial value and so
+can never register as implemented. They are all properties nothing here
+implements, so the count is correct today — but the measurement will not
+move when the work lands unless the row is fixed first.
+
 Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 10 of them. That list, not a sense of what feels
+implements no part of 9 of them. That list, not a sense of what feels
 modern, sets the order below.
 
 ### The cascade
@@ -35,8 +42,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    (§11), which needs a clip region the canvas does not have, and
    generated content with counters (§12), which needs pseudo-elements.
    Positioning (§9.3) and floats (§9.5) are done.
-2. **Flexbox.** Accepted as a `display` value and laid out as a block,
-   which is why a modern page renders as one column.
+2. **Flexbox, completed**: `flex-wrap`, so a container can be
+   multi-line, and the `align-content` that only means something once
+   it is; `baseline` alignment; and auto margins inside a flex
+   container, which absorb the free space before `justify-content` sees
+   it.
 3. **Selectors 3, completed**: `An+B` in `:nth-child()`, the
    `:nth-last-child` / `:nth-of-type` / `:nth-last-of-type` /
    `:only-of-type` family, `:empty`, `:target`, `:enabled`, `:disabled`,
@@ -153,8 +163,10 @@ rest. In rough order of how often real pages need it:
   float does not grow the parent that holds it.
 - **`position: sticky`**, which computes as `relative` because nothing
   in layout knows the scroll offset.
-- **Flexbox**, then **Grid**. Both currently fall back to block layout,
-  which is why a modern page lays out as a single column.
+- **Multi-line flex containers.** `flex-wrap` is not implemented, so a
+  row that overflows its container shrinks rather than wrapping, and
+  `align-content` has no lines to distribute.
+- **Grid**, which still falls back to block layout.
 - **`overflow: hidden`** clips nothing: the canvas has no clip region,
   so a clipped box would need to be drawn into an offscreen image and
   composited. See festina.md.
@@ -169,19 +181,38 @@ With both engines given the same 800x600 canvas, Chromium renders the
 layout are 90% of our time. In order:
 
 - **Share computed styles between elements whose matched declarations
-  are identical.** Computing is 21 ms, the single largest sub-phase, and
-  most elements in a real document match exactly what a sibling matches.
-  The benchmark page has 1,560 table cells that all match the same four
-  rules.
+  are identical.** Computing is 29 ms, the single largest sub-phase and
+  the one that grows with every property implemented, and most elements
+  in a real document match exactly what a sibling matches. The benchmark
+  page has 1,560 table cells that all match the same four rules.
+- **Read the declarations an element has, rather than asking for every
+  property it might have.** `computeStyle` looks up about 120 named
+  properties per element; a typical element declares a few dozen.
+  Iterating the merged map once and dispatching on the name would make
+  the phase cost what the page declares instead of what CSS defines,
+  which is the only shape that stays flat as more properties land.
 - **Cache the box tree across relayouts** when only the viewport width
-  changed, instead of rebuilding it. Building it is 15 ms.
+  changed, instead of rebuilding it. Building it is 14 ms.
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
 
+**A feature must not cost anything to the pages that do not use it.**
+Positioning cost 18 ms on a page with no positioned box, because it
+added a second tree walk, a second painting pass and two predicates in
+the hot child loops. All of it was recovered by asking, once per
+document, whether the feature is used at all (benchmarks.md, "what the
+CSS work cost"). Anything that adds a pass over the tree gets the same
+treatment before it lands.
+
+**Rebuild the old revisions and run them beside the new one.** Comparing
+today's number against one written down weeks ago measures the machine
+as much as the code. Every revision in that table was rebuilt and run
+within the same few minutes.
+
 **Do not compare unequal canvases again.** PNG encoding is linear in
 pixels and dominates at this page size: the same page onto 800x8000
-instead of 800x600 costs 354 ms instead of 134 ms, and all of that
+instead of 800x600 costs 382 ms instead of 166 ms, and all of that
 difference is encoding. `tests/bench.sh` pins both engines to 800x600.
 
 ## Deliberate non-work

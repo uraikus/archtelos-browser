@@ -13,10 +13,18 @@
 # without it. A property that changes nothing is not implemented.
 # The count is what css-2026.md's per-specification table is made of,
 # and it may not go down (CLAUDE.md §2).
+#
+# 226 rows still read `initial`, which is a placeholder rather than a
+# probe: `initial` computes to the initial value, so such a row can
+# never register as implemented no matter what the engine gains. Those
+# rows are all properties nothing here implements, so the count is
+# correct today -- but before implementing a property, give its row a
+# real value, or the number will not move when the work lands. The
+# three flex rows that read `1` were exactly this trap.
 accent-color	#123456
-align-content	initial
-align-items	initial
-align-self	initial
+align-content	center
+align-items	center
+align-self	flex-end
 alignment-baseline	initial
 anchor-name	initial
 anchor-scope	initial
@@ -106,7 +114,7 @@ color-interpolation	initial
 color-interpolation-filters	initial
 color-rendering	initial
 column-count	initial
-column-gap	initial
+column-gap	10px
 column-rule-color	#123456
 column-rule-style	solid
 column-rule-width	10px
@@ -142,11 +150,11 @@ fill	initial
 fill-opacity	initial
 fill-rule	initial
 filter	initial
-flex-basis	1
-flex-direction	1
-flex-grow	1
-flex-shrink	1
-flex-wrap	1
+flex-basis	10px
+flex-direction	column
+flex-grow	2
+flex-shrink	0
+flex-wrap	wrap
 float	left
 flood-color	#123456
 flood-opacity	initial
@@ -195,9 +203,9 @@ inset-inline-start	initial
 interactivity	initial
 interpolate-size	10px
 isolation	initial
-justify-content	initial
-justify-items	initial
-justify-self	initial
+justify-content	center
+justify-items	center
+justify-self	center
 left	11px
 letter-spacing	2px
 lighting-color	#123456
@@ -247,7 +255,7 @@ offset-path	initial
 offset-position	initial
 offset-rotate	initial
 opacity	0.5
-order	initial
+order	2
 orphans	initial
 outline-color	#123456
 outline-offset	3px
@@ -288,7 +296,7 @@ reading-order	initial
 resize	initial
 right	11px
 rotate	initial
-row-gap	initial
+row-gap	10px
 ruby-align	initial
 ruby-position	initial
 rx	initial

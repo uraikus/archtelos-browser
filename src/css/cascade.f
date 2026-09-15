@@ -527,6 +527,11 @@ map[text] cascadeCustom = {}
 // shows up here.
 const int VAR_MAX_PASSES = 8
 
+// The needle every property read scans for, built once. `'var('.toAscii()`
+// inside styleProp allocated a fresh four-byte ascii on every read of
+// every property of every element.
+ascii varNeedle = 'var('.toAscii()
+
 ascii func substituteVars(v:ascii) {
     // Work on a copy this function owns. `out` is reassigned every time
     // a var() is replaced, and reassigning an alias of the caller's
@@ -538,7 +543,7 @@ ascii func substituteVars(v:ascii) {
     ascii out = own.toAscii()
     if out == null { return null }
     for int pass = 0, pass < VAR_MAX_PASSES, pass++ {
-        int at = asciiIndexOfLower(out, 'var('.toAscii(), 0)
+        int at = asciiIndexOfLower(out, varNeedle, 0)
         if at < 0 { return out }
         // find the matching close paren
         int depth = 0
@@ -590,7 +595,7 @@ ascii func styleProp(props:map[text], name:text) {
     if v == null { return null }
     ascii a = v.toAscii()
     if a == null { return null }
-    if asciiIndexOfLower(a, 'var('.toAscii(), 0) < 0 { return a }
+    if asciiIndexOfLower(a, varNeedle, 0) < 0 { return a }
     return substituteVars(a)
 }
 
@@ -1070,12 +1075,30 @@ int func borderWidthProp(props:map[text], side:text, fontSize:int) {
     return maxInt(roundPx(l.v), 0)
 }
 
+// `justify-content`, `align-items` and `align-self` share a vocabulary.
+int func parseAlignValue(v:ascii, dflt:int) {
+    if v == null { return dflt }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'flex-start' || t == 'start' || t == 'left' { return BOXALIGN_START }
+    if t == 'flex-end' || t == 'end' || t == 'right' { return BOXALIGN_END }
+    if t == 'center' { return BOXALIGN_CENTRE }
+    if t == 'stretch' || t == 'normal' { return BOXALIGN_STRETCH }
+    if t == 'baseline' { return BOXALIGN_BASELINE }
+    if t == 'space-between' { return BOXALIGN_SPACE_BETWEEN }
+    if t == 'space-around' { return BOXALIGN_SPACE_AROUND }
+    if t == 'space-evenly' { return BOXALIGN_SPACE_EVENLY }
+    if t == 'auto' { return BOXALIGN_AUTO }
+    return dflt
+}
+
 int func parseDisplay(v:ascii, dflt:int) {
     if v == null { return dflt }
     ascii t = asciiLower(v)
     if t == 'none' { return DISPLAY_NONE }
     if t == 'block' || t == 'flow-root' || t == 'grid' { return DISPLAY_BLOCK }
-    if t == 'flex' || t == 'inline-flex' || t == 'inline-grid' { return DISPLAY_BLOCK }
+    if t == 'flex' { return DISPLAY_FLEX }
+    if t == 'inline-flex' { return DISPLAY_INLINE_FLEX }
+    if t == 'inline-grid' { return DISPLAY_BLOCK }
     if t == 'inline' { return DISPLAY_INLINE }
     if t == 'contents' { return DISPLAY_CONTENTS }
     if t == 'inline-block' { return DISPLAY_INLINE_BLOCK }
@@ -1152,8 +1175,13 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     bool addsCustom = false
     for int i = 0, i < declared.length, i++ {
         text k = declared[i]
-        if k.length > 1 && k.toAscii() != null && k.toAscii().charCodeAt(0) == CH_MINUS
-            && k.toAscii().charCodeAt(1) == CH_MINUS { addsCustom = true  break }
+        // `text` indexes without allocating; `k.toAscii()` here built a
+        // fresh ascii per key per element, which on this page was tens
+        // of thousands of allocations to read two characters.
+        if k.length > 1 && k.charCodeAt(0) == CH_MINUS && k.charCodeAt(1) == CH_MINUS {
+            addsCustom = true
+            break
+        }
     }
     if addsCustom {
         map[text] merged = {}
@@ -1356,6 +1384,84 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'top' || t == 'text-top' || t == 'super' { s.verticalAlign = VALIGN_TOP }
         else if t == 'bottom' || t == 'text-bottom' || t == 'sub' { s.verticalAlign = VALIGN_BOTTOM }
         else if t == 'inherit' && !isRoot { s.verticalAlign = parent.verticalAlign }
+    }
+    // ---- flexbox ------------------------------------------------------
+    s.flexDirection = FLEX_ROW
+    ascii fd = styleProp(props, 'flex-direction')
+    if fd != null {
+        ascii t = asciiLower(fd)
+        if t == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
+        else if t == 'column' { s.flexDirection = FLEX_COLUMN }
+        else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
+    }
+    s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_START)
+    s.alignItems = parseAlignValue(styleProp(props, 'align-items'), BOXALIGN_STRETCH)
+    s.alignSelf = parseAlignValue(styleProp(props, 'align-self'), BOXALIGN_AUTO)
+    s.flexGrow = 0.0
+    s.flexShrink = 1.0
+    s.flexBasis = lenAuto()
+    ascii fx = styleProp(props, 'flex')
+    if fx != null {
+        ascii t = asciiLower(asciiTrim(fx))
+        if t == 'none' {
+            s.flexGrow = 0.0
+            s.flexShrink = 0.0
+        } else if t == 'auto' {
+            s.flexGrow = 1.0
+            s.flexShrink = 1.0
+        } else if t == 'initial' {
+            // `flex: initial` is `0 1 auto`, which is what the three
+            // fields were just set to.
+        } else {
+            // `flex: <grow> [<shrink>] [<basis>]`; a bare number is the
+            // grow factor and makes the basis zero, which is what makes
+            // `flex: 1` share the whole line rather than the slack.
+            arr[ascii] parts = cssTokens(fx)
+            int numsSeen = 0
+            s.flexBasis = lenPx(0.0)
+            for int i = 0, i < parts.length, i++ {
+                ascii pt = asciiLower(parts[i])
+                parseNumberAt(pt, 0)
+                bool bare = numOk && numEnd == pt.length
+                if bare && numsSeen == 0 { s.flexGrow = numValue  numsSeen = 1 }
+                else if bare && numsSeen == 1 { s.flexShrink = numValue  numsSeen = 2 }
+                else {
+                    Len l = parseLength(pt, s.fontSize)
+                    if l.kind != LEN_INVALID { s.flexBasis = l }
+                }
+            }
+        }
+    }
+    ascii fg = styleProp(props, 'flex-grow')
+    if fg != null { parseNumberAt(asciiTrim(fg), 0)  if numOk { s.flexGrow = numValue } }
+    ascii fs2 = styleProp(props, 'flex-shrink')
+    if fs2 != null { parseNumberAt(asciiTrim(fs2), 0)  if numOk { s.flexShrink = numValue } }
+    ascii fb = styleProp(props, 'flex-basis')
+    if fb != null {
+        Len l = parseLength(fb, s.fontSize)
+        if l.kind != LEN_INVALID { s.flexBasis = l }
+    }
+    s.rowGap = 0
+    s.columnGap = 0
+    ascii gp = styleProp(props, 'gap')
+    if gp != null {
+        arr[ascii] parts = cssTokens(gp)
+        if parts.length > 0 {
+            Len a = parseLength(parts[0], s.fontSize)
+            if a.kind == LEN_PX { s.rowGap = roundPx(a.v)  s.columnGap = s.rowGap }
+        }
+        if parts.length > 1 {
+            Len b2 = parseLength(parts[1], s.fontSize)
+            if b2.kind == LEN_PX { s.columnGap = roundPx(b2.v) }
+        }
+    }
+    s.rowGap = pxProp(props, 'row-gap', s.fontSize, s.rowGap)
+    s.columnGap = pxProp(props, 'column-gap', s.fontSize, s.columnGap)
+    s.order = 0
+    ascii od = styleProp(props, 'order')
+    if od != null {
+        int o = asciiTrim(od).toText().toInt()
+        if o != null { s.order = o }
     }
     s.boxSizing = BOX_CONTENT
     ascii bsz = styleProp(props, 'box-sizing')
