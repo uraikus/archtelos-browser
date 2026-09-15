@@ -104,6 +104,37 @@ phases, with the methodology written down beside the table. Report
 what the measurement says even when it is unflattering; a benchmark
 that only ever shows a win is not being run honestly.
 
+**A measurement made by subtracting two large numbers must report the
+spread of both.** benchmarks.md once reported that Chromium rendered the
+benchmark page "1.15 times faster". The number came of timing each whole
+command and subtracting each engine's start-up: two quantities near
+500 ms, subtracted to obtain one near 50. Chromium's start-up on one
+machine spans 436 to 542 ms, so the same method gave 1.15x on one run
+and 3.8x on the next, and the project carried one of them as a headline
+for weeks. Measure the thing itself — from inside both engines, as
+`tests/chromium.py render` and the phase timers now do — or, if a
+difference is genuinely the only way in, publish the spread of every
+term beside the answer and say what it implies. The same caution applies
+to comparing today's number against one written down earlier: rebuild
+the old revision and run it beside the new one, in the same minutes on
+the same machine, or the comparison is measuring the machine.
+
+**A feature must not cost anything to the pages that do not use it.**
+Positioning cost 18 ms on a page with no positioned box, because it
+added a walk of the box tree, a second painting pass and two predicates
+in the hot child loops. All of it came back by asking once per document
+whether the feature occurs at all. Anything that adds a pass over the
+tree, or a test inside a loop over every box or every declaration, gets
+that flag before it lands, not after a benchmark notices.
+
+**Give a property's row in `tests/conformance/css-properties.txt` a real
+value before implementing it.** A row reading `initial` computes to the
+initial value, so the property can never register as implemented however
+complete the implementation is. Most rows still read `initial`, which is
+correct for a property nothing implements and silently wrong the moment
+one does. Fixing the row is part of the work, not an afterthought — the
+count in README.md and css-2026.md is the deliverable.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.

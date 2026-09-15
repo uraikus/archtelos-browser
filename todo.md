@@ -6,13 +6,6 @@ describes the present (CLAUDE.md, §3).
 
 ## CSS: move to the 2026 snapshot
 
-**Before implementing a property, give its row in
-`tests/conformance/css-properties.txt` a real value.** 226 of the 373
-rows still read `initial`, which computes to the initial value and so
-can never register as implemented. They are all properties nothing here
-implements, so the count is correct today — but the measurement will not
-move when the work lands unless the row is fixed first.
-
 Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
@@ -197,19 +190,6 @@ are 90% of our time and all of the gap. In order:
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
-
-**A feature must not cost anything to the pages that do not use it.**
-Positioning cost 18 ms on a page with no positioned box, because it
-added a second tree walk, a second painting pass and two predicates in
-the hot child loops. All of it was recovered by asking, once per
-document, whether the feature is used at all (benchmarks.md, "what the
-CSS work cost"). Anything that adds a pass over the tree gets the same
-treatment before it lands.
-
-**Rebuild the old revisions and run them beside the new one.** Comparing
-today's number against one written down weeks ago measures the machine
-as much as the code. Every revision in that table was rebuilt and run
-within the same few minutes.
 
 **Do not compare unequal canvases again.** PNG encoding is linear in
 pixels and dominates at this page size: the same page onto 800x8000

@@ -71,6 +71,24 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### Three standing rules, each bought with a mistake
+
+CLAUDE.md §3 gains three rules. None is a preference; each is the
+generalization of something this branch got wrong and had to correct.
+
+- **A measurement made by subtracting two large numbers must report the
+  spread of both.** The "1.15 times faster" headline came of subtracting
+  two quantities near 500 ms to obtain one near 50.
+- **A feature must not cost anything to the pages that do not use it.**
+  Positioning cost 18 ms on a page with no positioned box.
+- **Give a property's row in `css-properties.txt` a real value before
+  implementing it.** A row reading `initial` can never register as
+  implemented, so the instrument would not have moved when the work
+  landed.
+
+todo.md carried the first two while they were proposals; they are rules
+now, and it no longer repeats them.
+
 ### The benchmark was subtracting noise, and said so
 
 benchmarks.md reported that Chromium rendered the 51 KB page "about
