@@ -255,8 +255,8 @@ min-height	12px
 min-inline-size	10px
 min-width	11px
 mix-blend-mode	initial
-object-fit	initial
-object-position	initial
+object-fit	cover
+object-position	left top
 object-view-box	initial
 offset-anchor	initial
 offset-distance	initial

@@ -5,6 +5,28 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Two probe rows that could never have moved
+
+`object-fit` and `object-position` are next on the roadmap, and their
+rows in `tests/conformance/css-properties.txt` read `initial` — a value
+that computes to the initial value, so the property could never have
+registered as implemented however well it was implemented. They read
+`cover` and `left top` now. Nothing else changed: the count is still
+82/373 and both are still listed as doing nothing, which is the point.
+The rule is to give a row a real value *before* the work, not to
+discover afterwards that the number did not move.
+
+Grading them needs pixels rather than geometry, because `object-fit`
+changes where an image is painted inside its box and not the box
+itself — and headless Chromium cannot supply those pixels here.
+`--screenshot` paints only the first scanline: a plain 40x40 block of
+flat colour comes back as one row of colour and 39 rows of white, with
+or without `--virtual-time-budget`. It is the screenshot pipeline, not
+images and not the decoder, which reads this project's own fixtures
+correctly. `tests/chromium.py` never noticed because it reads the DOM.
+todo.md records it so the next attempt does not spend the same hour
+finding out.
+
 ### ::first-letter
 
 The first letter of the first line of a block, styled on its own. The

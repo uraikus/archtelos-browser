@@ -58,6 +58,24 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `conic-gradient()`, gradient interpolation hints, `object-fit` and
    `object-position`. Linear gradients are done; a radial one needs the
    same band machinery with circles instead of strips.
+
+   `object-fit` and `object-position` change where an image is painted
+   inside its box and not the box itself, so they are graded in pixels
+   rather than geometry — and **headless Chromium cannot supply those
+   pixels in this container**: `--screenshot` paints only the first
+   scanline of the page. A plain 40x40 block of flat colour comes back
+   as one row of colour and 39 rows of white, with or without
+   `--virtual-time-budget`, so it is the screenshot pipeline rather than
+   anything about images. `tests/chromium.py` is unaffected because it
+   reads the DOM rather than pixels. Until there is a way round it the
+   ground truth for these two is the specification's own sizing
+   algorithm, which is exact, with this engine's pixel checks verifying
+   the implementation against it.
+
+   Their rows in `tests/conformance/css-properties.txt` read `cover` and
+   `left top` rather than `initial`, so the instrument can register them
+   when they land — the rule about an instrument being able to fail,
+   applied before the work rather than after.
 5. **Backgrounds and Borders 3, completed**: background images and
    layers with position, repeat, size and clip; `box-shadow`;
    `border-image`; and border styles that paint as something other than
