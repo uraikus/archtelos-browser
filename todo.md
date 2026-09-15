@@ -76,10 +76,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `left top` rather than `initial`, so the instrument can register them
    when they land — the rule about an instrument being able to fail,
    applied before the work rather than after.
-5. **Backgrounds and Borders 3, completed**: background images and
-   layers with position, repeat, size and clip; `box-shadow`;
+5. **Backgrounds and Borders 3, completed**: `background-size`,
+   `background-clip`, `background-origin` and `background-attachment`;
+   more than one background layer per box; `box-shadow`;
    `border-image`; and border styles that paint as something other than
-   solid.
+   solid. A single background image from `url()` with `repeat` and
+   `position` is done.
 6. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
    `@font-face`.
 7. **Counter Styles 3**, which also fixes the list markers: today

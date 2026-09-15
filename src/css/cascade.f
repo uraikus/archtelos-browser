@@ -74,6 +74,9 @@ bool pseudoNonTag = false
 // anywhere asks for one at all.
 map[bool] pseudoHasFirstLetter = {}
 bool anyFirstLetter = false
+// Whether any computed style anywhere asked for a background image by
+// url(). A page with none never walks the document looking for them.
+bool anyBackgroundUrl = false
 
 // Whether any rule anywhere sets a counter, and how deep the style walk
 // is. Almost no document uses counters, and maintaining the stack for
@@ -98,6 +101,7 @@ void func cascadeReset() {
     pseudoNonTag = false
     pseudoHasFirstLetter = {}
     anyFirstLetter = false
+    anyBackgroundUrl = false
     anyCounters = false
     anyQuotes = false
     quoteDepth = 0
@@ -1861,6 +1865,51 @@ int func parentSerialOf(parent:Style) {
     return parent.serial
 }
 
+// The URL inside a `url(...)`, unquoted. Returns '' for anything else,
+// which is how a gradient value falls through to the gradient parser.
+text func parseUrlValue(v:ascii) {
+    if v == null { return '' }
+    // Worked out with indices and taken as ONE slice of the argument.
+    // Slicing a value that is itself a slice, and reassigning a local
+    // to a slice of itself, are both ways to read freed memory here --
+    // see FINDINGS.md, "slicing an ascii that came from a slice" and
+    // "ascii aliases are not retained". Valgrind caught this version's
+    // predecessor; the tests did not.
+    int n = v.length
+    int a = 0
+    while a < n && isSpaceCode(v.charCodeAt(a)) { a++ }
+    if !asciiStartsWithLower(v, 'url(', a) { return '' }
+    int close = asciiIndexOf(v, ')'.toAscii(), a)
+    if close < 0 { return '' }
+    int from = a + 4
+    int to = close
+    while from < to && isSpaceCode(v.charCodeAt(from)) { from++ }
+    while to > from && isSpaceCode(v.charCodeAt(to - 1)) { to-- }
+    if to - from >= 2 {
+        int q = v.charCodeAt(from)
+        if (q == CH_QUOTE || q == CH_APOS) && v.charCodeAt(to - 1) == q {
+            from++
+            to--
+        }
+    }
+    if to <= from { return '' }
+    return v.slice(from, to).toText()
+}
+
+// One axis of background-position. A keyword is a percentage of the
+// space the image leaves over, which is what makes `right` mean the
+// right edge rather than an offset of the box's width.
+Len func parseBackgroundPos(t:ascii, horizontal:bool, fontSize:int) {
+    if t == 'left' { return lenPercent(0.0) }
+    if t == 'right' { return lenPercent(1.0) }
+    if t == 'top' { return lenPercent(0.0) }
+    if t == 'bottom' { return lenPercent(1.0) }
+    if t == 'center' || t == 'centre' { return lenPercent(0.5) }
+    Len got = parseLength(t, fontSize)
+    if got.kind == LEN_AUTO { return lenPercent(0.0) }
+    return got
+}
+
 Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]) {
     Style s
     s.serial = styleSerialNext
@@ -2047,8 +2096,55 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         if ci != null { s.counterIncrement = ci.toText() }
     }
     s.backgroundImage = noGradient()
+    s.backgroundUrl = ''
     ascii bgimg = styleProp(props, 'background-image')
-    if bgimg != null { s.backgroundImage = parseLinearGradient(bgimg, s.color, s.fontSize) }
+    if bgimg != null {
+        s.backgroundImage = parseLinearGradient(bgimg, s.color, s.fontSize)
+        if !s.backgroundImage.present {
+            s.backgroundUrl = parseUrlValue(bgimg)
+            if s.backgroundUrl != '' { anyBackgroundUrl = true }
+        }
+    }
+    // background-repeat: the two-value form names the axes separately,
+    // and the one-value form applies to both.
+    s.backgroundRepeatX = true
+    s.backgroundRepeatY = true
+    ascii bgrep = styleProp(props, 'background-repeat')
+    if bgrep != null {
+        // The lowered string is held in a local: the slices the split
+        // returns alias it, and a temporary would be released out from
+        // under them (FINDINGS.md, "ascii aliases are not retained").
+        ascii bgrepLow = asciiLower(bgrep)
+        arr[ascii] parts = asciiSplitSpace(bgrepLow)
+        // The slices are indexed rather than bound to a local: binding
+        // one releases an alias that was never retained (FINDINGS.md,
+        // "ascii aliases are not retained"). Valgrind found this; the
+        // tests passed either way.
+        if parts.length == 1 {
+            if parts[0] == 'no-repeat' { s.backgroundRepeatX = false  s.backgroundRepeatY = false }
+            else if parts[0] == 'repeat-x' { s.backgroundRepeatY = false }
+            else if parts[0] == 'repeat-y' { s.backgroundRepeatX = false }
+        } else if parts.length >= 2 {
+            s.backgroundRepeatX = parts[0] != 'no-repeat'
+            s.backgroundRepeatY = parts[1] != 'no-repeat'
+        }
+    }
+    s.backgroundPosX = lenPercent(0.0)
+    s.backgroundPosY = lenPercent(0.0)
+    ascii bgpos = styleProp(props, 'background-position')
+    if bgpos != null {
+        ascii bgposLow = asciiLower(bgpos)
+        arr[ascii] parts = asciiSplitSpace(bgposLow)
+        if parts.length >= 1 { s.backgroundPosX = parseBackgroundPos(parts[0], true, s.fontSize) }
+        if parts.length >= 2 { s.backgroundPosY = parseBackgroundPos(parts[1], false, s.fontSize) }
+        else if parts.length == 1 {
+            // one value positions the horizontal axis and centres the
+            // other, unless it is a vertical keyword
+            if parts[0] == 'top' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(0.0) }
+            else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(0.5)  s.backgroundPosY = lenPercent(1.0) }
+            else { s.backgroundPosY = lenPercent(0.5) }
+        }
+    }
     s.width = lenProp(props, 'width', s.fontSize, lenAuto())
     s.height = lenProp(props, 'height', s.fontSize, lenAuto())
     s.minWidth = lenProp(props, 'min-width', s.fontSize, lenAuto())
@@ -2120,16 +2216,16 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // ordered them -- this only reads whichever landed last.
     ascii ff = styleProp(props, 'flex-flow')
     if ff != null {
-        arr[ascii] parts = asciiSplitSpace(asciiLower(ff))
+        ascii ffLow = asciiLower(ff)
+        arr[ascii] parts = asciiSplitSpace(ffLow)
         for int i = 0, i < parts.length, i++ {
-            ascii t = parts[i]
-            if t == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
-            else if t == 'column' { s.flexDirection = FLEX_COLUMN }
-            else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
-            else if t == 'row' { s.flexDirection = FLEX_ROW }
-            else if t == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
-            else if t == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
-            else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
+            if parts[i] == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
+            else if parts[i] == 'column' { s.flexDirection = FLEX_COLUMN }
+            else if parts[i] == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
+            else if parts[i] == 'row' { s.flexDirection = FLEX_ROW }
+            else if parts[i] == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
+            else if parts[i] == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
+            else if parts[i] == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
         }
     }
     ascii fwrap = styleProp(props, 'flex-wrap')

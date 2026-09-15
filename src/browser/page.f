@@ -104,6 +104,31 @@ void func gatherImages(page:Page) {
     }
 }
 
+// Fetches every background image a computed style names, storing it
+// under its resolved URL and rewriting the style to hold that URL so
+// the painter can find it. Styles are shared between elements that
+// matched the same rules, so this may see one twice; resolving an
+// already-absolute URL returns it unchanged.
+void func gatherBackgroundImages(page:Page, n:Node) {
+    if n.kind == NODE_ELEMENT && n.style.backgroundUrl != '' {
+        text raw = n.style.backgroundUrl
+        ascii a = raw.toAscii()
+        if a != null && !asciiStartsWithLower(a, 'data:', 0) {
+            text target = resolveUrl(page.url, raw)
+            n.style.backgroundUrl = target
+            if loadedImages[target] == null {
+                Resource r = fetchUrl(target)
+                if r.ok {
+                    http holder = {'url': 'http://localhost/', 'body': r.data}
+                    img decoded = holder.toImg()
+                    if decoded != null { loadedImages[target] = decoded }
+                }
+            }
+        }
+    }
+    for int i = 0, i < n.children.length, i++ { gatherBackgroundImages(page, n.children[i]) }
+}
+
 Page func loadPage(url:text, width:int) {
     Page page
     page.url = url
@@ -245,6 +270,13 @@ void func preparePage(page:Page, width:int) {
     int t2 = now()
     computeStyles(page.doc)
     timing('cascade', t2)
+    // Background images come from computed styles, so they cannot be
+    // collected with the <img> elements before the cascade has run.
+    if anyBackgroundUrl {
+        int tb = now()
+        gatherBackgroundImages(page, page.doc)
+        timing('background images', tb)
+    }
     int t3 = now()
     layoutPage(page, width)
     timing('layout', t3)

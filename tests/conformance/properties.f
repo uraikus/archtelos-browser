@@ -52,6 +52,8 @@ text func styleDigest(s:Style) {
         + `|${s.flexWrap}|${s.alignContent}`
         + `|${s.flexGrow}|${s.flexShrink}|${lenKey(s.flexBasis)}|${s.rowGap}|${s.columnGap}|${s.order}`
         + `|${gradientKey(s.backgroundImage)}|${s.overflowHidden}`
+        + `|${s.backgroundUrl}|${s.backgroundRepeatX}|${s.backgroundRepeatY}`
+        + `|${lenKey(s.backgroundPosX)}|${lenKey(s.backgroundPosY)}`
 }
 
 text func gradientKey(g:Gradient) {

@@ -117,4 +117,16 @@ Page pd = pageFromHtml(head + '<div id="c" style="display:flex;align-items:flex-
 checkEqInt(byId(pd.root, 'a').y, 0, 'flex-start aligns the boxes, not the text')
 check(byId(pd.root, 'a').y + byId(pd.root, 'a').baseline != byId(pd.root, 'b').y + byId(pd.root, 'b').baseline, 'so the baselines do not coincide')
 
+// ---- flex-flow names direction and wrap, in either order -------------
+// Exercised because it is the only path through the shorthand, and an
+// unexercised path is where a memory bug hides: this one released an
+// ascii alias that was never retained, which valgrind found and the
+// tests could not (FINDINGS.md, "ascii aliases are not retained").
+Page pf = pageFromHtml(head + `<div id="c" style="display:flex;flex-flow:row wrap;width:400px"><div id="a" style="${i20}"></div><div id="b" style="${i20}"></div><div id="d" style="${i30}"></div></div></body>`, 'about:blank', 400)
+checkEqInt(byId(pf.root, 'a').w, 150, 'flex-flow row wrap wraps rather than shrinking')
+checkEqInt(byId(pf.root, 'd').y, 20, 'onto a second line')
+
+Page pg = pageFromHtml(head + `<div id="c" style="display:flex;flex-flow:wrap column;width:400px;height:60px"><div id="a" style="width:50px;height:40px"></div><div id="b" style="width:60px;height:40px"></div></div></body>`, 'about:blank', 400)
+checkEqInt(byId(pg.root, 'b').y, 0, 'and the other order names the same two things')
+
 finish('flex wrap')

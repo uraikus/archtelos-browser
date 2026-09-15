@@ -53,14 +53,14 @@ app-region	initial
 appearance	initial
 backdrop-filter	initial
 backface-visibility	initial
-background-attachment	initial
+background-attachment	fixed
 background-blend-mode	initial
-background-clip	initial
+background-clip	content-box
 background-color	#123456
 background-image	linear-gradient(to right, red, blue)
-background-origin	initial
-background-position	initial
-background-repeat	initial
+background-origin	content-box
+background-position	right bottom
+background-repeat	no-repeat
 background-size	10px
 baseline-shift	initial
 baseline-source	initial

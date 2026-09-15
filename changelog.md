@@ -5,6 +5,57 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Background images
+
+`background-image: url(...)` painted nothing: only gradients were
+parsed, because a URL needs a fetch the cascade cannot do. It works now,
+with `background-repeat` and `background-position`.
+
+- **Fetched after the cascade**, not with the `<img>` elements, because
+  a background URL only exists once styles are computed. The walk is
+  gated on whether any computed style asked for one, so a page without
+  them never makes it: paired over 25 interleaved runs on the benchmark
+  page, median −1.0 ms, down in 14 runs and up in 9.
+- **`background-repeat`** in all five forms, including the two-value
+  one that names the axes separately.
+- **`background-position`** takes keywords and lengths on both axes. A
+  keyword is a percentage of the space the image leaves over, which is
+  what makes `right` put the image's right edge on the box's right edge
+  rather than pushing it a box-width across — in a 100px box a 10px
+  tile starts at x=90, not x=100.
+- **A tile that runs off the edge is cut off there**, painted through an
+  offscreen image the size of the box, the same device `overflow:
+  hidden` uses because the canvas has no clip region.
+
+Twenty-five pixel checks in the new `tests/render/background.f`. The
+properties instrument reads **84/373**, up from 82 — `background-repeat`
+and `background-position` register, and their probe rows had to be given
+real values first because both read `initial`.
+
+The fixture's two halves are exactly CSS `blue` (#0000ff) and CSS
+`green` (#008000). The first version used #00ff00, which is `lime`, and
+every colour check failed against an implementation that was already
+correct. The test file says so.
+
+### Three memory bugs valgrind found and the tests could not
+
+Parsing `background-repeat` and `background-position` splits a value
+into words, and every one of the three splits this branch added bound a
+word to a local — `ascii t = parts[0]`. That releases an alias the
+compiler never retained, which is shape (c) of FINDINGS.md's second
+finding, documented since the first week of this project. All twenty-five
+pixel checks passed with the bug in place; the suite cannot see it.
+
+One of the three shipped in the flex-wrap commit, in the `flex-flow`
+shorthand, and was latent only because no test used `flex-flow`. There
+is a test now, which is how a latent memory bug stops being latent.
+
+The defence is to index at every use rather than bind — `parts[0] ==
+'no-repeat'` instead of `ascii t = parts[0]` — and to run valgrind on
+anything that splits an `ascii` before believing a green suite.
+FINDINGS.md says so now, because knowing the finding was not enough to
+prevent three fresh instances of it in one sitting.
+
 ### Two probe rows that could never have moved
 
 `object-fit` and `object-position` are next on the roadmap, and their

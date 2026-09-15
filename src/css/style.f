@@ -178,6 +178,13 @@ Gradient func noGradient() {
 struct Style {
     serial:int
     backgroundImage:Gradient
+    // A background image from url(). The URL is resolved and fetched by
+    // the page pipeline, which stores the decoded image under it.
+    backgroundUrl:text
+    backgroundRepeatX:bool
+    backgroundRepeatY:bool
+    backgroundPosX:Len
+    backgroundPosY:Len
     // The declared values, not the running counts: two elements that
     // matched the same rules share this Style and still stand at
     // different counts, which live in the cascade's counter stack.

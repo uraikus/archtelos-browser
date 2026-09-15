@@ -227,6 +227,17 @@ local or a parameter; a local aliasing a global. The same shapes with
 keeps its property map as `map[text]` and converts on read, so that no
 `ascii` is ever aliased out of a container.
 
+**It keeps happening.** Shape (c) — a local bound to an element of an
+`arr[ascii]` — is the natural way to write a loop over the words of a
+value, so every new property that splits one reintroduces it:
+`background-repeat`, `background-position` and the `flex-flow`
+shorthand each arrived with it, and each passed its tests. Nothing in
+the language, the compiler or the test suite distinguishes the broken
+form from the correct one; only valgrind does. The defence is to index
+the array at every use — `parts[0] == 'no-repeat'` rather than
+`ascii t = parts[0]` — and to run valgrind on any code that splits an
+`ascii`, before believing a green suite.
+
 ---
 
 ## 3 A name cannot shadow a function

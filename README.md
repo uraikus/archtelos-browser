@@ -96,7 +96,10 @@ controls are drawn as boxes.
 text with underline and line-through, images, broken-image placeholders,
 list markers and opacity. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
-and with any number of colour stops.
+and with any number of colour stops, and `background-image: url()`
+paints a fetched image with `background-repeat` and
+`background-position` — a tile that runs off the edge is cut off
+there.
 
 **`::before` and `::after`** generate boxes from `content`, which takes
 quoted strings, `attr()`, `counter()`, `counters()` and the four quote
@@ -177,11 +180,10 @@ FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chrom
 The runner covers nineteen unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
-counters, quotes, first letter, audio, the preload scanner), three
-offscreen render
-suites that check real
-pixels with `getPixelColor` — general rendering, gradients and overflow
-clipping — three conformance runners that measure the engine against
+counters, quotes, first letter, audio, the preload scanner), four
+offscreen render suites that check real pixels with `getPixelColor` —
+general rendering, gradients, overflow clipping and background images —
+three conformance runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — the HTML conformance suite, and a headless render
 of every example. There is no test framework: `tests/assert.f` is

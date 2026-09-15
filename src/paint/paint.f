@@ -112,7 +112,65 @@ void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
     // the background image paints over the colour
     if s.backgroundImage.present {
         paintLinearGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
+    } else if s.backgroundUrl != '' {
+        paintBackgroundImage(x, y, w, h, s)
     }
+}
+
+// One axis of background-position, resolved against the space the
+// image leaves over: a percentage aligns that much of the image with
+// that much of the box, so `100%` puts its right edge on the box's
+// right edge rather than pushing it a box-width across.
+int func resolveBackgroundPos(l:Len, leftover:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return roundPx(leftover.toFloat() * l.v) }
+    if l.kind == LEN_PX { return roundPx(l.v) }
+    return 0
+}
+
+// A background image, tiled and positioned inside the box. It is
+// painted into an image the size of the box and drawn back, because a
+// tile that runs off the edge has to be cut off there and Festina's
+// canvas has no clip region -- the same reason overflow: hidden works
+// the way it does (FINDINGS.md, "an image is a drawable surface with a
+// smaller API").
+void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
+    if w <= 0 || h <= 0 { return }
+    img src = loadedImages[s.backgroundUrl]
+    if src == null { return }
+    int iw = src.width
+    int ih = src.height
+    if iw <= 0 || ih <= 0 { return }
+    int ox = resolveBackgroundPos(s.backgroundPosX, w - iw, s.fontSize)
+    int oy = resolveBackgroundPos(s.backgroundPosY, h - ih, s.fontSize)
+
+    // Where the first tile starts. Repeating backwards from the
+    // declared position keeps the tile grid anchored to it.
+    int startX = ox
+    int startY = oy
+    if s.backgroundRepeatX { while startX > 0 { startX = startX - iw } }
+    if s.backgroundRepeatY { while startY > 0 { startY = startY - ih } }
+
+    img layer = blankImage(w, h)
+    int ty = startY
+    bool moreY = true
+    while moreY {
+        int tx = startX
+        bool moreX = true
+        while moreX {
+            layer.drawImage(src, tx, ty)
+            if !s.backgroundRepeatX { moreX = false }
+            else {
+                tx = tx + iw
+                if tx >= w { moreX = false }
+            }
+        }
+        if !s.backgroundRepeatY { moreY = false }
+        else {
+            ty = ty + ih
+            if ty >= h { moreY = false }
+        }
+    }
+    pDrawImage(layer, x, y)
 }
 
 // ---- linear gradients (CSS Images 3) ---------------------------------
