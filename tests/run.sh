@@ -50,6 +50,26 @@ for src in tests/unit/*.f tests/render/*.f; do
         echo "FAILED: $src"; failed=1
     fi
 done
+# Which CSS properties actually change what renders.
+PROPERTIES_MIN=52
+if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
+    if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
+        echo "FAILED: tests/conformance/properties.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/properties.f"; failed=1
+fi
+
+# Every HTML element's default display, against Chromium's own answer.
+ELEMENTS_MIN=121
+if compile tests/conformance/elements.f "$BUILD/elements" >/dev/null; then
+    if ! run "$BUILD/elements" --min "$ELEMENTS_MIN"; then
+        echo "FAILED: tests/conformance/elements.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/elements.f"; failed=1
+fi
+
 if compile tests/conformance/html5lib.f "$BUILD/conformance" >/dev/null; then
     if ! run "$BUILD/conformance" --min "$CONFORMANCE_MIN"; then
         echo "FAILED: tests/conformance/html5lib.f"; failed=1

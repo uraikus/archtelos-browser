@@ -75,6 +75,14 @@ than their prominence suggests.
 
 ### The instrument
 
+**Two measurements exist now**, both with floors in `tests/run.sh`:
+`tests/conformance/properties.f` reports how many of the 373 CSS
+properties Chromium knows change what this engine renders (52), and
+`tests/conformance/elements.f` how many of the 121 HTML elements get
+the default `display` Chromium gives them (121 of 121). Each entry in
+the work above should move the first number, and the runner names every
+property that still does nothing.
+
 **Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
 against the standard's own tests, level with Chromium, and the only
 reason that was possible is that a corpus existed and could be run.

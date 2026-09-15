@@ -19,6 +19,13 @@ const int DISPLAY_TABLE_ROW = 6
 const int DISPLAY_TABLE_CELL = 7
 const int DISPLAY_TABLE_ROW_GROUP = 8
 const int DISPLAY_FLEX = 9
+const int DISPLAY_TABLE_CAPTION = 10
+const int DISPLAY_TABLE_COLUMN = 11
+const int DISPLAY_TABLE_COLUMN_GROUP = 12
+const int DISPLAY_TABLE_HEADER_GROUP = 13
+const int DISPLAY_TABLE_FOOTER_GROUP = 14
+const int DISPLAY_RUBY = 15
+const int DISPLAY_CONTENTS = 16
 
 // text-align
 const int ALIGN_LEFT = 0
@@ -169,9 +176,23 @@ bool func lenIsAuto(l:Len) {
 }
 
 bool func displayIsBlockLevel(d:int) {
-    return d == DISPLAY_BLOCK || d == DISPLAY_LIST_ITEM || d == DISPLAY_TABLE || d == DISPLAY_FLEX
+    return d == DISPLAY_BLOCK || d == DISPLAY_LIST_ITEM || d == DISPLAY_TABLE
+        || d == DISPLAY_FLEX || d == DISPLAY_TABLE_CAPTION
 }
 
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
+        || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS
+}
+
+// The three row-group values differ only in where a table puts them,
+// which this engine does not reorder, so layout treats them alike.
+bool func displayIsRowGroup(d:int) {
+    return d == DISPLAY_TABLE_ROW_GROUP || d == DISPLAY_TABLE_HEADER_GROUP
+        || d == DISPLAY_TABLE_FOOTER_GROUP
+}
+
+// A column box generates no box of its own; a table reads its width.
+bool func displayIsColumn(d:int) {
+    return d == DISPLAY_TABLE_COLUMN || d == DISPLAY_TABLE_COLUMN_GROUP
 }

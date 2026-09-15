@@ -313,6 +313,9 @@ Box func buildBox(n:Node, parentStyle:Style) {
     Style s = n.style
     int d = s.display
     if d == DISPLAY_NONE { return null }
+    // A column or column group generates no box; a table reads the
+    // width off the element itself.
+    if displayIsColumn(d) { return null }
     text tag = n.tag
     if tag == 'br' {
         return newBox(BOX_BR, n, s)
@@ -370,7 +373,7 @@ Box func buildBox(n:Node, parentStyle:Style) {
         buildChildren(b, n, s)
         return b
     }
-    if d == DISPLAY_TABLE_ROW_GROUP {
+    if displayIsRowGroup(d) {
         // rows are lifted into the table by buildTableChildren; a row
         // group met anywhere else behaves as a block
         Box b = newBox(BOX_BLOCK, n, s)
@@ -419,7 +422,7 @@ void func buildTableChildren(b:Box, n:Node, s:Style) {
         Node c = n.children[i]
         if c.kind != NODE_ELEMENT { continue }
         int cd = c.style.display
-        if cd == DISPLAY_TABLE_ROW_GROUP {
+        if displayIsRowGroup(cd) {
             for int j = 0, j < c.children.length, j++ {
                 Node r = c.children[j]
                 if r.kind == NODE_ELEMENT && r.style.display == DISPLAY_TABLE_ROW {

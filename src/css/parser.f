@@ -489,7 +489,11 @@ arr[text] supportedProperties = [
     'font', 'font-size', 'font-weight', 'font-style', 'font-family', 'line-height',
     'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
-    'list-style', 'list-style-type', 'overflow', 'overflow-x', 'overflow-y', 'float',
+    'list-style', 'list-style-type',
+    // `overflow` and `float` are deliberately absent: the cascade
+    // computes them and nothing reads them, so claiming support would
+    // be the lie @supports exists to prevent (css-2026.md).
+
     'inline-size', 'block-size',
     'margin-inline', 'margin-inline-start', 'margin-inline-end',
     'margin-block', 'margin-block-start', 'margin-block-end',

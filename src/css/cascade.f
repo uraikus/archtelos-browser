@@ -843,14 +843,20 @@ int func parseDisplay(v:ascii, dflt:int) {
     if t == 'none' { return DISPLAY_NONE }
     if t == 'block' || t == 'flow-root' || t == 'grid' { return DISPLAY_BLOCK }
     if t == 'flex' || t == 'inline-flex' || t == 'inline-grid' { return DISPLAY_BLOCK }
-    if t == 'inline' || t == 'contents' { return DISPLAY_INLINE }
+    if t == 'inline' { return DISPLAY_INLINE }
+    if t == 'contents' { return DISPLAY_CONTENTS }
     if t == 'inline-block' { return DISPLAY_INLINE_BLOCK }
     if t == 'list-item' { return DISPLAY_LIST_ITEM }
     if t == 'table' || t == 'inline-table' { return DISPLAY_TABLE }
     if t == 'table-row' { return DISPLAY_TABLE_ROW }
     if t == 'table-cell' { return DISPLAY_TABLE_CELL }
-    if t == 'table-row-group' || t == 'table-header-group' || t == 'table-footer-group' { return DISPLAY_TABLE_ROW_GROUP }
-    if t == 'table-caption' { return DISPLAY_BLOCK }
+    if t == 'table-row-group' { return DISPLAY_TABLE_ROW_GROUP }
+    if t == 'table-header-group' { return DISPLAY_TABLE_HEADER_GROUP }
+    if t == 'table-footer-group' { return DISPLAY_TABLE_FOOTER_GROUP }
+    if t == 'table-caption' { return DISPLAY_TABLE_CAPTION }
+    if t == 'table-column' { return DISPLAY_TABLE_COLUMN }
+    if t == 'table-column-group' { return DISPLAY_TABLE_COLUMN_GROUP }
+    if t == 'ruby' { return DISPLAY_RUBY }
     return dflt
 }
 
