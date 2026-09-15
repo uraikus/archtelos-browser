@@ -49,6 +49,13 @@ struct Box {
     // is shared between every element that matched the same
     // declarations: writing to one would write to all of them.
     forcedWidthPx:int
+    // The words of a text box, after white-space processing and any
+    // text-transform. They depend only on the content and the computed
+    // style, both fixed once the cascade has run, and they are asked
+    // for twice -- once to measure intrinsic widths and once to place
+    // the text -- so they are worked out once.
+    wordsDone:bool
+    words:arr[text]
     node:Node               // the element; id 0 for anonymous boxes
     style:Style
     children:arr[Box]
@@ -306,10 +313,18 @@ bool func isInlineLevelBox(b:Box) {
     return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX
 }
 
+// Whether a text box holds nothing but white space, which is the test
+// that decides whether it is a box at all. `text` indexes without
+// allocating; `t.toAscii()` here built a fresh ascii on every call, and
+// the call is made several times for every text child of every element
+// while the box tree is built. It also answered false for any text with
+// a non-ASCII character in it, which no blank string has.
 bool func textIsCollapsibleBlank(t:text) {
-    ascii a = t.toAscii()
-    if a == null { return false }
-    return asciiIsBlank(a)
+    if t == null || t == '' { return false }
+    for int i = 0, i < t.length, i++ {
+        if !isSpaceCode(t.charCodeAt(i)) { return false }
+    }
+    return true
 }
 
 bool func isFormControl(tag:text) {
@@ -574,10 +589,13 @@ void func wrapInlineRuns(b:Box) {
 // Words of a text box after white-space processing. Pre-formatted
 // text is split only at newlines, each line one unbreakable word.
 arr[text] func wordsOf(b:Box) {
+    if b.wordsDone { return b.words }
     profWordsCalls++
     int t0 = archtelosTiming ? now() : 0
     arr[text] words = wordsOfUncounted(b)
     if archtelosTiming { profWordsMs = profWordsMs + (now() - t0) }
+    b.words = words
+    b.wordsDone = true
     return words
 }
 

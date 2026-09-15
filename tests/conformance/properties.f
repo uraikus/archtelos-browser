@@ -51,6 +51,16 @@ text func styleDigest(s:Style) {
         + `|${s.outlineWidth}|${s.outlineColor}`
         + `|${s.flexDirection}|${s.justifyContent}|${s.alignItems}|${s.alignSelf}`
         + `|${s.flexGrow}|${s.flexShrink}|${lenKey(s.flexBasis)}|${s.rowGap}|${s.columnGap}|${s.order}`
+        + `|${gradientKey(s.backgroundImage)}`
+}
+
+text func gradientKey(g:Gradient) {
+    if !g.present { return '-' }
+    arr[text] parts = []
+    for int i = 0, i < g.stops.length, i++ {
+        parts.push(`${g.stops[i]}@${g.posKind[i]}:${g.posVal[i]}`)
+    }
+    return `${g.repeating}/${g.angle}/${parts.join(',')}`
 }
 
 text func lenKey(l:Len) {

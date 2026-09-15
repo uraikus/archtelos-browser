@@ -10,7 +10,7 @@ Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 9 of them. That list, not a sense of what feels
+implements no part of 8 of them. That list, not a sense of what feels
 modern, sets the order below.
 
 ### The cascade
@@ -45,8 +45,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `:only-of-type` family, `:empty`, `:target`, `:enabled`, `:disabled`,
    `:checked`, `:lang()`, and pseudo-elements — which generated content
    needs anyway.
-4. **CSS Images 3**: gradients, `object-fit`, `object-position`. No CSS
-   image of any kind is supported today.
+4. **CSS Images 3, completed**: `radial-gradient()` and
+   `conic-gradient()`, gradient interpolation hints, `object-fit` and
+   `object-position`. Linear gradients are done; a radial one needs the
+   same band machinery with circles instead of strips.
 5. **Backgrounds and Borders 3, completed**: background images and
    layers with position, repeat, size and clip; `box-shadow`;
    `border-image`; and border styles that paint as something other than

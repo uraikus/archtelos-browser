@@ -419,6 +419,60 @@ of the three.
 
 ---
 
+## 21 A gradient cannot be built at run time
+
+The canvas has `fillLinearGradient(x0, y0, c0, x1, y1, c1)`, and a
+browser cannot use it. Its colour arguments are `color`-typed, and:
+
+```festina
+int r = 64
+color c = `rgb(${r}, 128, 192)`
+// error: a color must come from a literal, so the compiler can resolve
+// it once -- write `color name = '...'` and use `name`, or, to choose
+// one at runtime, use fillStyle(red, green, blue) with each component
+// 0-255
+```
+
+A `color` must be a literal. A CSS gradient's colours come from the
+document, so they are never literals, and the diagnostic's own advice —
+use `fillStyle` — sets a flat colour and cannot reach the gradient call
+at all. `fillLinearGradient` is unreachable from any program whose
+colours are data.
+
+The second limit is that it interpolates between exactly two stops,
+where CSS allows any number, and its runtime uses
+`cairo_pattern_add_color_stop_rgb`, so an alpha channel is dropped.
+
+`linear-gradient()` is therefore painted here as a run of one-pixel
+bands of flat colour, each set with `fillStyle`. Off the axis it is
+worse: there is no clip region on the canvas either, so a band cannot be
+drawn as a rotated rectangle and clipped, and is instead built as the
+polygon where the band meets the box and filled as a path. Cairo is
+doing none of the work it is good at.
+
+## 22 A color is opaque
+
+A `color` can be compared for equality and nothing else. It cannot be
+interpolated into a string (`error: cannot interpolate a value of type
+color`), assigned from an `int`, or read apart into components. So a
+test that wants to say "this pixel is within three of that colour"
+cannot: it can only ask whether the pixel equals some literal.
+
+The way round is to paint the colour being asked about and read it back:
+
+```festina
+fillStyle(r, g, b)              // this does take numbers
+drawRect(SCRATCH_X, SCRATCH_Y, 1, 1)
+return getPixelColor(SCRATCH_X, SCRATCH_Y) == pixelUnderTest
+```
+
+which turns the question into one the language can answer, at the price
+of painting a candidate for every value in the tolerance. The gradient
+tests do this because two rasterizers disagree by a unit or two: Skia
+dithers gradients and Cairo does not.
+
+---
+
 ## 15–19 Smaller
 
 - **`ascii.toInt()`**: the semantic analyzer accepts it, codegen rejects

@@ -689,16 +689,160 @@ void func applyFontShorthand(props:map[text], value:ascii) {
     }
 }
 
+// ---- gradients (CSS Images 3) ----------------------------------------
+//
+// `linear-gradient([<angle> | to <side-or-corner>,]? <stop>#)`. The
+// angle is degrees clockwise from pointing up, which is what the
+// standard says and what makes `to bottom` 180 and `to right` 90.
+
+// Splits on top-level commas, so a comma inside rgb(...) stays put.
+arr[ascii] func splitTopLevelCommas(v:ascii) {
+    arr[ascii] out = []
+    int n = v.length
+    int depth = 0
+    int start = 0
+    int i = 0
+    while i < n {
+        int c = v.charCodeAt(i)
+        if c == CH_QUOTE || c == CH_APOS { i = skipQuoted(v, i)  continue }
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_COMMA && depth <= 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+        i++
+    }
+    if start < n { out.push(asciiTrim(v.slice(start, n))) }
+    return out
+}
+
+// `to right`, `to bottom left`, `45deg`, `0.5turn`. Returns -1 when the
+// text is not a direction at all, which is how the caller knows the
+// first component was a colour stop instead.
+float func parseGradientDirection(t:ascii) {
+    ascii low = asciiLower(asciiTrim(t))
+    if low == null || low.length == 0 { return -1.0 }
+    if asciiStartsWithLower(low, 'to ', 0) {
+        bool top = asciiIndexOf(low, 'top'.toAscii(), 0) >= 0
+        bool bottom = asciiIndexOf(low, 'bottom'.toAscii(), 0) >= 0
+        bool left = asciiIndexOf(low, 'left'.toAscii(), 0) >= 0
+        bool right = asciiIndexOf(low, 'right'.toAscii(), 0) >= 0
+        if top && left { return 315.0 }
+        if top && right { return 45.0 }
+        if bottom && left { return 225.0 }
+        if bottom && right { return 135.0 }
+        if top { return 0.0 }
+        if right { return 90.0 }
+        if bottom { return 180.0 }
+        if left { return 270.0 }
+        return -1.0
+    }
+    parseNumberAt(low, 0)
+    if !numOk { return -1.0 }
+    ascii unit = asciiLower(asciiTrim(low.slice(numEnd, low.length)))
+    if unit == 'deg' { return numValue }
+    if unit == 'turn' { return numValue * 360.0 }
+    if unit == 'rad' { return numValue * 180.0 / 3.14159265358979 }
+    if unit == 'grad' { return numValue * 0.9 }
+    return -1.0
+}
+
+// One `<color> <position>?` stop. The position comes back as -1 when it
+// was not given, so the caller can space those evenly as the standard
+// requires.
+int gradStopColor = COLOR_UNSET
+int gradStopKind = GSTOP_AUTO
+float gradStopVal = 0.0
+
+void func parseGradientStop(t:ascii, currentColor:int, fontSize:int) {
+    gradStopColor = COLOR_UNSET
+    gradStopKind = GSTOP_AUTO
+    gradStopVal = 0.0
+    arr[ascii] parts = cssTokens(t)
+    if parts.length == 0 { return }
+    gradStopColor = parseCssColor(parts[0], currentColor)
+    if parts.length > 1 {
+        ascii p = asciiTrim(parts[1])
+        parseNumberAt(p, 0)
+        if numOk {
+            ascii unit = asciiLower(asciiTrim(p.slice(numEnd, p.length)))
+            if unit == '%' {
+                gradStopKind = GSTOP_PERCENT
+                gradStopVal = numValue / 100.0
+            } else {
+                // a length: resolve it the way every other length is
+                // resolved, then keep the pixels for the painter
+                Len l = parseLength(p, fontSize)
+                if l.kind == LEN_PX {
+                    gradStopKind = GSTOP_PX
+                    gradStopVal = l.v
+                }
+            }
+        }
+    }
+}
+
+// Parses a whole `linear-gradient(...)` / `repeating-linear-gradient(...)`
+// value. An unparseable one comes back with present = false, which makes
+// the declaration do nothing, as an invalid value should.
+Gradient func parseLinearGradient(v:ascii, currentColor:int, fontSize:int) {
+    Gradient g = noGradient()
+    if v == null { return g }
+    ascii low = asciiLower(asciiTrim(v))
+    bool repeating = asciiStartsWithLower(low, 'repeating-linear-gradient(', 0)
+    bool plain = asciiStartsWithLower(low, 'linear-gradient(', 0)
+    if !repeating && !plain { return g }
+    int open = asciiIndexOf(v, '('.toAscii(), 0)
+    if open < 0 || v.charCodeAt(v.length - 1) != CH_RPAREN { return g }
+    ascii inside = asciiTrim(v.slice(open + 1, v.length - 1))
+    arr[ascii] parts = splitTopLevelCommas(inside)
+    if parts.length == 0 { return g }
+
+    int first = 0
+    float angle = 180.0                 // `to bottom` when none is given
+    float dir = parseGradientDirection(parts[0])
+    if dir >= 0.0 { angle = dir  first = 1 }
+
+    arr[int] colors = []
+    arr[int] kinds = []
+    arr[float] vals = []
+    for int i = first, i < parts.length, i++ {
+        parseGradientStop(parts[i], currentColor, fontSize)
+        if gradStopColor == COLOR_UNSET { return noGradient() }
+        colors.push(gradStopColor)
+        kinds.push(gradStopKind)
+        vals.push(gradStopVal)
+    }
+    if colors.length < 2 { return noGradient() }
+
+    g.present = true
+    g.repeating = repeating
+    g.angle = angle
+    g.stops = colors
+    g.posKind = kinds
+    g.posVal = vals
+    return g
+}
+
 void func applyBackgroundShorthand(props:map[text], value:ascii) {
     arr[ascii] t = cssTokens(value)
     ascii found = 'transparent'
+    ascii image = null
     for int i = 0, i < t.length, i++ {
         ascii tok = dup(t[i])
-        if asciiStartsWithLower(tok, 'url(', 0) || asciiIndexOf(tok, 'gradient(', 0) >= 0 { continue }
+        if asciiStartsWithLower(tok, 'url(', 0) { continue }
+        if asciiIndexOf(asciiLower(tok), 'gradient('.toAscii(), 0) >= 0 { image = tok  continue }
         int c = parseCssColor(tok, COLOR_BLACK)
         if c != COLOR_UNSET { found = tok }
     }
     setProp(props, 'background-color', found)
+    // The shorthand resets the image, whether or not it names one.
+    if image == null {
+        setProp(props, 'background-image', 'none')
+    } else {
+        setProp(props, 'background-image', image)
+    }
 }
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
@@ -1387,6 +1531,12 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     int dfltDisplay = DISPLAY_INLINE
     s.display = parseDisplay(styleProp(props, 'display'), dfltDisplay)
     s.background = colorProp(props, 'background-color', s.color, COLOR_TRANSPARENT)
+    // A background image paints over the background colour. Only
+    // gradients are supported; `url()` needs a fetch the cascade cannot
+    // do, and is left for Backgrounds and Borders 3 (todo.md).
+    s.backgroundImage = noGradient()
+    ascii bgimg = styleProp(props, 'background-image')
+    if bgimg != null { s.backgroundImage = parseLinearGradient(bgimg, s.color, s.fontSize) }
     s.width = lenProp(props, 'width', s.fontSize, lenAuto())
     s.height = lenProp(props, 'height', s.fontSize, lenAuto())
     s.minWidth = lenProp(props, 'min-width', s.fontSize, lenAuto())

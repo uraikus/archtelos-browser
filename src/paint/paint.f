@@ -35,13 +35,240 @@ void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
 }
 
 void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
-    if !colorIsPaintable(s.background) || w <= 0 || h <= 0 { return }
-    paintFill(s.background, s.effectiveOpacity)
-    if s.borderRadius > 0 {
-        roundedRectPath(x, y, w, h, s.borderRadius)
+    if w <= 0 || h <= 0 { return }
+    if colorIsPaintable(s.background) {
+        paintFill(s.background, s.effectiveOpacity)
+        if s.borderRadius > 0 {
+            roundedRectPath(x, y, w, h, s.borderRadius)
+            fillPath()
+        } else {
+            drawRect(x, y, w, h)
+        }
+        fillAlpha(1.0)
+    }
+    // the background image paints over the colour
+    if s.backgroundImage.present {
+        paintLinearGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
+    }
+}
+
+// ---- linear gradients (CSS Images 3) ---------------------------------
+//
+// The gradient line runs through the centre of the box at the declared
+// angle, long enough that the corners furthest along it map to 0 and 1,
+// which is what makes `to bottom right` reach the corners exactly
+// (CSS Images 3 SS3.4.1).
+//
+// It is painted as a run of one-pixel bands, each a flat colour. That
+// is not how one would like to draw a gradient: Festina's canvas has
+// `fillLinearGradient`, but its two colour arguments must be literals
+// -- "a color must come from a literal, so the compiler can resolve it
+// once" -- and a CSS gradient's colours are known only at run time. It
+// also interpolates between exactly two stops, where CSS allows any
+// number. See FINDINGS.md, "a gradient cannot be built at run time".
+//
+// There is no clip region on the canvas either (todo.md), so an
+// off-axis band cannot be drawn as a rotated rectangle and clipped; it
+// is built as the polygon where the band meets the box and filled as a
+// path.
+
+float gradDirX = 0.0
+float gradDirY = 1.0
+
+// Unit vector along the gradient line. CSS measures the angle clockwise
+// from pointing up, and y grows downwards on the canvas.
+void func gradientDirection(angleDeg:float) {
+    float rad = angleDeg * 3.14159265358979 / 180.0
+    gradDirX = Math.sin(rad)
+    gradDirY = 0.0 - Math.cos(rad)
+}
+
+float func absFloat(v:float) { return v < 0.0 ? 0.0 - v : v }
+float func minFloat(a:float, b:float) { return a < b ? a : b }
+float func maxFloat(a:float, b:float) { return a > b ? a : b }
+
+// Stop positions resolved to fractions of the gradient line, which
+// needs the line's length and so cannot happen before paint time. A
+// stop with no position sits halfway between its neighbours, and the
+// first and last default to 0 and 1 (CSS Images 3 SS3.4.3); positions
+// never decrease.
+arr[float] gradOffsets = []
+
+void func resolveGradientStops(g:Gradient, length:float) {
+    arr[float] out = []
+    int n = g.stops.length
+    for int i = 0, i < n, i++ {
+        if g.posKind[i] == GSTOP_PERCENT { out.push(g.posVal[i]) }
+        else if g.posKind[i] == GSTOP_PX { out.push(length > 0.0 ? g.posVal[i] / length : 0.0) }
+        else { out.push(0.0 - 1.0) }
+    }
+    if out[0] < 0.0 { out[0] = 0.0 }
+    if out[n - 1] < 0.0 { out[n - 1] = 1.0 }
+    for int i = 1, i < n - 1, i++ {
+        if out[i] >= 0.0 { continue }
+        int j = i + 1
+        while j < n && out[j] < 0.0 { j++ }
+        float lo = out[i - 1]
+        float hi = j < n ? out[j] : 1.0
+        int gap = j - i + 1
+        for int k = i, k < j, k++ {
+            out[k] = lo + (hi - lo) * (k - i + 1).toFloat() / gap.toFloat()
+        }
+        i = j - 1
+    }
+    for int i = 1, i < n, i++ {
+        if out[i] < out[i - 1] { out[i] = out[i - 1] }
+    }
+    gradOffsets = out
+}
+
+// The colour at `t` along the line, interpolated in sRGB between the
+// two stops that bracket it -- which is what both Chromium and the
+// standard do for an ordinary gradient.
+int func gradientColorAt(g:Gradient, offsets:arr[float], tIn:float) {
+    float t = tIn
+    int n = g.stops.length
+    if n == 0 { return COLOR_TRANSPARENT }
+    if n == 1 { return g.stops[0] }
+    if g.repeating {
+        float first = offsets[0]
+        float last = offsets[n - 1]
+        float span = last - first
+        if span > 0.0 {
+            float rel = (t - first) / span
+            rel = rel - Math.floor(rel).toFloat()
+            t = first + rel * span
+        }
+    }
+    if t <= offsets[0] { return g.stops[0] }
+    if t >= offsets[n - 1] { return g.stops[n - 1] }
+    for int i = 0, i + 1 < n, i++ {
+        float a = offsets[i]
+        float b = offsets[i + 1]
+        if t < a || t > b { continue }
+        if b <= a { return g.stops[i + 1] }
+        float f = (t - a) / (b - a)
+        int c0 = g.stops[i]
+        int c1 = g.stops[i + 1]
+        return packColor(
+            lerpChannel(colorRed(c0), colorRed(c1), f),
+            lerpChannel(colorGreen(c0), colorGreen(c1), f),
+            lerpChannel(colorBlue(c0), colorBlue(c1), f),
+            lerpChannel(colorAlpha(c0), colorAlpha(c1), f))
+    }
+    return g.stops[n - 1]
+}
+
+int func lerpChannel(a:int, b:int, f:float) {
+    int v = roundPx(a.toFloat() + (b.toFloat() - a.toFloat()) * f)
+    if v < 0 { return 0 }
+    if v > 255 { return 255 }
+    return v
+}
+
+// Clips a convex polygon to the half-plane nx*x + ny*y <= c.
+arr[float] clipOutX = []
+arr[float] clipOutY = []
+
+void func clipHalfPlane(xs:arr[float], ys:arr[float], nx:float, ny:float, c:float) {
+    arr[float] ox = []
+    arr[float] oy = []
+    int n = xs.length
+    for int i = 0, i < n, i++ {
+        int j = (i + 1) % n
+        float xi = xs[i]
+        float yi = ys[i]
+        float xj = xs[j]
+        float yj = ys[j]
+        float di = nx * xi + ny * yi - c
+        float dj = nx * xj + ny * yj - c
+        if di <= 0.0 { ox.push(xi)  oy.push(yi) }
+        if (di < 0.0 && dj > 0.0) || (di > 0.0 && dj < 0.0) {
+            float f = di / (di - dj)
+            ox.push(xi + (xj - xi) * f)
+            oy.push(yi + (yj - yi) * f)
+        }
+    }
+    clipOutX = ox
+    clipOutY = oy
+}
+
+void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
+    if g.stops.length < 2 || w <= 0 || h <= 0 { return }
+    gradientDirection(g.angle)
+    float dx = gradDirX
+    float dy = gradDirY
+
+    float halfW = w.toFloat() / 2.0
+    float halfH = h.toFloat() / 2.0
+    float half = absFloat(halfW * dx) + absFloat(halfH * dy)
+    if half <= 0.0 { return }
+    float length = half + half
+    float cxf = x.toFloat() + halfW
+    float cyf = y.toFloat() + halfH
+    float x0 = cxf - dx * half
+    float y0 = cyf - dy * half
+
+    resolveGradientStops(g, length)
+    arr[float] offsets = gradOffsets
+    fillAlpha(opacity)
+    bool horizontal = absFloat(dy) < 0.001
+    bool vertical = absFloat(dx) < 0.001
+    int steps = roundPx(length)
+    if steps < 1 { steps = 1 }
+
+    for int i = 0, i < steps, i++ {
+        float t0 = i.toFloat() / steps.toFloat()
+        float t1 = (i + 1).toFloat() / steps.toFloat()
+        int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
+        if colorAlpha(c) == 0 { continue }
+        applyFillColor(c)
+        if horizontal || vertical {
+            // the band is a rectangle, so no polygon is needed
+            float a0 = x0 + dx * length * t0 + dy * 0.0
+            float b0 = y0 + dy * length * t0
+            float a1 = x0 + dx * length * t1
+            float b1 = y0 + dy * length * t1
+            if horizontal {
+                int lo = roundPx(minFloat(a0, a1))
+                int hi = roundPx(maxFloat(a0, a1))
+                int bx = maxInt(lo, x)
+                int bw = minInt(hi, x + w) - bx
+                if bw > 0 { drawRect(bx, y, bw, h) }
+            } else {
+                int lo = roundPx(minFloat(b0, b1))
+                int hi = roundPx(maxFloat(b0, b1))
+                int by = maxInt(lo, y)
+                int bh = minInt(hi, y + h) - by
+                if bh > 0 { drawRect(x, by, w, bh) }
+            }
+            continue
+        }
+        // Off-axis: the band meets the box in a polygon. The polygon's
+        // vertices have to be whole pixels -- moveTo and lineTo take
+        // integers -- so a band one pixel wide rounds to a sliver with
+        // anti-aliased edges, and consecutive slivers leave seams of
+        // background showing through. Each band therefore starts a
+        // pixel earlier than it should and overwrites the tail of its
+        // predecessor, which closes the seam at the cost of biasing a
+        // boundary pixel towards the later colour by less than a unit.
+        arr[float] px = [x.toFloat(), (x + w).toFloat(), (x + w).toFloat(), x.toFloat()]
+        arr[float] py = [y.toFloat(), y.toFloat(), (y + h).toFloat(), (y + h).toFloat()]
+        float base = dx * x0 + dy * y0
+        float p0 = base + length * t0 - 1.0
+        float p1 = base + length * t1
+        // keep dx*x + dy*y >= p0, i.e. -dx*x - dy*y <= -p0
+        clipHalfPlane(px, py, 0.0 - dx, 0.0 - dy, 0.0 - p0)
+        if clipOutX.length < 3 { continue }
+        clipHalfPlane(clipOutX, clipOutY, dx, dy, p1)
+        if clipOutX.length < 3 { continue }
+        beginPath()
+        moveTo(roundPx(clipOutX[0]), roundPx(clipOutY[0]))
+        for int k = 1, k < clipOutX.length, k++ {
+            lineTo(roundPx(clipOutX[k]), roundPx(clipOutY[k]))
+        }
+        closePath()
         fillPath()
-    } else {
-        drawRect(x, y, w, h)
     }
     fillAlpha(1.0)
 }

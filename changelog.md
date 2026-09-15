@@ -71,6 +71,72 @@ The page now renders in 152 ms end to end. The 14 ms that remain are the real co
 of computing about thirty more properties per element, which is the next
 thing to attack.
 
+### Linear gradients, painted a band at a time
+
+`linear-gradient()` and `repeating-linear-gradient()` work as a
+background image: `to <side>` and `to <corner>` keywords, an angle in
+`deg`, `turn`, `rad` or `grad`, any number of colour stops, and stop
+positions given as percentages, as lengths, or omitted and spaced evenly
+between their neighbours. Twenty-two pixel checks, every expected colour
+read out of Chromium 141 by painting the same gradient and calling
+`getImageData`.
+
+**The canvas has `fillLinearGradient` and a browser cannot use it.** Its
+two colour arguments are `color`-typed, and a `color` in Festina must
+come from a literal — "so the compiler can resolve it once". A CSS
+gradient's colours come from the document and are never literals, so the
+one call that would draw this exactly is unreachable. It also takes
+exactly two stops where CSS allows any number, and drops alpha.
+
+So a gradient is painted as a run of one-pixel bands of flat colour.
+Along an axis each band is a rectangle. Off the axis there is no clip
+region on the canvas either, so a band cannot be a rotated rectangle
+clipped to the box, and is built instead as the polygon where the band
+meets the box and filled as a path — with each band starting a pixel
+early, because the polygon's vertices must be whole pixels and abutting
+diagonal slivers leave seams of background showing through.
+
+FINDINGS.md gains two entries for this and festina.md a proposal: `rgb()`
+as an expression, a gradient call taking a list of stops, and component
+access on a `color`.
+
+That last one matters for the tests as much as the renderer: a `color`
+compares equal or not, and cannot be interpolated into a string or read
+apart, so "this pixel is within three of that colour" is not a question
+the language can ask. The gradient tests answer it by painting each
+candidate with `fillStyle`, which does take numbers, and reading it back.
+The tolerance is needed because Skia dithers gradients and Cairo does
+not.
+
+One more property changes what renders: 77 of 373 to **78**.
+
+### Two pieces of repeated work in layout, and an honest null result
+
+`textIsCollapsibleBlank` built a fresh `ascii` on every call to read
+whether a string is all spaces, and it is asked several times of every
+text child of every element while the box tree is built. It reads the
+`text` directly now, which allocates nothing — and answers correctly for
+a string with a non-ASCII character in it, where the old one answered
+false because `toAscii` returned null.
+
+`wordsOf` splits a text box into words with a regex replace and a split.
+It was called 3,761 times for 2,201 text boxes, because intrinsic widths
+ask for the words and then placing the text asks again. The words depend
+only on the content and the computed style, both fixed once the cascade
+has run, so they are worked out once and kept on the box.
+
+**Neither change moves the benchmark.** The layout phase's best of
+fifteen runs is 47 ms before and after; only the mean moves, 50 ms to
+48. Removing 1,560 regex splits and a few thousand allocations is less
+than the phase's own run-to-run spread. The sub-phase counter for
+`wordsOf` reads 5 ms before and 0 after, which is why it looked like
+more: that counter is noisy across runs, and the instrument itself is
+not the explanation — a `now()` call costs about 20 ns here, so
+bracketing 3,761 calls with two of them costs 0.15 ms, not 5.
+
+The changes are kept because they are strictly less work for
+byte-identical output, not because they made the page render faster.
+
 ### One computed style per distinct match, not one per element
 
 Computing styles had become the largest phase of the cascade — 37 ms of

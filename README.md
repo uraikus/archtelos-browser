@@ -19,7 +19,7 @@ cases — the same number Chromium 141 passes on the same corpus, and 84
 of the 117 each fails are the same cases. CSS targets the
 [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose official
 definition of CSS is 24 specifications; the engine implements no part of
-9 of them. Where it stands on each is in [css-2026.md](css-2026.md).
+8 of them. Where it stands on each is in [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 
@@ -92,7 +92,9 @@ controls are drawn as boxes.
 
 **Painting** covers backgrounds, borders with rounded corners,
 text with underline and line-through, images, broken-image placeholders,
-list markers and opacity.
+list markers and opacity. `linear-gradient()` and
+`repeating-linear-gradient()` paint as background images, at any angle
+and with any number of colour stops.
 
 **Flex containers** are single-line: `flex-direction`, `order`,
 `flex-grow`, `flex-shrink`, `flex-basis` and the `flex` shorthand,

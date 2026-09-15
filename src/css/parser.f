@@ -489,6 +489,7 @@ arr[Selector] func parseSelectorList(prelude:ascii) {
 // is not supported, whatever its value.
 arr[text] supportedProperties = [
     'display', 'visibility', 'opacity', 'color', 'background-color', 'background',
+    'background-image',
     'width', 'height', 'min-width', 'max-width', 'min-height',
     'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
     'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',

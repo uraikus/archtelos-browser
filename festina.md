@@ -186,6 +186,42 @@ should not have had to learn that.
 
 ---
 
+## 3c Let a color be made from numbers, and a gradient from a list
+
+**Today.** `color` values must be literals, so `fillLinearGradient` —
+whose two colour arguments are `color`-typed — cannot be called by any
+program whose colours come from data. A browser's colours always do. The
+diagnostic suggests `fillStyle(r, g, b)` for runtime colours, which is
+right for a flat fill and cannot reach the gradient call. The gradient
+also takes exactly two stops and drops alpha, where CSS allows any
+number of stops with alpha.
+
+A `color` is also opaque in the other direction: it cannot be
+interpolated into a string or read apart, so a pixel cannot be compared
+to another with a tolerance.
+
+**Proposal.** Three things, in order of how much they unlock:
+
+1. `rgb(r, g, b)` and `rgba(r, g, b, a)` as expressions producing a
+   `color` from runtime integers. The literal form stays for the common
+   case; this is the escape hatch.
+2. `fillGradient(x0, y0, x1, y1, stops)` taking an array of
+   `(offset, color)`, so a multi-stop gradient is one call.
+3. `.red`, `.green`, `.blue`, `.alpha` on a `color`, and a string form,
+   so a colour can be inspected and printed.
+
+**What it removes here.** `linear-gradient()` is painted as hundreds of
+one-pixel bands set with `fillStyle`, and off-axis as hundreds of
+clipped polygons, because the one call that would do it exactly cannot
+be called. It also removes a test helper that paints a candidate colour
+and reads it back in order to compare two colours with a tolerance.
+
+A clip region on the canvas would help the same case independently: with
+one, an off-axis band would be a rotated rectangle rather than a polygon
+computed by hand.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

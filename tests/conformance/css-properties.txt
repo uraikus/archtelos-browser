@@ -48,7 +48,7 @@ background-attachment	initial
 background-blend-mode	initial
 background-clip	initial
 background-color	#123456
-background-image	none
+background-image	linear-gradient(to right, red, blue)
 background-origin	initial
 background-position	initial
 background-repeat	initial

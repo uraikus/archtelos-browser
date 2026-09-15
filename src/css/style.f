@@ -132,8 +132,45 @@ struct Len {
     pct:float   // LEN_CALC only: the percentage part, added to v
 }
 
+// A linear gradient, as CSS Images 3 defines it: a line through the box
+// at `angle` degrees clockwise from "up", and colour stops along it.
+// `stops` and `offsets` are parallel; an offset is a fraction of the
+// line's length, already resolved so the painter has only to draw.
+//
+// Festina's canvas fills a linear gradient between exactly two colours
+// (`fillLinearGradient`), so a gradient with more stops is painted as a
+// band per adjacent pair. See FINDINGS.md, "a gradient has two stops".
+// A stop's position may be a percentage, a length, or absent, and a
+// length can only be turned into a fraction once the gradient line's
+// length is known -- which is at paint time, not cascade time. So the
+// position is kept as it was written.
+const int GSTOP_AUTO = 0
+const int GSTOP_PERCENT = 1
+const int GSTOP_PX = 2
+
+struct Gradient {
+    present:bool
+    repeating:bool
+    angle:float          // degrees, clockwise from pointing up
+    stops:arr[int]       // packed colours
+    posKind:arr[int]     // GSTOP_*
+    posVal:arr[float]    // a fraction for PERCENT, pixels for PX
+}
+
+Gradient func noGradient() {
+    Gradient g
+    g.present = false
+    g.repeating = false
+    g.angle = 180.0
+    g.stops = []
+    g.posKind = []
+    g.posVal = []
+    return g
+}
+
 struct Style {
     serial:int
+    backgroundImage:Gradient
     display:int
     color:int
     background:int
