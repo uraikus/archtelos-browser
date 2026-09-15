@@ -5,6 +5,59 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Flex containers wrap
+
+`flex-wrap` was the largest hole left in Flexible Box 1: every container
+was single-line, so a row that did not fit shrank its items instead of
+starting a second line, and `align-content` had nothing to distribute.
+
+- **Items are broken into lines** before anything is sized, and each
+  line grows and shrinks on its own. An item alone on the last line
+  takes all of that line's free space, not a share of the container's.
+- **`align-content`** distributes the lines across the cross axis in all
+  six values, and stretches them when it is not asked otherwise — which
+  is what makes two lines of height-less items fill half a container
+  each. `flex-flow` parses as direction and wrap in either order.
+- **`wrap-reverse`** flips the cross axis, which reverses the order of
+  the lines *and* the end of its own line an item aligns to. Both halves
+  are needed: Chromium puts the first line's items at the bottom of a
+  line that is itself at the bottom.
+- **Auto margins** absorb a line's free space before `justify-content`
+  is consulted, sharing it equally when several are auto, which is how
+  `margin-left: auto` on one item pushes the rest to the end.
+- **`align-items: baseline`** lines the text up rather than the boxes:
+  the line's depth is the deepest baseline plus the most that hangs
+  below it, which is not the tallest item.
+
+Forty checks in the new `tests/unit/test_flexwrap.f`, every expected
+number read out of Chromium 141. The properties instrument reads
+**82/373**, up from 80 — `flex-wrap` and `align-content` register.
+
+### Free space is distributed by rounding the running total
+
+Three items sharing 400px were 133, 133 and 134 and started at 0, 133
+and 266, where Chromium starts them at 0, 133 and 267. Rounding each
+item's share on its own loses a pixel off the end of the row; rounding
+the *cumulative* share and taking differences puts every edge where a
+browser puts it. The same change fixes `align-content: stretch`
+distributing cross space between lines.
+
+Every length here is still an integer, so an isolated width can be a
+pixel off even when the edges are right. todo.md records that as the
+sub-pixel gap it is rather than leaving it to be rediscovered.
+
+### A measurement harness that quietly dropped the page font
+
+The first Chromium probe for these numbers set `innerHTML` on a `<div>`
+with markup that began `<body style="font:16px/20px monospace">`. A
+`<body>` inside `innerHTML` is discarded by the parser, so the font
+never applied and every font-dependent number came back wrong — a
+32px item measured 37px tall instead of 20. The wrap cases all use
+explicit pixel sizes and were unaffected; baseline alignment was not,
+and was re-measured on a whole document. The test file says so, because
+the next person writing a probe will reach for `innerHTML` too.
+
+
 ### A preload scanner, and prefetching on worker threads
 
 A browser that waits for tree construction to finish before it asks the

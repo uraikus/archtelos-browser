@@ -79,6 +79,13 @@ const int BOXALIGN_SPACE_AROUND = 6
 const int BOXALIGN_SPACE_EVENLY = 7
 const int BOXALIGN_AUTO = 8
 
+// flex-wrap. A container is single-line unless it says otherwise;
+// wrap-reverse flips the cross axis, which reverses both the order of
+// the lines and the side of its own line an item aligns to.
+const int FLEXWRAP_NOWRAP = 0
+const int FLEXWRAP_WRAP = 1
+const int FLEXWRAP_WRAP_REVERSE = 2
+
 // box-sizing
 const int BOX_CONTENT = 0
 const int BOX_BORDER = 1
@@ -212,6 +219,8 @@ struct Style {
     justifyContent:int
     alignItems:int
     alignSelf:int
+    alignContent:int
+    flexWrap:int
     flexGrow:float
     flexShrink:float
     flexBasis:Len

@@ -35,11 +35,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `auto`, which need a scrollable area rather than only a clip, and
    paged media (§13). Positioning (§9.3), floats (§9.5), generated
    content (§12) and `overflow: hidden` clipping (§11) are done.
-2. **Flexbox, completed**: `flex-wrap`, so a container can be
-   multi-line, and the `align-content` that only means something once
-   it is; `baseline` alignment; and auto margins inside a flex
-   container, which absorb the free space before `justify-content` sees
-   it.
+2. **What is left of Flexible Box 1**: `flex-basis: content`, the
+   min-content floor that keeps an item from shrinking below its own
+   content, and nested flex containers as flex items. `flex-wrap`,
+   `align-content`, `baseline` alignment and auto margins are done.
 3. **`::first-line` and `::first-letter`**, and what is left of
    generated content: `open-quote` and `close-quote` with the `quotes`
    property, and `url()` in `content`. `::before` and `::after`
@@ -164,15 +163,13 @@ rest. In rough order of how often real pages need it:
   float does not grow the parent that holds it.
 - **`position: sticky`**, which computes as `relative` because nothing
   in layout knows the scroll offset.
-- **Multi-line flex containers.** `flex-wrap` is not implemented, so a
-  row that overflows its container shrinks rather than wrapping, and
-  `align-content` has no lines to distribute.
 - **Grid**, which still falls back to block layout.
-- **`overflow: hidden`** clips nothing: the canvas has no clip region,
-  so a clipped box would need to be drawn into an offscreen image and
-  composited. See festina.md.
-- **Generated content** (`::before`, `::after`), which the selector
-  parser already recognizes and refuses to match.
+- **Sub-pixel layout.** Every length is an integer, so three items
+  sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
+  rounds only when painting. Distributing free space by rounding the
+  running total rather than each share puts the *edges* in the right
+  place, which is what the flex code now does, but an isolated width can
+  still be a pixel off.
 - **Vertical writing modes**, **multi-column**, **`aspect-ratio`**.
 
 ## Networking is blocked on two Festina bugs

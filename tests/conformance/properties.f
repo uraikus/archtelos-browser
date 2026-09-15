@@ -49,6 +49,7 @@ text func styleDigest(s:Style) {
         + `|${lenKey(s.maxHeight)}|${s.boxSizing}|${s.captionSide}|${s.wordSpacing}`
         + `|${s.outlineWidth}|${s.outlineColor}`
         + `|${s.flexDirection}|${s.justifyContent}|${s.alignItems}|${s.alignSelf}`
+        + `|${s.flexWrap}|${s.alignContent}`
         + `|${s.flexGrow}|${s.flexShrink}|${lenKey(s.flexBasis)}|${s.rowGap}|${s.columnGap}|${s.order}`
         + `|${gradientKey(s.backgroundImage)}|${s.overflowHidden}`
 }

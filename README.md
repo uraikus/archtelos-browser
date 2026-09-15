@@ -105,10 +105,15 @@ standard's scoping. Quotes, `url()` in `content`, `::first-line` and
 `::first-letter` are not implemented, and a counter always renders in
 decimal.
 
-**Flex containers** are single-line: `flex-direction`, `order`,
-`flex-grow`, `flex-shrink`, `flex-basis` and the `flex` shorthand,
-`justify-content`, `align-items`, `align-self` and the `gap` family.
-`flex-wrap` is not implemented, so nothing wraps onto a second line.
+**Flex containers** wrap: `flex-direction`, `flex-wrap` and the
+`flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
+`flex-basis` and the `flex` shorthand, `justify-content`,
+`align-items`, `align-self`, `align-content` and the `gap` family.
+Items are broken into lines that grow and shrink independently,
+`align-content` distributes the lines across the cross axis,
+`wrap-reverse` flips it, an auto margin takes the free space before
+`justify-content` is consulted, and `align-items: baseline` lines the
+text up rather than the boxes.
 
 **`<audio>`** draws its controls at the size Chromium draws them, and is
 invisible without a `controls` attribute, as the standard's own

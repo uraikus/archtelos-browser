@@ -601,8 +601,9 @@ arr[text] supportedProperties = [
     'float', 'clear',
     'box-sizing', 'max-height', 'word-spacing', 'caption-side',
     'flex', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-basis',
-    'justify-content', 'align-items', 'align-self', 'gap', 'row-gap',
-    'column-gap', 'order',
+    'flex-wrap', 'flex-flow',
+    'justify-content', 'align-items', 'align-self', 'align-content',
+    'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
     // A property belongs here when something reads it, not when the
     // cascade merely computes it: claiming otherwise is the lie

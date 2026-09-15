@@ -1974,9 +1974,45 @@ bool func flexHeightIndefinite(s:Style) {
     return s.height.kind != LEN_PX
 }
 
+// How many of an item's main-axis margins are `auto`. An auto margin
+// eats the line's free space before justify-content is consulted, and
+// when several are auto they share it equally (Flexbox 1 §8.1).
+int func flexAutoMainMargins(it:Box, row:bool) {
+    int n = 0
+    if row {
+        if it.style.marginLeft.kind == LEN_AUTO { n++ }
+        if it.style.marginRight.kind == LEN_AUTO { n++ }
+    } else {
+        if it.style.marginTop.kind == LEN_AUTO { n++ }
+        if it.style.marginBottom.kind == LEN_AUTO { n++ }
+    }
+    return n
+}
+
+// Where the lines of a multi-line container sit in the cross axis.
+// Same distribution as justify-content, over lines rather than items.
+int func flexLineOffsetFor(align:int, spare:int, lines:int, index:int) {
+    if spare <= 0 || lines <= 0 { return 0 }
+    if align == BOXALIGN_END { return spare }
+    if align == BOXALIGN_CENTRE { return Math.floorDiv(spare, 2) }
+    if align == BOXALIGN_SPACE_BETWEEN {
+        if lines < 2 { return 0 }
+        return Math.floorDiv(spare * index, lines - 1)
+    }
+    if align == BOXALIGN_SPACE_AROUND {
+        return Math.floorDiv(spare * (index + index + 1), lines + lines)
+    }
+    if align == BOXALIGN_SPACE_EVENLY {
+        return Math.floorDiv(spare * (index + 1), lines + 1)
+    }
+    return 0
+}
+
 void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     Style s = b.style
     bool row = flexIsRow(s)
+    bool wrap = s.flexWrap != FLEXWRAP_NOWRAP
+    bool wrapReverse = s.flexWrap == FLEXWRAP_WRAP_REVERSE
     int innerMain = row ? b.w - b.pl - b.pr - b.bl - b.br : 0
     int flexOriginX = b.x + b.bl + b.pl
     int flexOriginY = b.y + b.bt + b.pt
@@ -2000,128 +2036,276 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
         items[j + 1] = cur
     }
 
-    int gap = row ? s.columnGap : s.rowGap
+    int mainGap = row ? s.columnGap : s.rowGap
+    int crossGap = row ? s.rowGap : s.columnGap
     int count = items.length
     if count == 0 {
         if row && flexHeightIndefinite(s) { b.h = b.pt + b.pb + b.bt + b.bb }
+        b.baseline = b.h
         return
     }
 
     // a first pass to size and measure every item
     arr[int] mainSize = []
-    int totalMain = 0
-    float totalGrow = 0.0
-    float totalShrink = 0.0
     for int i = 0, i < count, i++ {
         Box it = items[i]
         resolveEdges(it, innerMain > 0 ? innerMain : cw)
-        int base = flexBaseSize(it, row, row ? innerMain : cw)
-        mainSize.push(base)
-        totalMain = totalMain + base + (row ? it.ml + it.mr : it.mt + it.mb)
-        totalGrow = totalGrow + it.style.flexGrow
-        totalShrink = totalShrink + it.style.flexShrink
+        mainSize.push(flexBaseSize(it, row, row ? innerMain : cw))
     }
-    int gapTotal = gap * (count - 1)
 
-    // grow or shrink into the free space, but only along a main axis
-    // whose size is known: a column of auto height has none to share.
+    // The main axis's available size. A column of auto height has none,
+    // and a container with none never wraps: there is no size to
+    // overflow.
     int mainAvail = row ? innerMain : (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
-    int spare = mainAvail < 0 ? 0 : mainAvail - totalMain - gapTotal
-    if spare > 0 && totalGrow > 0.0 {
-        int handed = 0
-        for int i = 0, i < count, i++ {
-            float share = items[i].style.flexGrow / totalGrow
-            int add = i == count - 1 ? spare - handed : roundPx(spare.toFloat() * share)
-            mainSize[i] = mainSize[i] + add
-            handed = handed + add
-        }
-    } else if spare < 0 && totalShrink > 0.0 {
-        int owed = 0 - spare
-        int taken = 0
-        for int i = 0, i < count, i++ {
-            float share = items[i].style.flexShrink / totalShrink
-            int cut = i == count - 1 ? owed - taken : roundPx(owed.toFloat() * share)
-            if cut > mainSize[i] { cut = mainSize[i] }
-            mainSize[i] = mainSize[i] - cut
-            taken = taken + cut
-        }
-    }
 
-    // lay each item out at its main size, then place it
-    int used = 0
-    for int i = 0, i < count, i++ { used = used + mainSize[i] }
-    for int i = 0, i < count, i++ {
-        Box it = items[i]
-        used = used + (row ? it.ml + it.mr : it.mt + it.mb)
+    // ---- break the items into lines ----------------------------------
+    arr[int] lineFirst = []
+    arr[int] lineLast = []
+    if !wrap || mainAvail < 0 {
+        lineFirst.push(0)
+        lineLast.push(count - 1)
+    } else {
+        int start = 0
+        int run = 0
+        for int i = 0, i < count, i++ {
+            Box it = items[i]
+            int outer = mainSize[i] + (row ? it.ml + it.mr : it.mt + it.mb)
+            int add = i > start ? mainGap + outer : outer
+            if i > start && run + add > mainAvail {
+                lineFirst.push(start)
+                lineLast.push(i - 1)
+                start = i
+                run = outer
+            } else {
+                run = run + add
+            }
+        }
+        lineFirst.push(start)
+        lineLast.push(count - 1)
     }
-    int leftover = mainAvail < 0 ? 0 : mainAvail - used - gapTotal
-    if leftover < 0 { leftover = 0 }
+    int lines = lineFirst.length
 
     int crossAvail = row
         ? (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
         : b.w - b.pl - b.pr - b.bl - b.br
 
-    int cursor = 0
-    int maxCross = 0
-    for int i = 0, i < count, i++ {
-        int idx = flexIsReverse(s) ? count - 1 - i : i
-        Box item = items[idx]
-        int size = mainSize[idx]
-        int align = item.style.alignSelf == BOXALIGN_AUTO ? s.alignItems : item.style.alignSelf
-        if row {
-            // give the item its main size as a width, and let the block
-            // machinery do the rest
-            item.forcedWidthPx = size
-            layoutBlock(item, flexOriginX, flexOriginY, size + item.ml + item.mr, false)
-            item.forcedWidthPx = -1
-            if align == BOXALIGN_STRETCH && lenIsAuto(item.style.height) && crossAvail > 0 {
-                item.h = crossAvail - item.mt - item.mb
-            }
-            int outer = item.h + item.mt + item.mb
-            if outer > maxCross { maxCross = outer }
-        } else {
-            layoutBlock(item, flexOriginX, flexOriginY, crossAvail, false)
-            if !lenIsAuto(item.style.height) || item.style.flexBasis.kind != LEN_AUTO {
-                item.h = size
-            } else {
-                mainSize[idx] = item.h
-                size = item.h
-            }
-            if align == BOXALIGN_STRETCH && lenIsAuto(item.style.width) {
-                item.w = crossAvail - item.ml - item.mr
-            }
-            int outer = item.w + item.ml + item.mr
-            if outer > maxCross { maxCross = outer }
+    // ---- resolve each line's flexible lengths, and lay its items out --
+    // Growing and shrinking happen within a line, never across the
+    // container: an item alone on the last line takes all of its own
+    // free space.
+    arr[int] lineCross = []
+    arr[int] lineBaseline = []
+    arr[int] lineLeftover = []
+    arr[int] lineAutoMargins = []
+    for int li = 0, li < lines, li++ {
+        int first = lineFirst[li]
+        int last = lineLast[li]
+        int n = last - first + 1
+        int totalMain = 0
+        float totalGrow = 0.0
+        float totalShrink = 0.0
+        int autos = 0
+        for int i = first, i <= last, i++ {
+            Box it = items[i]
+            totalMain = totalMain + mainSize[i] + (row ? it.ml + it.mr : it.mt + it.mb)
+            totalGrow = totalGrow + it.style.flexGrow
+            totalShrink = totalShrink + it.style.flexShrink
+            autos = autos + flexAutoMainMargins(it, row)
         }
+        int gapTotal = mainGap * (n - 1)
+        int spare = mainAvail < 0 ? 0 : mainAvail - totalMain - gapTotal
+        // An auto margin absorbs the free space, so nothing is left for
+        // flex-grow to take.
+        // Distribute by rounding the running total rather than each
+        // share on its own: three items sharing 400px are 133, 134, 133
+        // and start at 0, 133 and 267, which is where a browser puts
+        // them. Rounding each share alone loses a pixel off the end.
+        if spare > 0 && autos == 0 && totalGrow > 0.0 {
+            float acc = 0.0
+            int handed = 0
+            for int i = first, i <= last, i++ {
+                acc = acc + items[i].style.flexGrow / totalGrow
+                int upto = i == last ? spare : roundPx(spare.toFloat() * acc)
+                mainSize[i] = mainSize[i] + (upto - handed)
+                handed = upto
+            }
+            spare = 0
+        } else if spare < 0 && totalShrink > 0.0 {
+            int owed = 0 - spare
+            float acc = 0.0
+            int taken = 0
+            for int i = first, i <= last, i++ {
+                acc = acc + items[i].style.flexShrink / totalShrink
+                int upto = i == last ? owed : roundPx(owed.toFloat() * acc)
+                int cut = upto - taken
+                if cut > mainSize[i] { cut = mainSize[i] }
+                mainSize[i] = mainSize[i] - cut
+                taken = taken + cut
+            }
+            spare = 0
+        }
+        if spare < 0 { spare = 0 }
+        lineLeftover.push(spare)
+        lineAutoMargins.push(autos)
 
-        int offset = flexOffsetFor(s.justifyContent, leftover, count, i, gap)
-        int mainPos = cursor + offset
-        int crossPos = 0
-        int itemCross = row ? item.h + item.mt + item.mb : item.w + item.ml + item.mr
-        if crossAvail > 0 && itemCross < crossAvail {
-            if align == BOXALIGN_CENTRE { crossPos = Math.floorDiv(crossAvail - itemCross, 2) }
-            else if align == BOXALIGN_END { crossPos = crossAvail - itemCross }
+        // lay the items out at their resolved main size, and measure
+        // how far the line reaches across. Baseline-aligned items are
+        // measured twice over: the line has to be deep enough for the
+        // deepest baseline plus whatever hangs below the deepest of
+        // those, which is not the same as the tallest item.
+        int maxCross = 0
+        int maxBase = 0
+        int maxBelow = 0
+        for int i = first, i <= last, i++ {
+            Box item = items[i]
+            if row {
+                item.forcedWidthPx = mainSize[i]
+                layoutBlock(item, flexOriginX, flexOriginY, mainSize[i] + item.ml + item.mr, false)
+                item.forcedWidthPx = -1
+                int outer = item.h + item.mt + item.mb
+                if outer > maxCross { maxCross = outer }
+                int al = item.style.alignSelf == BOXALIGN_AUTO ? s.alignItems : item.style.alignSelf
+                if al == BOXALIGN_BASELINE {
+                    int base = item.baseline + item.mt
+                    if base > maxBase { maxBase = base }
+                    if outer - base > maxBelow { maxBelow = outer - base }
+                }
+            } else {
+                layoutBlock(item, flexOriginX, flexOriginY, crossAvail, false)
+                if !lenIsAuto(item.style.height) || item.style.flexBasis.kind != LEN_AUTO {
+                    item.h = mainSize[i]
+                } else {
+                    mainSize[i] = item.h
+                }
+                int outer = item.w + item.ml + item.mr
+                if outer > maxCross { maxCross = outer }
+            }
         }
-        if row {
-            shiftBoxTree(item, flexOriginX + mainPos + item.ml - item.x,
-                               flexOriginY + crossPos + item.mt - item.y)
-        } else {
-            shiftBoxTree(item, flexOriginX + crossPos + item.ml - item.x,
-                               flexOriginY + mainPos + item.mt - item.y)
-        }
-        cursor = cursor + size + gap + (row ? item.ml + item.mr : item.mt + item.mb)
+        if maxBase + maxBelow > maxCross { maxCross = maxBase + maxBelow }
+        lineCross.push(maxCross)
+        lineBaseline.push(maxBase)
     }
 
-    // an auto cross size fits the items
-    if row && flexHeightIndefinite(s) {
-        b.h = maxCross + b.pt + b.pb + b.bt + b.bb
-    } else if !row && flexHeightIndefinite(s) {
-        int total = 0
-        for int i = 0, i < count, i++ {
-            Box it = items[i]
-            total = total + mainSize[i] + it.mt + it.mb
+    // ---- give the lines their share of the cross axis -----------------
+    int crossUsed = 0
+    for int li = 0, li < lines, li++ { crossUsed = crossUsed + lineCross[li] }
+    crossUsed = crossUsed + crossGap * (lines - 1)
+    int crossSpare = crossAvail < 0 ? 0 : crossAvail - crossUsed
+    if crossSpare < 0 { crossSpare = 0 }
+    // align-content stretch hands the free cross space to the lines
+    // themselves, which is what makes a line of height-less items fill
+    // half a container.
+    if crossSpare > 0 && s.alignContent == BOXALIGN_STRETCH {
+        int handed = 0
+        for int li = 0, li < lines, li++ {
+            int upto = li == lines - 1
+                ? crossSpare
+                : roundPx(crossSpare.toFloat() * (li + 1).toFloat() / lines.toFloat())
+            lineCross[li] = lineCross[li] + (upto - handed)
+            handed = upto
         }
-        b.h = total + gapTotal + b.pt + b.pb + b.bt + b.bb
+        crossSpare = 0
+    }
+
+    // ---- place every line, and every item within its line -------------
+    int crossCursor = 0
+    for int li = 0, li < lines, li++ {
+        int first = lineFirst[li]
+        int last = lineLast[li]
+        int n = last - first + 1
+        int thisCross = lineCross[li]
+        int lineOffset = flexLineOffsetFor(s.alignContent, crossSpare, lines, li)
+        int crossStart = crossCursor + lineOffset
+        // wrap-reverse flips the cross axis: the first line ends up
+        // furthest from the cross-start edge.
+        if wrapReverse && crossAvail >= 0 {
+            crossStart = crossAvail - crossStart - thisCross
+        }
+
+        int leftover = lineLeftover[li]
+        int autos = lineAutoMargins[li]
+        int autoShare = autos > 0 ? Math.floorDiv(leftover, autos) : 0
+        int cursor = 0
+        int autoSeen = 0
+        for int k = 0, k < n, k++ {
+            int idx = flexIsReverse(s) ? last - k : first + k
+            Box item = items[idx]
+            int size = mainSize[idx]
+            int align = item.style.alignSelf == BOXALIGN_AUTO ? s.alignItems : item.style.alignSelf
+            int leadAuto = 0
+            if autos > 0 {
+                bool leadIsAuto = row
+                    ? item.style.marginLeft.kind == LEN_AUTO
+                    : item.style.marginTop.kind == LEN_AUTO
+                if leadIsAuto {
+                    autoSeen++
+                    leadAuto = autoSeen == autos ? leftover - autoShare * (autos - 1) : autoShare
+                }
+            }
+
+            // stretch fills the line's own cross size, not the container's
+            if align == BOXALIGN_STRETCH && thisCross > 0 {
+                if row && lenIsAuto(item.style.height) {
+                    item.h = thisCross - item.mt - item.mb
+                } else if !row && lenIsAuto(item.style.width) {
+                    item.w = thisCross - item.ml - item.mr
+                }
+            }
+
+            int offset = autos > 0 ? 0 : flexOffsetFor(s.justifyContent, leftover, n, k, mainGap)
+            int mainPos = cursor + offset + leadAuto
+            int crossPos = 0
+            int itemCross = row ? item.h + item.mt + item.mb : item.w + item.ml + item.mr
+            if align == BOXALIGN_BASELINE && row {
+                // sit so this item's baseline meets the line's
+                crossPos = lineBaseline[li] - item.baseline - item.mt
+                if crossPos < 0 { crossPos = 0 }
+            } else if thisCross > 0 && itemCross < thisCross {
+                if align == BOXALIGN_CENTRE { crossPos = Math.floorDiv(thisCross - itemCross, 2) }
+                else if align == BOXALIGN_END { crossPos = thisCross - itemCross }
+                // wrap-reverse also flips which end of its own line an
+                // item aligns to.
+                if wrapReverse && (align == BOXALIGN_START || align == BOXALIGN_STRETCH) {
+                    crossPos = thisCross - itemCross
+                } else if wrapReverse && align == BOXALIGN_END {
+                    crossPos = 0
+                }
+            }
+            if row {
+                shiftBoxTree(item, flexOriginX + mainPos + item.ml - item.x,
+                                   flexOriginY + crossStart + crossPos + item.mt - item.y)
+            } else {
+                shiftBoxTree(item, flexOriginX + crossStart + crossPos + item.ml - item.x,
+                                   flexOriginY + mainPos + item.mt - item.y)
+            }
+            int trailAuto = 0
+            if autos > 0 {
+                bool trailIsAuto = row
+                    ? item.style.marginRight.kind == LEN_AUTO
+                    : item.style.marginBottom.kind == LEN_AUTO
+                if trailIsAuto {
+                    autoSeen++
+                    trailAuto = autoSeen == autos ? leftover - autoShare * (autos - 1) : autoShare
+                }
+            }
+            cursor = cursor + size + mainGap + leadAuto + trailAuto
+                   + (row ? item.ml + item.mr : item.mt + item.mb)
+        }
+        crossCursor = crossCursor + thisCross + crossGap
+    }
+
+    // an auto cross size fits the lines
+    if flexHeightIndefinite(s) {
+        if row {
+            b.h = crossUsed + b.pt + b.pb + b.bt + b.bb
+        } else {
+            int total = 0
+            for int i = 0, i < count, i++ {
+                Box it = items[i]
+                total = total + mainSize[i] + it.mt + it.mb
+            }
+            b.h = total + mainGap * (count - 1) + b.pt + b.pb + b.bt + b.bb
+        }
     }
     b.baseline = b.h
 }

@@ -1961,6 +1961,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     }
     // ---- flexbox ------------------------------------------------------
     s.flexDirection = FLEX_ROW
+    s.flexWrap = FLEXWRAP_NOWRAP
     ascii fd = styleProp(props, 'flex-direction')
     if fd != null {
         ascii t = asciiLower(fd)
@@ -1968,9 +1969,34 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'column' { s.flexDirection = FLEX_COLUMN }
         else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
     }
+    // flex-flow is flex-direction and flex-wrap in either order, and a
+    // longhand after it still wins because the cascade has already
+    // ordered them -- this only reads whichever landed last.
+    ascii ff = styleProp(props, 'flex-flow')
+    if ff != null {
+        arr[ascii] parts = asciiSplitSpace(asciiLower(ff))
+        for int i = 0, i < parts.length, i++ {
+            ascii t = parts[i]
+            if t == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
+            else if t == 'column' { s.flexDirection = FLEX_COLUMN }
+            else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
+            else if t == 'row' { s.flexDirection = FLEX_ROW }
+            else if t == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
+            else if t == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
+            else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
+        }
+    }
+    ascii fwrap = styleProp(props, 'flex-wrap')
+    if fwrap != null {
+        ascii t = asciiLower(asciiTrim(fwrap))
+        if t == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
+        else if t == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
+        else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
+    }
     s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_START)
     s.alignItems = parseAlignValue(styleProp(props, 'align-items'), BOXALIGN_STRETCH)
     s.alignSelf = parseAlignValue(styleProp(props, 'align-self'), BOXALIGN_AUTO)
+    s.alignContent = parseAlignValue(styleProp(props, 'align-content'), BOXALIGN_STRETCH)
     s.flexGrow = 0.0
     s.flexShrink = 1.0
     s.flexBasis = lenAuto()
