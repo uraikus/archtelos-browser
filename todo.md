@@ -10,7 +10,7 @@ Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 11 of them. That list, not a sense of what feels
+implements no part of 10 of them. That list, not a sense of what feels
 modern, sets the order below.
 
 ### The cascade
@@ -72,7 +72,7 @@ than their prominence suggests.
 
 **Two measurements exist now**, both with floors in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 373 CSS
-properties Chromium knows change what this engine renders (60), and
+properties Chromium knows change what this engine renders (67), and
 `tests/conformance/elements.f` how many of the 121 HTML elements get
 the default `display` Chromium gives them (121 of 121). Each entry in
 the work above should move the first number, and the runner names every

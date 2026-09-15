@@ -47,6 +47,8 @@ text func styleDigest(s:Style) {
         + `|${s.textIndent}|${s.letterSpacing}|${s.hidden}|${s.fontKey}`
         + `|${s.position}|${lenKey(s.top)}|${lenKey(s.right)}|${lenKey(s.bottom)}|${lenKey(s.left)}|${s.zIndex}`
         + `|${s.floatSide}|${s.clearSide}`
+        + `|${lenKey(s.maxHeight)}|${s.boxSizing}|${s.captionSide}|${s.wordSpacing}`
+        + `|${s.outlineWidth}|${s.outlineColor}`
 }
 
 text func lenKey(l:Len) {

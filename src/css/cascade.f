@@ -1306,6 +1306,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.minWidth = lenProp(props, 'min-width', s.fontSize, lenAuto())
     s.maxWidth = lenProp(props, 'max-width', s.fontSize, lenAuto())
     s.minHeight = lenProp(props, 'min-height', s.fontSize, lenAuto())
+    s.maxHeight = lenProp(props, 'max-height', s.fontSize, lenAuto())
     Len zero = lenPx(0.0)
     s.marginTop = lenProp(props, 'margin-top', s.fontSize, zero)
     s.marginRight = lenProp(props, 'margin-right', s.fontSize, zero)
@@ -1355,6 +1356,48 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'top' || t == 'text-top' || t == 'super' { s.verticalAlign = VALIGN_TOP }
         else if t == 'bottom' || t == 'text-bottom' || t == 'sub' { s.verticalAlign = VALIGN_BOTTOM }
         else if t == 'inherit' && !isRoot { s.verticalAlign = parent.verticalAlign }
+    }
+    s.boxSizing = BOX_CONTENT
+    ascii bsz = styleProp(props, 'box-sizing')
+    if bsz != null && asciiLower(bsz) == 'border-box' { s.boxSizing = BOX_BORDER }
+    s.captionSide = CAPTION_TOP
+    ascii cs2 = styleProp(props, 'caption-side')
+    if cs2 != null && asciiLower(cs2) == 'bottom' { s.captionSide = CAPTION_BOTTOM }
+    s.wordSpacing = isRoot ? 0 : parent.wordSpacing
+    s.wordSpacing = pxProp(props, 'word-spacing', s.fontSize, s.wordSpacing)
+    s.outlineWidth = 0
+    s.outlineColor = s.color
+    ascii ow = styleProp(props, 'outline-width')
+    ascii ost = styleProp(props, 'outline-style')
+    ascii oc = styleProp(props, 'outline-color')
+    ascii osh = styleProp(props, 'outline')
+    if osh != null {
+        // `outline` is width, style and colour in any order.
+        arr[ascii] parts = cssTokens(osh)
+        for int i = 0, i < parts.length, i++ {
+            ascii t = asciiLower(parts[i])
+            if t == 'none' || t == 'hidden' { s.outlineWidth = 0 }
+            else if t == 'solid' || t == 'dashed' || t == 'dotted' || t == 'double'
+                 || t == 'groove' || t == 'ridge' || t == 'inset' || t == 'outset' {
+                if s.outlineWidth == 0 { s.outlineWidth = 3 }
+            } else {
+                int c = parseCssColor(t, s.color)
+                if c != COLOR_UNSET { s.outlineColor = c }
+                else {
+                    Len l = parseLength(t, s.fontSize)
+                    if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+                }
+            }
+        }
+    }
+    if ow != null {
+        Len l = parseLength(ow, s.fontSize)
+        if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+    }
+    if ost != null && (asciiLower(ost) == 'none' || asciiLower(ost) == 'hidden') { s.outlineWidth = 0 }
+    if oc != null {
+        int c = parseCssColor(oc, s.color)
+        if c != COLOR_UNSET { s.outlineColor = c }
     }
     s.clearSide = CLEAR_NONE
     ascii cl = styleProp(props, 'clear')

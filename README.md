@@ -19,7 +19,7 @@ cases — the same number Chromium 141 passes on the same corpus, and 84
 of the 117 each fails are the same cases. CSS targets the
 [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose official
 definition of CSS is 24 specifications; the engine implements no part of
-11 of them. Where it stands on each is in [css-2026.md](css-2026.md).
+10 of them. Where it stands on each is in [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 

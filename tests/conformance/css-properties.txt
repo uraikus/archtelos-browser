@@ -89,12 +89,12 @@ border-top-width	3px; border-style: solid
 bottom	11px
 box-decoration-break	initial
 box-shadow	initial
-box-sizing	initial
+box-sizing	border-box
 break-after	initial
 break-before	initial
 break-inside	initial
 buffered-rendering	initial
-caption-side	initial
+caption-side	bottom
 caret-animation	initial
 caret-color	#123456
 clear	both
@@ -230,7 +230,7 @@ math-depth	initial
 math-shift	initial
 math-style	solid
 max-block-size	10px
-max-height	10px
+max-height	40px
 max-inline-size	10px
 max-width	222px
 min-block-size	10px
@@ -250,9 +250,9 @@ opacity	0.5
 order	initial
 orphans	initial
 outline-color	#123456
-outline-offset	initial
-outline-style	solid
-outline-width	10px
+outline-offset	3px
+outline-style	solid; outline-width: 3px
+outline-width	3px; outline-style: solid
 overflow-anchor	initial
 overflow-block	initial
 overflow-clip-margin	initial
@@ -380,7 +380,7 @@ widows	initial
 width	123px
 will-change	initial
 word-break	initial
-word-spacing	initial
+word-spacing	10px
 writing-mode	initial
 x	initial
 y	initial

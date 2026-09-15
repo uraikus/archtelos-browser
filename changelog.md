@@ -5,6 +5,28 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A batch of properties that were computed and ignored
+
+Five that did nothing and one that was never parsed. The geometry in the
+15 new checks was read out of Chromium with `getBoundingClientRect` on
+the same markup.
+
+- **`box-sizing`**, so a declared width or height can be the border box
+  rather than the content box. Every box was content-box.
+- **`max-height`**, which had no field at all: the declaration was
+  inert, and a 300px-tall box with `max-height: 40px` stayed 300.
+- **`word-spacing`**, which widens every space by its length.
+- **`caption-side`**, so a caption can go below the rows. Captions
+  always went above.
+- **`outline`** and its longhands, drawn just outside the border box and
+  taking no space. Every outline style paints solid, as every border
+  style does.
+
+Seven more properties change what renders: 60 of 373 to **67 of 373**,
+and Basic User Interface 3 is no longer a specification the engine has
+no part of, which takes the official definition from 11 untouched to
+**10 of 24**.
+
 ### Floats and clear
 
 `float` was parsed, computed and never read; every floated box laid out

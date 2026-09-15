@@ -104,6 +104,21 @@ Line func firstLineOf(b:Box) {
     return null
 }
 
+// An outline is drawn just outside the border box and takes no space,
+// so it can overlap whatever is next to it (CSS Basic User Interface 3).
+// Every outline style paints solid, as every border style does.
+void func paintOutline(b:Box) {
+    Style s = b.style
+    int w = s.outlineWidth
+    if w <= 0 || b.w <= 0 || b.h <= 0 { return }
+    applyFillColor(colorWithOpacity(s.outlineColor, s.effectiveOpacity))
+    drawRect(b.x - w, b.y - w, b.w + w + w, w)
+    drawRect(b.x - w, b.y + b.h, b.w + w + w, w)
+    drawRect(b.x - w, b.y, w, b.h)
+    drawRect(b.x + b.w, b.y, w, b.h)
+    fillAlpha(1.0)
+}
+
 void func paintListMarker(b:Box) {
     Style s = b.style
     if s.listStyle == LIST_NONE { return }
@@ -285,6 +300,7 @@ void func paintBox(b:Box) {
         if !s.hidden { paintFrame(b) }
         return
     }
+    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
     paintLines(b)

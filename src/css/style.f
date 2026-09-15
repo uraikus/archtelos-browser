@@ -56,6 +56,14 @@ const int VALIGN_MIDDLE = 1
 const int VALIGN_TOP = 2
 const int VALIGN_BOTTOM = 3
 
+// box-sizing
+const int BOX_CONTENT = 0
+const int BOX_BORDER = 1
+
+// caption-side
+const int CAPTION_TOP = 0
+const int CAPTION_BOTTOM = 1
+
 // clear
 const int CLEAR_NONE = 0
 const int CLEAR_LEFT = 1
@@ -132,6 +140,13 @@ struct Style {
     minWidth:Len
     maxWidth:Len
     minHeight:Len
+    maxHeight:Len
+    boxSizing:int
+    captionSide:int
+    wordSpacing:int
+    outlineWidth:int
+    outlineColor:int
+    minHeightSet:bool
     marginTop:Len
     marginRight:Len
     marginBottom:Len

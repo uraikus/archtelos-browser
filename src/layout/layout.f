@@ -179,7 +179,7 @@ int func measureWidth(s:Style, t:text) {
 }
 
 int func spaceWidth(s:Style) {
-    return measureWidth(s, ' ')
+    return measureWidth(s, ' ') + s.wordSpacing
 }
 
 int func fontAscent(s:Style) {
@@ -892,6 +892,9 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         }
     } else {
         width = maxInt(resolveLen(s.width, cw, 0), 0)
+        // `box-sizing: border-box` means the declared width IS the
+        // border box, so the padding and border come out of it.
+        if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
     }
     if s.maxWidth.kind != LEN_AUTO {
         int mx = resolveLen(s.maxWidth, cw, width)
@@ -925,11 +928,24 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         contentH = layoutBlockChildren(b, innerX, innerY, width)
     }
     int h = contentH
+    int vEdges = b.pt + b.pb + b.bt + b.bb
     if !lenIsAuto(s.height) && s.height.kind == LEN_PX {
         h = maxInt(roundPx(s.height.v), 0)
+        // as with the width, a border-box height already includes the
+        // padding and border
+        if s.boxSizing == BOX_BORDER { h = maxInt(h - vEdges, 0) }
     }
-    if s.minHeight.kind == LEN_PX { h = maxInt(h, roundPx(s.minHeight.v)) }
-    b.h = h + b.pt + b.pb + b.bt + b.bb
+    if s.minHeight.kind == LEN_PX {
+        int mn = roundPx(s.minHeight.v)
+        if s.boxSizing == BOX_BORDER { mn = maxInt(mn - vEdges, 0) }
+        h = maxInt(h, mn)
+    }
+    if s.maxHeight.kind == LEN_PX {
+        int mx = roundPx(s.maxHeight.v)
+        if s.boxSizing == BOX_BORDER { mx = maxInt(mx - vEdges, 0) }
+        if h > mx { h = mx }
+    }
+    b.h = h + vEdges
     if b.baseline == 0 { b.baseline = b.h }
 }
 
@@ -1620,10 +1636,13 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
     b.y = y + b.mt
     int innerX = contentX(b)
     int rowY = contentY(b)
-    // captions and other block children first
+    // A caption goes above the rows or below them, and anything else
+    // hoisted in here goes above (CSS Tables 3, `caption-side`).
+    bool captionBelow = b.style.captionSide == CAPTION_BOTTOM
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_ROW { continue }
+        if captionBelow && c.node != null && htmlTagOf(c.node.id) == 'caption' { continue }
         layoutBlock(c, innerX, rowY, tableContentW, false)
         rowY = c.y + c.h + c.mb
     }
@@ -1689,6 +1708,16 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
         }
         row.h = rowH
         rowY = rowY + rowH + spacing
+    }
+    // the caption that was held back goes under the last row
+    if captionBelow {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_ROW { continue }
+            if c.node == null || htmlTagOf(c.node.id) != 'caption' { continue }
+            layoutBlock(c, innerX, rowY, tableContentW, false)
+            rowY = c.y + c.h + c.mb
+        }
     }
     b.h = rowY - b.y + b.pb + b.bb
     b.baseline = b.h

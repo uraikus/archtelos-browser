@@ -51,7 +51,7 @@ for src in tests/unit/*.f tests/render/*.f; do
     fi
 done
 # Which CSS properties actually change what renders.
-PROPERTIES_MIN=60
+PROPERTIES_MIN=67
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1
