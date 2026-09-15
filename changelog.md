@@ -5,6 +5,63 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### ::first-letter
+
+The first letter of the first line of a block, styled on its own. The
+selector parser accepted `::first-letter` and then made the rule
+unusable; it now names a box, the cascade computes a style for it
+without requiring any `content`, and the box tree splits the first text
+box so that letter sits in an inline box of its own.
+
+What counts as the first letter was read out of Chromium 141 rather
+than assumed. At 16px monospace with `::first-letter { font-size: 32px }`
+the width says which characters were chosen:
+
+| markup | Chromium | what it means |
+|---|---|---|
+| `Hello` | 48px | five 16px characters |
+| `Hello` with the rule | 58px | one 32px, four 16px |
+| `"Hello` | 77px | **two** 32px — punctuation joins the letter |
+| `   Hello` | 58px | leading whitespace is skipped |
+| `<em>H</em>ello` | 58px | a nested inline still yields it |
+
+Only the first letter of the block, not the first of every descendant:
+the walk stops at the first one it splits and at any block-level child,
+whose own first letter is its own.
+
+`::first-line` still makes its rule unusable. Restyling a line that
+only exists after line breaking is a different kind of change, and
+saying so is better than matching the element and rendering something
+nobody asked for.
+
+Ten checks in the new `tests/unit/test_firstletter.f`. The line height
+Chromium gives an enlarged first letter (26px against a 20px
+line-height) depends on font metrics this engine does not have, so it is
+not asserted.
+
+### A space before an inline element was being dropped
+
+`A <em>B</em>` rendered exactly as wide as `AB`, while `A B` and
+`<em>A</em> B` were both correct. The space between a text box and a
+following *element* was lost, which is ordinary prose — `a <b>word</b>`
+— and it had been wrong for as long as there has been inline layout.
+
+Intrinsic width only added a separating space when the box it was
+looking at was itself text, so a space at the *end* of a text box
+followed by an element was counted by nobody. It is carried across the
+children as a pending flag now, and a text box that is nothing but
+whitespace is treated as that space rather than as content with a width,
+so two collapsing spaces are still one space.
+
+Four widths that must all agree, in `tests/unit/test_layout.f`.
+Chromium measures all four at 29px and this engine now measures all
+four at 30px, the pixel being the known difference between its
+character width and Chromium's. Found while measuring `::first-letter`
+against a mixed-content case, which is the only reason it turned up.
+
+Paired over 31 interleaved runs the fix costs nothing measurable:
+median 0.0 ms, up in 15 runs and down in 13.
+
 ### open-quote and close-quote
 
 The last of CSS2 §12 that was missing. `quotes` gives the strings,

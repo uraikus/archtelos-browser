@@ -104,9 +104,15 @@ keywords. `counter-reset` and `counter-increment` maintain counters with
 the standard's scoping, and `quotes` gives `open-quote` and
 `close-quote` their strings at a depth that runs over the document in
 document order rather than following element nesting — so `<q>` renders
-its quotation marks. `url()` in `content`, `::first-line` and
-`::first-letter` are not implemented, and a counter always renders in
-decimal.
+its quotation marks.
+
+**`::first-letter`** styles the first letter of the first line of a
+block on its own, taking any punctuation in front of it along, skipping
+leading whitespace, and finding the letter inside a nested inline. Only
+the first of the block, not the first of every descendant.
+`::first-line` still makes its rule unusable rather than matching the
+element. `url()` in `content` is not implemented, and a counter always
+renders in decimal.
 
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
@@ -168,10 +174,11 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers eighteen unit suites (utilities, HTML, CSS parser,
+The runner covers nineteen unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
-counters, quotes, audio, the preload scanner), three offscreen render
+counters, quotes, first letter, audio, the preload scanner), three
+offscreen render
 suites that check real
 pixels with `getPixelColor` — general rendering, gradients and overflow
 clipping — three conformance runners that measure the engine against

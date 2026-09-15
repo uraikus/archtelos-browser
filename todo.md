@@ -39,10 +39,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    min-content floor that keeps an item from shrinking below its own
    content, and nested flex containers as flex items. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
-3. **`::first-line` and `::first-letter`**, and the `url()` in
-   `content` that would let generated content carry an image.
+3. **`::first-line`**, and the `url()` in `content` that would let
+   generated content carry an image. `::first-letter` is done, and
    `::before` and `::after` generate boxes from strings, `attr()`,
-   `counter()`, `counters()` and the four quote keywords already.
+   `counter()`, `counters()` and the four quote keywords. `::first-line`
+   is the harder half: the line it names does not exist until line
+   breaking has run, so restyling it means breaking the line twice or
+   re-breaking after the style changes the metrics.
 
    None of this is gradeable by the selector instrument -- a
    pseudo-element selects part of an element rather than an element, so

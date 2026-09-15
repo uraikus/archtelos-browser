@@ -70,6 +70,10 @@ bool anyPseudoRules = false
 // measured at 8 ms on the 51 KB benchmark page, which has no <q>.
 map[bool] pseudoTagSet = {}
 bool pseudoNonTag = false
+// Which elements have a ::first-letter style, and whether any rule
+// anywhere asks for one at all.
+map[bool] pseudoHasFirstLetter = {}
+bool anyFirstLetter = false
 
 // Whether any rule anywhere sets a counter, and how deep the style walk
 // is. Almost no document uses counters, and maintaining the stack for
@@ -92,6 +96,8 @@ void func cascadeReset() {
     anyPseudoRules = false
     pseudoTagSet = {}
     pseudoNonTag = false
+    pseudoHasFirstLetter = {}
+    anyFirstLetter = false
     anyCounters = false
     anyQuotes = false
     quoteDepth = 0
@@ -144,6 +150,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if sel.pseudoElement != '' {
                 anyPseudoRules = true
                 text pk = selectorKey(sel)
+                if sel.pseudoElement == 'first-letter' { anyFirstLetter = true }
                 if pk == '*' || pk.charCodeAt(0) == CH_HASH || pk.charCodeAt(0) == CH_DOT {
                     pseudoNonTag = true
                 } else {
@@ -945,6 +952,19 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     pseudoContents[pseudoKey(n.id, which)] = content
 }
 
+// ::first-letter carries no `content`: it restyles characters that are
+// already there, so the style is kept on its own without one.
+void func computeFirstLetterFor(n:Node, own:Style) {
+    arr[Match] matches = collectPseudoMatches(n, 'first-letter')
+    if matches.length == 0 { return }
+    map[text] props = {}
+    for int i = 0, i < matches.length, i++ {
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    pseudoStyles[pseudoKey(n.id, 'first-letter')] = computeStyleValues(n, own, false, props)
+    pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
+}
+
 void func computePseudoElements(n:Node, own:Style) {
     if !anyPseudoRules { return }
     // One map lookup rules out every element no pseudo rule names,
@@ -953,6 +973,7 @@ void func computePseudoElements(n:Node, own:Style) {
     if !pseudoNonTag && pseudoTagSet[n.tag] == null { return }
     computePseudoFor(n, own, 'before')
     computePseudoFor(n, own, 'after')
+    if anyFirstLetter { computeFirstLetterFor(n, own) }
 }
 
 // A style attribute holding non-ASCII (a font name, say): rewrite the

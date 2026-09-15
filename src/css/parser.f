@@ -330,15 +330,16 @@ Compound func parseCompound() {
             int end = scanIdent(start)
             ascii name = asciiLower(selSrc.slice(start, end))
             selPos = end
-            // `::before` and `::after`, and the one-colon spellings CSS2
-            // used, name a generated box rather than a state of this
-            // element. Only these two generate anything here; the others
-            // (`::first-line`, `::first-letter`) still make the rule
-            // unusable rather than silently matching the element.
+            // `::before`, `::after` and `::first-letter`, and the
+            // one-colon spellings CSS2 used, name a box other than this
+            // element's own. `::first-line` still makes the rule
+            // unusable rather than silently matching the element,
+            // because restyling a line that only exists after line
+            // breaking is not something this engine can do yet.
             bool isElementPseudo = name == 'before' || name == 'after'
                 || name == 'first-line' || name == 'first-letter'
             if doubleColon || isElementPseudo {
-                if name == 'before' || name == 'after' {
+                if name == 'before' || name == 'after' || name == 'first-letter' {
                     comp.pseudoElement = name.toText()
                 } else {
                     comp.unsupported = true

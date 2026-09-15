@@ -492,6 +492,78 @@ void func buildChildren(b:Box, n:Node, s:Style) {
         if c != null { addChildBox(b, c) }
     }
     addGeneratedBox(b, n, 'after')
+    applyFirstLetter(b, n)
+}
+
+// How many characters of `t` make up the first letter, starting at the
+// first one that is not whitespace (CSS2 §5.12.2): any punctuation that
+// precedes the letter goes with it, and so does any that follows it.
+// Returns the index just past them, or -1 when the text holds no letter
+// at all and the search must move to the next box.
+int func firstLetterEnd(t:text) {
+    ascii a = t.toAscii()
+    if a == null { return -1 }
+    int len = a.length
+    int i = 0
+    while i < len && isSpaceCode(a.charCodeAt(i)) { i++ }
+    if i >= len { return -1 }
+    // leading punctuation
+    while i < len && !isAlnumCode(a.charCodeAt(i)) && !isSpaceCode(a.charCodeAt(i)) { i++ }
+    if i >= len { return -1 }
+    if isSpaceCode(a.charCodeAt(i)) { return -1 }
+    i++                                  // the letter itself
+    // and any punctuation clinging to it
+    while i < len && !isAlnumCode(a.charCodeAt(i)) && !isSpaceCode(a.charCodeAt(i)) { i++ }
+    return i
+}
+
+// Splits the first text box in `b`'s inline content so that its first
+// letter sits in a box of the ::first-letter style. Returns true once
+// it has done so, which stops the walk: only the first letter of the
+// block is styled, not the first of every descendant.
+bool func splitFirstLetter(b:Box, ps:Style) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT {
+            if textIsCollapsibleBlank(c.content) { continue }
+            int end = firstLetterEnd(c.content)
+            if end < 0 { continue }
+            ascii a = c.content.toAscii()
+            if a == null { continue }
+            Node lead = newTextNode(a.slice(0, end).toText())
+            lead.style = ps
+            Box letter = newBox(BOX_INLINE, c.node, ps)
+            addChildBox(letter, buildTextBox(lead, ps))
+            letter.parentId = b.id
+            letter.depth = b.depth + 1
+            c.content = a.slice(end, a.length).toText()
+            // An array here has no insert, so the child list is rebuilt
+            // with the letter box in front of what is left of the text
+            // -- see FINDINGS.md, "one global namespace" for the family
+            // of small absences this belongs to.
+            arr[Box] rebuilt = []
+            for int k = 0, k < b.children.length, k++ {
+                if k == i { rebuilt.push(letter) }
+                rebuilt.push(b.children[k])
+            }
+            b.children = rebuilt
+            return true
+        }
+        if c.kind == BOX_INLINE || c.kind == BOX_ANON {
+            if splitFirstLetter(c, ps) { return true }
+        }
+        // A block-level child starts a new block, whose own first
+        // letter is not this one's.
+        if c.blockLevel { return true }
+    }
+    return false
+}
+
+void func applyFirstLetter(b:Box, n:Node) {
+    if !anyFirstLetter { return }
+    if n == null || n.id <= 0 { return }
+    if pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] == null { return }
+    splitFirstLetter(b, pseudoStyleOf(n.id, 'first-letter'))
 }
 
 // A ::before or ::after box: the generated content as a text box inside
@@ -771,19 +843,50 @@ void func computeIntrinsicUncounted(b:Box) {
     if inlineContent || b.kind == BOX_INLINE {
         // inline content: max = everything on one line, min = widest piece
         int lineW = 0
+        // A space between two pieces of inline content is a space
+        // whether the pieces are text or elements: `a <em>b</em>` is as
+        // wide as `a b`. The space lives at the end of one text box or
+        // the start of the next and is not part of either one's own
+        // measured width, so it is carried across as a flag. Two
+        // collapsing spaces are still one space.
+        bool spacePending = false
+        int spacePendingWidth = 0
         for int i = 0, i < b.children.length, i++ {
             Box c = b.children[i]
             computeIntrinsic(c)
             if c.kind == BOX_BR {
                 maxW = maxInt(maxW, lineW)
                 lineW = 0
+                spacePending = false
+                continue
+            }
+            // A text box that is nothing but whitespace is the space
+            // between its neighbours, not a piece of content with a
+            // width of its own; counting both would separate them by
+            // two spaces.
+            if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content)
+                && c.style.whiteSpace != WS_PRE && c.style.whiteSpace != WS_PRE_WRAP {
+                if !spacePending {
+                    spacePending = true
+                    spacePendingWidth = spaceWidth(c.style)
+                }
                 continue
             }
             minW = maxInt(minW, c.minContent)
             if c.kind == BOX_TEXT && c.style.whiteSpace == WS_NOWRAP { minW = maxInt(minW, c.maxContent) }
+            if c.kind == BOX_TEXT && textStartsWithSpace(c) && !spacePending {
+                spacePending = true
+                spacePendingWidth = spaceWidth(c.style)
+            }
+            if spacePending && i > 0 {
+                lineW = lineW + spacePendingWidth
+            }
+            spacePending = false
             lineW = lineW + c.maxContent
-            if c.kind == BOX_TEXT && i > 0 && !textStartsWithSpace(c) { }
-            else if i > 0 && c.kind == BOX_TEXT { lineW = lineW + spaceWidth(c.style) }
+            if c.kind == BOX_TEXT && textEndsWithSpace(c) {
+                spacePending = true
+                spacePendingWidth = spaceWidth(c.style)
+            }
         }
         maxW = maxInt(maxW, lineW)
         if s.whiteSpace == WS_NOWRAP { minW = maxW }
@@ -819,6 +922,12 @@ void func computeIntrinsicUncounted(b:Box) {
 bool func textStartsWithSpace(b:Box) {
     if b.content == null || b.content == '' { return false }
     int c = b.content.charCodeAt(0)
+    return isSpaceCode(c)
+}
+
+bool func textEndsWithSpace(b:Box) {
+    if b.content == null || b.content == '' { return false }
+    int c = b.content.charCodeAt(b.content.length - 1)
     return isSpaceCode(c)
 }
 
