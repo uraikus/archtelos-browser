@@ -372,4 +372,64 @@ color colorAtHalf = getPixelColor(2, 2)
 check(imageAtHalf != blue, 'a background image on a half-transparent box is not fully opaque')
 check(imageAtHalf == colorAtHalf, 'it blends exactly as the same colour at the same opacity does')
 
+// ---- the longhands, against the shorthand that already worked ----------
+// `background-position-x` and `background-position-y` say separately
+// what `background-position` says together, so the test that earns its
+// place is that the two land on the same pixel rather than that each
+// lands on one worked out here. The shorthand's own pixels are checked
+// above, which is what makes it a reference worth comparing against.
+text posBox = '<div style="width:100px;height:60px;background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+
+// Where the tile's top-left corner landed, as x * 1000 + y, or -1 if
+// the tile is not in the box at all. Scanning the whole box rather than
+// one row matters: a helper that looked along y=32 answered "not found"
+// for a tile at the top, and two positions that both miss the row
+// compare equal, so a pair of checks passed while the feature was
+// absent. One value comes out of a function here (FINDINGS.md, "one
+// value out of a function"), so the two coordinates are packed.
+int func tileOrigin(css:text) {
+    Page pp = pageFromHtml(head + posBox + css + '"></div></body>',
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(pp, 0, 0, 300)
+    for int y = 0, y < 60, y++ {
+        for int x = 0, x < 100, x++ {
+            if getPixelColor(x, y) == blue { return x * 1000 + y }
+        }
+    }
+    return -1
+}
+
+// The shorthand's own pixels are checked above, which is what makes it
+// a reference worth comparing against; that the tile is found at all is
+// asserted first, so "not found" on both sides cannot read as agreement.
+check(tileOrigin('background-position:20px 30px') == 20 * 1000 + 30,
+      'the shorthand puts the tile where the pixels above say it does')
+
+checkEqInt(tileOrigin('background-position-x:20px;background-position-y:30px'),
+           tileOrigin('background-position:20px 30px'),
+           'the longhands put the tile where the shorthand does')
+checkEqInt(tileOrigin('background-position-x:right;background-position-y:top'),
+           tileOrigin('background-position:right top'),
+           'keyword longhands agree with the keyword shorthand')
+checkEqInt(tileOrigin('background-position-y:bottom;background-position-x:20px'),
+           tileOrigin('background-position:20px bottom'),
+           'and a keyword on the vertical axis beside a length on the other')
+// A percentage is the one the shorthand had wrong once: it is of the
+// space the image leaves over, not of the box.
+checkEqInt(tileOrigin('background-position-x:50%;background-position-y:0'),
+           tileOrigin('background-position:50% 0'),
+           'a percentage longhand agrees with the percentage shorthand')
+
+// Cascade order decides between a shorthand and a longhand, which is
+// only true if the shorthand expands into the longhands rather than
+// being read beside them.
+checkEqInt(tileOrigin('background-position:10px 20px;background-position-x:20px'),
+           tileOrigin('background-position:20px 20px'),
+           'a longhand after the shorthand wins on its own axis and leaves the other')
+checkEqInt(tileOrigin('background-position-x:99px;background-position:20px 30px'),
+           tileOrigin('background-position:20px 30px'),
+           'and the shorthand after a longhand overrides it')
+
 finish('background images')

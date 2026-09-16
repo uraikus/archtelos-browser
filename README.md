@@ -146,8 +146,9 @@ and with any number of colour stops; `radial-gradient()` and
 or an ellipse, sized by any of the four extent keywords or explicit
 radii and placed with `at`. `background-image: url()`
 paints a fetched image with `background-repeat`,
-`background-position` and `background-size`, which takes `cover`,
-`contain`, lengths, percentages and `auto` on either axis.
+`background-position` — or `background-position-x` and
+`background-position-y` separately — and `background-size`, which takes
+`cover`, `contain`, lengths, percentages and `auto` on either axis.
 `border-image` cuts an image into nine regions and lays them round the
 border: the corners at their own size, the edges stretched or tiled
 between them, and the middle only if `fill` asks.

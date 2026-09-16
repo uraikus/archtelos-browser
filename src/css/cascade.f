@@ -2018,6 +2018,36 @@ void func applyBackgroundShorthand(props:map[text], value:ascii) {
     }
 }
 
+// `background-position` sets `background-position-x` and
+// `background-position-y`, and is expanded here rather than read beside
+// them, because otherwise cascade order between a shorthand and a
+// longhand could not be honoured: whichever the reader consulted first
+// would always win.
+//
+// One value positions the horizontal axis and centres the other, unless
+// it is a vertical keyword, in which case it does the reverse -- which
+// is what Chromium computes for `background-position: top` too.
+void func applyBackgroundPositionShorthand(props:map[text], value:ascii) {
+    ascii low = asciiLower(asciiTrim(value))
+    arr[ascii] parts = asciiSplitSpace(low)
+    if parts.length >= 2 {
+        props['background-position-x'] = dup(parts[0])
+        props['background-position-y'] = dup(parts[1])
+        return
+    }
+    if parts.length != 1 { return }
+    if parts[0] == 'top' {
+        props['background-position-x'] = 'center'.toAscii()
+        props['background-position-y'] = 'top'.toAscii()
+    } else if parts[0] == 'bottom' {
+        props['background-position-x'] = 'center'.toAscii()
+        props['background-position-y'] = 'bottom'.toAscii()
+    } else {
+        props['background-position-x'] = dup(parts[0])
+        props['background-position-y'] = 'center'.toAscii()
+    }
+}
+
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
     // `display` is validated here rather than where it is read, because
@@ -2062,6 +2092,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     if name == 'background' {
         applyBackgroundShorthand(props, value)
+        return
+    }
+    if name == 'background-position' {
+        applyBackgroundPositionShorthand(props, value)
         return
     }
     // `grid-column` and `grid-row` are `<start> / <end>`, and a single
@@ -3434,21 +3468,18 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             s.backgroundRepeatY = parts[1] != 'no-repeat'
         }
     }
+    // Only the longhands are read: `background-position` was expanded
+    // into them where it was applied, so the later of a shorthand and a
+    // longhand wins whichever way round they are written.
     s.backgroundPosX = lenPercent(0.0)
     s.backgroundPosY = lenPercent(0.0)
-    ascii bgpos = styleProp(props, 'background-position')
-    if bgpos != null {
-        ascii bgposLow = asciiLower(bgpos)
-        arr[ascii] parts = asciiSplitSpace(bgposLow)
-        if parts.length >= 1 { s.backgroundPosX = parsePositionAxis(parts[0], true, s.fontSize) }
-        if parts.length >= 2 { s.backgroundPosY = parsePositionAxis(parts[1], false, s.fontSize) }
-        else if parts.length == 1 {
-            // one value positions the horizontal axis and centres the
-            // other, unless it is a vertical keyword
-            if parts[0] == 'top' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(0.0) }
-            else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(100.0) }
-            else { s.backgroundPosY = lenPercent(50.0) }
-        }
+    ascii bgposX = styleProp(props, 'background-position-x')
+    if bgposX != null {
+        s.backgroundPosX = parsePositionAxis(asciiLower(asciiTrim(bgposX)), true, s.fontSize)
+    }
+    ascii bgposY = styleProp(props, 'background-position-y')
+    if bgposY != null {
+        s.backgroundPosY = parsePositionAxis(asciiLower(asciiTrim(bgposY)), false, s.fontSize)
     }
     // box-shadow (Backgrounds and Borders 3 §6): a comma-separated list,
     // each `<offset-x> <offset-y> <blur>? <spread>? <colour>? inset?` in

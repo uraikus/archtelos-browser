@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### background-position-x and background-position-y
+
+The two axes of `background-position`, settable on their own. The
+shorthand is expanded into them where declarations are applied rather
+than read beside them, because a reader that consulted one first would
+make that one always win: cascade order has to decide between
+`background-position: 10px 20px; background-position-x: 20px` and the
+same pair written the other way round, and now does.
+
+195 of 405 properties, from 193. Each longhand moves its own field and
+not the other's, which `--fields` says.
+
+The checks are agreements rather than pixels worked out again: the
+shorthand's own pixels are established above them in the same file, so
+the longhands are asserted to put the tile exactly where the shorthand
+puts it, for lengths, keywords, a percentage, and both orders of
+shorthand and longhand.
+
+The first version of the helper looked for the tile along one row, and
+two positions that both miss that row compare equal -- so two of the
+checks passed while the feature was absent. It scans the whole box now,
+and the shorthand's own position is asserted outright first, so "not
+found" on both sides cannot read as agreement.
+
 ### The property instrument was measuring against the wrong denominator
 
 The row list in `tests/conformance/css-properties.txt` was built from
