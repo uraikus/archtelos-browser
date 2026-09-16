@@ -29,6 +29,22 @@ struct AttrSel {
     name:text
     op:int
     value:text
+    caseInsensitive:bool    // the `i` flag after the value
+}
+
+// `:not()`, `:is()`, `:where()` and `:has()` each take a comma-separated
+// list of selectors. They differ in what a match means: `:not()` wants
+// none to match, `:is()` and `:where()` want any, and `:has()` wants a
+// descendant to match. `:where()` alone contributes no specificity,
+// which is its whole reason for existing beside `:is()`.
+const int SUBSEL_NOT = 0
+const int SUBSEL_IS = 1
+const int SUBSEL_WHERE = 2
+const int SUBSEL_HAS = 3
+
+struct SubSelector {
+    kind:int
+    alternatives:arr[Compound]
 }
 
 struct Compound {
@@ -45,8 +61,11 @@ struct Compound {
     attrs:arr[AttrSel]
     pseudos:arr[text]       // e.g. 'first-child', 'nth-child:2:1'
     pseudoElement:text      // '' = none; 'before' or 'after'
-    notSel:Compound         // the argument of :not(); meaningful only when hasNot
-    hasNot:bool             // a struct field can never read as null (see FINDINGS.md), hence the flag
+    // The functional pseudo-classes that take a selector list of their
+    // own: `:not()`, `:is()`, `:where()` and `:has()`. One list serves
+    // all four because they differ only in how a match is read, which
+    // is what `kind` says.
+    subs:arr[SubSelector]
     combinator:int          // relation to the compound on its LEFT
     unsupported:bool
 }
@@ -578,14 +597,30 @@ Compound func parseCompound() {
                 int close = matchParen(selSrc, selPos)
                 ascii arg = asciiTrim(selSrc.slice(selPos + 1, close))
                 selPos = close + 1
-                if name == 'not' {
+                if name == 'not' || name == 'is' || name == 'where' || name == 'has'
+                    || name == 'matches' || name == 'any' {
+                    SubSelector sub
+                    sub.kind = name == 'not' ? SUBSEL_NOT
+                             : (name == 'has' ? SUBSEL_HAS
+                             : (name == 'where' ? SUBSEL_WHERE : SUBSEL_IS))
                     int savedPos = selPos
                     ascii savedSrc = dup(selSrc)
-                    selSrc = arg
-                    selPos = 0
-                    comp.notSel = parseCompound()
-                    comp.hasNot = true
-                    if selPos < arg.length { comp.unsupported = true }
+                    arr[ascii] alts = splitOnCommas(arg)
+                    for int k = 0, k < alts.length, k++ {
+                        ascii alt = asciiTrim(alts[k])
+                        // `:has(> p)` names a relation this engine does
+                        // not distinguish, so a leading combinator is
+                        // what makes the selector unsupported rather
+                        // than silently a descendant test.
+                        if alt.length == 0 { comp.unsupported = true  continue }
+                        selSrc = alt
+                        selPos = 0
+                        Compound inner = parseCompound()
+                        if selPos < alt.length { comp.unsupported = true }
+                        sub.alternatives.push(inner)
+                    }
+                    if sub.alternatives.length == 0 { comp.unsupported = true }
+                    comp.subs.push(sub)
                     selSrc = savedSrc
                     selPos = savedPos
                 } else if name == 'nth-child' || name == 'nth-last-child'
@@ -680,14 +715,40 @@ void func parseAttrSel(comp:Compound, inner:ascii) {
         while i < n && isSpaceCode(inner.charCodeAt(i)) { i++ }
         int end = n
         while end > i && isSpaceCode(inner.charCodeAt(end - 1)) { end-- }
-        // a trailing " i" flag would be case-insensitivity; ignore it
         if i < end && (inner.charCodeAt(i) == CH_QUOTE || inner.charCodeAt(i) == CH_APOS) {
             int q = inner.charCodeAt(i)
             int close = i + 1
             while close < end && inner.charCodeAt(close) != q { close++ }
             a.value = inner.slice(i + 1, close).toText()
+            // A trailing `i` or `s` after the closing quote is the
+            // case-sensitivity flag (Selectors 4 §6.3). It was parsed
+            // and thrown away, which made `[a="X" i]` an ordinary
+            // case-sensitive match rather than the one that was asked
+            // for.
+            int after = close + 1
+            while after < end && isSpaceCode(inner.charCodeAt(after)) { after++ }
+            if after < end {
+                int flag = inner.charCodeAt(after)
+                if flag == 73 || flag == 105 { a.caseInsensitive = true }   // I or i
+            }
         } else {
-            a.value = inner.slice(i, end).toText()
+            int valueEnd = end
+            // an unquoted value may carry the same flag, separated by
+            // whitespace
+            int sp = valueEnd
+            while sp > i && !isSpaceCode(inner.charCodeAt(sp - 1)) { sp-- }
+            if sp > i && sp < valueEnd && valueEnd - sp == 1 {
+                int flag = inner.charCodeAt(sp)
+                if flag == 73 || flag == 105 {
+                    a.caseInsensitive = true
+                    valueEnd = sp - 1
+                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
+                } else if flag == 83 || flag == 115 {
+                    valueEnd = sp - 1
+                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
+                }
+            }
+            a.value = inner.slice(i, valueEnd).toText()
         }
     }
     comp.attrs.push(a)
@@ -781,7 +842,17 @@ int func compoundSpecificity(c:Compound) {
     // (Selectors 3 §9).
     int types = (c.tag != '' ? 1 : 0) + (c.pseudoElement != '' ? 1 : 0)
     int s = packSpecificity(ids, classes, types)
-    if c.hasNot { s = specAdd(s, compoundSpecificity(c.notSel)) }
+    // `:not()`, `:is()` and `:has()` take the specificity of their most
+    // specific argument; `:where()` takes none at all (Selectors 4).
+    for int i = 0, i < c.subs.length, i++ {
+        if c.subs[i].kind == SUBSEL_WHERE { continue }
+        int best = 0
+        for int k = 0, k < c.subs[i].alternatives.length, k++ {
+            int inner = compoundSpecificity(c.subs[i].alternatives[k])
+            if inner > best { best = inner }
+        }
+        s = specAdd(s, best)
+    }
     return s
 }
 
@@ -1184,11 +1255,18 @@ text func dumpSelector(sel:Selector) {
         }
         for int j = 0, j < c.pseudos.length, j++ { out = `${out}:${c.pseudos[j]}` }
         if c.pseudoElement != '' { out = `${out}::${c.pseudoElement}` }
-        if c.hasNot {
-            Selector inner
-            inner.parts.push(c.notSel)
-            text innerText = dumpSelector(inner)
-            out = `${out}:not(${innerText})`
+        for int j = 0, j < c.subs.length, j++ {
+            SubSelector sub = c.subs[j]
+            text fname = sub.kind == SUBSEL_NOT ? 'not'
+                       : (sub.kind == SUBSEL_HAS ? 'has'
+                       : (sub.kind == SUBSEL_WHERE ? 'where' : 'is'))
+            text inner = ''
+            for int k = 0, k < sub.alternatives.length, k++ {
+                Selector one
+                one.parts.push(sub.alternatives[k])
+                inner = inner + (k > 0 ? ',' : '') + dumpSelector(one)
+            }
+            out = `${out}:${fname}(${inner})`
         }
     }
     if sel.unsupported { out = out + '!' }

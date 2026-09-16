@@ -5,6 +5,44 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The last five selectors, and the documentation that claimed they worked
+
+`:is()` and `:where()`, which differ only in that `:where()` contributes
+no specificity; `:has()`, as a descendant test; a selector list inside
+`:not()`; and the attribute case-sensitivity flag. **The instrument goes
+from 56 of 61 to 61 of 61** — every selector it asks about now matches
+exactly the elements Chromium matches.
+
+The four functional pseudo-classes share one implementation, because
+they differ only in how a match is read: `:not()` wants none of its
+alternatives to match, `:is()` and `:where()` want any, and `:has()`
+wants a descendant to. `:has()` with a leading combinator — `:has(> p)`
+— names a relation this engine does not distinguish and is refused
+rather than quietly read as a descendant test.
+
+**This was found because css-2026.md said they already worked.** Its
+Selectors 3 row listed `:is()`, `:where()`, `:has()` and a `:not()` list
+among the things that work, while the Selectors 4 row two classes below
+named those same five as the measurement's only failures — the file
+contradicted itself, and the measurement had been saying which half was
+right on every run since the instrument was built.
+
+So the rest of the file was audited rather than the one row fixed, and
+five more had drifted the same way: Lists and Counters still said
+`list-style-position` was missing, Logical Properties said the block
+padding aliases were not done, Positioned Layout said there was no
+`inset` shorthand, and Transforms 2 and Containment 2 sat in a row of
+specifications with nothing implemented while each had gained a part.
+Every one of those was a feature added on this branch whose row nobody
+went back to.
+
+**The headline moved with them.** Of the 24 specifications in the
+snapshot's official definition the engine now implements part of 22 and
+no part of 2, against 8 when this branch began — and the two it does not
+touch are the two it cannot: Compositing and Blending needs a
+compositing operator the runtime does not expose, and Easing needs an
+animation clock.
+
 ### Counter styles
 
 All five of the standard's numbering systems — `cyclic`, `fixed`,

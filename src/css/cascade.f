@@ -238,9 +238,19 @@ bool func attrMatches(nid:int, a:AttrSel) {
     if a.op == ATTR_EXISTS { return true }
     text v = attrOf(nid, a.name)
     if v == null { v = '' }
-    if a.op == ATTR_EQUALS { return v == a.value }
+    // The `i` flag matches without regard to case, which is one
+    // lowercasing of both sides rather than a second comparison at
+    // every operator below (Selectors 4 §6.3).
+    text wanted = a.value
+    if a.caseInsensitive {
+        ascii lowered = v.toAscii()
+        if lowered != null { v = asciiLower(lowered).toText() }
+        ascii loweredWant = wanted.toAscii()
+        if loweredWant != null { wanted = asciiLower(loweredWant).toText() }
+    }
+    if a.op == ATTR_EQUALS { return v == wanted }
     ascii av = v.toAscii()
-    ascii want = a.value.toAscii()
+    ascii want = wanted.toAscii()
     if av == null || want == null { return false }
     if a.op == ATTR_INCLUDES {
         arr[ascii] words = asciiSplitSpace(av)
@@ -373,6 +383,23 @@ bool func nthMatches(pos:int, stepA:int, offB:int) {
     return Math.floorDiv(diff, stepA) >= 0
 }
 
+// `:has()` asks whether anything inside the element matches. The
+// standard's relative selectors can name a combinator -- `:has(> p)` --
+// and this engine does not distinguish them, so a leading one makes the
+// selector unsupported rather than quietly a descendant test.
+bool func hasMatchingDescendant(nid:int, sub:SubSelector) {
+    arr[Node] kids = nodeRegistry[nid].children
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        for int k = 0, k < sub.alternatives.length, k++ {
+            if matchCompound(kid, sub.alternatives[k]) { return true }
+        }
+        if hasMatchingDescendant(kid, sub) { return true }
+    }
+    return false
+}
+
 bool func matchCompound(nid:int, c:Compound) {
     if nodeRegistry[nid].kind != NODE_ELEMENT { return false }
     if c.unsupported { return false }
@@ -396,8 +423,21 @@ bool func matchCompound(nid:int, c:Compound) {
     for int i = 0, i < c.pseudos.length, i++ {
         if !pseudoMatches(nid, c.pseudos[i]) { return false }
     }
-    if c.hasNot {
-        if matchCompound(nid, c.notSel) { return false }
+    for int i = 0, i < c.subs.length, i++ {
+        SubSelector sub = c.subs[i]
+        if sub.kind == SUBSEL_HAS {
+            if !hasMatchingDescendant(nid, sub) { return false }
+            continue
+        }
+        bool any = false
+        for int k = 0, k < sub.alternatives.length, k++ {
+            if matchCompound(nid, sub.alternatives[k]) { any = true }
+        }
+        // `:not()` wants none of them to match; `:is()` and `:where()`
+        // want any. That is the whole difference between the three.
+        if sub.kind == SUBSEL_NOT {
+            if any { return false }
+        } else if !any { return false }
     }
     return true
 }
