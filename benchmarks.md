@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,706,304 |
-| This browser, all `.f` source | 862,742 |
+| This browser, the whole program | 2,710,664 |
+| This browser, all `.f` source | 870,762 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -653,6 +653,27 @@ The `2,701,152` this table carried before that measurement was two
 commits stale: `direction` and `dir` had taken the binary to 2,701,280
 without an entry here. The cost above is measured against that, not
 against the number that was written down.
+
+`aspect-ratio` costs **4,360 bytes** (2,706,304 → 2,710,664) and, to a
+page that never declares it, one boolean read off the style the box is
+already holding: the width path asks it before working out whether a
+declared height fixes the box, and the height path asks it where a
+declared height would have been. No flag, no second lookup, nothing per
+document.
+
+The automatic-grid-row fix costs **nothing the linker records** — the
+binary is the same 2,710,664 with it and without — and, for a grid, one
+extra layout of each item that decides an automatic row. A grid whose
+rows are all declared measures none of them, and a page with no grid on
+it never reaches the loop.
+
+Together they leave `generated.html` where it was. The revision before
+both, rebuilt and sampled alternately with this one in the same minutes,
+gives 107, 104, 102, 106, 102, 103, 123, 103, 103 and 105 ms against
+this one's 101, 103, 105, 103, 103, 105, 103, 101, 102 and 105 — the
+best of each a millisecond apart, and the one reading over 110 on the
+side that does not have the features. The run's own control qualified at
+4.2%.
 
 CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
 `memchr` per rule on a page that does not nest. A rule body with no `{`
