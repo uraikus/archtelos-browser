@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,710,664 |
-| This browser, all `.f` source | 870,762 |
+| This browser, the whole program | 2,715,032 |
+| This browser, all `.f` source | 873,821 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -667,7 +667,16 @@ extra layout of each item that decides an automatic row. A grid whose
 rows are all declared measures none of them, and a page with no grid on
 it never reaches the loop.
 
-Together they leave `generated.html` where it was. The revision before
+`counter-set`, with the `counter-reset` scoping correction beside it,
+costs **4,368 bytes** (2,710,664 → 2,715,032) and nothing at all to a
+page without counters: the benchmark page names none, so `anyCounters`
+is false and neither the scope test a reset now makes nor the pop an
+element now does is reached. Ten alternating samples each give 101 to
+109 ms on both sides, with the same best — which is what "nothing at
+all" should look like, and is the reason the page was checked for
+counters before the numbers were read.
+
+Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,
 gives 107, 104, 102, 106, 102, 103, 123, 103, 103 and 105 ms against
 this one's 101, 103, 105, 103, 103, 105, 103, 101, 102 and 105 — the
