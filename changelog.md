@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The relative colour syntax, which completes Color 5
+
+`rgb(from red r g b)` and its form in every other colour function: the
+origin colour is converted into that function's space, its channels are
+bound to the names the function writes them with, and the three
+components are expressions over those names -- a name, a number, a
+percentage on that function's own scale, `none`, or a `calc()` over them
+with the four operators and parentheses.
+
+`color(from <color> <space> ...)` takes all eight predefined spaces,
+which needed the XYZ-to-linear matrices for `display-p3`, `a98-rgb`,
+`prophoto-rgb` and `rec2020` -- the inverses of the ones the absolute
+forms use. The identity check is what says they are right: a colour
+written back under its own channel names must be the colour it started
+as, and it is, in all fifteen spaces.
+
+The `xyz` spaces name their channels `x`, `y` and `z`, so
+`color(from red xyz r g b)` is not a query about them and is dropped,
+which is what Chromium does with it too.
+
+It is the mirror of `color-mix()`: both wanted sRGB converted *into* a
+space rather than out of it, and having done that for the mix there was
+nothing left to do for this but name the channels.
+
+With the relative form disabled, thirty-four of the thirty-nine checks
+fail.
+
 ### color-mix()
 
 Over every interpolation space the standard names: the rectangular

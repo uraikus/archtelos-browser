@@ -132,6 +132,11 @@ int func parseCssColor(raw:ascii, currentColor:int) {
         bool isRgb = fn == 'rgb' || fn == 'rgba'
         bool isHsl = fn == 'hsl' || fn == 'hsla'
         if fn == 'color-mix' { return parseColorMix(inner, currentColor) }
+        // The relative forms begin with `from`, and every colour
+        // function has one (CSS Color 5 §4).
+        if asciiStartsWith(asciiTrim(inner), 'from', 0) {
+            return parseRelativeColor(fn, inner, currentColor)
+        }
         if !isRgb && !isHsl { return parseWideColor(fn, inner) }
         arr[float] nums = parseColorComponents(inner, isHsl)
         if nums.length < 3 { return COLOR_UNSET }
@@ -951,4 +956,438 @@ int func parseColorMix(inner:ascii, currentColor:int) {
     // result's alpha carries what they came to.
     float scale = sum < 100.0 ? sum / 100.0 : 1.0
     return mixColors(c1, c2, space, way, p1 / sum, scale)
+}
+
+// ---------------------------------------------------------------------
+// CSS Color 5's relative colour syntax: `rgb(from <color> r g b)`, and
+// the same for every other colour function. The origin colour is
+// converted into the function's own space, its channels are bound to
+// the names that function writes them with, and the three components
+// are expressions over those names.
+//
+// It is the mirror of color-mix(): both need sRGB converted *into* a
+// space, and both are one conversion away from the absolute forms the
+// wider colour spaces already had.
+
+// The origin colour's channels, in the units the function counts them
+// in, and what they are called.
+float relC1 = 0.0
+float relC2 = 0.0
+float relC3 = 0.0
+float relAlphaValue = 1.0
+ascii relName1
+ascii relName2
+ascii relName3
+
+// The linear-light channels of the four wide RGB spaces, from XYZ with
+// the white point each is defined against. These are the inverses of
+// the matrices the absolute `color()` forms use, and the identity check
+// -- a colour written back under its own channel names -- is what says
+// they are.
+float xyzToWideR = 0.0
+float xyzToWideG = 0.0
+float xyzToWideB = 0.0
+
+void func xyzToDisplayP3(x:float, y:float, z:float) {
+    xyzToWideR = 2.4934969119414250 * x - 0.9313836179191238 * y - 0.4027107844507168 * z
+    xyzToWideG = -0.8294889695615747 * x + 1.7626640603183463 * y + 0.0236246858419436 * z
+    xyzToWideB = 0.0358458302437844 * x - 0.0761723892680418 * y + 0.9568845240076872 * z
+}
+
+void func xyzToA98(x:float, y:float, z:float) {
+    xyzToWideR = 2.0415879038107470 * x - 0.5650069742788597 * y - 0.3447313507783297 * z
+    xyzToWideG = -0.9692436362808796 * x + 1.8759675015077202 * y + 0.0415550574071756 * z
+    xyzToWideB = 0.0134442806320311 * x - 0.1183623922310184 * y + 1.0151749943912054 * z
+}
+
+void func xyzToProphoto(x:float, y:float, z:float) {
+    xyzToWideR = 1.3457989731028281 * x - 0.2555801000799754 * y - 0.0511062850675340 * z
+    xyzToWideG = -0.5446224939028347 * x + 1.5082327413132781 * y + 0.0205360323914797 * z
+    xyzToWideB = 1.2119675456389454 * z
+}
+
+void func xyzToRec2020(x:float, y:float, z:float) {
+    xyzToWideR = 1.7166511879712674 * x - 0.3556707837763923 * y - 0.2533662813736598 * z
+    xyzToWideG = -0.6666843518324893 * x + 1.6164812366349397 * y + 0.0157685458139111 * z
+    xyzToWideB = 0.0176398574453109 * x - 0.0427706132578085 * y + 0.9421031212354739 * z
+}
+
+// The inverses of the three transfer functions the wide spaces use.
+float func a98Encode(c:float) {
+    float sign = c < 0.0 ? -1.0 : 1.0
+    return sign * Math.pow(Math.abs(c), 256.0 / 563.0)
+}
+
+float func prophotoEncode(c:float) {
+    float sign = c < 0.0 ? -1.0 : 1.0
+    float v = Math.abs(c)
+    if v < 0.001953125 { return sign * v * 16.0 }
+    return sign * Math.pow(v, 1.0 / 1.8)
+}
+
+float func rec2020Encode(c:float) {
+    float alpha = 1.09929682680944
+    float beta = 0.018053968510807
+    float sign = c < 0.0 ? -1.0 : 1.0
+    float v = Math.abs(c)
+    if v < beta { return sign * v * 4.5 }
+    return sign * (alpha * Math.pow(v, 0.45) - (alpha - 1.0))
+}
+
+// Reads a packed colour into the channels `color(<space> ...)` writes.
+// Answers false for a space this cannot convert into.
+bool func colorIntoColorSpace(c:int, space:ascii) {
+    float r = colorRed(c).toFloat() / 255.0
+    float g = colorGreen(c).toFloat() / 255.0
+    float b = colorBlue(c).toFloat() / 255.0
+    if space == 'srgb' {
+        relC1 = r
+        relC2 = g
+        relC3 = b
+        return true
+    }
+    float lr = srgbDecode(r)
+    float lg = srgbDecode(g)
+    float lb = srgbDecode(b)
+    if space == 'srgb-linear' {
+        relC1 = lr
+        relC2 = lg
+        relC3 = lb
+        return true
+    }
+    linearToXyz65(lr, lg, lb)
+    float x = xyzX
+    float y = xyzY
+    float z = xyzZ
+    if space == 'xyz' || space == 'xyz-d65' {
+        relC1 = x
+        relC2 = y
+        relC3 = z
+        return true
+    }
+    if space == 'xyz-d50' {
+        xyz65ToXyz50(x, y, z)
+        relC1 = xyzX
+        relC2 = xyzY
+        relC3 = xyzZ
+        return true
+    }
+    if space == 'display-p3' {
+        xyzToDisplayP3(x, y, z)
+        relC1 = srgbEncode(xyzToWideR)
+        relC2 = srgbEncode(xyzToWideG)
+        relC3 = srgbEncode(xyzToWideB)
+        return true
+    }
+    if space == 'a98-rgb' {
+        xyzToA98(x, y, z)
+        relC1 = a98Encode(xyzToWideR)
+        relC2 = a98Encode(xyzToWideG)
+        relC3 = a98Encode(xyzToWideB)
+        return true
+    }
+    if space == 'rec2020' {
+        xyzToRec2020(x, y, z)
+        relC1 = rec2020Encode(xyzToWideR)
+        relC2 = rec2020Encode(xyzToWideG)
+        relC3 = rec2020Encode(xyzToWideB)
+        return true
+    }
+    if space == 'prophoto-rgb' {
+        // ProPhoto is defined against D50, so the adaptation comes
+        // first here and not after.
+        xyz65ToXyz50(x, y, z)
+        xyzToProphoto(xyzX, xyzY, xyzZ)
+        relC1 = prophotoEncode(xyzToWideR)
+        relC2 = prophotoEncode(xyzToWideG)
+        relC3 = prophotoEncode(xyzToWideB)
+        return true
+    }
+    return false
+}
+
+// Reads a packed colour into the channels one colour *function* writes,
+// and names them. Answers false for a function with no relative form.
+bool func colorIntoFunctionSpace(c:int, fn:ascii) {
+    relAlphaValue = colorAlpha(c).toFloat() / 255.0
+    if fn == 'rgb' || fn == 'rgba' {
+        relName1 = 'r'
+        relName2 = 'g'
+        relName3 = 'b'
+        relC1 = colorRed(c).toFloat()
+        relC2 = colorGreen(c).toFloat()
+        relC3 = colorBlue(c).toFloat()
+        return true
+    }
+    if fn == 'hsl' || fn == 'hsla' || fn == 'hwb' {
+        colorIntoSpace(c, fn == 'hwb' ? MIXSPACE_HWB : MIXSPACE_HSL)
+        relName1 = 'h'
+        relName2 = fn == 'hwb' ? 'w' : 's'
+        relName3 = fn == 'hwb' ? 'b' : 'l'
+        relC1 = mixA1
+        // Both are written out of a hundred, and held out of one.
+        relC2 = mixA2 * 100.0
+        relC3 = mixA3 * 100.0
+        return true
+    }
+    if fn == 'lab' || fn == 'oklab' {
+        colorIntoSpace(c, fn == 'lab' ? MIXSPACE_LAB : MIXSPACE_OKLAB)
+        relName1 = 'l'
+        relName2 = 'a'
+        relName3 = 'b'
+        relC1 = mixA1
+        relC2 = mixA2
+        relC3 = mixA3
+        return true
+    }
+    if fn == 'lch' || fn == 'oklch' {
+        colorIntoSpace(c, fn == 'lch' ? MIXSPACE_LCH : MIXSPACE_OKLCH)
+        relName1 = 'l'
+        relName2 = 'c'
+        relName3 = 'h'
+        // The polar spaces keep the hue first; the functions write the
+        // lightness first.
+        relC1 = mixA3
+        relC2 = mixA2
+        relC3 = mixA1
+        return true
+    }
+    return false
+}
+
+// ---- the expression a channel may be written as -----------------------
+//
+// A number, a percentage, a channel name, `none`, or a calc() over
+// those with the four operators and parentheses. It is a separate
+// evaluator from the one in the cascade because that one answers with a
+// length and this one with a plain number.
+
+ascii relSrc
+int relPos = 0
+bool relOk = true
+
+void func relSkipSpace() {
+    while relPos < relSrc.length && isSpaceCode(relSrc.charCodeAt(relPos)) { relPos++ }
+}
+
+float func relParseTerm(fullScale:float) {
+    relSkipSpace()
+    if relPos >= relSrc.length {
+        relOk = false
+        return 0.0
+    }
+    int c = relSrc.charCodeAt(relPos)
+    if c == CH_LPAREN {
+        relPos++
+        float inner = relParseSum(fullScale)
+        relSkipSpace()
+        if relPos >= relSrc.length || relSrc.charCodeAt(relPos) != CH_RPAREN {
+            relOk = false
+            return 0.0
+        }
+        relPos++
+        return inner
+    }
+    if asciiStartsWith(relSrc, 'calc(', relPos) {
+        relPos = relPos + 5
+        float inner = relParseSum(fullScale)
+        relSkipSpace()
+        if relPos >= relSrc.length || relSrc.charCodeAt(relPos) != CH_RPAREN {
+            relOk = false
+            return 0.0
+        }
+        relPos++
+        return inner
+    }
+    if isAlphaCode(c) {
+        int start = relPos
+        while relPos < relSrc.length && isAlphaCode(relSrc.charCodeAt(relPos)) { relPos++ }
+        if asciiRegionEquals(relSrc, start, relPos, 'none') { return 0.0 }
+        if asciiRegionEquals(relSrc, start, relPos, 'alpha') { return relAlphaValue }
+        if asciiRegionEquals(relSrc, start, relPos, relName1) { return relC1 }
+        if asciiRegionEquals(relSrc, start, relPos, relName2) { return relC2 }
+        if asciiRegionEquals(relSrc, start, relPos, relName3) { return relC3 }
+        relOk = false
+        return 0.0
+    }
+    parseNumberAt(relSrc, relPos)
+    if !numOk {
+        relOk = false
+        return 0.0
+    }
+    float v = numValue
+    relPos = numEnd
+    if relPos < relSrc.length && relSrc.charCodeAt(relPos) == CH_PERCENT {
+        relPos++
+        return v * fullScale / 100.0
+    }
+    return v
+}
+
+float func relParseProduct(fullScale:float) {
+    float left = relParseTerm(fullScale)
+    while relOk {
+        relSkipSpace()
+        if relPos >= relSrc.length { return left }
+        int c = relSrc.charCodeAt(relPos)
+        if c != CH_STAR && c != CH_SLASH { return left }
+        relPos++
+        float right = relParseTerm(fullScale)
+        if !relOk { return 0.0 }
+        if c == CH_STAR { left = left * right }
+        else {
+            if right == 0.0 {
+                relOk = false
+                return 0.0
+            }
+            left = left / right
+        }
+    }
+    return left
+}
+
+float func relParseSum(fullScale:float) {
+    float left = relParseProduct(fullScale)
+    while relOk {
+        relSkipSpace()
+        if relPos >= relSrc.length { return left }
+        int c = relSrc.charCodeAt(relPos)
+        if c != CH_PLUS && c != CH_MINUS { return left }
+        // `+` and `-` are separated by whitespace in calc(), which is
+        // what keeps `1 -2` from reading as a subtraction of a negative.
+        if relPos == 0 || !isSpaceCode(relSrc.charCodeAt(relPos - 1)) { return left }
+        relPos++
+        float right = relParseProduct(fullScale)
+        if !relOk { return 0.0 }
+        left = c == CH_PLUS ? left + right : left - right
+    }
+    return left
+}
+
+float func evaluateChannel(expr:ascii, fullScale:float) {
+    relSrc = expr
+    relPos = 0
+    relOk = true
+    float v = relParseSum(fullScale)
+    relSkipSpace()
+    if relPos < relSrc.length { relOk = false }
+    return v
+}
+
+// ---- the relative forms themselves --------------------------------------
+
+// `<fn>(from <color> <c1> <c2> <c3> [/ <alpha>]?)`, where `fn` is the
+// colour function whose channels are in scope. Answers COLOR_UNSET for
+// anything this cannot read, which leaves the declaration to be
+// dropped, as an invalid value should be.
+int func parseRelativeColor(fn:ascii, inner:ascii, currentColor:int) {
+    // The tokens after `from`: the origin colour, then the channels.
+    // The origin may be a function of its own, so the split has to know
+    // about parentheses.
+    arr[ascii] toks = colorTokens(inner)
+    if toks.length < 2 || toks[0] != 'from' { return COLOR_UNSET }
+    int origin = parseCssColor(toks[1], currentColor)
+    if origin == COLOR_UNSET { return COLOR_UNSET }
+    int at = 2
+    ascii space = null
+    if fn == 'color' {
+        if toks.length < 3 { return COLOR_UNSET }
+        if !colorIntoColorSpace(origin, toks[2]) { return COLOR_UNSET }
+        space = toks[2]
+        relAlphaValue = colorAlpha(origin).toFloat() / 255.0
+        bool isXyz = space == 'xyz' || space == 'xyz-d65' || space == 'xyz-d50'
+        relName1 = isXyz ? 'x' : 'r'
+        relName2 = isXyz ? 'y' : 'g'
+        relName3 = isXyz ? 'z' : 'b'
+        at = 3
+    } else if !colorIntoFunctionSpace(origin, fn) {
+        return COLOR_UNSET
+    }
+    // Three channels, then an optional alpha after a slash.
+    arr[ascii] parts = []
+    ascii alphaExpr = null
+    for int i = at, i < toks.length, i++ {
+        if toks[i] == '/' {
+            if i + 1 < toks.length { alphaExpr = toks[i + 1] }
+            break
+        }
+        parts.push(toks[i])
+    }
+    if parts.length != 3 { return COLOR_UNSET }
+    float s1 = relScale(fn, space, 0)
+    float s2 = relScale(fn, space, 1)
+    float s3 = relScale(fn, space, 2)
+    float v1 = evaluateChannel(parts[0], s1)
+    if !relOk { return COLOR_UNSET }
+    float v2 = evaluateChannel(parts[1], s2)
+    if !relOk { return COLOR_UNSET }
+    float v3 = evaluateChannel(parts[2], s3)
+    if !relOk { return COLOR_UNSET }
+    int alpha = colorAlpha(origin)
+    if alphaExpr != null {
+        float a = evaluateChannel(alphaExpr, 1.0)
+        if !relOk { return COLOR_UNSET }
+        if a < 0.0 { a = 0.0 }
+        if a > 1.0 { a = 1.0 }
+        alpha = Math.round(a * 255.0)
+    }
+    return buildColorInSpace(fn, space, v1, v2, v3, alpha)
+}
+
+// What a full percentage means for one channel of one function.
+float func relScale(fn:ascii, space:ascii, index:int) {
+    if fn == 'rgb' || fn == 'rgba' { return 255.0 }
+    if fn == 'hsl' || fn == 'hsla' || fn == 'hwb' { return 100.0 }
+    if fn == 'lab' { return index == 0 ? 100.0 : 125.0 }
+    if fn == 'lch' { return index == 0 ? 100.0 : (index == 1 ? 150.0 : 360.0) }
+    if fn == 'oklab' { return index == 0 ? 1.0 : 0.4 }
+    if fn == 'oklch' { return index == 0 ? 1.0 : (index == 1 ? 0.4 : 360.0) }
+    return 1.0
+}
+
+// The three components back into a colour, as the function would build
+// it from absolute values.
+int func buildColorInSpace(fn:ascii, space:ascii, v1:float, v2:float, v3:float, alpha:int) {
+    if fn == 'rgb' || fn == 'rgba' {
+        return packColor(clampChannel(v1), clampChannel(v2), clampChannel(v3), alpha)
+    }
+    if fn == 'hsl' || fn == 'hsla' { return hslToPacked(v1, v2 / 100.0, v3 / 100.0, alpha) }
+    if fn == 'hwb' { return hwbToPacked(v1, v2 / 100.0, v3 / 100.0, alpha) }
+    if fn == 'lab' { return labToPacked(v1, v2, v3, alpha) }
+    if fn == 'oklab' { return oklabToPacked(v1, v2, v3, alpha) }
+    if fn == 'lch' { return lchToPacked(v1, v2, v3, alpha) }
+    if fn == 'oklch' { return oklchToPacked(v1, v2, v3, alpha) }
+    // color(): the same eight spaces the absolute form takes.
+    c4Value = [v1, v2, v3]
+    c4Percent = [false, false, false]
+    c4Unit = [HUE_PLAIN, HUE_PLAIN, HUE_PLAIN]
+    return colorFunctionToPacked(space, 0, space.length, alpha)
+}
+
+// The whitespace-separated tokens of a colour function's arguments,
+// with a parenthesised group kept whole and `/` its own token.
+arr[ascii] func colorTokens(v:ascii) {
+    arr[ascii] out = []
+    int n = v.length
+    int i = 0
+    while i < n {
+        while i < n && (isSpaceCode(v.charCodeAt(i)) || v.charCodeAt(i) == CH_COMMA) { i++ }
+        if i >= n { break }
+        if v.charCodeAt(i) == CH_SLASH {
+            out.push(v.slice(i, i + 1))
+            i++
+            continue
+        }
+        int start = i
+        int depth = 0
+        while i < n {
+            int c = v.charCodeAt(i)
+            if c == CH_LPAREN { depth++ }
+            else if c == CH_RPAREN { depth-- }
+            else if depth == 0 && (isSpaceCode(c) || c == CH_SLASH || c == CH_COMMA) { break }
+            i++
+        }
+        out.push(v.slice(start, i))
+    }
+    return out
 }

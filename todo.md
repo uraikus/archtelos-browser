@@ -156,8 +156,7 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 the media features about a user's own preferences that
 this browser has no way to learn (Media Queries 4), and the three about
-a folding screen; Color 5's relative colour syntax, now that `color-mix()` is
-there; the gamut mapping Color 4 asks for, since a
+a folding screen; the gamut mapping Color 4 asks for, since a
 colour outside sRGB is clamped per channel here; `inline-table`, which lays out
 as a block-level table rather than an inline one (Display 3), and that
 level's two-value syntax; what is left of Text 3 — `line-break`, which is about

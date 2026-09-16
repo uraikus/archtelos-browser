@@ -96,9 +96,11 @@ cm, mm, ex, ch, vw, vh.
 Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
 `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`,
 `oklch()`, `color()` over the eight predefined spaces, the nineteen
-system colors, `transparent`, `currentcolor`, and `color-mix()` over
-every interpolation space the standard names, premultiplied, with all
-four ways round the hue circle. Every one of them ends
+system colors, `transparent`, `currentcolor`, `color-mix()` over every
+interpolation space the standard names, premultiplied, with all four
+ways round the hue circle, and the relative syntax — `rgb(from red r g
+b)` and its form in every other colour function, with `calc()` over the
+channels. Every one of them ends
 as a packed sRGB integer, converted by the standard's own matrices; a
 component outside the sRGB gamut is clamped per channel.
 
@@ -275,7 +277,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-22,140 lines of Festina in `src/` and `browser.f`.
+22,579 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -285,14 +287,14 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-seven unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-eight unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
-media queries, cascade layers, colour mixing, audio, the preload
-scanner), thirteen offscreen render suites that check
+media queries, cascade layers, colour mixing, relative colours, audio,
+the preload scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 object fitting, borders, border images, text decoration, transforms,
