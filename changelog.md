@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `aspect-ratio`
+
+CSS Box Sizing 4 §4, and the property instrument's count goes from 198
+to 199 on a field that means the property rather than a neighbour's:
+`properties.f --fields` reports `aspect-ratio -> aspectRatio`.
+
+A box with one definite dimension takes the other from the ratio. The
+part that cannot be guessed from the name is that this applies to the
+inline axis too: `aspect-ratio: 2; height: 40px` on a block-level box is
+eighty pixels wide, not the width of its containing block, and Chromium
+141 agrees. The box the ratio describes is the content box, or the
+border box under `box-sizing: border-box` — the same declaration is 120
+by 70 one way and 100 by 50 the other.
+
+Two rules came out of the measurement rather than the specification
+text. The content is an automatic minimum in the block axis, so three
+lines in a box the ratio would make too short make it taller; and that
+minimum does not apply once the box clips, so adding `overflow: hidden`
+takes the ratio back and lets the content spill. Flex and grid
+containers follow both, which is why the ratio is applied after they
+have sized themselves from their lines and tracks rather than before.
+
+The grammar is taken apart slash-first. Splitting on whitespace and
+then looking for the slash makes `16 / 9` — the ordinary way to write a
+ratio — three tokens instead of one, and that is exactly what the first
+version of this did: the test that caught it asserts `16 / 9` and
+`16/9` give the same box, not that either gives 90.
+
+The two terms are kept rather than their quotient, because a zero on
+either side is degenerate and a single number cannot hold `2 / 0` apart
+from `0 / 1`; both give a height of nothing, as Chromium does. A
+negative term makes the declaration invalid. `auto <ratio>` gives way to
+a replaced element's natural ratio where there is one, which is the
+whole difference between it and a bare ratio: `auto 2` leaves a square
+image square and `2` does not.
+
+A table is not covered: `layoutTable` sizes itself from its rows and the
+ratio does not reach it. css-2026.md says so.
+
 ### `content: url()` generates an image, and `width` stops applying to inline boxes
 
 CSS2 §12.2 lets `content` name a url, and generated content could not

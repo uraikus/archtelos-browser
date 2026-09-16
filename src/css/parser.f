@@ -1070,7 +1070,7 @@ arr[text] supportedProperties = [
     'list-style', 'list-style-type', 'list-style-image', 'background-attachment',
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
     'float', 'clear',
-    'box-sizing', 'max-height', 'word-spacing', 'caption-side',
+    'box-sizing', 'max-height', 'word-spacing', 'caption-side', 'aspect-ratio',
     'flex', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-basis',
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',

@@ -1192,6 +1192,10 @@ int func imageBoxWidth(b:Box, cw:int) {
     if !lenIsAuto(s.width) {
         return maxInt(resolveLen(s.width, cw, natural), 0)
     }
+    if s.hasAspectRatio && !(s.aspectPrefersNatural && natural > 0 && naturalH > 0) {
+        int fixedH = definiteContentHeight(b)
+        if fixedH >= 0 { return aspectWidthFromHeight(b, fixedH) }
+    }
     if !lenIsAuto(s.height) && naturalH > 0 && natural > 0 {
         int h = resolveLen(s.height, 0, naturalH)
         return roundPx(h.toFloat() * natural.toFloat() / naturalH.toFloat())
@@ -1211,6 +1215,12 @@ int func imageBoxHeight(b:Box, w:int) {
     int naturalH = b.imgH > 0 ? b.imgH : 0
     if !lenIsAuto(s.height) && s.height.kind == LEN_PX {
         return maxInt(roundPx(s.height.v), 0)
+    }
+    // A declared ratio replaces the image's natural one; `auto <ratio>`
+    // gives way to it, which is the whole difference between the two
+    // forms (Sizing 4 §4). `auto 2` on a square image leaves it square.
+    if s.hasAspectRatio && !(s.aspectPrefersNatural && natural > 0 && naturalH > 0) {
+        return aspectHeightFromWidth(b, w)
     }
     if natural > 0 && naturalH > 0 {
         return roundPx(w.toFloat() * naturalH.toFloat() / natural.toFloat())
@@ -1261,6 +1271,64 @@ bool func widthIsShrinkToFit(b:Box) {
         && !b.blockLevel
 }
 
+// ---- aspect-ratio ----------------------------------------------------------
+// The box the ratio describes is the content box, or the border box
+// under `box-sizing: border-box` (Sizing 4 §4) -- `aspect-ratio: 2;
+// width: 100px; padding: 10px` is 120 by 70 one way and 100 by 50 the
+// other, which is how Chromium 141 answers it.
+//
+// A zero on either side of the ratio is degenerate and makes the
+// derived dimension zero; Chromium gives both `0 / 1` and `2 / 0` a
+// height of nothing, which is why the two terms are kept apart rather
+// than divided once in the cascade.
+
+int func aspectHeightFromWidth(b:Box, contentW:int) {
+    Style s = b.style
+    if s.aspectW <= 0.0 || s.aspectH <= 0.0 { return 0 }
+    if s.boxSizing == BOX_BORDER {
+        int hEdges = b.pt + b.pb + b.bt + b.bb
+        int wEdges = b.pl + b.pr + b.bl + b.br
+        int outer = roundPx((contentW + wEdges).toFloat() * s.aspectH / s.aspectW)
+        return maxInt(outer - hEdges, 0)
+    }
+    return maxInt(roundPx(contentW.toFloat() * s.aspectH / s.aspectW), 0)
+}
+
+int func aspectWidthFromHeight(b:Box, contentH:int) {
+    Style s = b.style
+    if s.aspectW <= 0.0 || s.aspectH <= 0.0 { return 0 }
+    if s.boxSizing == BOX_BORDER {
+        int hEdges = b.pt + b.pb + b.bt + b.bb
+        int wEdges = b.pl + b.pr + b.bl + b.br
+        int outer = roundPx((contentH + hEdges).toFloat() * s.aspectW / s.aspectH)
+        return maxInt(outer - wEdges, 0)
+    }
+    return maxInt(roundPx(contentH.toFloat() * s.aspectW / s.aspectH), 0)
+}
+
+// A container whose height a ratio fixes takes it from the ratio rather
+// than from the lines or tracks its children came to, with the content
+// still an automatic minimum unless the box clips: the same rule a
+// block follows, and what Chromium 141 does for flex and grid alike.
+void func applyContainerAspect(b:Box) {
+    Style s = b.style
+    if !s.hasAspectRatio || s.height.kind == LEN_PX { return }
+    int vEdges = b.pt + b.pb + b.bt + b.bb
+    int arh = aspectHeightFromWidth(b, b.w - b.pl - b.pr - b.bl - b.br) + vEdges
+    b.h = s.overflowHidden ? arh : maxInt(arh, b.h)
+}
+
+// The content height a declared `height` fixes, or -1 when it fixes
+// none. Only a box with one definite dimension takes the other from
+// the ratio, so this is the question the width code has to ask first.
+int func definiteContentHeight(b:Box) {
+    Style s = b.style
+    if s.height.kind != LEN_PX { return -1 }
+    int h = maxInt(roundPx(s.height.v), 0)
+    if s.boxSizing == BOX_BORDER { h = maxInt(h - (b.pt + b.pb + b.bt + b.bb), 0) }
+    return h
+}
+
 void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     resolveEdges(b, cw)
     Style s = b.style
@@ -1301,8 +1369,17 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int edges = b.pl + b.pr + b.bl + b.br
     int width = 0
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
+    // A definite height and a ratio give the width, block-level or not:
+    // Chromium makes `aspect-ratio: 2; height: 40px` eighty pixels wide
+    // rather than letting it fill its containing block. The field is
+    // read straight off the style the box already holds, so a box
+    // without the property pays one boolean and no lookup.
+    int arHeight = -1
+    if autoWidth && s.hasAspectRatio { arHeight = definiteContentHeight(b) }
     if autoWidth {
-        if widthIsShrinkToFit(b) {
+        if arHeight >= 0 {
+            width = aspectWidthFromHeight(b, arHeight)
+        } else if widthIsShrinkToFit(b) {
             computeIntrinsic(b)
             int avail = cw - b.ml - b.mr
             int pref = b.maxContent - horizontalExtras(b, 0) + edges
@@ -1401,6 +1478,13 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // as with the width, a border-box height already includes the
         // padding and border
         if s.boxSizing == BOX_BORDER { h = maxInt(h - vEdges, 0) }
+    } else if s.hasAspectRatio {
+        int arh = aspectHeightFromWidth(b, width)
+        // The content is an automatic minimum in the block axis, and
+        // only while the box does not clip: Chromium gives three lines
+        // in a 100px box with `aspect-ratio: 2` a height of 60 where
+        // the ratio says 50, and 50 once `overflow: hidden` is added.
+        h = s.overflowHidden ? arh : maxInt(arh, h)
     }
     if s.minHeight.kind == LEN_PX {
         int mn = roundPx(s.minHeight.v)
@@ -3135,6 +3219,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     int gridEdges = b.pt + b.pb + b.bt + b.bb
     if lenIsAuto(s.height) { b.h = totalH + gridEdges }
     b.w = width + b.pl + b.pr + b.bl + b.br
+    applyContainerAspect(b)
     if b.baseline == 0 { b.baseline = b.h }
 }
 
@@ -3291,6 +3376,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     int count = items.length
     if count == 0 {
         if row && flexHeightIndefinite(s) { b.h = b.pt + b.pb + b.bt + b.bb }
+        applyContainerAspect(b)
         b.baseline = b.h
         return
     }
@@ -3557,6 +3643,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
             b.h = total + mainGap * (count - 1) + b.pt + b.pb + b.bt + b.bb
         }
     }
+    applyContainerAspect(b)
     b.baseline = b.h
 }
 

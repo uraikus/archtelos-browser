@@ -342,14 +342,24 @@ rest. In rough order of how often real pages need it:
   float does not grow the parent that holds it.
 - **`position: sticky`**, which computes as `relative` because nothing
   in layout knows the scroll offset.
-- **Grid**, which still falls back to block layout.
+- **An automatic grid row is always zero.** `gridSizeAxis` sizes an
+  auto track from `a.box.h` in the block axis, and the items have not
+  been laid out when it runs, so every auto row is nothing: a grid whose
+  only rows are automatic has no height whatever is in it. The comment
+  beside the call already says what it should do — "the rows are sized
+  after the columns, because an auto row's height is the height of items
+  laid out at their column widths" — and the code does not lay them out.
+  `<div style="display:grid;width:100px"><div style="height:90px">` is
+  100 by 0 here and 100 by 90 in Chromium 141. The inline axis is
+  correct: an auto column asks `computeIntrinsic`, which needs no
+  layout.
 - **Sub-pixel layout.** Every length is an integer, so three items
   sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
   rounds only when painting. Distributing free space by rounding the
   running total rather than each share puts the *edges* in the right
   place, which is what the flex code now does, but an isolated width can
   still be a pixel off.
-- **Vertical writing modes**, **multi-column**, **`aspect-ratio`**.
+- **Vertical writing modes.**
 
 ## Networking is blocked on two Festina bugs
 

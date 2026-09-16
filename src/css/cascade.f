@@ -1078,6 +1078,67 @@ text func quoteStringAt(pairs:arr[text], depth:int, open:bool) {
     return pairs[lv + lv + (open ? 0 : 1)]
 }
 
+// One term of a ratio: a number and nothing else after it.
+bool func aspectTerm(t:ascii) {
+    if t == null || t.length == 0 { return false }
+    parseNumberAt(t, 0)
+    return numOk && numEnd == t.length
+}
+
+// `aspect-ratio: auto || <ratio>`, where a ratio is one number or two
+// separated by a slash (Sizing 4 §4). The two terms are kept rather
+// than their quotient because a zero on either side is degenerate and
+// has to stay tellable from the other: Chromium 141 gives both `0 / 1`
+// and `2 / 0` a height of nothing.
+//
+// The slash is found before anything is split on whitespace, because
+// `16 / 9` is the ordinary way to write a ratio and splitting first
+// makes the slash a token of its own.
+//
+// A negative or non-numeric term makes the whole declaration invalid,
+// which Chromium reports as a computed `auto`, so nothing is stored and
+// the box is sized as it was.
+void func applyAspectRatio(s:Style, v:ascii) {
+    s.aspectW = 0.0
+    s.aspectH = 0.0
+    s.hasAspectRatio = false
+    s.aspectPrefersNatural = false
+    if v == null { return }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == null || t.length == 0 { return }
+    bool sawAuto = false
+    if asciiStartsWithLower(t, 'auto', 0) && (t.length == 4 || isSpaceCode(t.charCodeAt(4))) {
+        sawAuto = true
+        t = asciiTrim(t.slice(4, t.length))
+    } else if t.length > 5 && asciiStartsWithLower(t, 'auto', t.length - 4)
+              && isSpaceCode(t.charCodeAt(t.length - 5)) {
+        sawAuto = true
+        t = asciiTrim(t.slice(0, t.length - 4))
+    }
+    // `auto` on its own: a replaced box already uses its natural ratio
+    // and no other box has one, so there is nothing to store.
+    if t == null || t.length == 0 { return }
+    float w = 0.0
+    float h = 1.0
+    int slash = asciiIndexOf(t, '/'.toAscii(), 0)
+    if slash < 0 {
+        if !aspectTerm(t) { return }
+        w = numValue
+    } else {
+        ascii num = asciiTrim(t.slice(0, slash))
+        if !aspectTerm(num) { return }
+        w = numValue
+        ascii den = asciiTrim(t.slice(slash + 1, t.length))
+        if !aspectTerm(den) { return }
+        h = numValue
+    }
+    if w < 0.0 || h < 0.0 { return }
+    s.aspectW = w
+    s.aspectH = h
+    s.hasAspectRatio = true
+    s.aspectPrefersNatural = sawAuto
+}
+
 text func resolveContent(v:ascii, n:Node) {
     // Before the first return, not after it: an element with no
     // `content` at all leaves through the next line, and a run left
@@ -4135,6 +4196,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.boxSizing = BOX_CONTENT
     ascii bsz = styleProp(props, 'box-sizing')
     if bsz != null && asciiLower(bsz) == 'border-box' { s.boxSizing = BOX_BORDER }
+    applyAspectRatio(s, styleProp(props, 'aspect-ratio'))
     s.captionSide = CAPTION_TOP
     ascii cs2 = styleProp(props, 'caption-side')
     if cs2 != null && asciiLower(cs2) == 'bottom' { s.captionSide = CAPTION_BOTTOM }

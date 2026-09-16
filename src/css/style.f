@@ -576,6 +576,16 @@ struct Style {
     minHeight:Len
     maxHeight:Len
     boxSizing:int
+    // aspect-ratio (Sizing 4 §4), as the two terms rather than their
+    // quotient: `0 / 1` and `2 / 0` are both degenerate and a single
+    // float cannot hold the second. `hasAspectRatio` is what says the
+    // property was declared at all, since a degenerate ratio is a
+    // declared one. `aspectPrefersNatural` is the `auto <ratio>` form,
+    // where a natural ratio wins and this is only the fallback.
+    aspectW:float
+    aspectH:float
+    hasAspectRatio:bool
+    aspectPrefersNatural:bool
     flexDirection:int
     justifyContent:int
     // Box Alignment 3 on a block container: justifyItems is the
