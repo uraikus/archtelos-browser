@@ -1154,6 +1154,21 @@ bool func isBorderWidthToken(t:ascii) {
 }
 
 // border / border-top / ...: any order of width, style, color.
+// `inset` is the shorthand for the four inset properties, taking the
+// same one-to-four-value form the margin shorthand does.
+void func applyFourSidesInset(props:map[text], value:ascii) {
+    arr[ascii] t = cssTokens(value)
+    if t.length == 0 { return }
+    ascii top = dup(t[0])
+    ascii right = dup(t.length > 1 ? t[1] : t[0])
+    ascii bottom = dup(t.length > 2 ? t[2] : t[0])
+    ascii left = dup(t.length > 3 ? t[3] : (t.length > 1 ? t[1] : t[0]))
+    setProp(props, 'top', top)
+    setProp(props, 'right', right)
+    setProp(props, 'bottom', bottom)
+    setProp(props, 'left', left)
+}
+
 void func applyBorderShorthand(props:map[text], sides:arr[text], value:ascii) {
     arr[ascii] t = cssTokens(value)
     ascii width = 'medium'
@@ -1488,6 +1503,20 @@ void func applyBackgroundShorthand(props:map[text], value:ascii) {
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // The logical border shorthands are renamed before anything else,
+    // because the shorthand dispatch below reads the name: renaming
+    // afterwards left `border-block-start` as a longhand nobody handles.
+    if name == 'border-block-start' { name = 'border-top' }
+    else if name == 'border-block-end' { name = 'border-bottom' }
+    else if name == 'border-inline-start' { name = 'border-left' }
+    else if name == 'border-inline-end' { name = 'border-right' }
+    else if name == 'border-block' {
+        applyBorderShorthand(props, ['top', 'bottom'], value)
+        return
+    } else if name == 'border-inline' {
+        applyBorderShorthand(props, ['left', 'right'], value)
+        return
+    }
     if name == 'margin' || name == 'padding' {
         applyFourSides(props, name, '', value)
         return
@@ -1535,6 +1564,47 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'padding-inline-end' { name = 'padding-right' }
     if name == 'margin-block-start' { name = 'margin-top' }
     if name == 'margin-block-end' { name = 'margin-bottom' }
+    // The rest of the logical box, which in a left-to-right horizontal
+    // writing mode is a renaming and nothing more: `inline-start` is the
+    // left edge and `block-start` the top. css-2026.md records that this
+    // engine assumes that mode throughout, which is what makes these
+    // aliases rather than a feature of their own.
+    if name == 'padding-block-start' { name = 'padding-top' }
+    if name == 'padding-block-end' { name = 'padding-bottom' }
+    if name == 'inset-block-start' { name = 'top' }
+    if name == 'inset-block-end' { name = 'bottom' }
+    if name == 'inset-inline-start' { name = 'left' }
+    if name == 'inset-inline-end' { name = 'right' }
+    if name == 'min-inline-size' { name = 'min-width' }
+    if name == 'max-inline-size' { name = 'max-width' }
+    if name == 'min-block-size' { name = 'min-height' }
+    if name == 'max-block-size' { name = 'max-height' }
+    if name == 'overflow-block' || name == 'overflow-inline' { name = 'overflow' }
+    if name == 'border-block-start-width' { name = 'border-top-width' }
+    if name == 'border-block-end-width' { name = 'border-bottom-width' }
+    if name == 'border-inline-start-width' { name = 'border-left-width' }
+    if name == 'border-inline-end-width' { name = 'border-right-width' }
+    if name == 'border-block-start-style' { name = 'border-top-style' }
+    if name == 'border-block-end-style' { name = 'border-bottom-style' }
+    if name == 'border-inline-start-style' { name = 'border-left-style' }
+    if name == 'border-inline-end-style' { name = 'border-right-style' }
+    if name == 'border-block-start-color' { name = 'border-top-color' }
+    if name == 'border-block-end-color' { name = 'border-bottom-color' }
+    if name == 'border-inline-start-color' { name = 'border-left-color' }
+    if name == 'border-inline-end-color' { name = 'border-right-color' }
+    if name == 'inset' {
+        applyFourSidesInset(props, value)
+        return
+    }
+    if name == 'inset-block' || name == 'inset-inline' {
+        arr[ascii] t = cssTokens(value)
+        if t.length == 0 { return }
+        ascii a = dup(t[0])
+        ascii b = dup(t.length > 1 ? t[1] : t[0])
+        if name == 'inset-block' { setProp(props, 'top', a)  setProp(props, 'bottom', b) }
+        else { setProp(props, 'left', a)  setProp(props, 'right', b) }
+        return
+    }
     if name == 'margin-inline' || name == 'padding-inline' || name == 'margin-block' || name == 'padding-block' {
         arr[ascii] t = cssTokens(value)
         if t.length == 0 { return }

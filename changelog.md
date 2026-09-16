@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The logical box
+
+Twenty-four logical properties did nothing: `border-block-start-width`,
+`inset-inline-end`, `min-block-size`, `padding-block-start` and the rest
+of that family were parsed and dropped. They are mapped onto their
+physical twins now, along with the `inset`, `inset-block`,
+`inset-inline`, `border-block` and `border-inline` shorthands and the
+four single-edge border shorthands.
+
+In a left-to-right horizontal writing mode this is a renaming and
+nothing more — `inline-start` is the left edge, `block-start` the top —
+which is exactly why the checks compare the two spellings against each
+other rather than against a number: a check that `border-block-start-width`
+computes to 7 would pass just as well if both spellings were broken the
+same way. Forty-eight checks in the new `tests/unit/test_logical.f`, each
+one a logical declaration and its physical twin computing the same
+thing, and each also asserting the value is not simply the initial one
+on both sides — which is the failure mode that would make an equivalence
+check vacuous.
+
+**Properties 89 → 113**, the largest move of the branch, and `--fields`
+confirms each of the twenty-four lands on the physical field it should:
+`inset-block-start -> top`, `max-inline-size -> maxWidth`,
+`border-inline-end-color -> borderRightColor`.
+
+**One ordering bug, found by the tests.** The four single-edge
+shorthands kept failing after the longhands passed: the renames ran
+*after* the shorthand dispatch, so `border-block-start` became
+`border-top` too late for anything to handle it and arrived as a
+longhand nobody knew. They are renamed at the top of `applyDecl` now,
+before the dispatch reads the name.
+
+This is an alias layer and would be wrong in any other writing mode,
+which css-2026.md now says under Writing Modes 3 rather than leaving the
+twenty-four to look like real support.
+
 ### groove, ridge, inset and outset
 
 The last four border styles painted solid. They shade an edge against
