@@ -2922,6 +2922,64 @@ Len func evaluateCalc(body:ascii, fontSize:int) {
     return lenCalc(r.px, r.pct)
 }
 
+// `object-view-box: none | inset() | rect() | xywh()` (Images 4). The
+// three functional forms name one rectangle over the image's own
+// pixels in three ways, and Chromium computes all of them to an
+// `inset()`; here they keep their own kind and are resolved together
+// once the image's size is known.
+ViewBox func parseViewBox(v:ascii, fontSize:int) {
+    ViewBox vb
+    vb.kind = VIEWBOX_NONE
+    if v == null { return vb }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == null || t.length == 0 || t == 'none' { return vb }
+    if t.charCodeAt(t.length - 1) != CH_RPAREN { return vb }
+    int open = asciiIndexOf(t, '('.toAscii(), 0)
+    if open <= 0 { return vb }
+    ascii fn = asciiTrim(t.slice(0, open))
+    int kind = VIEWBOX_NONE
+    if fn == 'inset' { kind = VIEWBOX_INSET }
+    else if fn == 'rect' { kind = VIEWBOX_RECT }
+    else if fn == 'xywh' { kind = VIEWBOX_XYWH }
+    if kind == VIEWBOX_NONE { return vb }
+    arr[ascii] args = asciiSplitSpace(asciiTrim(t.slice(open + 1, t.length - 1)))
+    if args.length == 0 { return vb }
+    arr[Len] got = []
+    for int i = 0, i < args.length, i++ {
+        // `rect()` writes `auto` for an edge that is not moved; it is
+        // the same as a zero inset from that side here.
+        if args[i] == 'auto' { got.push(lenPx(0.0))  continue }
+        got.push(parseLength(args[i], fontSize))
+    }
+    if kind == VIEWBOX_XYWH {
+        if got.length < 4 { return vb }
+        vb.t = got[0]
+        vb.r = got[1]
+        vb.b = got[2]
+        vb.l = got[3]
+        vb.kind = kind
+        return vb
+    }
+    if kind == VIEWBOX_RECT {
+        if got.length < 4 { return vb }
+        vb.t = got[0]
+        vb.r = got[1]
+        vb.b = got[2]
+        vb.l = got[3]
+        vb.kind = kind
+        return vb
+    }
+    // `inset()` takes one to four values in the margin shorthand's
+    // order: all, then vertical and horizontal, then top / horizontal /
+    // bottom, then all four.
+    vb.t = got[0]
+    vb.r = got.length > 1 ? got[1] : got[0]
+    vb.b = got.length > 2 ? got[2] : vb.t
+    vb.l = got.length > 3 ? got[3] : vb.r
+    vb.kind = kind
+    return vb
+}
+
 Len func parseLength(tok:ascii, fontSize:int) {
     Len l
     l.kind = LEN_INVALID
@@ -4089,6 +4147,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if objfitLow == 'scale-down' { s.objectFit = OBJECTFIT_SCALE_DOWN }
         else { s.objectFit = OBJECTFIT_FILL }
     }
+    s.objectViewBox = parseViewBox(styleProp(props, 'object-view-box'), s.fontSize)
     ascii objpos = styleProp(props, 'object-position')
     if objpos != null {
         ascii objposLow = asciiLower(objpos)

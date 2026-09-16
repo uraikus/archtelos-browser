@@ -1103,7 +1103,7 @@ arr[text] supportedProperties = [
     'border-bottom-right-radius', 'border-bottom-left-radius',
     'border-start-start-radius', 'border-start-end-radius',
     'border-end-start-radius', 'border-end-end-radius',
-    'box-shadow', 'object-fit', 'object-position',
+    'box-shadow', 'object-fit', 'object-position', 'object-view-box',
     // A property belongs here when something reads it, not when the
     // cascade merely computes it: claiming otherwise is the lie
     // @supports exists to prevent (css-2026.md). `overflow` was absent

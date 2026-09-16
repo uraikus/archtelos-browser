@@ -108,6 +108,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.backgroundSizeW)}`, `${lenKey(s.backgroundSizeH)}`, 
         `${s.backgroundClip}`, `${s.backgroundOrigin}`, `${s.objectFit}`, 
         `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`,
+        `${s.objectViewBox.kind}:${lenKey(s.objectViewBox.t)}:${lenKey(s.objectViewBox.r)}:${lenKey(s.objectViewBox.b)}:${lenKey(s.objectViewBox.l)}`,
         `${shadowKey(s.shadows)}`,
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.counterSet}`, `${s.quotes}`,
         `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`]
@@ -167,7 +168,7 @@ arr[text] func styleDigestFieldNames() {
         'backgroundUrl', 'backgroundRepeatX', 'backgroundRepeatY', 
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
-        'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows',
+        'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'objectViewBox', 'shadows',
         'counterReset', 'counterIncrement', 'counterSet', 'quotes', 'colorSchemeDark',
         'containerType', 'containerName']
 }

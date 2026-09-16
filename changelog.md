@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `object-view-box`
+
+CSS Images 4, and the property count goes from 201 to 202 on
+`object-view-box -> objectViewBox`.
+
+A rectangle over a replaced element's own pixels, which becomes its
+natural size: `object-view-box: inset(0 5px 0 0)` on a ten-pixel-square
+image makes it five by ten, and `object-fit` then fits that rectangle
+rather than the whole image. All three spellings work -- `inset()`,
+`rect()` and `xywh()` -- and the checks assert that they paint the same
+picture rather than that each matches a number, which is the only thing
+that could catch one of the three being read in the wrong order.
+
+The terms stay unresolved in the computed style, because a percentage is
+of the image's size and the image may not have loaded when the style is
+computed.
+
+A view box reaching outside the image is empty there rather than
+repeating an edge. That falls out of how the region is cut: the canvas
+cannot take a source rectangle (FINDINGS.md 30), so the region is
+blitted into a blank image at a negative offset -- which `border-image`
+already did -- and whatever lands outside is simply never drawn.
+
+`object-fit: fill` needed its own path. It scales the two axes by
+different amounts and `objectFitScale` answers with one number, so the
+fill case blits directly; it now blits the cut region instead of the
+whole image, which is the only change that case needed.
+
+The test was wrong before the code was. It read pixels two from each
+edge, which is inside the smoothing band when a five-pixel view box is
+stretched over forty -- an eight-fold upscale where the suite's other
+image checks do four. The feature was working; the sample points were
+in the blend. They are ten pixels in now, with the reason written
+beside them.
+
 ### `grid-template-areas` and named grid lines
 
 CSS Grid 1 §7.3 and §8.3, and the property count goes from 200 to 201 on

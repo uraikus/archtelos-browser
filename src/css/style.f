@@ -52,6 +52,25 @@ struct Track {
 // One edge of an item's placement on one axis. A line number counts
 // from 1; `span n` says how many tracks to cover without saying where
 // they start.
+// object-view-box (Images 4): a rectangle over a replaced element's own
+// pixels, which becomes its natural size. The terms stay unresolved
+// because a percentage is of the image's size and the image may not
+// have loaded when the style is computed. For `inset` and `rect` the
+// four are top, right, bottom and left; for `xywh` they are x, y, width
+// and height.
+const int VIEWBOX_NONE = 0
+const int VIEWBOX_INSET = 1
+const int VIEWBOX_RECT = 2
+const int VIEWBOX_XYWH = 3
+
+struct ViewBox {
+    kind:int
+    t:Len
+    r:Len
+    b:Len
+    l:Len
+}
+
 const int GRIDLINE_AUTO = 0
 const int GRIDLINE_NUMBER = 1
 const int GRIDLINE_SPAN = 2
@@ -493,6 +512,7 @@ struct Style {
     // object-fit and object-position, which move a replaced element's
     // content inside its content box and change no geometry.
     objectFit:int
+    objectViewBox:ViewBox
     objectPosX:Len
     objectPosY:Len
     // The declared values, not the running counts: two elements that

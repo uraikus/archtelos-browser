@@ -1483,11 +1483,26 @@ float func objectFitScale(fit:int, iw:int, ih:int, w:int, h:int) {
 // to the content box, so it is painted into an image that size and
 // blitted back, the canvas having no clip region (FINDINGS.md, "an
 // image is a drawable surface with a smaller API").
+// The image a box paints, which is the whole of it unless
+// `object-view-box` names a rectangle: then it is that rectangle, cut
+// out at its own size, with anything reaching outside the image left
+// empty. The canvas cannot take a source rectangle (FINDINGS.md, "an
+// image destination cannot take drawImage's source rectangle"), so the
+// region is blitted into a blank image at a negative offset, which is
+// what `border-image` already does.
+img func viewBoxSource(b:Box) {
+    if b.image == null { return null }
+    if !resolveViewBox(b.style, b.imgW, b.imgH) { return b.image }
+    return cutRegion(b.image, viewBoxX, viewBoxY, viewBoxW, viewBoxH)
+}
+
 void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
-    int iw = b.imgW
-    int ih = b.imgH
+    img source = viewBoxSource(b)
+    if source == null { return }
+    int iw = source.width
+    int ih = source.height
     if iw <= 0 || ih <= 0 {
-        pDrawImageScaled(b.image, x, y, w, h)
+        pDrawImageScaled(source, x, y, w, h)
         return
     }
     float scale = objectFitScale(b.style.objectFit, iw, ih, w, h)
@@ -1500,7 +1515,7 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // clip has nothing to cut, and a direct blit avoids allocating and
     // compositing an image the size of the box.
     if ox >= 0 && oy >= 0 && ox + ow <= w && oy + oh <= h {
-        pDrawImageScaled(b.image, x + ox, y + oy, ow, oh)
+        pDrawImageScaled(source, x + ox, y + oy, ow, oh)
         return
     }
     // The caller has already set the element's opacity for the direct
@@ -1509,7 +1524,7 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // layer's pixels and the blit.
     img layer = blankImage(w, h)
     fillAlpha(1.0)
-    layer.drawImage(b.image, ox, oy, ow, oh)
+    layer.drawImage(source, ox, oy, ow, oh)
     fillAlpha(b.style.opacity)
     pDrawImage(layer, x, y)
 }
@@ -1525,8 +1540,15 @@ void func paintImage(b:Box) {
         // `fill` is the initial value and stretches the content to the
         // box, which is one blit and the only thing a page that does
         // not mention object-fit ever reaches.
-        if b.style.objectFit == OBJECTFIT_FILL { pDrawImageScaled(b.image, x, y, w, h) }
-        else { paintFittedImage(b, x, y, w, h) }
+        // `fill` stretches the content to the box, which is one blit --
+        // and `objectFitScale` cannot express it, since filling scales
+        // the two axes by different amounts and that function answers
+        // with one number. A view box only changes which pixels are
+        // stretched, so it takes the same path with the region cut out.
+        if b.style.objectFit == OBJECTFIT_FILL {
+            img filled = viewBoxSource(b)
+            if filled != null { pDrawImageScaled(filled, x, y, w, h) }
+        } else { paintFittedImage(b, x, y, w, h) }
         fillAlpha(1.0)
         return
     }

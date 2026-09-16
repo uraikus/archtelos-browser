@@ -303,11 +303,11 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, the preload scanner), fourteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, the preload scanner), fifteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
-generated content, object fitting, borders, border images, text
-decoration, transforms, right-to-left text and box shadows — three conformance
+generated content, object fitting, object view boxes, borders, border
+images, text decoration, transforms, right-to-left text and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

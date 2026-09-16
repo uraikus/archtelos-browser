@@ -1185,10 +1185,71 @@ void func offsetInlineDescendants(b:Box, dx:int, dy:int) {
     }
 }
 
+// The rectangle `object-view-box` names over an image `natW` by `natH`,
+// in the image's own pixels (Images 4). It may reach outside the image,
+// which a negative inset asks for and which leaves those pixels empty.
+// The four answers come back in globals because a Festina function
+// returns one value (FINDINGS.md, "one value out of a function").
+int viewBoxX = 0
+int viewBoxY = 0
+int viewBoxW = 0
+int viewBoxH = 0
+
+bool func resolveViewBox(s:Style, natW:int, natH:int) {
+    viewBoxX = 0
+    viewBoxY = 0
+    viewBoxW = natW
+    viewBoxH = natH
+    if s.objectViewBox.kind == VIEWBOX_NONE || natW <= 0 || natH <= 0 { return false }
+    int t = resolveLen(s.objectViewBox.t, natH, 0)
+    int r = resolveLen(s.objectViewBox.r, natW, 0)
+    int bo = resolveLen(s.objectViewBox.b, natH, 0)
+    int l = resolveLen(s.objectViewBox.l, natW, 0)
+    if s.objectViewBox.kind == VIEWBOX_XYWH {
+        // t r b l hold x y w h for this form.
+        viewBoxX = t
+        viewBoxY = r
+        viewBoxW = bo
+        viewBoxH = l
+    } else if s.objectViewBox.kind == VIEWBOX_RECT {
+        viewBoxX = l
+        viewBoxY = t
+        viewBoxW = r - l
+        viewBoxH = bo - t
+    } else {
+        viewBoxX = l
+        viewBoxY = t
+        viewBoxW = natW - l - r
+        viewBoxH = natH - t - bo
+    }
+    if viewBoxW <= 0 || viewBoxH <= 0 {
+        viewBoxX = 0
+        viewBoxY = 0
+        viewBoxW = natW
+        viewBoxH = natH
+        return false
+    }
+    return true
+}
+
+// The natural size a replaced box has after its view box: the whole
+// image when there is none.
+int func naturalImageWidth(b:Box) {
+    if b.imgW <= 0 { return 0 }
+    resolveViewBox(b.style, b.imgW, b.imgH)
+    return viewBoxW
+}
+
+int func naturalImageHeight(b:Box) {
+    if b.imgH <= 0 { return 0 }
+    resolveViewBox(b.style, b.imgW, b.imgH)
+    return viewBoxH
+}
+
 int func imageBoxWidth(b:Box, cw:int) {
     Style s = b.style
-    int natural = b.imgW > 0 ? b.imgW : 0
-    int naturalH = b.imgH > 0 ? b.imgH : 0
+    int natural = naturalImageWidth(b)
+    int naturalH = naturalImageHeight(b)
     if !lenIsAuto(s.width) {
         return maxInt(resolveLen(s.width, cw, natural), 0)
     }
@@ -1211,8 +1272,8 @@ int func imageBoxWidth(b:Box, cw:int) {
 
 int func imageBoxHeight(b:Box, w:int) {
     Style s = b.style
-    int natural = b.imgW > 0 ? b.imgW : 0
-    int naturalH = b.imgH > 0 ? b.imgH : 0
+    int natural = naturalImageWidth(b)
+    int naturalH = naturalImageHeight(b)
     if !lenIsAuto(s.height) && s.height.kind == LEN_PX {
         return maxInt(roundPx(s.height.v), 0)
     }
