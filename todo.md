@@ -131,9 +131,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     container split around the spanner; `column-fill: auto`; and real
     fragment boxes, so that a subtree nested below the container's own
     children can be broken and a split child's background paints in
-    each column rather than only the first. That last one is the same
-    machinery paged media and the `break-*` properties want, so it is
-    one piece of work for three items.
+    each column rather than only the first. Fragment boxes are what
+    Fragmentation 3 still wants too: `break-before` and `break-after`
+    decide where a column breaks, but a break can only fall between
+    the container's own children or between one child's lines, so
+    `break-inside: avoid` on a grandchild changes nothing, and
+    `box-decoration-break` has no two boxes to choose between. That is
+    one piece of work for paged media as well.
 13. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Basic User Interface 3's
    `cursor`, `resize` and `appearance`, which need window APIs Festina
@@ -172,7 +176,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(176; Chromium reports 373, and four of them cannot be graded by a probe
+(181; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

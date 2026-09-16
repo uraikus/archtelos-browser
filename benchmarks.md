@@ -489,7 +489,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 20,294 lines of Festina across `browser.f` and `src/` |
+| Source | 20,444 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,8 +498,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,601,264 |
-| This browser, all `.f` source | 730,019 |
+| This browser, the whole program | 2,605,648 |
+| This browser, all `.f` source | 737,129 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -521,8 +521,16 @@ which is worth knowing before generating another one.
 CSS Color 4's wider colour spaces — six colour functions, eight
 predefined spaces and nineteen system colours — cost **13,696 bytes of
 binary** (2,587,568 → 2,601,264) and 0.2 s of compile time, and nothing
-at all at render time: the previous revision and this one, rebuilt and
-run alternately in the same minutes, give 97 to 104 ms and 96 to 104 ms
-on `generated.html`. The conversions run only for a colour function that
-is not `rgb()` or `hsl()`, which the benchmark pages do not contain.
+at all at render time: the revision before them and the one with them,
+rebuilt and run alternately in the same minutes, give 97 to 104 ms and
+96 to 104 ms on `generated.html`. The conversions run only for a colour
+function that is not `rgb()` or `hsl()`, which the benchmark pages do
+not contain.
+
+Column break control — `break-before`, `break-after`, `break-inside`,
+`orphans` and `widows` — cost **4,384 bytes** (2,601,264 → 2,605,648)
+and nothing at render time either, for the same reason: all of it is
+inside `layoutColumns`, which a page with no multi-column container
+never calls, and the five extra declarations are read once per distinct
+computed style, which is 24 times on `generated.html`.
 

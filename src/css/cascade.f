@@ -2339,6 +2339,29 @@ int func lineStyleKeyword(t:ascii) {
 
 // Whether a token is one of the line-style keywords at all, which the
 // `outline` shorthand needs in order to tell a style from a colour.
+// break-before and break-after, reduced to what a column context can
+// act on. `page` and the page-side keywords ask for a page break, and
+// there are no pages here, so they read as `auto`; `avoid-page` is
+// likewise not an instruction about a column.
+int func breakKeyword(v:ascii) {
+    if v == null { return BRK_AUTO }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'column' || t == 'avoid-column' || t == 'avoid' {
+        return t == 'column' ? BRK_COLUMN : BRK_AVOID
+    }
+    return BRK_AUTO
+}
+
+// A positive integer property -- `orphans` and `widows` -- keeping the
+// inherited value when the declaration is absent or not a number.
+int func countProp(props:map[text], name:text, inherited:int) {
+    ascii v = styleProp(props, name)
+    if v == null { return inherited }
+    parseNumberAt(asciiTrim(v), 0)
+    if !numOk { return inherited }
+    return maxInt(roundPx(numValue), 1)
+}
+
 bool func isLineStyleKeyword(t:ascii) {
     return t == 'none' || t == 'hidden' || t == 'solid' || t == 'dashed'
         || t == 'dotted' || t == 'double' || t == 'groove' || t == 'ridge'
@@ -3416,6 +3439,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             }
         }
     }
+    // CSS Fragmentation 3: where a column break may or must happen.
+    // `orphans` and `widows` are inherited, since they describe a
+    // paragraph's lines and the declaration is usually on an ancestor.
+    s.breakBefore = breakKeyword(styleProp(props, 'break-before'))
+    s.breakAfter = breakKeyword(styleProp(props, 'break-after'))
+    s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
+    s.orphans = countProp(props, 'orphans', isRoot ? 2 : parent.orphans)
+    s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
     ascii crs = styleProp(props, 'column-rule-style')
     if crs != null { s.columnRuleStyle = lineStyleKeyword(asciiLower(asciiTrim(crs))) }
     ascii crw = styleProp(props, 'column-rule-width')

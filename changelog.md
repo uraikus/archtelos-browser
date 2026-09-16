@@ -5,6 +5,48 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Where a column may break
+
+- **`break-before` and `break-after`** take `column` to force a column
+  break and `avoid` or `avoid-column` to forbid one. `page` and the
+  page-side keywords compute and do nothing, because there are no pages
+  here — which is also what Chromium does with them on screen, and the
+  check says so rather than asserting a break that should not happen.
+- **`break-inside: avoid`** makes a child indivisible: it enters the
+  column machinery as one unit however many lines it holds, so it moves
+  whole.
+- **`orphans` and `widows`** constrain a break inside a paragraph to
+  leave that many lines behind it and take that many with it. They
+  inherit, as the standard says, and the initial value of both is 2.
+
+**Properties 176 → 181**, one field moved per property —
+`tests/conformance/properties.f --fields` says which.
+
+The two ends of the balancing loop now read one answer rather than each
+deciding for itself. `columnsNeeded` and the placement loop each had
+their own copy of "does a column break here", and a third case was about
+to be added to both; they call one `columnBreaks` now, because a target
+height that says two columns and a placement that makes three would give
+the container the height of a column it does not contain.
+
+`orphans` and `widows` pull a break in opposite directions, and a rule
+that only looked one way would pass half the checks. Four of six lines
+of orphans pushes the break a line later; four of widows pulls it two
+lines earlier. Five and five of six is a contradiction, and the standard
+says such a pair is ignored rather than making the content unbreakable —
+what gives way is widows, which is what Chromium does and what the check
+now requires.
+
+Every expected position came from Chromium 141 before any of this was
+written, with each line of the fixture wrapped in a span of its own, so
+which column a line landed in is that engine's answer rather than an
+inference from a height.
+
+Comparing two `ColumnUnit`s asked whether two struct references were the
+same, which Festina rejects in the backend rather than the parser
+(FINDINGS.md, "two struct references cannot be compared"). The units
+carry the child's index instead.
+
 ### CSS Color 4's wider color spaces, and a visited-link color that was wrong
 
 - **`hwb()`**, **`lab()`**, **`lch()`**, **`oklab()`**, **`oklch()`**

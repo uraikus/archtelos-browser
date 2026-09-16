@@ -151,7 +151,11 @@ own order.
 **Columns** break one flow into several. `column-count` and
 `column-width` say how many and how wide, the content is laid out once
 at the column width and then broken into columns of equal height, and
-`column-rule` draws a line down each gap without taking any space.
+`column-rule` draws a line down each gap without taking any space. Where
+the breaks fall is under `break-before`, `break-after` and
+`break-inside`, which force a column break or forbid one, and under
+`orphans` and `widows`, which say how few lines of a paragraph may be
+left at the foot of a column or carried to the head of the next.
 
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and
@@ -242,7 +246,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-20,294 lines of Festina in `src/` and `browser.f`.
+20,444 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -252,12 +256,12 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-one unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-two unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, hyphens, color spaces, audio, the preload scanner), twelve offscreen render suites that check
+styles, hyphens, color spaces, fragmentation, audio, the preload scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, border images, text decoration, transforms, right-to-left

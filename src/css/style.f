@@ -191,6 +191,15 @@ const int OBJECTFIT_COVER = 2
 const int OBJECTFIT_NONE = 3
 const int OBJECTFIT_SCALE_DOWN = 4
 
+// break-before and break-after. Only a column break happens here: a
+// page break is a break in a paginated context, which a screen render
+// is not, so `page` and its `left`/`right`/`recto`/`verso` variants ask
+// for something this engine never makes and change nothing -- which is
+// what Chromium does with them on screen too.
+const int BRK_AUTO = 0
+const int BRK_COLUMN = 1
+const int BRK_AVOID = 2
+
 // box-sizing
 const int BOX_CONTENT = 0
 const int BOX_BORDER = 1
@@ -521,6 +530,15 @@ struct Style {
     columnRuleWidth:int
     columnRuleStyle:int
     columnRuleColor:int
+    // CSS Fragmentation 3 and CSS2 orphans/widows, which decide where a
+    // column may break. `breakBefore` and `breakAfter` are BRK_*;
+    // `breakInsideAvoid` is the only value of break-inside that changes
+    // anything here. Orphans and widows are the standard's initial 2.
+    breakBefore:int
+    breakAfter:int
+    breakInsideAvoid:bool
+    orphans:int
+    widows:int
     justifyItems:int
     // CSS Grid. An empty template is a grid with no explicit tracks in
     // that axis, which is the initial value and costs no allocation.

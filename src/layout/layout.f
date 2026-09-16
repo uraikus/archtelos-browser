@@ -325,6 +325,8 @@ Style func anonymousStyle(parent:Style) {
     s.wordBreaking = parent.wordBreaking
     s.tabSize = parent.tabSize
     s.tabSizePx = parent.tabSizePx
+    s.orphans = parent.orphans
+    s.widows = parent.widows
     s.listStyle = parent.listStyle
     s.listStyleName = parent.listStyleName
     s.letterSpacing = parent.letterSpacing
@@ -1356,6 +1358,23 @@ struct ColumnUnit {
     hasLine:bool        // whether `line` means anything
     top:int
     bottom:int
+    // Where a break just before this unit stands with the standard.
+    // `forceBefore` is break-before: column on this child or
+    // break-after: column on the one before; `avoidBefore` is the same
+    // pair with `avoid`. Orphans and widows are answered per column, so
+    // they cannot be decided here: what is recorded is where this line
+    // sits in its child's run, and what that child asked for.
+    forceBefore:bool
+    avoidBefore:bool
+    // Which child this came from, as an index rather than the box
+    // itself: two struct references cannot be compared (FINDINGS.md,
+    // "two struct references cannot be compared"), and the orphans rule
+    // has to ask whether two units are lines of the same paragraph.
+    childIndex:int
+    lineIndex:int
+    lineTotal:int
+    orphans:int
+    widows:int
 }
 
 // Lays the content out at the column width, then moves it into columns
@@ -1380,21 +1399,25 @@ int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
     // than one division.
     int target = Math.floorDiv(flowH + count - 1, count)
     int guard = 0
+    arr[int] breaks = columnBreaks(units, target)
     while guard < 64 {
-        if columnsNeeded(units, target) <= count { break }
+        if breaks.length + 1 <= count { break }
         target = target + maxInt(Math.floorDiv(target, 8), 1)
+        breaks = columnBreaks(units, target)
         guard++
     }
 
     // Move each unit into its column. A unit's offset is the column's
     // x step and the top of the run it belongs to.
     int col = 0
+    int nextBreak = 0
     int colTop = units[0].top
     int tallest = 0
     for int i = 0, i < units.length, i++ {
         ColumnUnit u = units[i]
-        if u.bottom - colTop > target && u.top > colTop {
+        if nextBreak < breaks.length && breaks[nextBreak] == i {
             col++
+            nextBreak++
             colTop = u.top
         }
         int dx = col * (colW + gap)
@@ -1414,33 +1437,101 @@ int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
     return tallest
 }
 
-// How many columns a target height needs, filling them in order.
-int func columnsNeeded(units:arr[ColumnUnit], target:int) {
-    int cols = 1
+// Whether a column may break just before unit `i`, given the unit the
+// current column started at. A break between two children is always
+// allowed; inside one child's run of lines it has to leave `orphans`
+// lines behind and take `widows` lines with it. `relaxWidows` drops the
+// second of those, which is what the standard asks for when the pair
+// cannot both be honoured -- five orphans and five widows of six lines
+// is a contradiction, and the answer is not to refuse to break.
+bool func columnBreakAllowed(units:arr[ColumnUnit], i:int, colStart:int, relaxWidows:bool) {
+    if units[i].forceBefore { return true }
+    if units[i].avoidBefore { return false }
+    if !units[i].hasLine || units[i].lineIndex == 0 { return true }
+    int above = units[i].lineIndex
+    if units[colStart].hasLine && units[colStart].childIndex == units[i].childIndex {
+        above = units[i].lineIndex - units[colStart].lineIndex
+    }
+    if above < units[i].orphans { return false }
+    if !relaxWidows && units[i].lineTotal - units[i].lineIndex < units[i].widows { return false }
+    return true
+}
+
+// The unit each column after the first starts at, for a given column
+// height. The balancing loop and the placement loop both read this one
+// answer rather than each deciding for itself, because they must agree:
+// a target that says two columns and a placement that makes three would
+// be a container the height of a column it does not contain.
+arr[int] func columnBreaks(units:arr[ColumnUnit], target:int) {
+    arr[int] out = []
+    int colStart = 0
     int colTop = units[0].top
-    for int i = 0, i < units.length, i++ {
-        if units[i].bottom - colTop > target && units[i].top > colTop {
-            cols++
-            colTop = units[i].top
+    int i = 1
+    while i < units.length {
+        bool overflow = units[i].bottom - colTop > target && units[i].top > colTop
+        if !units[i].forceBefore && !overflow {
+            i++
+            continue
+        }
+        int at = columnBreakPoint(units, i, colStart)
+        if at < 0 { break }
+        out.push(at)
+        colStart = at
+        colTop = units[at].top
+        i = at + 1
+    }
+    return out
+}
+
+// The break to take when the column has run out of room before unit
+// `i`. The first allowed point from `i` onwards, since a forbidden
+// break means the content carries on into the column it did not fit;
+// failing that the last allowed point before it, which is how `widows`
+// pulls a break earlier when no later one can satisfy it; failing that
+// the same two searches with widows dropped. Answers -1 when this
+// column cannot be ended at all.
+int func columnBreakPoint(units:arr[ColumnUnit], i:int, colStart:int) {
+    for int pass = 0, pass < 2, pass++ {
+        bool relax = pass == 1
+        for int j = i, j < units.length, j++ {
+            if columnBreakAllowed(units, j, colStart, relax) { return j }
+        }
+        for int k = i - 1, k > colStart, k-- {
+            if columnBreakAllowed(units, k, colStart, relax) { return k }
         }
     }
-    return cols
+    return -1
 }
 
 void func collectColumnUnits(b:Box, out:arr[ColumnUnit]) {
+    bool pendingForce = false
+    bool pendingAvoid = false
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
         if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
-        if c.lines.length > 0 {
+        bool force = pendingForce || c.style.breakBefore == BRK_COLUMN
+        bool avoid = pendingAvoid || c.style.breakBefore == BRK_AVOID
+        pendingForce = c.style.breakAfter == BRK_COLUMN
+        pendingAvoid = c.style.breakAfter == BRK_AVOID
+        // A child that may not be broken goes in as one unit, however
+        // many lines it holds: a unit is the smallest thing a column
+        // takes, so making it the whole child is what `avoid` means.
+        if c.lines.length > 0 && !c.style.breakInsideAvoid {
             for int j = 0, j < c.lines.length, j++ {
-                Line ln = c.lines[j]
                 ColumnUnit u
                 u.box = c
-                u.line = ln
+                u.line = c.lines[j]
                 u.hasLine = true
-                u.top = ln.y
-                u.bottom = ln.y + ln.h
+                u.top = c.lines[j].y
+                u.bottom = c.lines[j].y + c.lines[j].h
+                u.forceBefore = j == 0 && force
+                u.avoidBefore = j == 0 && avoid
+                u.childIndex = i
+                u.lineIndex = j
+                u.lineTotal = c.lines.length
+                u.orphans = c.style.orphans
+                u.widows = c.style.widows
                 out.push(u)
             }
             continue
@@ -1449,6 +1540,15 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit]) {
         u.box = c
         u.top = c.y - c.mt
         u.bottom = c.y + c.h + c.mb
+        if c.lines.length > 0 {
+            // A whole child that holds lines still covers them, so its
+            // own rectangle is the union rather than its laid-out box.
+            u.top = minInt(u.top, c.lines[0].y)
+            u.bottom = maxInt(u.bottom, c.lines[c.lines.length - 1].y + c.lines[c.lines.length - 1].h)
+        }
+        u.forceBefore = force
+        u.avoidBefore = avoid
+        u.childIndex = i
         out.push(u)
     }
 }
