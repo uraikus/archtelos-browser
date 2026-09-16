@@ -98,6 +98,9 @@ struct Rule {
     selectors:arr[Selector]
     decls:arr[Decl]
     order:int               // source order across every sheet
+    // Which cascade layer this rule is in, as an index into
+    // cssLayerNames, or CASCADE_NO_LAYER for a rule in none.
+    layer:int
 }
 
 struct Stylesheet {
@@ -118,6 +121,67 @@ const text XHTML_NS = 'http://www.w3.org/1999/xhtml'
 // The prefixes an `@namespace` rule declared, and the default one.
 map[text] cssNamespacePrefixes = {}
 text cssDefaultNamespace = ''
+
+// CSS Cascade 5's layers. A layer is declared the first time it is
+// named -- by a `@layer a, b;` statement or by a `@layer a { }` block --
+// and its place in this list is its place in the cascade: of two
+// layered declarations the one in the later layer wins, and a
+// declaration in no layer beats both. `!important` reverses all of it,
+// which the weight below does rather than this list.
+//
+// A rule in no layer carries CASCADE_NO_LAYER, which ranks above every
+// layer index. Only 256 layers are kept apart, because the weight packs
+// the layer into a field beside the origin and the specificity and that
+// field has to end somewhere; a sheet with more competes on specificity
+// from there on.
+const int CASCADE_MAX_LAYERS = 256
+const int CASCADE_NO_LAYER = 256
+
+arr[text] cssLayerNames = []
+map[int] cssLayerIndex = {}
+// The layer the rules being parsed are in, and its full dotted name, so
+// `@layer b` inside `@layer a` is the layer `a.b`.
+int cssCurrentLayer = CASCADE_NO_LAYER
+text cssCurrentLayerName = ''
+int cssAnonymousLayers = 0
+
+void func cssResetLayers() {
+    arr[text] emptyNames = []
+    map[int] emptyIndex = {}
+    cssLayerNames = emptyNames
+    cssLayerIndex = emptyIndex
+    cssCurrentLayer = CASCADE_NO_LAYER
+    cssCurrentLayerName = ''
+    cssAnonymousLayers = 0
+}
+
+// The index of a layer, declaring it -- and every layer it is nested in
+// -- if this is the first time it has been named.
+int func declareLayer(name:text) {
+    if name == '' { return CASCADE_NO_LAYER }
+    int known = cssLayerIndex[name]
+    if known != null { return known }
+    // `a.b` implies `a`, and `a` has to be declared first: it is the
+    // outer layer, and the standard orders an outer layer before what
+    // is nested in it.
+    ascii full = name.toAscii()
+    int dot = -1
+    for int i = 0, i < full.length, i++ {
+        if full.charCodeAt(i) == CH_DOT { dot = i }
+    }
+    if dot > 0 { declareLayer(full.slice(0, dot).toText()) }
+    if cssLayerNames.length >= CASCADE_MAX_LAYERS { return CASCADE_MAX_LAYERS - 1 }
+    int at = cssLayerNames.length
+    cssLayerNames.push(name)
+    cssLayerIndex[name] = at
+    return at
+}
+
+// The full name of a layer written inside the one being parsed.
+text func qualifiedLayerName(name:text) {
+    if cssCurrentLayerName == '' { return name }
+    return cssCurrentLayerName + '.' + name
+}
 
 void func cssResetNamespaces() {
     map[text] empty = {}
@@ -1485,6 +1549,16 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                     } else if parts.length >= 2 {
                         cssNamespacePrefixes[parts[0].toText()] = parseNamespaceUri(parts[1])
                     }
+                } else if atName == 'layer' {
+                    // `@layer a, b, c;` declares the order without
+                    // giving any of them rules, which is the whole
+                    // reason the statement form exists.
+                    int stop = semi < 0 ? n : semi
+                    arr[ascii] names = splitOnCommas(asciiTrim(src.slice(nameEnd, stop)))
+                    for int k = 0, k < names.length, k++ {
+                        ascii one = asciiTrim(names[k])
+                        if one.length > 0 { declareLayer(qualifiedLayerName(asciiLower(one).toText())) }
+                    }
                 }
                 i = semi < 0 ? n : semi + 1
                 continue
@@ -1515,7 +1589,23 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
             } else if atName == 'layer' {
                 int close = blockEnd - 1
                 if close < brace + 1 { close = brace + 1 }
+                ascii layerName = asciiTrim(src.slice(nameEnd, brace))
+                int outerLayer = cssCurrentLayer
+                text outerName = cssCurrentLayerName
+                text full = ''
+                if layerName.length == 0 {
+                    // An anonymous layer is a layer nothing can name
+                    // again, so it gets a name no stylesheet can write.
+                    cssAnonymousLayers++
+                    full = qualifiedLayerName(`%anonymous${cssAnonymousLayers}`)
+                } else {
+                    full = qualifiedLayerName(asciiLower(layerName).toText())
+                }
+                cssCurrentLayer = declareLayer(full)
+                cssCurrentLayerName = full
                 parseRulesInto(sheet, src.slice(brace + 1, close))
+                cssCurrentLayer = outerLayer
+                cssCurrentLayerName = outerName
             }
             // @font-face, @keyframes, @page, @import ...: skipped
             i = blockEnd
@@ -1536,6 +1626,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
         r.selectors = parseSelectorList(prelude)
         r.decls = parseDeclarations(body)
         r.order = cssRuleCounter
+        r.layer = cssCurrentLayer
         cssRuleCounter++
         // "If any selector in the list cannot be parsed, the group of
         // selectors is invalid" -- the whole rule goes, not just that

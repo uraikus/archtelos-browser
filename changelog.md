@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### @layer orders the cascade
+
+The blocks were parsed and the ordering -- the entire point -- was
+discarded. A layer is declared where it is first named, by a
+`@layer a, b;` statement or by a `@layer a { }` block, and its place in
+that order is its place in the cascade, above specificity and above
+source order: of two layered declarations the one in the later layer
+wins, and a declaration in no layer beats both.
+
+`!important` reverses all of it, so an important declaration in the
+*earliest* layer is the strongest author one and an important unlayered
+declaration the weakest.
+
+`@layer b` inside `@layer a` is the layer `a.b`, and declaring `a.b`
+declares `a` first, because an outer layer comes before what is nested
+in it. An anonymous `@layer { }` is a layer nothing can name again, so
+two of them are two layers.
+
+The cascade sorts on one integer, and there are now four tiers to pack
+into it rather than three. The rank reaches 518 with 256 layers, which
+leaves ten thousand billion for each rank; specificity is a triple
+packed base 1024, so it fits in a million of those; and what had to give
+is source order, which counts to a million and no further. A sheet with
+more than a million rules decides its last ones on specificity alone,
+and one with more than 256 layers stops telling them apart -- both
+written down because neither is a thing the standard allows.
+
+The count does not move -- `@layer` is not a property. What grades it is
+`tests/unit/test_layers.f`: twelve stylesheets whose winning colour is
+Chromium 141's, and eight assertions about the weights themselves, so a
+failure says which tier is wrong and not only which colour won. With the
+layer ignored, six of the twenty fail.
+
 ### The media features Level 4 adds
 
 Each is a statement about this browser rather than a computation, and

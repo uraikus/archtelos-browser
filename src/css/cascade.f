@@ -49,6 +49,7 @@ struct RuleRef {
     rule:Rule
     sel:Selector
     origin:int
+    layer:int
 }
 
 struct Bucket {
@@ -101,6 +102,7 @@ bool cascadeSawClip = false
 bool cascadeSawShape = false
 
 void func cascadeReset() {
+    cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
     cascadeSawShape = false
@@ -167,6 +169,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.rule = rule
             ref.sel = sel
             ref.origin = origin
+            ref.layer = rule.layer
             if sel.pseudoElement != '' {
                 anyPseudoRules = true
                 text pk = selectorKey(sel)
@@ -210,25 +213,51 @@ void func cascadeAddDocumentStyles(doc:Node) {
     }
 }
 
-// The cascade sorts on origin and importance first, then specificity,
-// then source order (CSS Cascade 4 §6.1). Importance *inverts* the
-// origin order: a normal author declaration beats a normal user-agent
-// one, and an important user-agent declaration beats an important
-// author one. Inline style is author origin, ranked above author rules.
+// The cascade sorts on origin, importance and layer first, then
+// specificity, then source order (CSS Cascade 5 §6.4). Importance
+// *inverts* the whole of that order: a normal author declaration beats
+// a normal user-agent one, an important user-agent declaration beats an
+// important author one, and an important declaration in an early layer
+// beats one in a late layer. Inline style is author origin, ranked
+// above author rules and in no layer.
 //
-//   normal UA < normal author < normal inline
-//             < important author < important inline < important UA
-int func originRank(important:bool, origin:int) {
-    if !important { return origin }
-    if origin == ORIGIN_UA { return 5 }
-    if origin == ORIGIN_INLINE { return 4 }
-    return 3
+//   normal UA < normal author layers, in order < normal unlayered author
+//             < normal inline
+//             < important author unlayered < important author layers,
+//               in reverse < important inline < important UA
+//
+// The layers occupy a band of ranks each, which is why this is one
+// number rather than the four the standard describes: Festina sorts on
+// an int, and the tiers are packed into it in the order the standard
+// compares them.
+int func originRank(important:bool, origin:int, layer:int) {
+    int span = CASCADE_MAX_LAYERS + 1
+    int inLayer = layer < 0 || layer > CASCADE_NO_LAYER ? CASCADE_NO_LAYER : layer
+    if !important {
+        if origin == ORIGIN_UA { return 0 }
+        if origin == ORIGIN_INLINE { return 1 + span }
+        // 1 .. span: the layers in order, with no layer last.
+        return 1 + inLayer
+    }
+    if origin == ORIGIN_UA { return 4 + 2 * span }
+    if origin == ORIGIN_INLINE { return 3 + 2 * span }
+    // An important declaration in no layer is the weakest of the
+    // important author ones, and the earliest layer the strongest.
+    if inLayer == CASCADE_NO_LAYER { return 2 + span }
+    return 3 + span + (CASCADE_NO_LAYER - 1 - inLayer)
 }
 
-int func matchWeight(important:bool, origin:int, specificity:int, order:int) {
-    return originRank(important, origin) * 100000000000000000
-         + specificity * 10000000
-         + order
+// The three tiers packed into one int, in the order the standard
+// compares them. Specificity is a triple packed base 1024, so it is
+// under 2^30, which times a million stays inside the rank's field; the
+// rank reaches 518 with 256 layers, which times ten thousand billion
+// stays inside an int. What has to give is source order, which holds a
+// million rules and counts no further: a sheet with more than that
+// decides its last rules on specificity alone.
+int func matchWeight(important:bool, origin:int, layer:int, specificity:int, order:int) {
+    return originRank(important, origin, layer) * 10000000000000000
+         + specificity * 1000000
+         + (order < 1000000 ? order : 999999)
 }
 
 // ---- selector matching ------------------------------------------------
@@ -527,7 +556,7 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
     text tag = n.tag
     bool isCell = tag == 'td' || tag == 'th'
     if !n.hasPresHint && !isCell { return }
-    int w = matchWeight(false, ORIGIN_AUTHOR, 0, 0)
+    int w = matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0)
     text align = getAttr(n, 'align')
     if align != null {
         ascii a = asciiLower(align.toAscii())
@@ -668,7 +697,7 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
         for int d = 0, d < decls, d++ {
             Match m
             m.decl = b.refs[i].rule.decls[d]
-            m.weight = matchWeight(b.refs[i].rule.decls[d].important, origin, specificity, order)
+            m.weight = matchWeight(b.refs[i].rule.decls[d].important, origin, b.refs[i].layer, specificity, order)
             matches.push(m)
         }
     }
@@ -695,7 +724,7 @@ arr[Match] func collectMatches(n:Node) {
         for int d = 0, d < decls.length, d++ {
             Match m
             m.decl = decls[d]
-            m.weight = matchWeight(decls[d].important, ORIGIN_INLINE, 0, d)
+            m.weight = matchWeight(decls[d].important, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, d)
             matches.push(m)
         }
     }

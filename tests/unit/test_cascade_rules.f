@@ -22,19 +22,19 @@ checkEqInt(t1.style.color, packColor(0, 0, 255, 255), 'one id beats a hundred cl
 // ---- 2. !important inverts the origin order ---------------------------
 // Normal: UA < author < inline. Important: author < inline < UA, because
 // an important user-agent declaration outranks an important author one.
-check(matchWeight(false, ORIGIN_UA, 0, 0) < matchWeight(false, ORIGIN_AUTHOR, 0, 0),
+check(matchWeight(false, ORIGIN_UA, CASCADE_NO_LAYER, 0, 0) < matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0),
       'normal author beats normal UA')
-check(matchWeight(false, ORIGIN_AUTHOR, 0, 0) < matchWeight(false, ORIGIN_INLINE, 0, 0),
+check(matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0) < matchWeight(false, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, 0),
       'normal inline beats normal author')
-check(matchWeight(false, ORIGIN_INLINE, 0, 0) < matchWeight(true, ORIGIN_AUTHOR, 0, 0),
+check(matchWeight(false, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, 0) < matchWeight(true, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0),
       'any important beats any normal')
-check(matchWeight(true, ORIGIN_AUTHOR, 0, 0) < matchWeight(true, ORIGIN_INLINE, 0, 0),
+check(matchWeight(true, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0) < matchWeight(true, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, 0),
       'important inline beats important author')
-check(matchWeight(true, ORIGIN_INLINE, 0, 0) < matchWeight(true, ORIGIN_UA, 0, 0),
+check(matchWeight(true, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, 0) < matchWeight(true, ORIGIN_UA, CASCADE_NO_LAYER, 0, 0),
       'important UA beats important inline')
-check(matchWeight(false, ORIGIN_AUTHOR, 100, 0) < matchWeight(false, ORIGIN_AUTHOR, 200, 0),
+check(matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 100, 0) < matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 200, 0),
       'higher specificity wins within an origin')
-check(matchWeight(false, ORIGIN_AUTHOR, 100, 1) < matchWeight(false, ORIGIN_AUTHOR, 100, 2),
+check(matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 100, 1) < matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 100, 2),
       'later source order wins at equal specificity')
 
 // ---- 3. inherit takes the parent's value ------------------------------
