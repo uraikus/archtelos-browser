@@ -27,6 +27,33 @@ const int DISPLAY_TABLE_FOOTER_GROUP = 14
 const int DISPLAY_RUBY = 15
 const int DISPLAY_CONTENTS = 16
 const int DISPLAY_INLINE_FLEX = 17
+const int DISPLAY_GRID = 18
+const int DISPLAY_INLINE_GRID = 19
+
+// A grid track's size. `fr` is not a length: it is a share of what the
+// fixed tracks leave, so it cannot live in a Len and has a field of its
+// own. TRACK_AUTO sizes to the content.
+const int TRACK_LEN = 0     // a length or a percentage, in `size`
+const int TRACK_FR = 1      // a share, in `fr`
+const int TRACK_AUTO = 2
+
+struct Track {
+    kind:int
+    size:Len
+    fr:float
+}
+
+// One edge of an item's placement on one axis. A line number counts
+// from 1; `span n` says how many tracks to cover without saying where
+// they start.
+const int GRIDLINE_AUTO = 0
+const int GRIDLINE_NUMBER = 1
+const int GRIDLINE_SPAN = 2
+
+struct GridLine {
+    kind:int
+    n:int
+}
 
 // text-align
 const int ALIGN_LEFT = 0
@@ -442,6 +469,17 @@ struct Style {
     // BOXALIGN_AUTO on the child means "whatever the parent says",
     // which is its initial value and its zero value both.
     justifyItems:int
+    // CSS Grid. An empty template is a grid with no explicit tracks in
+    // that axis, which is the initial value and costs no allocation.
+    gridCols:arr[Track]
+    gridRows:arr[Track]
+    gridAutoCols:arr[Track]
+    gridAutoRows:arr[Track]
+    gridAutoFlowColumn:bool
+    gridColStart:GridLine
+    gridColEnd:GridLine
+    gridRowStart:GridLine
+    gridRowEnd:GridLine
     justifySelf:int
     textOverflowEllipsis:bool
     pointerEvents:int

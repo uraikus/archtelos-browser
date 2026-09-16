@@ -120,13 +120,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
    everywhere with no call to change it. Cairo has every Porter-Duff
    and separable blend operator; the entry point is what is missing.
-11. The remainder of the official definition, lower value for this
+11. **Grid, completed**: named lines and `grid-template-areas`,
+    `minmax()`, `min-content`, `max-content` and `fit-content()`,
+    `auto-fill` and `auto-fit`, dense packing, and subgrid. An `auto`
+    track is sized by the largest item that sits in it alone, so an
+    item spanning two auto tracks does not grow either of them.
+12. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
    User Interface 3, Multi-column 1, Easing 1, Namespaces 3.
 
 ### After the official definition
 
-Grid; `@layer` ordering, which is discarded today (Cascade 5); the
+`@layer` ordering, which is discarded today (Cascade 5); the
 Media Queries 4 range syntax; Selectors 4's `:is()`, `:where()`,
 `:has()` and a selector list inside `:not()`; `color-mix()` and the
 wider colour spaces; `box-sizing`, since every box is content-box; the
@@ -148,7 +153,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(149; Chromium reports 373, and four of them cannot be graded by a probe
+(158; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

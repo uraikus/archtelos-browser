@@ -25,6 +25,7 @@ const int BOX_BR = 10
 const int BOX_IFRAME = 11
 const int BOX_FLEX = 12
 const int BOX_AUDIO = 13
+const int BOX_GRID = 14
 
 // The size Chromium draws an audio element's controls at, which is what
 // a page laid out against it expects to find.
@@ -353,7 +354,7 @@ bool func boxIsPositioned(b:Box) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_AUDIO
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_GRID || b.kind == BOX_AUDIO
 }
 
 // Whether a text box holds nothing but white space, which is the test
@@ -468,6 +469,12 @@ Box func buildBox(n:Node, parentStyle:Style) {
     if d == DISPLAY_FLEX || d == DISPLAY_INLINE_FLEX {
         Box b = newBox(BOX_FLEX, n, s)
         b.blockLevel = d == DISPLAY_FLEX
+        buildChildren(b, n, s)
+        return b
+    }
+    if d == DISPLAY_GRID || d == DISPLAY_INLINE_GRID {
+        Box b = newBox(BOX_GRID, n, s)
+        b.blockLevel = d == DISPLAY_GRID
         buildChildren(b, n, s)
         return b
     }
@@ -1180,7 +1187,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int width = 0
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
     if autoWidth {
-        if (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX) && !b.blockLevel {
+        if (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX || b.kind == BOX_GRID) && !b.blockLevel {
             computeIntrinsic(b)
             int avail = cw - b.ml - b.mr
             int pref = b.maxContent - horizontalExtras(b, 0) + edges
@@ -1231,6 +1238,19 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
             b.h = fh + flexEdges
         }
         layoutFlex(b, cx, y, cw)
+        return
+    }
+    // A grid container sizes its tracks and places its items into them
+    // rather than stacking its children (CSS Grid 1 §7, §8).
+    if b.kind == BOX_GRID {
+        int gridEdges = b.pt + b.pb + b.bt + b.bb
+        b.h = gridEdges
+        if s.height.kind == LEN_PX {
+            int gh = maxInt(roundPx(s.height.v), 0)
+            if s.boxSizing == BOX_BORDER { gh = maxInt(gh - gridEdges, 0) }
+            b.h = gh + gridEdges
+        }
+        layoutGrid(b, cx, y, cw, width)
         return
     }
 
@@ -2391,6 +2411,343 @@ int func flexLineOffsetFor(align:int, spare:int, lines:int, index:int) {
         return Math.floorDiv(spare * (index + 1), lines + 1)
     }
     return 0
+}
+
+// ---- CSS Grid -------------------------------------------------------------
+//
+// Three passes, in the order the standard puts them: place every item
+// on the two axes, size the tracks those placements imply, then lay
+// each item out inside the area it occupies.
+//
+// An item's placement is a half-open range of track indices on each
+// axis. Both are resolved before any track is sized, because a track's
+// size can depend on the items in it and an item's track cannot depend
+// on any size.
+struct GridArea {
+    box:Box
+    col:int
+    colSpan:int
+    row:int
+    rowSpan:int
+}
+
+// The track index an edge pair resolves to, as a start and a span.
+// A line number counts from 1 and may be negative, counting back from
+// the end; `span n` fixes the width without fixing the position, which
+// is what leaves the item to auto-placement.
+int gridResolvedStart = 0
+int gridResolvedSpan = 1
+bool gridResolvedAuto = false
+
+void func resolveGridEdges(startL:GridLine, endL:GridLine, explicitCount:int) {
+    gridResolvedAuto = false
+    gridResolvedSpan = 1
+    gridResolvedStart = 0
+    int startN = -1
+    int endN = -1
+    if startL.kind == GRIDLINE_NUMBER { startN = gridLineIndex(startL.n, explicitCount) }
+    if endL.kind == GRIDLINE_NUMBER { endN = gridLineIndex(endL.n, explicitCount) }
+    if startN >= 0 && endN >= 0 {
+        gridResolvedStart = minInt(startN, endN)
+        gridResolvedSpan = maxInt(maxInt(startN, endN) - gridResolvedStart, 1)
+        return
+    }
+    if startN >= 0 {
+        gridResolvedStart = startN
+        gridResolvedSpan = endL.kind == GRIDLINE_SPAN ? maxInt(endL.n, 1) : 1
+        return
+    }
+    if endN >= 0 {
+        int span = startL.kind == GRIDLINE_SPAN ? maxInt(startL.n, 1) : 1
+        gridResolvedStart = maxInt(endN - span, 0)
+        gridResolvedSpan = span
+        return
+    }
+    // no line named on either edge: the position is for auto-placement
+    // to decide, and only the span is known
+    gridResolvedAuto = true
+    if startL.kind == GRIDLINE_SPAN { gridResolvedSpan = maxInt(startL.n, 1) }
+    else if endL.kind == GRIDLINE_SPAN { gridResolvedSpan = maxInt(endL.n, 1) }
+}
+
+// Line 1 is the start of track 0. A negative line counts back from the
+// end of the explicit grid, so -1 is the line after its last track.
+int func gridLineIndex(n:int, explicitCount:int) {
+    if n > 0 { return n - 1 }
+    return maxInt(explicitCount + 1 + n, 0)
+}
+
+// The size of one track, in px, given the space the axis has. An `fr`
+// track has no size of its own and is resolved afterwards.
+int func trackBaseSize(t:Track, axisSize:int) {
+    if t.kind == TRACK_LEN { return maxInt(resolveLen(t.size, axisSize, 0), 0) }
+    return 0
+}
+
+// The track list an axis uses at index i: the explicit template while
+// it lasts, then the auto list repeating, then auto.
+Track func trackAt(explicit:arr[Track], auto:arr[Track], i:int) {
+    if i < explicit.length { return explicit[i] }
+    if auto.length > 0 { return auto[(i - explicit.length) % auto.length] }
+    Track t
+    t.kind = TRACK_AUTO
+    return t
+}
+
+void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
+    Style s = b.style
+    b.x = cx + b.ml
+    b.y = y + b.mt
+    int innerX = contentX(b)
+    int innerY = contentY(b)
+    int colGap = s.columnGap
+    int rowGap = s.rowGap
+
+    // ---- pass 1: place every item ----------------------------------
+    int explicitCols = s.gridCols.length
+    int explicitRows = s.gridRows.length
+    arr[GridArea] areas = []
+    arr[Box] autoItems = []
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if boxIsOutOfFlow(c) { continue }
+        GridArea a
+        a.box = c
+        a.colSpan = 1
+        a.rowSpan = 1
+        resolveGridEdges(c.style.gridColStart, c.style.gridColEnd, explicitCols)
+        bool colAuto = gridResolvedAuto
+        a.col = gridResolvedStart
+        a.colSpan = gridResolvedSpan
+        resolveGridEdges(c.style.gridRowStart, c.style.gridRowEnd, explicitRows)
+        bool rowAuto = gridResolvedAuto
+        a.row = gridResolvedStart
+        a.rowSpan = gridResolvedSpan
+        if colAuto { a.col = -1 }
+        if rowAuto { a.row = -1 }
+        areas.push(a)
+    }
+    // Auto-placement: the cursor walks the grid in the flow's order and
+    // takes the first run of free cells wide enough for the item. An
+    // item that named one axis keeps it and only the other is chosen.
+    bool columnFlow = s.gridAutoFlowColumn
+    // Named for the flow rather than `lineCount`: a local that shares
+    // a name with a function anywhere in the program emits invalid IR,
+    // and the namespace is global across every imported file
+    // (FINDINGS.md, findings 3 and 9).
+    int flowLines = columnFlow
+        ? maxInt(explicitRows, 1)
+        : maxInt(explicitCols, 1)
+    arr[bool] occupied = []
+    int cursor = 0
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        if a.col >= 0 && a.row >= 0 {
+            gridMarkOccupied(occupied, a, flowLines, columnFlow)
+            continue
+        }
+        // The two axes are not symmetrical here: one runs along the
+        // flow and wraps at flowLines, the other is the cross axis and
+        // grows without limit. An item that named one of them keeps it
+        // and only the other is searched.
+        int alongPos = columnFlow ? a.row : a.col
+        int crossPos = columnFlow ? a.col : a.row
+        int alongSpan = minInt(maxInt(columnFlow ? a.rowSpan : a.colSpan, 1), flowLines)
+        int crossSpan = maxInt(columnFlow ? a.colSpan : a.rowSpan, 1)
+        if alongPos >= 0 {
+            // the position along the flow is fixed: take the first
+            // cross line where it is free
+            int d = crossPos >= 0 ? crossPos : 0
+            while !gridRunIsFree(occupied, flowLines, alongPos, alongSpan, d, crossSpan) { d++ }
+            crossPos = d
+        } else {
+            // walk the flow from the cursor until a free run fits
+            int at = maxInt(cursor, crossPos >= 0 ? crossPos * flowLines : 0)
+            while true {
+                int cAt = Math.floorDiv(at, flowLines)
+                int aAt = at % flowLines
+                if aAt + alongSpan > flowLines { at = (cAt + 1) * flowLines  continue }
+                if crossPos >= 0 && cAt != crossPos {
+                    if cAt > crossPos { break }
+                    at = crossPos * flowLines
+                    continue
+                }
+                if gridRunIsFree(occupied, flowLines, aAt, alongSpan, cAt, crossSpan) {
+                    alongPos = aAt
+                    crossPos = cAt
+                    if crossPos < 0 { crossPos = cAt }
+                    cursor = at
+                    break
+                }
+                at++
+            }
+            if alongPos < 0 { alongPos = 0 }
+        }
+        if crossPos < 0 { crossPos = 0 }
+        if columnFlow { a.row = alongPos  a.col = crossPos }
+        else { a.col = alongPos  a.row = crossPos }
+        gridMarkOccupied(occupied, a, flowLines, columnFlow)
+    }
+
+    // ---- pass 2: size the tracks -----------------------------------
+    int colCount = maxInt(explicitCols, 1)
+    int rowCount = maxInt(explicitRows, 1)
+    for int i = 0, i < areas.length, i++ {
+        colCount = maxInt(colCount, areas[i].col + areas[i].colSpan)
+        rowCount = maxInt(rowCount, areas[i].row + areas[i].rowSpan)
+    }
+    arr[int] colSizes = gridSizeAxis(b, areas, s.gridCols, s.gridAutoCols, colCount,
+                                     width, colGap, true)
+    // The rows are sized after the columns, because an auto row's
+    // height is the height of items laid out at their column widths.
+    arr[int] rowSizes = gridSizeAxis(b, areas, s.gridRows, s.gridAutoRows, rowCount,
+                                     -1, rowGap, false)
+
+    // ---- pass 3: place the items in their areas --------------------
+    arr[int] colPos = gridTrackPositions(colSizes, colGap)
+    arr[int] rowPos = gridTrackPositions(rowSizes, rowGap)
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        int ax = innerX + colPos[a.col]
+        int ay = innerY + rowPos[a.row]
+        int aw = gridSpanSize(colSizes, colGap, a.col, a.colSpan)
+        int ah = gridSpanSize(rowSizes, rowGap, a.row, a.rowSpan)
+        Box c = a.box
+        c.forcedWidthPx = lenIsAuto(c.style.width) ? aw : -1
+        layoutBlock(c, ax, ay, aw, false)
+        if lenIsAuto(c.style.height) && ah > c.h { c.h = ah }
+        c.forcedWidthPx = -1
+    }
+
+    int totalH = 0
+    for int i = 0, i < rowSizes.length, i++ {
+        totalH = totalH + rowSizes[i] + (i > 0 ? rowGap : 0)
+    }
+    int gridEdges = b.pt + b.pb + b.bt + b.bb
+    if lenIsAuto(s.height) { b.h = totalH + gridEdges }
+    b.w = width + b.pl + b.pr + b.bl + b.br
+    if b.baseline == 0 { b.baseline = b.h }
+}
+
+// Whether the rectangle of cells an item would take is entirely free.
+bool func gridRunIsFree(occupied:arr[bool], flowLines:int, along:int, alongSpan:int,
+                        cross:int, crossSpan:int) {
+    if along + alongSpan > flowLines { return false }
+    for int d = 0, d < crossSpan, d++ {
+        for int k = 0, k < alongSpan, k++ {
+            if gridOccupiedAt(occupied, (cross + d) * flowLines + along + k) { return false }
+        }
+    }
+    return true
+}
+
+bool func gridOccupiedAt(occupied:arr[bool], at:int) {
+    if at < 0 || at >= occupied.length { return false }
+    return occupied[at]
+}
+
+void func gridMarkOccupied(occupied:arr[bool], a:GridArea, flowLines:int, columnFlow:bool) {
+    int along = columnFlow ? a.row : a.col
+    int cross = columnFlow ? a.col : a.row
+    int alongSpan = columnFlow ? a.rowSpan : a.colSpan
+    int crossSpan = columnFlow ? a.colSpan : a.rowSpan
+    for int d = 0, d < crossSpan, d++ {
+        for int k = 0, k < alongSpan, k++ {
+            int at = (cross + d) * flowLines + along + k
+            if at < 0 { continue }
+            while occupied.length <= at { occupied.push(false) }
+            occupied[at] = true
+        }
+    }
+}
+
+// The start offset of each track, from the content edge.
+arr[int] func gridTrackPositions(sizes:arr[int], gap:int) {
+    arr[int] pos = []
+    int at = 0
+    for int i = 0, i < sizes.length, i++ {
+        pos.push(at)
+        at = at + sizes[i] + gap
+    }
+    pos.push(at)
+    return pos
+}
+
+// The size an item spanning `span` tracks from `at` occupies, gaps
+// between them included.
+int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int) {
+    int total = 0
+    for int i = at, i < at + span && i < sizes.length, i++ {
+        total = total + sizes[i] + (i > at ? gap : 0)
+    }
+    return total
+}
+
+// One axis of track sizing. `axisSize` is the space the axis has, or -1
+// when it has none fixed -- which is the block axis of a grid whose
+// height is automatic, where `fr` has nothing to share and an auto
+// track is as big as its content.
+arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
+                           auto:arr[Track], count:int, axisSize:int,
+                           gap:int, inline:bool) {
+    arr[int] sizes = []
+    arr[float] frs = []
+    float totalFr = 0.0
+    int fixed = 0
+    for int i = 0, i < count, i++ {
+        Track t = trackAt(explicit, auto, i)
+        int size = 0
+        float fr = 0.0
+        if t.kind == TRACK_LEN {
+            size = trackBaseSize(t, axisSize < 0 ? 0 : axisSize)
+        } else if t.kind == TRACK_FR && axisSize >= 0 {
+            fr = t.fr
+            totalFr = totalFr + t.fr
+        }
+        sizes.push(size)
+        frs.push(fr)
+        fixed = fixed + size
+    }
+    // An auto track is as large as the largest item that sits in it
+    // alone; an item spanning several tracks does not contribute, which
+    // is the standard's rule and keeps this a single pass.
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        int at = inline ? a.col : a.row
+        int span = inline ? a.colSpan : a.rowSpan
+        if span != 1 || at < 0 || at >= count { continue }
+        Track t = trackAt(explicit, auto, at)
+        if t.kind != TRACK_AUTO { continue }
+        int need = 0
+        if inline {
+            computeIntrinsic(a.box)
+            need = a.box.maxContent
+        } else {
+            need = a.box.h + a.box.mt + a.box.mb
+        }
+        if need > sizes[at] {
+            fixed = fixed + (need - sizes[at])
+            sizes[at] = need
+        }
+    }
+    if axisSize >= 0 && totalFr > 0.0 {
+        int gaps = count > 1 ? gap * (count - 1) : 0
+        int spare = maxInt(axisSize - fixed - gaps, 0)
+        int handed = 0
+        int lastFr = -1
+        for int i = 0, i < count, i++ { if frs[i] > 0.0 { lastFr = i } }
+        for int i = 0, i < count, i++ {
+            if frs[i] <= 0.0 { continue }
+            // the last fr track takes the remainder, so the tracks add
+            // up to the space exactly rather than to a pixel less
+            int share = i == lastFr ? spare - handed
+                      : roundPx(spare.toFloat() * frs[i] / totalFr)
+            sizes[i] = share
+            handed = handed + share
+        }
+    }
+    return sizes
 }
 
 void func layoutFlex(b:Box, cx:int, y:int, cw:int) {

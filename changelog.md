@@ -5,6 +5,73 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Grid
+
+`display: grid` and `inline-grid` establish a grid container, and its
+children are laid out on two axes at once rather than stacked. Three
+passes, in the order the standard puts them: every item is placed on
+both axes, then the tracks those placements imply are sized, then each
+item is laid out in the area it occupies. Placement comes first because
+a track's size can depend on the items in it and an item's track can
+depend on no size.
+
+**Tracks** come from `grid-template-columns` and `grid-template-rows` as
+lengths, percentages, `auto`, `fr` and `repeat()` of a whole list, with
+`grid-auto-columns` and `grid-auto-rows` sizing the tracks an item
+creates past the template. `fr` is not a length — it is a share of what
+the fixed tracks and the gaps leave — so it has a field of its own
+rather than a `Len`, and the last `fr` track takes the remainder so the
+tracks add up to the space exactly.
+
+**Placement** is by line number, counting back from the end when
+negative, or by `span n`; `grid-column`, `grid-row` and `grid-area` are
+their shorthands. Auto-placement walks the grid in the flow's order and
+takes the first free run of cells wide enough. An item that names one
+axis keeps it and only the other is chosen, which is where the first
+draft was wrong: auto-placement overwrote the named axis, and two
+checks said so.
+
+The `repeat()` form is checked against the tracks written out longhand,
+and the shorthand against its two longhands — two ways of saying one
+thing, which is the shape of check that can fail without either answer
+being known in advance.
+
+**Properties 149 → 158.**
+
+Forty-eight checks in the new `tests/unit/test_grid.f`.
+
+**A fifth instrument defect.** The four placement rows carried the value
+`none`, which is not valid for those properties — and Chromium accepts
+it, because a grid line may be named and `none` parses as a name. So
+the rows measured named-line placement, which nothing here implements,
+and a correct engine that rejects `none` scored zero for getting it
+right. They carry `2` and `span 2` now, which are what the properties
+are for; the audit still passes.
+
+**A name collision that was a compile error in one program and nothing
+in nine.** A local in the layout engine named `lineCount` met a
+`lineCount` helper in one render suite, and the backend emitted a
+reference to the function where the local belonged. The namespace is
+global across every imported file, so which programs break depends on
+which files are linked together. FINDINGS.md finding 3 gains the case.
+
+**And a memory bug no test could see.** `parseTrackList` bound a token
+to a local — `ascii tok = toks[i]` — which releases an alias the
+compiler never retained. Every grid test passed and the program exited
+0; valgrind showed an invalid read *and* an invalid write of size 8 in
+`festina_ascii_release` on every track parsed. That is the fourth time
+this exact shape has appeared in this repository, which is why the rule
+is to index rather than bind (FINDINGS.md, finding 2).
+
+**It costs pages without a grid nothing**, and this time that is
+measured rather than asserted: the revision before this one and this one
+were built side by side and timed alternately on the same idle machine,
+at 92 to 98 ms and 94 to 99 ms on the benchmark page — two series that
+overlap completely. A single run against the recorded 93 ms had
+suggested a 3 ms regression, and Chromium's control row had moved by the
+same proportion in the same run, which is what the rule about checking a
+number you did not change is for.
+
 ### Four more, and an escape that was not one
 
 - **`justify-items` and `justify-self`** move a block-level box in the

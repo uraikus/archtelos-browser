@@ -275,6 +275,24 @@ error: expected a parameter name, found free('free')
 which is what the other two should do. The machinery to reject the name
 is there; it is only consulted for builtins.
 
+**The namespace is global across every imported file (finding 9), so
+the two names need never meet in one file, or be written by one
+person.** A local named `lineCount` in the layout engine and a
+`lineCount` helper in one render suite collided here: nine other suites
+that import the same layout engine compiled and ran correctly, and the
+tenth failed with
+
+```
+LLVM IR parse error: error: global variable reference must have pointer type
+  call void @gridMarkOccupied(ptr %t35994, ptr %t35995, i64 @lineCount, i8 %t35996)
+```
+
+— the local silently replaced by a reference to the function. Which
+programs break depends on which files are linked together, so a name
+that is safe today becomes a compile error when an unrelated file gains
+a helper, and there is no way to see the collision coming from either
+end.
+
 ---
 
 ## 4 An empty `text` is `null`

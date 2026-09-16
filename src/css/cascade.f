@@ -1520,6 +1520,106 @@ arr[Transform] func parseTransformList(v:ascii, fontSize:int) {
     return out
 }
 
+// Splits a value on top-level slashes, which is how `grid-column` and
+// `grid-row` separate their two edges.
+arr[ascii] func splitTopLevelSlash(v:ascii) {
+    arr[ascii] out = []
+    int depth = 0
+    int start = 0
+    for int i = 0, i < v.length, i++ {
+        int c = v.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_SLASH && depth <= 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+    }
+    out.push(asciiTrim(v.slice(start, v.length)))
+    return out
+}
+
+// One grid track. `fr` is a share of the free space rather than a
+// length, so it cannot go through parseLength at all.
+Track func parseTrack(tok:ascii, fontSize:int) {
+    Track t
+    t.kind = TRACK_AUTO
+    ascii low = asciiLower(asciiTrim(tok))
+    if low == 'auto' || low == 'min-content' || low == 'max-content' { return t }
+    if low.length > 2 && low.slice(low.length - 2, low.length) == 'fr' {
+        parseNumberAt(low, 0)
+        if numOk {
+            t.kind = TRACK_FR
+            t.fr = numValue > 0.0 ? numValue : 0.0
+            return t
+        }
+        return t
+    }
+    Len l = parseLength(low, fontSize)
+    if l.kind == LEN_PX || l.kind == LEN_PERCENT {
+        t.kind = TRACK_LEN
+        t.size = l
+    }
+    return t
+}
+
+// A track list, with `repeat(n, <list>)` expanded in place. The count
+// is capped because a template is written by hand and a runaway repeat
+// would be a denial of service rather than a layout.
+arr[Track] func parseTrackList(v:ascii, fontSize:int) {
+    arr[Track] out = []
+    if v == null { return out }
+    ascii t = asciiTrim(v)
+    if t == '' || asciiLower(t) == 'none' { return out }
+    arr[ascii] toks = cssTokens(t)
+    for int i = 0, i < toks.length, i++ {
+        // The token is indexed rather than bound, because a bound
+        // element releases an alias that was never retained
+        // (FINDINGS.md, "ascii aliases are not retained"). Only
+        // valgrind sees the difference.
+        if asciiStartsWithLower(asciiLower(toks[i]), 'repeat(', 0)
+            && toks[i].charCodeAt(toks[i].length - 1) == CH_RPAREN {
+            arr[ascii] args = splitTopLevelCommas(toks[i].slice(7, toks[i].length - 1))
+            if args.length < 2 { continue }
+            parseNumberAt(asciiTrim(args[0]), 0)
+            if !numOk { continue }
+            int n = minInt(maxInt(roundPx(numValue), 0), 1000)
+            arr[ascii] inner = cssTokens(asciiTrim(args[1]))
+            for int r = 0, r < n, r++ {
+                for int k = 0, k < inner.length, k++ { out.push(parseTrack(inner[k], fontSize)) }
+            }
+            continue
+        }
+        out.push(parseTrack(toks[i], fontSize))
+    }
+    return out
+}
+
+// One edge of a grid placement: a line number, `span n`, or `auto`.
+GridLine func parseGridLine(v:ascii) {
+    GridLine g
+    g.kind = GRIDLINE_AUTO
+    if v == null { return g }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return g }
+    if asciiLower(t[0]) == 'span' {
+        g.kind = GRIDLINE_SPAN
+        g.n = 1
+        if t.length > 1 {
+            parseNumberAt(asciiTrim(t[1]), 0)
+            if numOk { g.n = maxInt(roundPx(numValue), 1) }
+        }
+        return g
+    }
+    if asciiLower(t[0]) == 'auto' { return g }
+    parseNumberAt(asciiTrim(t[0]), 0)
+    if numOk && roundPx(numValue) != 0 {
+        g.kind = GRIDLINE_NUMBER
+        g.n = roundPx(numValue)
+    }
+    return g
+}
+
 Shadow func parseShadow(v:ascii, currentColor:int, fontSize:int) {
     arr[ascii] t = cssTokens(v)
     if t.length == 0 { return null }
@@ -1659,6 +1759,23 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     if name == 'background' {
         applyBackgroundShorthand(props, value)
+        return
+    }
+    // `grid-column` and `grid-row` are `<start> / <end>`, and a single
+    // value sets the start alone.
+    if name == 'grid-column' || name == 'grid-row' {
+        text axis = name == 'grid-column' ? 'column' : 'row'
+        arr[ascii] halves = splitTopLevelSlash(value)
+        if halves.length > 0 { setProp(props, `grid-${axis}-start`, halves[0]) }
+        if halves.length > 1 { setProp(props, `grid-${axis}-end`, halves[1]) }
+        return
+    }
+    if name == 'grid-area' {
+        arr[ascii] parts = splitTopLevelSlash(value)
+        if parts.length > 0 { setProp(props, 'grid-row-start', parts[0]) }
+        if parts.length > 1 { setProp(props, 'grid-column-start', parts[1]) }
+        if parts.length > 2 { setProp(props, 'grid-row-end', parts[2]) }
+        if parts.length > 3 { setProp(props, 'grid-column-end', parts[3]) }
         return
     }
     if name == 'list-style' {
@@ -2164,10 +2281,11 @@ int func parseDisplay(v:ascii, dflt:int) {
     if v == null { return dflt }
     ascii t = asciiLower(v)
     if t == 'none' { return DISPLAY_NONE }
-    if t == 'block' || t == 'flow-root' || t == 'grid' { return DISPLAY_BLOCK }
+    if t == 'block' || t == 'flow-root' { return DISPLAY_BLOCK }
+    if t == 'grid' { return DISPLAY_GRID }
     if t == 'flex' { return DISPLAY_FLEX }
     if t == 'inline-flex' { return DISPLAY_INLINE_FLEX }
-    if t == 'inline-grid' { return DISPLAY_BLOCK }
+    if t == 'inline-grid' { return DISPLAY_INLINE_GRID }
     if t == 'inline' { return DISPLAY_INLINE }
     if t == 'contents' { return DISPLAY_CONTENTS }
     if t == 'inline-block' { return DISPLAY_INLINE_BLOCK }
@@ -2944,6 +3062,19 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // justify-items is inherited in effect rather than by the cascade:
     // it is read off the parent box at layout time, so it is stored as
     // the element's own value and the child asks for it there.
+    // CSS Grid. The templates are parsed once per distinct style, like
+    // every other property here, so a page with no grid on it allocates
+    // nothing: an absent template is an empty list.
+    s.gridCols = parseTrackList(styleProp(props, 'grid-template-columns'), s.fontSize)
+    s.gridRows = parseTrackList(styleProp(props, 'grid-template-rows'), s.fontSize)
+    s.gridAutoCols = parseTrackList(styleProp(props, 'grid-auto-columns'), s.fontSize)
+    s.gridAutoRows = parseTrackList(styleProp(props, 'grid-auto-rows'), s.fontSize)
+    ascii gaf = styleProp(props, 'grid-auto-flow')
+    s.gridAutoFlowColumn = gaf != null && asciiIndexOf(asciiLower(gaf), 'column'.toAscii(), 0) >= 0
+    s.gridColStart = parseGridLine(styleProp(props, 'grid-column-start'))
+    s.gridColEnd = parseGridLine(styleProp(props, 'grid-column-end'))
+    s.gridRowStart = parseGridLine(styleProp(props, 'grid-row-start'))
+    s.gridRowEnd = parseGridLine(styleProp(props, 'grid-row-end'))
     s.justifyItems = parseAlignValue(styleProp(props, 'justify-items'), BOXALIGN_START)
     s.justifySelf = parseAlignValue(styleProp(props, 'justify-self'), BOXALIGN_AUTO)
     ascii tov = styleProp(props, 'text-overflow')

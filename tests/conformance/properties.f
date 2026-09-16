@@ -69,7 +69,11 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.maxHeight)}`, `${s.boxSizing}`, `${s.captionSide}`, 
         `${s.wordSpacing}`, `${s.outlineWidth}`, `${s.outlineStyle}`, `${s.outlineColor}`, 
         `${s.outlineOffset}`, `${s.tableLayoutFixed}`, `${s.emptyCellsHide}`, 
-        `${s.justifyItems}`, `${s.justifySelf}`, 
+        `${trackKey(s.gridCols)}`, `${trackKey(s.gridRows)}`, 
+        `${trackKey(s.gridAutoCols)}`, `${trackKey(s.gridAutoRows)}`, 
+        `${s.gridAutoFlowColumn}`, `${lineKey(s.gridColStart)}`, 
+        `${lineKey(s.gridColEnd)}`, `${lineKey(s.gridRowStart)}`, 
+        `${lineKey(s.gridRowEnd)}`, `${s.justifyItems}`, `${s.justifySelf}`, 
         `${s.textOverflowEllipsis}`, `${s.pointerEvents}`, 
         `${s.containSize}`, `${s.containLayout}`, `${s.containPaint}`, 
         `${s.containStyle}`, `${s.contentHidden}`, 
@@ -122,7 +126,9 @@ arr[text] func styleDigestFieldNames() {
         'fontKey', 'position', 'top', 'right', 'bottom', 'left', 'zIndex', 
         'floatSide', 'clearSide', 'maxHeight', 'boxSizing', 'captionSide', 
         'wordSpacing', 'outlineWidth', 'outlineStyle', 'outlineColor', 'outlineOffset', 
-        'tableLayoutFixed', 'emptyCellsHide', 'justifyItems', 'justifySelf', 'textOverflowEllipsis', 
+        'tableLayoutFixed', 'emptyCellsHide', 'gridCols', 'gridRows', 'gridAutoCols', 'gridAutoRows', 
+        'gridAutoFlowColumn', 'gridColStart', 'gridColEnd', 
+        'gridRowStart', 'gridRowEnd', 'justifyItems', 'justifySelf', 'textOverflowEllipsis', 
         'pointerEvents', 'containSize', 'containLayout', 
         'containPaint', 'containStyle', 'contentHidden', 
         'intrinsicWidth', 'intrinsicHeight', 'transforms', 
@@ -134,6 +140,18 @@ arr[text] func styleDigestFieldNames() {
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows']
+}
+
+text func trackKey(list:arr[Track]) {
+    text out = ''
+    for int i = 0, i < list.length, i++ {
+        out = out + `${list[i].kind}:${lenKey(list[i].size)}/${list[i].fr};`
+    }
+    return out
+}
+
+text func lineKey(g:GridLine) {
+    return `${g.kind}:${g.n}`
 }
 
 text func transformKey(list:arr[Transform]) {
