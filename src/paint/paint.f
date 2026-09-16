@@ -675,6 +675,61 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
     fillAlpha(1.0)
 }
 
+// One side of a border, in its own style (Backgrounds and Borders 3
+// §4.3). `horizontal` says which way the line runs: a top or bottom
+// edge is `w` long and `thick` deep, a left or right edge the other way
+// about, and the two differ only in which axis the pattern steps along.
+//
+// The standard fixes `double` exactly -- two lines and a gap, each as
+// near a third of the width as the width allows -- and leaves the dash
+// and dot lengths to the user agent. These follow the usual convention:
+// a dash three times the border's thickness, a dot square, each
+// separated by a gap of its own length, and the run is stretched so a
+// whole number of them spans the edge rather than leaving a stub.
+void func paintBorderSide(x:int, y:int, w:int, h:int, horizontal:bool, style:int) {
+    if w <= 0 || h <= 0 { return }
+    int thick = horizontal ? h : w
+    int along = horizontal ? w : h
+    if style == BORDER_SOLID || style == BORDER_NONE {
+        pDrawRect(x, y, w, h)
+        return
+    }
+    if style == BORDER_DOUBLE {
+        // A width that does not divide by three gives the extra pixels
+        // to the lines rather than the gap, which keeps a 2px double
+        // border visible as two 1px lines with no gap to spare.
+        int line = Math.floorDiv(thick + 2, 3)
+        int gap = thick - line - line
+        if gap < 1 || line < 1 {
+            pDrawRect(x, y, w, h)
+            return
+        }
+        if horizontal {
+            pDrawRect(x, y, w, line)
+            pDrawRect(x, y + thick - line, w, line)
+        } else {
+            pDrawRect(x, y, line, h)
+            pDrawRect(x + thick - line, y, line, h)
+        }
+        return
+    }
+    // dashed and dotted: a run of marks with an equal gap after each.
+    int mark = style == BORDER_DOTTED ? thick : thick * 3
+    if mark < 1 { mark = 1 }
+    int period = mark + mark
+    int count = Math.floorDiv(along + period - 1, period)
+    if count < 1 { count = 1 }
+    // stretch the period so the marks end flush with the edge
+    for int i = 0, i < count, i++ {
+        int start = Math.floorDiv(along * i, count)
+        int end = Math.floorDiv(along * (i + 1), count)
+        int len = Math.floorDiv(end - start + 1, 2)
+        if len < 1 { len = 1 }
+        if horizontal { pDrawRect(x + start, y, len, h) }
+        else { pDrawRect(x, y + start, w, len) }
+    }
+}
+
 void func paintBorders(b:Box) {
     Style s = b.style
     if s.borderStyle == BORDER_NONE { return }
@@ -708,19 +763,19 @@ void func paintBorders(b:Box) {
     }
     if b.bt > 0 && colorIsPaintable(s.borderTopColor) && !skipTop {
         paintFill(s.borderTopColor, s.effectiveOpacity)
-        pDrawRect(x, y, w, b.bt)
+        paintBorderSide(x, y, w, b.bt, true, s.borderTopStyle)
     }
     if b.bb > 0 && colorIsPaintable(s.borderBottomColor) {
         paintFill(s.borderBottomColor, s.effectiveOpacity)
-        pDrawRect(x, y + h - b.bb, w, b.bb)
+        paintBorderSide(x, y + h - b.bb, w, b.bb, true, s.borderBottomStyle)
     }
     if b.bl > 0 && colorIsPaintable(s.borderLeftColor) && !skipLeft {
         paintFill(s.borderLeftColor, s.effectiveOpacity)
-        pDrawRect(x, y, b.bl, h)
+        paintBorderSide(x, y, b.bl, h, false, s.borderLeftStyle)
     }
     if b.br > 0 && colorIsPaintable(s.borderRightColor) {
         paintFill(s.borderRightColor, s.effectiveOpacity)
-        pDrawRect(x + w - b.br, y, b.br, h)
+        paintBorderSide(x + w - b.br, y, b.br, h, false, s.borderRightStyle)
     }
     fillAlpha(1.0)
 }

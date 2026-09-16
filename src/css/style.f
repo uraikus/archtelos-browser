@@ -143,6 +143,12 @@ const int POS_STICKY = 4
 // border-style
 const int BORDER_NONE = 0
 const int BORDER_SOLID = 1
+// `groove`, `ridge`, `inset` and `outset` shade a border with a lighter
+// and a darker edge; they are accepted and painted solid, which is the
+// right width and colour and the wrong relief.
+const int BORDER_DASHED = 2
+const int BORDER_DOTTED = 3
+const int BORDER_DOUBLE = 4
 
 // text-transform
 const int TT_NONE = 0
@@ -324,7 +330,14 @@ struct Style {
     borderRightColor:int
     borderBottomColor:int
     borderLeftColor:int
+    // `borderStyle` is only whether the box has any border at all, kept
+    // for the early-out; each side carries its own style, because a box
+    // may be solid on one edge and dashed on the next.
     borderStyle:int
+    borderTopStyle:int
+    borderRightStyle:int
+    borderBottomStyle:int
+    borderLeftStyle:int
     borderRadius:int
     borderSpacing:int
     borderCollapse:bool

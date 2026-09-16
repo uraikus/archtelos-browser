@@ -1818,6 +1818,20 @@ int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     return c
 }
 
+// One side's border-style. Everything that is not a broken or doubled
+// line paints solid, which is what `groove`, `ridge`, `inset` and
+// `outset` get: the right width and colour, without the relief.
+int func borderStyleProp(props:map[text], side:text) {
+    ascii v = styleProp(props, `border-${side}-style`)
+    if v == null { return BORDER_SOLID }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'none' || t == 'hidden' { return BORDER_NONE }
+    if t == 'dashed' { return BORDER_DASHED }
+    if t == 'dotted' { return BORDER_DOTTED }
+    if t == 'double' { return BORDER_DOUBLE }
+    return BORDER_SOLID
+}
+
 int func borderWidthProp(props:map[text], side:text, fontSize:int) {
     ascii style = styleProp(props, `border-${side}-style`)
     if style == null || asciiLower(style) == 'none' || asciiLower(style) == 'hidden' { return 0 }
@@ -2347,6 +2361,13 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.borderBottomColor = colorProp(props, 'border-bottom-color', s.color, s.color)
     s.borderLeftColor = colorProp(props, 'border-left-color', s.color, s.color)
     s.borderStyle = (s.borderTop + s.borderRight + s.borderBottom + s.borderLeft) > 0 ? BORDER_SOLID : BORDER_NONE
+    // The declared keyword per side. `borderWidthProp` has already
+    // turned `none` and `hidden` into a zero width, so a side with no
+    // width paints nothing whatever this says.
+    s.borderTopStyle = borderStyleProp(props, 'top')
+    s.borderRightStyle = borderStyleProp(props, 'right')
+    s.borderBottomStyle = borderStyleProp(props, 'bottom')
+    s.borderLeftStyle = borderStyleProp(props, 'left')
     s.borderRadius = 0
     ascii br = styleProp(props, 'border-radius')
     if br != null {

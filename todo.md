@@ -75,9 +75,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    the check. A radial gradient can be graded the same way.
 5. **Backgrounds and Borders 3, completed**: `background-attachment`;
    more than one background layer per box; `box-shadow`; `border-image`;
-   and border styles that paint as something other than solid. A single
-   background image from `url()` with `repeat`, `position`, `size`,
-   `origin` and `clip` is done. A background clipped to the padding or
+   and `groove`, `ridge`, `inset` and `outset`, which paint solid
+   because each needs its edge shaded lighter on one side and darker on
+   the other. A single background image from `url()` with `repeat`,
+   `position`, `size`, `origin` and `clip` is done, and so are `solid`,
+   `dashed`, `dotted` and `double` borders per side. A background clipped to the padding or
    content edge still uses the border box's `border-radius` rather than
    the smaller inner curve, which needs the rounded-rectangle path that
    an image layer does not have (FINDINGS.md, "an image is a drawable

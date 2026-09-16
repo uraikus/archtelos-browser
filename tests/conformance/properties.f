@@ -43,6 +43,7 @@ text func styleDigest(s:Style) {
         + `|${s.borderTop}|${s.borderRight}|${s.borderBottom}|${s.borderLeft}`
         + `|${s.borderTopColor}|${s.borderRightColor}|${s.borderBottomColor}|${s.borderLeftColor}`
         + `|${s.borderStyle}|${s.borderRadius}|${s.borderSpacing}|${s.borderCollapse}`
+        + `|${s.borderTopStyle}|${s.borderRightStyle}|${s.borderBottomStyle}|${s.borderLeftStyle}`
         + `|${s.textIndent}|${s.letterSpacing}|${s.hidden}|${s.fontKey}`
         + `|${s.position}|${lenKey(s.top)}|${lenKey(s.right)}|${lenKey(s.bottom)}|${lenKey(s.left)}|${s.zIndex}`
         + `|${s.floatSide}|${s.clearSide}`

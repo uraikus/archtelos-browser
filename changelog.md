@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Borders paint as the style they were given
+
+Every border painted solid. The cascade derived one style for the whole
+box from whether any width was non-zero and threw the declared keyword
+away, so `border: 1px dashed` came out as a solid line and a box could
+not be solid on one edge and dashed on the next.
+
+Each side now carries its own style, and the painter draws it:
+
+- **`double`** is the one the standard fixes exactly — two parallel
+  lines with a gap, each as near a third of the width as the width
+  allows — so it is checked to the pixel: six pixels become two, two and
+  two. A width that does not divide by three gives the spare pixels to
+  the lines rather than the gap, so a 2px double border is two hairlines
+  rather than one line and a gap it has no room for.
+- **`dashed` and `dotted`** are left to the user agent, so the checks
+  ask what the standard actually requires — that the line be broken —
+  rather than inventing a dash length and claiming Chromium agrees. A
+  dash is three times the border's thickness and a dot is square, each
+  followed by a gap of its own length, and the run is stretched so a
+  whole number of marks spans the edge instead of ending in a stub.
+- **`groove`, `ridge`, `inset` and `outset`** are accepted and painted
+  solid: the right width and colour, without the relief. css-2026.md and
+  todo.md say so rather than leaving it to be discovered.
+
+Twenty-two pixel checks in the new `tests/render/borders.f`; stubbing
+every side back to solid fails nine of them. The paint phase is unmoved
+on the benchmark page, which is full of bordered table cells — a median
+of 0.0 ms over 25 interleaved paired runs, five slower and seven faster.
+
+**This moves no instrument count, and that is worth saying.** The
+physical `border-*-style` rows already registered, because
+`borderWidthProp` gives a side with a declared style the medium width
+and that alone changes the computed style. They were registering for a
+property the engine did not implement — the count was right for the
+wrong reason, which is the same failure the audit found in the row
+values, one level up. What the checks measure here is pixels.
+
+**One test expectation was wrong and the code was right.** The first
+draft asserted that dotted leaves more gap than dashed. It does not:
+both put a gap of its own length after every mark, so both cover about
+half the edge however often they break it. What differs is the number of
+marks, which is what the check counts now.
+
 ### background-origin and background-clip
 
 `background-origin` chooses the edge a background image is placed and
