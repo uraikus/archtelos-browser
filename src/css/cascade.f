@@ -1763,6 +1763,21 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     // `grid-column` and `grid-row` are `<start> / <end>`, and a single
     // value sets the start alone.
+    // `columns` is a width and a count in either order.
+    if name == 'columns' {
+        arr[ascii] ct = cssTokens(value)
+        for int i = 0, i < ct.length, i++ {
+            ascii t = asciiLower(ct[i])
+            if t == 'auto' { continue }
+            Len l = parseLength(t, 16)
+            if l.kind == LEN_PX && asciiIndexOf(t, 'px'.toAscii(), 0) >= 0 {
+                setProp(props, 'column-width', ct[i])
+            } else {
+                setProp(props, 'column-count', ct[i])
+            }
+        }
+        return
+    }
     if name == 'grid-column' || name == 'grid-row' {
         text axis = name == 'grid-column' ? 'column' : 'row'
         arr[ascii] halves = splitTopLevelSlash(value)
@@ -3062,6 +3077,65 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // justify-items is inherited in effect rather than by the cascade:
     // it is read off the parent box at layout time, so it is stored as
     // the element's own value and the child asks for it there.
+    // CSS Multi-column. `column-rule` is width, style and colour in any
+    // order, like `border` and `outline`; the rule takes no space, so
+    // its width never reaches the box model.
+    s.columnCount = 0
+    ascii ccnt = styleProp(props, 'column-count')
+    if ccnt != null {
+        ascii t = asciiLower(asciiTrim(ccnt))
+        if t != 'auto' {
+            parseNumberAt(t, 0)
+            if numOk { s.columnCount = maxInt(roundPx(numValue), 0) }
+        }
+    }
+    ascii cwid = styleProp(props, 'column-width')
+    if cwid != null {
+        ascii t = asciiLower(asciiTrim(cwid))
+        if t != 'auto' {
+            Len l = parseLength(t, s.fontSize)
+            if l.kind == LEN_PX { s.columnWidth = l }
+        }
+    }
+    s.columnRuleStyle = BORDER_NONE
+    s.columnRuleColor = s.color
+    int ruleDeclaredWidth = -1
+    ascii crsh = styleProp(props, 'column-rule')
+    if crsh != null {
+        arr[ascii] parts = cssTokens(crsh)
+        for int i = 0, i < parts.length, i++ {
+            ascii t = asciiLower(parts[i])
+            if isLineStyleKeyword(t) { s.columnRuleStyle = lineStyleKeyword(t) }
+            else {
+                int c = parseCssColor(t, s.color)
+                if c != COLOR_UNSET { s.columnRuleColor = c }
+                else {
+                    Len l = parseLength(t, s.fontSize)
+                    if l.kind == LEN_PX { ruleDeclaredWidth = maxInt(roundPx(l.v), 0) }
+                }
+            }
+        }
+    }
+    ascii crs = styleProp(props, 'column-rule-style')
+    if crs != null { s.columnRuleStyle = lineStyleKeyword(asciiLower(asciiTrim(crs))) }
+    ascii crw = styleProp(props, 'column-rule-width')
+    if crw != null {
+        ascii t = asciiLower(asciiTrim(crw))
+        if t == 'thin' { ruleDeclaredWidth = 1 }
+        else if t == 'medium' { ruleDeclaredWidth = 3 }
+        else if t == 'thick' { ruleDeclaredWidth = 5 }
+        else {
+            Len l = parseLength(t, s.fontSize)
+            if l.kind == LEN_PX { ruleDeclaredWidth = maxInt(roundPx(l.v), 0) }
+        }
+    }
+    s.columnRuleWidth = s.columnRuleStyle == BORDER_NONE ? 0
+                      : (ruleDeclaredWidth >= 0 ? ruleDeclaredWidth : 3)
+    ascii crc = styleProp(props, 'column-rule-color')
+    if crc != null {
+        int c = parseCssColor(asciiTrim(crc), s.color)
+        if c != COLOR_UNSET { s.columnRuleColor = c }
+    }
     // CSS Grid. The templates are parsed once per distinct style, like
     // every other property here, so a page with no grid on it allocates
     // nothing: an absent template is an empty list.

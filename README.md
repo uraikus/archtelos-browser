@@ -128,6 +128,11 @@ content — and a tile that runs past that edge is cut off there. `object-fit` a
 element's own content inside its box, in all five fitting values, and
 clip it to the content box.
 
+**Columns** break one flow into several. `column-count` and
+`column-width` say how many and how wide, the content is laid out once
+at the column width and then broken into columns of equal height, and
+`column-rule` draws a line down each gap without taking any space.
+
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and
 `grid-template-rows` say what the tracks are — lengths, percentages,
@@ -227,11 +232,11 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-five unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-six unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-containment, alignment, grid, audio, the preload scanner), ten offscreen render suites that check
+containment, alignment, grid, columns, audio, the preload scanner), ten offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, text decoration, transforms and box shadows — three

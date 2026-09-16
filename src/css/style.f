@@ -468,6 +468,14 @@ struct Style {
     // default its children take, justifySelf is a child's own answer.
     // BOXALIGN_AUTO on the child means "whatever the parent says",
     // which is its initial value and its zero value both.
+    // CSS Multi-column. `columnCount` is 0 for `auto`, and
+    // `columnWidth` unset means auto, so the initial value of both is
+    // the zero value and a page with no columns writes nothing.
+    columnCount:int
+    columnWidth:Len
+    columnRuleWidth:int
+    columnRuleStyle:int
+    columnRuleColor:int
     justifyItems:int
     // CSS Grid. An empty template is a grid with no explicit tracks in
     // that axis, which is the initial value and costs no allocation.

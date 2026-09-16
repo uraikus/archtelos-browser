@@ -1258,7 +1258,14 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int innerX = contentX(b)
     int innerY = contentY(b)
     int contentH = 0
-    if hasInlineContent(b) {
+    // A multi-column container lays its content out once, at the column
+    // width, and then breaks that one flow into columns (CSS
+    // Multi-column 1 §3). Nothing here is laid out twice, so the cost
+    // is the walk that moves the content, not a second layout.
+    int usedColumns = usedColumnCount(s, width)
+    if usedColumns > 1 {
+        contentH = layoutColumns(b, innerX, innerY, width, usedColumns)
+    } else if hasInlineContent(b) {
         contentH = layoutInlineContent(b, innerX, innerY, width)
     } else {
         contentH = layoutBlockChildren(b, innerX, innerY, width)
@@ -1313,6 +1320,159 @@ void func justifyBlockChild(parent:Box, c:Box, cx:int, cw:int) {
     int slack = cw - (c.w + c.ml + c.mr)
     if slack <= 0 { return }
     offsetBox(c, align == BOXALIGN_CENTRE ? Math.floorDiv(slack, 2) : slack, 0)
+}
+
+// How many columns this box has, given the space it has to fill. A
+// count alone is that count; a width alone is as many columns of at
+// least that width as fit; both together make the count a maximum
+// (CSS Multi-column 1 §3.3).
+int func usedColumnCount(s:Style, width:int) {
+    bool hasCount = s.columnCount > 0
+    bool hasWidth = s.columnWidth.kind == LEN_PX
+    if !hasCount && !hasWidth { return 1 }
+    if !hasWidth { return maxInt(s.columnCount, 1) }
+    int cw = maxInt(roundPx(s.columnWidth.v), 1)
+    int gap = s.columnGap
+    int fit = maxInt(Math.floorDiv(width + gap, cw + gap), 1)
+    if hasCount { return maxInt(minInt(s.columnCount, fit), 1) }
+    return fit
+}
+
+// One thing that can be moved into a column on its own: a line box of a
+// child that holds lines, or a whole child that does not. Nothing
+// deeper is broken, so a subtree nested below the container's own
+// children stays whole -- css-2026.md records that.
+struct ColumnUnit {
+    box:Box             // the child this belongs to
+    line:Line
+    hasLine:bool        // whether `line` means anything
+    top:int
+    bottom:int
+}
+
+// Lays the content out at the column width, then moves it into columns
+// of equal height. Returns the height of the tallest column, which is
+// the container's content height.
+int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
+    Style s = b.style
+    int gap = s.columnGap
+    int colW = Math.floorDiv(width - gap * (count - 1), count)
+    if colW < 1 { colW = 1 }
+    int flowH = hasInlineContent(b)
+        ? layoutInlineContent(b, innerX, innerY, colW)
+        : layoutBlockChildren(b, innerX, innerY, colW)
+
+    arr[ColumnUnit] units = []
+    collectColumnUnits(b, units)
+    if units.length == 0 { return flowH }
+
+    // Balance: aim for an equal share and grow the target until every
+    // unit fits in the columns there are. A unit taller than the target
+    // sets its own column's height, which is why this is a loop rather
+    // than one division.
+    int target = Math.floorDiv(flowH + count - 1, count)
+    int guard = 0
+    while guard < 64 {
+        if columnsNeeded(units, target) <= count { break }
+        target = target + maxInt(Math.floorDiv(target, 8), 1)
+        guard++
+    }
+
+    // Move each unit into its column. A unit's offset is the column's
+    // x step and the top of the run it belongs to.
+    int col = 0
+    int colTop = units[0].top
+    int tallest = 0
+    for int i = 0, i < units.length, i++ {
+        ColumnUnit u = units[i]
+        if u.bottom - colTop > target && u.top > colTop {
+            col++
+            colTop = u.top
+        }
+        int dx = col * (colW + gap)
+        int dy = innerY - colTop
+        // `hasLine` rather than a null test: a struct-typed field can
+        // never read as null, so `u.line == null` is always false and
+        // every unit would take the line branch (FINDINGS.md,
+        // finding 5).
+        if u.hasLine { offsetLine(u.line, dx, dy) }
+        else { offsetBox(u.box, dx, dy) }
+        tallest = maxInt(tallest, u.bottom - colTop)
+    }
+    // A child whose lines were split no longer occupies one rectangle.
+    // Its box is cut back to the part that stayed in the first column
+    // it appears in, so its background does not smear across the gap.
+    for int i = 0, i < b.children.length, i++ { refitFragmentedChild(b.children[i]) }
+    return tallest
+}
+
+// How many columns a target height needs, filling them in order.
+int func columnsNeeded(units:arr[ColumnUnit], target:int) {
+    int cols = 1
+    int colTop = units[0].top
+    for int i = 0, i < units.length, i++ {
+        if units[i].bottom - colTop > target && units[i].top > colTop {
+            cols++
+            colTop = units[i].top
+        }
+    }
+    return cols
+}
+
+void func collectColumnUnits(b:Box, out:arr[ColumnUnit]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
+        if c.lines.length > 0 {
+            for int j = 0, j < c.lines.length, j++ {
+                Line ln = c.lines[j]
+                ColumnUnit u
+                u.box = c
+                u.line = ln
+                u.hasLine = true
+                u.top = ln.y
+                u.bottom = ln.y + ln.h
+                out.push(u)
+            }
+            continue
+        }
+        ColumnUnit u
+        u.box = c
+        u.top = c.y - c.mt
+        u.bottom = c.y + c.h + c.mb
+        out.push(u)
+    }
+}
+
+void func offsetLine(ln:Line, dx:int, dy:int) {
+    ln.x = ln.x + dx
+    ln.y = ln.y + dy
+    ln.baseline = ln.baseline + dy
+    for int j = 0, j < ln.frags.length, j++ {
+        Fragment f = ln.frags[j]
+        f.x = f.x + dx
+        f.y = f.y + dy
+        f.baseline = f.baseline + dy
+    }
+}
+
+// After the lines have moved, a child that holds them may cover several
+// columns. Its own rectangle is refitted to the lines that share its
+// first column, so its background and border stay in one place.
+void func refitFragmentedChild(c:Box) {
+    if c.lines.length == 0 { return }
+    int firstX = c.lines[0].x
+    int top = c.lines[0].y
+    int bottom = c.lines[0].y + c.lines[0].h
+    for int i = 0, i < c.lines.length, i++ {
+        if c.lines[i].x != firstX { continue }
+        top = minInt(top, c.lines[i].y)
+        bottom = maxInt(bottom, c.lines[i].y + c.lines[i].h)
+    }
+    c.x = firstX
+    c.y = top
+    c.h = maxInt(bottom - top, 0)
 }
 
 int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {

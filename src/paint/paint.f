@@ -1002,6 +1002,30 @@ Line func firstLineOf(b:Box) {
     return null
 }
 
+// The rule between each pair of columns: a line centred in the gap,
+// painted through the same code as a border side so every style paints
+// as itself. It takes no space, so it is drawn over the gap the columns
+// already left rather than pushing them apart (CSS Multi-column 1 §4).
+void func paintColumnRules(b:Box) {
+    Style s = b.style
+    int count = usedColumnCount(s, contentWidth(b))
+    if count < 2 || s.columnRuleStyle == BORDER_NONE { return }
+    int gap = s.columnGap
+    int colW = Math.floorDiv(contentWidth(b) - gap * (count - 1), count)
+    if colW < 1 { return }
+    int w = minInt(s.columnRuleWidth, maxInt(gap, 1))
+    int c = colorWithOpacity(s.columnRuleColor, s.effectiveOpacity)
+    int top = contentY(b)
+    int h = b.h - b.pt - b.pb - b.bt - b.bb
+    if h <= 0 { return }
+    for int i = 1, i < count, i++ {
+        int centre = contentX(b) + i * (colW + gap) - Math.floorDiv(gap, 2)
+        paintBorderSide(centre - Math.floorDiv(w, 2), top, w, h, false, true,
+                        s.columnRuleStyle, c, s.effectiveOpacity)
+    }
+    fillAlpha(1.0)
+}
+
 // Whether a cell has anything in it. A cell holding only collapsible
 // whitespace is empty, and the layout has already dropped that text, so
 // a cell with no child boxes and no line boxes is the question.
@@ -1567,6 +1591,7 @@ void func paintBoxUntransformed(b:Box) {
         return
     }
     if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+    if s.columnRuleWidth > 0 && !s.hidden { paintColumnRules(b) }
     // content-visibility: hidden skips the contents entirely
     // (Containment 2 §4). The box's own background, border and outline
     // are not contents, so they are already painted above; everything

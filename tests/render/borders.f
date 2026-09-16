@@ -303,4 +303,46 @@ checkEqInt(flushTop - offsetTop, 3, 'and outline-offset moves it out by exactly 
 shotOutline('outline:4px solid red;outline-offset:3px')
 check(getPixelColor(20, 8) == white, 'the gap the offset opens is left empty')
 
+// ---- the column rule -----------------------------------------------------
+// The rule is a line down the middle of each gap between columns. It
+// takes no space, so it is painted over a gap the columns already left.
+
+void func shotColumns(style:text) {
+    Page p = pageFromHtml(head + '<div style="width:100px;column-count:2;'
+        + 'column-gap:20px;' + style + '">'
+        + '<div style="height:10px"></div><div style="height:10px"></div>'
+        + '<div style="height:10px"></div><div style="height:10px"></div>'
+        + '</div></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+// Two 40px columns with a 20px gap: the gap runs from x=40 to x=60 and
+// its middle is x=50.
+shotColumns('')
+check(getPixelColor(50, 5) == white, 'with no rule the gap between columns is empty')
+
+shotColumns('column-rule:4px solid red')
+check(getPixelColor(50, 5) == red, 'column-rule paints a line down the middle of the gap')
+check(getPixelColor(20, 5) == white, 'and not across the columns themselves')
+
+// The rule is centred in the gap and only as wide as it was asked to
+// be, so the rest of the gap stays empty.
+shotColumns('column-rule:4px solid red')
+check(getPixelColor(42, 5) == white, 'the rule does not fill the gap on the left')
+check(getPixelColor(58, 5) == white, 'nor on the right')
+
+shotColumns('column-rule:4px dashed red')
+int ruleInk = 0
+for int yy = 0, yy < 20, yy++ {
+    if getPixelColor(50, yy) == red { ruleInk++ }
+}
+check(ruleInk > 0, 'a dashed rule paints something down the gap')
+int solidInk = 0
+shotColumns('column-rule:4px solid red')
+for int yy = 0, yy < 20, yy++ {
+    if getPixelColor(50, yy) == red { solidInk++ }
+}
+check(solidInk > ruleInk, 'and less of it than a solid one, because it is broken')
+
 finish('borders')

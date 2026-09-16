@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Columns
+
+The third of the snapshot's untouched specifications off zero.
+`column-count` and `column-width` resolve by the standard's rule — a
+count alone is that count, a width alone is as many columns of at least
+that width as fit, both together make the count a maximum — with the
+`columns` shorthand, `column-gap`, and `column-rule` and its three
+longhands painted down the middle of each gap through the same code as a
+border side.
+
+**The content is laid out once, at the column width, and that single
+flow is then broken into columns.** Nothing is laid out twice: the cost
+is the walk that moves the content, not a second layout. The balanced
+height starts at an equal share and grows until every unit fits in the
+columns there are, because a unit taller than the share sets its own
+column's height.
+
+**Breaking happens between the container's direct children and between
+the line boxes of a direct child, and no deeper.** That covers what
+multi-column is used for — a stack of blocks, or one long run of text,
+whose lines are all in one child — and css-2026.md says plainly what it
+does not cover: a subtree nested below those children stays whole and
+overflows its column. A child whose lines are split has its own box
+refitted to the lines sharing its first column, so its background does
+not smear across the gap. Real fragment boxes are in todo.md, where they
+sit with paged media and the `break-*` properties, because it is one
+piece of work for all three.
+
+`column-count: 1` is checked against no columns at all — a
+multi-column container with one column must be indistinguishable from an
+ordinary block, and that is the check that would catch the whole
+mechanism firing when it should not.
+
+**Properties 158 → 163.**
+
+Twenty-eight checks in the new `tests/unit/test_multicol.f` and seven in
+`tests/render/borders.f` (66 → 73).
+
+**A struct field that can never be null.** The first draft marked a
+column unit as "a whole child" by leaving its `line` field unset and
+testing `u.line == null`. A struct-typed field can never read as null
+(FINDINGS.md, finding 5), so the test was always false and every unit
+took the line branch: the blocks stayed in column one and seven checks
+said so. It carries an explicit flag now.
+
 ### Grid
 
 `display: grid` and `inline-grid` establish a grid container, and its

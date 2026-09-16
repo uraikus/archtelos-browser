@@ -125,9 +125,16 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     `auto-fill` and `auto-fit`, dense packing, and subgrid. An `auto`
     track is sized by the largest item that sits in it alone, so an
     item spanning two auto tracks does not grow either of them.
-12. The remainder of the official definition, lower value for this
+12. **Multi-column 1, completed**: `column-span: all`, which needs the
+    container split around the spanner; `column-fill: auto`; and real
+    fragment boxes, so that a subtree nested below the container's own
+    children can be broken and a split child's background paints in
+    each column rather than only the first. That last one is the same
+    machinery paged media and the `break-*` properties want, so it is
+    one piece of work for three items.
+13. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
-   User Interface 3, Multi-column 1, Easing 1, Namespaces 3.
+   User Interface 3, Easing 1, Namespaces 3.
 
 ### After the official definition
 
@@ -153,7 +160,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(158; Chromium reports 373, and four of them cannot be graded by a probe
+(163; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
