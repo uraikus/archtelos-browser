@@ -530,7 +530,7 @@ else in this file:
 | | Bytes |
 |---|---|
 | This browser, the whole program | 2,733,240 |
-| This browser, all `.f` source | 893,796 |
+| This browser, all `.f` source | 895,005 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -705,6 +705,15 @@ reached; the run put it at 99 ms and eight alternating samples give 98
 to 121 against the revision before it at 100 to 117 — two series with
 an outlier apiece and overlapping bests, which is the machine rather
 than the change.
+
+`transform-box` costs **no bytes the linker records**: the binary is
+2,733,240 with it and without. That number was checked rather than
+taken, because an unchanged size is also what a stale build looks like
+— the two binaries hash differently (`c47a9923` against `5322c080`), so
+they are different programs that happen to round to the same size. The
+benchmark page has no transform on it, so nothing here is reached:
+eight alternating samples give 100 to 106 ms against 97 to 104, two
+overlapping series whose difference is the machine.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,
