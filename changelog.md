@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### white-space was two properties all along
+
+`white-space` is a shorthand for two independent questions — whether
+spaces and newlines survive, and whether a line may wrap — and the
+engine stored the product of the two as one enum of the shorthand's own
+values. That enum has no room for `pre-line`, which preserves newlines
+while still collapsing spaces, so `pre-line` was mapped to `pre-wrap`
+and kept every run of spaces it should have collapsed.
+
+The pair is stored as `white-space-collapse` and `text-wrap-mode` now,
+which are real properties in their own right, and the shorthand expands
+into them. `pre-line` behaves as itself. The five shorthand values are
+five distinct pairs, and the checks say so: each is put against the two
+longhands it stands for rather than against a number, which is the only
+form of check that could fail if both spellings were broken the same
+way.
+
+Four more properties from the same specification:
+
+- **`tab-size`**, as a count of spaces or as a length. A tab used to
+  expand to four spaces with nothing able to change it; the initial
+  value is eight.
+- **`word-break`** and **`overflow-wrap`**, which both allow a break
+  inside a word and differ on when: `break-all` breaks any word that
+  will not fit in the room left on the line, `break-word` waits until
+  the word would not fit on a line of its own. The engine had neither,
+  so a long word simply overflowed.
+- **`text-align-last`**, which aligns the last line of a block and any
+  line the content broke itself. A `<br>` now closes a line differently
+  from a line that merely ran out of room, which is the distinction the
+  property is about.
+
+**Properties 121 → 127**, and `--fields` shows each landing on the field
+that means it rather than on a neighbour's.
+
+Thirty-two checks in the new `tests/unit/test_text.f`, in layout rather
+than in the cascade, because a property the cascade computes and layout
+never reads is not implemented. Stubbing each of the three behaviours
+back out fails six of them, which is the check that they can fail at
+all.
+
 ### Every corner its own radius
 
 `border-radius` read the first token and gave all four corners that one

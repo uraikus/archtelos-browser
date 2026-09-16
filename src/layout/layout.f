@@ -169,6 +169,38 @@ text func layoutProfile() {
 regex spaceRun = /[[:space:]]+/g
 regex tabChar = regex(9.toChar(), 'g')
 
+// white-space is two independent questions, and these are the two.
+// `preserve-breaks` -- `white-space: pre-line` -- answers them
+// differently from each other, which is why the pair cannot be one
+// enum: it keeps newlines while still collapsing spaces.
+bool func wsKeepsSpaces(s:Style) { return s.whiteSpaceCollapse == WSC_PRESERVE }
+bool func wsKeepsBreaks(s:Style) { return s.whiteSpaceCollapse != WSC_COLLAPSE }
+bool func wsNoWrap(s:Style) { return s.textWrapMode == WRAP_NOWRAP }
+
+// What a tab expands to. tab-size is either a count of spaces or a
+// length; a length is turned back into the nearest whole number of
+// spaces, because a tab is expanded into the text before the line is
+// measured rather than resolved against the position it lands at.
+text func tabAdvance(s:Style) {
+    int n = s.tabSize
+    if s.tabSizePx >= 0 {
+        int sw = spaceWidth(s)
+        n = sw > 0 ? Math.floorDiv(s.tabSizePx, sw) : 0
+    }
+    text out = ''
+    for int i = 0, i < n, i++ { out = out + ' ' }
+    return out
+}
+
+// A whitespace-only text node disappears when whitespace collapses.
+// Under `pre-line` it disappears too, unless it holds a newline, which
+// is preserved and so still breaks the line.
+bool func wsDropsBlank(s:Style, content:text) {
+    if s.whiteSpaceCollapse == WSC_COLLAPSE { return true }
+    if s.whiteSpaceCollapse == WSC_PRESERVE { return false }
+    return content.split('\n').length == 1
+}
+
 void func setFontFor(s:Style) {
     if s.fontKey == currentFontKey { return }
     profFontSwitches++
@@ -280,7 +312,12 @@ Style func anonymousStyle(parent:Style) {
     s.textAlign = parent.textAlign
     s.textDecoration = parent.textDecoration
     s.textTransform = parent.textTransform
-    s.whiteSpace = parent.whiteSpace
+    s.whiteSpaceCollapse = parent.whiteSpaceCollapse
+    s.textWrapMode = parent.textWrapMode
+    s.textAlignLast = parent.textAlignLast
+    s.wordBreaking = parent.wordBreaking
+    s.tabSize = parent.tabSize
+    s.tabSizePx = parent.tabSizePx
     s.listStyle = parent.listStyle
     s.letterSpacing = parent.letterSpacing
     s.textIndent = parent.textIndent
@@ -650,7 +687,7 @@ void func wrapInlineRuns(b:Box) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if isInlineLevelBox(c) {
-            if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) && c.style.whiteSpace != WS_PRE && c.style.whiteSpace != WS_PRE_WRAP { continue }
+            if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) && wsDropsBlank(c.style, c.content) { continue }
             hasInline = true
         } else {
             hasBlock = true
@@ -713,8 +750,19 @@ arr[text] func wordsOfUncounted(b:Box) {
     text t = b.content
     if b.style.textTransform == TT_UPPERCASE { t = textUpper(t) }
     else if b.style.textTransform == TT_LOWERCASE { t = textLower(t) }
-    if b.style.whiteSpace == WS_PRE || b.style.whiteSpace == WS_PRE_WRAP {
-        return t.replace(tabChar, '    ').split('\n')
+    if wsKeepsSpaces(b.style) {
+        return t.replace(tabChar, tabAdvance(b.style)).split('\n')
+    }
+    if wsKeepsBreaks(b.style) {
+        // pre-line: newlines survive, every other run of whitespace
+        // collapses to one space. Splitting on the newline first keeps
+        // the collapse from eating it.
+        arr[text] lines = t.split('\n')
+        arr[text] out = []
+        for int i = 0, i < lines.length, i++ {
+            out.push(lines[i].replace(spaceRun, ' '))
+        }
+        return out
     }
     return t.replace(spaceRun, ' ').split(' ')
 }
@@ -754,8 +802,8 @@ void func computeIntrinsicUncounted(b:Box) {
     if b.kind == BOX_TEXT {
         arr[text] words = wordsOf(b)
         int sw = spaceWidth(b.style)
-        bool pre = b.style.whiteSpace == WS_PRE || b.style.whiteSpace == WS_PRE_WRAP
-        bool nowrap = b.style.whiteSpace == WS_NOWRAP
+        bool pre = wsKeepsBreaks(b.style)
+        bool nowrap = wsNoWrap(b.style) && !wsKeepsBreaks(b.style)
         int lineW = 0
         for int i = 0, i < words.length, i++ {
             text w = words[i]
@@ -865,7 +913,7 @@ void func computeIntrinsicUncounted(b:Box) {
             // width of its own; counting both would separate them by
             // two spaces.
             if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content)
-                && c.style.whiteSpace != WS_PRE && c.style.whiteSpace != WS_PRE_WRAP {
+                && wsDropsBlank(c.style, c.content) {
                 if !spacePending {
                     spacePending = true
                     spacePendingWidth = spaceWidth(c.style)
@@ -873,7 +921,7 @@ void func computeIntrinsicUncounted(b:Box) {
                 continue
             }
             minW = maxInt(minW, c.minContent)
-            if c.kind == BOX_TEXT && c.style.whiteSpace == WS_NOWRAP { minW = maxInt(minW, c.maxContent) }
+            if c.kind == BOX_TEXT && wsNoWrap(c.style) && !wsKeepsBreaks(c.style) { minW = maxInt(minW, c.maxContent) }
             if c.kind == BOX_TEXT && textStartsWithSpace(c) && !spacePending {
                 spacePending = true
                 spacePendingWidth = spaceWidth(c.style)
@@ -889,7 +937,7 @@ void func computeIntrinsicUncounted(b:Box) {
             }
         }
         maxW = maxInt(maxW, lineW)
-        if s.whiteSpace == WS_NOWRAP { minW = maxW }
+        if wsNoWrap(s) && !wsKeepsBreaks(s) { minW = maxW }
     } else {
         for int i = 0, i < b.children.length, i++ {
             Box c = b.children[i]
@@ -1284,6 +1332,7 @@ bool ifcLineHasContent = false
 int ifcLineCount = 0
 arr[Box] ifcOpenInlines = []
 arr[Fragment] ifcOpenBg = []      // the current line's background fragment of each open inline
+bool ifcHardBreak = false         // the line being closed ends at a break the content asked for
 
 int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     Box savedBox = ifcBox
@@ -1472,9 +1521,13 @@ void func finishLineUncounted(forced:bool) {
     int used = ifcX - ifcLineStart
     int freeSpace = (ifcLineRight - ifcLineStart) - used
     int shift = 0
+    // text-align-last governs the last line of the block and any line
+    // the content broke itself; every other line takes text-align.
+    int align = bs.textAlign
+    if bs.textAlignLast >= 0 && (!forced || ifcHardBreak) { align = bs.textAlignLast }
     if freeSpace > 0 {
-        if bs.textAlign == ALIGN_CENTER { shift = Math.floorDiv(freeSpace, 2) }
-        else if bs.textAlign == ALIGN_RIGHT { shift = freeSpace }
+        if align == ALIGN_CENTER { shift = Math.floorDiv(freeSpace, 2) }
+        else if align == ALIGN_RIGHT { shift = freeSpace }
     }
     for int i = 0, i < ifcFrags.length, i++ {
         Fragment f = ifcFrags[i]
@@ -1563,6 +1616,16 @@ void func breakLine() {
     beginLine()
 }
 
+// A break the content asked for -- a <br>, or a newline in preserved
+// text -- rather than one the line ran out of room for. The line it
+// closes is a last line, so it takes text-align-last.
+void func hardBreakLine() {
+    ifcHardBreak = true
+    finishLine(true)
+    ifcHardBreak = false
+    beginLine()
+}
+
 void func placeInline(b:Box) {
     if boxIsOutOfFlow(b) { return }
     if boxIsFloated(b) {
@@ -1576,7 +1639,7 @@ void func placeInline(b:Box) {
         return
     }
     if b.kind == BOX_BR {
-        breakLine()
+        hardBreakLine()
         return
     }
     if b.kind == BOX_INLINE {
@@ -1617,13 +1680,13 @@ void func placeInline(b:Box) {
     int total = b.w + b.ml + b.mr
     if ifcPendingSpace && ifcLineHasContent {
         int sw = ifcPendingSpaceWidth
-        if ifcX + sw + total > ifcLineRight && ifcBox.style.whiteSpace != WS_NOWRAP {
+        if ifcX + sw + total > ifcLineRight && !wsNoWrap(ifcBox.style) {
             breakLine()
         } else {
             ifcX = ifcX + sw
         }
         ifcPendingSpace = false
-    } else if ifcLineHasContent && ifcX + total > ifcLineRight && ifcBox.style.whiteSpace != WS_NOWRAP {
+    } else if ifcLineHasContent && ifcX + total > ifcLineRight && !wsNoWrap(ifcBox.style) {
         breakLine()
     }
     Fragment f = newFragment(FRAG_ATOMIC, b, '')
@@ -1648,17 +1711,19 @@ void func placeTextUncounted(b:Box) {
     Style s = b.style
     text t = b.content
     if t == null || t == '' { return }
-    bool pre = s.whiteSpace == WS_PRE || s.whiteSpace == WS_PRE_WRAP
-    bool nowrap = s.whiteSpace == WS_NOWRAP || s.whiteSpace == WS_PRE
+    bool keepBreaks = wsKeepsBreaks(s)
+    bool nowrap = wsNoWrap(s)
     arr[text] words = wordsOf(b)
     int sw = spaceWidth(s)
-    if pre {
+    if keepBreaks {
+        // each element is one preserved line; the break between two of
+        // them is one the content asked for, so it ends a last line
         for int i = 0, i < words.length, i++ {
-            if i > 0 { breakLine() }
+            if i > 0 { hardBreakLine() }
             text w = words[i]
             if w == '' { continue }
             int ww = measureWidth(s, w)
-            if s.whiteSpace == WS_PRE_WRAP && ifcX + ww > ifcLineRight && ifcLineHasContent {
+            if !nowrap && ifcX + ww > ifcLineRight {
                 placeWrappedWords(b, w.split(' '), sw)
                 continue
             }
@@ -1687,7 +1752,8 @@ void func placeTextUncounted(b:Box) {
         }
         if spaceBefore { ifcX = ifcX + spaceW }
         ifcPendingSpace = false
-        appendWord(b, w, ww)
+        if wordMustBreak(s, ww) { placeWordInPieces(b, w) }
+        else { appendWord(b, w, ww) }
         // a space follows every word except the last
         if i < words.length - 1 {
             ifcPendingSpace = true
@@ -1713,7 +1779,35 @@ void func placeWrappedWords(b:Box, words:arr[text], sw:int) {
         } else if i > 0 {
             ifcX = ifcX + sw
         }
-        if w != '' { appendWord(b, w, ww) }
+        if w == '' { continue }
+        if wordMustBreak(s, ww) { placeWordInPieces(b, w) }
+        else { appendWord(b, w, ww) }
+    }
+}
+
+// Whether this word has to be broken inside itself to be placed.
+// `break-all` breaks any word that does not fit in the room left on
+// the line; `break-word` waits until the word would not fit on a line
+// of its own, which is the whole difference between the two.
+bool func wordMustBreak(s:Style, ww:int) {
+    if s.wordBreaking == BREAK_NONE || wsNoWrap(s) { return false }
+    if ifcX + ww <= ifcLineRight { return false }
+    if s.wordBreaking == BREAK_ALL { return true }
+    return ww > ifcLineRight - ifcLineStart
+}
+
+// Places a word one character at a time, breaking wherever the next
+// character would not fit. Each character is measured on its own, so a
+// pair the font kerns is measured slightly wide; appendWord merges the
+// run back into one fragment per line, so only the break position is
+// affected.
+void func placeWordInPieces(b:Box, w:text) {
+    Style s = b.style
+    arr[text] chars = w.split('')
+    for int i = 0, i < chars.length, i++ {
+        int cw = measureWidth(s, chars[i])
+        if ifcLineHasContent && ifcX + cw > ifcLineRight { breakLine() }
+        appendWord(b, chars[i], cw)
     }
 }
 

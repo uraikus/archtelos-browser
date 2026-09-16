@@ -113,16 +113,22 @@ Grid; `@layer` ordering, which is discarded today (Cascade 5); the
 Media Queries 4 range syntax; Selectors 4's `:is()`, `:where()`,
 `:has()` and a selector list inside `:not()`; `color-mix()` and the
 wider colour spaces; `box-sizing`, since every box is content-box; the
-`display` corrections in Display 3; and the Text 3 and Text Decoration 3
-gaps. These sit in the snapshot's three lower classes, which is lower
-than their prominence suggests.
+`display` corrections in Display 3; what is left of Text 3 — `hyphens`,
+which needs the soft hyphen to break a word; `line-break`, which is
+about CJK; `text-wrap-style: balance`, which needs the line breaker run
+more than once; `text-overflow`, which needs a scrollable area rather
+than only a clip; and a tab that advances to a tab stop rather than
+expanding to whole spaces — and Text Decoration 3, which has neither
+`overline` nor a decoration colour, style or thickness. These sit in the
+snapshot's three lower classes, which is lower than their prominence
+suggests.
 
 ### The instrument
 
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(121; Chromium reports 373, and four of them cannot be graded by a probe
+(127; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

@@ -2254,6 +2254,21 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'right' || t == 'end' { s.textAlign = ALIGN_RIGHT }
         else if t == 'justify' { s.textAlign = ALIGN_LEFT }
     }
+    // text-align-last aligns the last line of a block, and the line
+    // before a forced break. `auto` -- the initial value -- is not an
+    // alignment but an absence of one, so it is kept as -1 rather than
+    // folded into text-align: the line must be able to ask whether it
+    // was set at all.
+    s.textAlignLast = isRoot ? -1 : parent.textAlignLast
+    ascii tal = styleProp(props, 'text-align-last')
+    if tal != null {
+        ascii t = asciiLower(tal)
+        if t == 'auto' { s.textAlignLast = -1 }
+        else if t == 'left' || t == 'start' { s.textAlignLast = ALIGN_LEFT }
+        else if t == 'center' { s.textAlignLast = ALIGN_CENTER }
+        else if t == 'right' || t == 'end' { s.textAlignLast = ALIGN_RIGHT }
+        else if t == 'justify' { s.textAlignLast = ALIGN_LEFT }
+    }
     // text-decoration is NOT an inherited property: the element's own
     // computed value starts at none. What the standard does instead is
     // propagate the decoration of an ancestor to the boxes inside it,
@@ -2283,14 +2298,81 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.quotes = isRoot ? '' : parent.quotes
     ascii qv = styleProp(props, 'quotes')
     if qv != null { s.quotes = qv.toText() }
-    s.whiteSpace = isRoot ? WS_NORMAL : parent.whiteSpace
+    // white-space is a shorthand for white-space-collapse and
+    // text-wrap-mode. It is expanded here rather than in the shorthand
+    // pass because both longhands inherit, so the inherited pair has to
+    // be in place before either the shorthand or a longhand overrides
+    // part of it.
+    s.whiteSpaceCollapse = isRoot ? WSC_COLLAPSE : parent.whiteSpaceCollapse
+    s.textWrapMode = isRoot ? WRAP_WRAP : parent.textWrapMode
     ascii ws = styleProp(props, 'white-space')
     if ws != null {
         ascii t = asciiLower(ws)
-        if t == 'normal' { s.whiteSpace = WS_NORMAL }
-        else if t == 'pre' { s.whiteSpace = WS_PRE }
-        else if t == 'nowrap' { s.whiteSpace = WS_NOWRAP }
-        else if t == 'pre-wrap' || t == 'pre-line' || t == 'break-spaces' { s.whiteSpace = WS_PRE_WRAP }
+        if t == 'normal' { s.whiteSpaceCollapse = WSC_COLLAPSE  s.textWrapMode = WRAP_WRAP }
+        else if t == 'pre' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_NOWRAP }
+        else if t == 'nowrap' { s.whiteSpaceCollapse = WSC_COLLAPSE  s.textWrapMode = WRAP_NOWRAP }
+        else if t == 'pre-wrap' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_WRAP }
+        else if t == 'pre-line' { s.whiteSpaceCollapse = WSC_PRESERVE_BREAKS  s.textWrapMode = WRAP_WRAP }
+        // break-spaces differs from pre-wrap only in where a line may
+        // break inside a run of preserved spaces, which this engine
+        // does not do either way
+        else if t == 'break-spaces' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_WRAP }
+    }
+    ascii wsc = styleProp(props, 'white-space-collapse')
+    if wsc != null {
+        ascii t = asciiLower(wsc)
+        if t == 'collapse' { s.whiteSpaceCollapse = WSC_COLLAPSE }
+        else if t == 'preserve' || t == 'break-spaces' { s.whiteSpaceCollapse = WSC_PRESERVE }
+        else if t == 'preserve-breaks' { s.whiteSpaceCollapse = WSC_PRESERVE_BREAKS }
+        else if t == 'preserve-spaces' { s.whiteSpaceCollapse = WSC_PRESERVE }
+    }
+    ascii twm = styleProp(props, 'text-wrap-mode')
+    if twm != null {
+        ascii t = asciiLower(twm)
+        if t == 'wrap' { s.textWrapMode = WRAP_WRAP }
+        else if t == 'nowrap' { s.textWrapMode = WRAP_NOWRAP }
+    }
+    // word-break and overflow-wrap both say a word may be broken.
+    // `word-break: break-word` is the legacy spelling of
+    // `overflow-wrap: break-word` and the standard keeps it as that.
+    s.wordBreaking = isRoot ? BREAK_NONE : parent.wordBreaking
+    ascii owp = styleProp(props, 'overflow-wrap')
+    if owp != null {
+        ascii t = asciiLower(owp)
+        if t == 'normal' { s.wordBreaking = BREAK_NONE }
+        else if t == 'break-word' { s.wordBreaking = BREAK_WORD }
+        else if t == 'anywhere' { s.wordBreaking = BREAK_ALL }
+    }
+    ascii wb = styleProp(props, 'word-break')
+    if wb != null {
+        ascii t = asciiLower(wb)
+        if t == 'normal' || t == 'keep-all' { s.wordBreaking = BREAK_NONE }
+        else if t == 'break-all' { s.wordBreaking = BREAK_ALL }
+        else if t == 'break-word' { s.wordBreaking = BREAK_WORD }
+    }
+    // tab-size: a number of spaces, or a length saying the advance
+    // outright. Both inherit; the initial value is eight spaces.
+    s.tabSize = isRoot ? 8 : parent.tabSize
+    s.tabSizePx = isRoot ? -1 : parent.tabSizePx
+    ascii ts = styleProp(props, 'tab-size')
+    if ts != null {
+        arr[ascii] tst = cssTokens(ts)
+        if tst.length > 0 {
+            // parseLength cannot tell a bare number from a px length --
+            // both compute to LEN_PX -- and here the two mean different
+            // things, so the unit is read directly.
+            ascii tt = asciiLower(asciiTrim(tst[0]))
+            parseNumberAt(tt, 0)
+            if numOk {
+                if tt.slice(numEnd, tt.length) == '' {
+                    s.tabSize = maxInt(roundPx(numValue), 0)
+                    s.tabSizePx = -1
+                } else {
+                    Len l = parseLength(tt, s.fontSize)
+                    if l.kind == LEN_PX { s.tabSizePx = maxInt(roundPx(l.v), 0) }
+                }
+            }
+        }
     }
     s.listStyle = isRoot ? LIST_DISC : parent.listStyle
     ascii ls = styleProp(props, 'list-style-type')
@@ -2804,5 +2886,5 @@ void func computeStyles(doc:Node) {
 }
 
 text func describeStyle(s:Style) {
-    return `display=${s.display} color=${s.color} bg=${s.background} font=${s.fontKey} lh=${s.lineHeight} align=${s.textAlign} deco=${s.textDecoration} ws=${s.whiteSpace} list=${s.listStyle} m=${resolveLen(s.marginTop, 0, -1)}/${resolveLen(s.marginRight, 0, -1)}/${resolveLen(s.marginBottom, 0, -1)}/${resolveLen(s.marginLeft, 0, -1)} p=${resolveLen(s.paddingTop, 0, -1)}/${resolveLen(s.paddingRight, 0, -1)}/${resolveLen(s.paddingBottom, 0, -1)}/${resolveLen(s.paddingLeft, 0, -1)} b=${s.borderTop}/${s.borderRight}/${s.borderBottom}/${s.borderLeft} w=${s.width.kind}:${s.width.v} h=${s.height.kind}:${s.height.v}`
+    return `display=${s.display} color=${s.color} bg=${s.background} font=${s.fontKey} lh=${s.lineHeight} align=${s.textAlign} deco=${s.textDecoration} ws=${s.whiteSpaceCollapse}/${s.textWrapMode} list=${s.listStyle} m=${resolveLen(s.marginTop, 0, -1)}/${resolveLen(s.marginRight, 0, -1)}/${resolveLen(s.marginBottom, 0, -1)}/${resolveLen(s.marginLeft, 0, -1)} p=${resolveLen(s.paddingTop, 0, -1)}/${resolveLen(s.paddingRight, 0, -1)}/${resolveLen(s.paddingBottom, 0, -1)}/${resolveLen(s.paddingLeft, 0, -1)} b=${s.borderTop}/${s.borderRight}/${s.borderBottom}/${s.borderLeft} w=${s.width.kind}:${s.width.v} h=${s.height.kind}:${s.height.v}`
 }

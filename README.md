@@ -88,8 +88,14 @@ Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
 **Layout** is block formatting with margin collapsing, inline formatting
 with word wrapping and baseline alignment, inline-blocks with
 shrink-to-fit widths, replaced images with intrinsic sizes and aspect
-ratio, `pre`, list markers, and automatic table layout with fixed and
-percentage columns, `colspan`, row heights and vertical alignment. Form
+ratio, preserved whitespace, list markers, and automatic table layout
+with fixed and percentage columns, `colspan`, row heights and vertical
+alignment. `white-space` is kept as the two things it is a shorthand
+for, so `pre-line` keeps newlines while collapsing runs of spaces, and
+either half can be set alone as `white-space-collapse` or
+`text-wrap-mode`. A tab advances by `tab-size`, `word-break` and
+`overflow-wrap` break inside a word too long for its line, and
+`text-align-last` aligns the last line of a block on its own. Form
 controls are drawn as boxes.
 
 **Painting** covers backgrounds, borders with rounded corners — each
@@ -193,13 +199,14 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers nineteen unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-two unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
-counters, quotes, first letter, audio, the preload scanner), six
-offscreen render suites that check real pixels with `getPixelColor` —
-general rendering, linear gradients, radial gradients, overflow
-clipping, background images and object fitting — three conformance
+counters, quotes, first letter, list markers, logical properties, text,
+audio, the preload scanner), eight offscreen render suites that check
+real pixels with `getPixelColor` — general rendering, linear gradients,
+radial gradients, overflow clipping, background images, object fitting,
+borders and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

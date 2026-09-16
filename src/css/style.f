@@ -38,11 +38,27 @@ const int DECO_NONE = 0
 const int DECO_UNDERLINE = 1
 const int DECO_LINE_THROUGH = 2
 
-// white-space
-const int WS_NORMAL = 0
-const int WS_PRE = 1
-const int WS_NOWRAP = 2
-const int WS_PRE_WRAP = 3
+// white-space-collapse: what happens to a run of spaces and to a
+// newline. `white-space` is a shorthand for this and text-wrap-mode,
+// and the engine stores the two separately because they are two
+// independent questions: `pre-line` preserves newlines while still
+// collapsing spaces, which no single enum of the shorthand's values
+// can express.
+const int WSC_COLLAPSE = 0
+const int WSC_PRESERVE = 1
+const int WSC_PRESERVE_BREAKS = 2
+
+// text-wrap-mode
+const int WRAP_WRAP = 0
+const int WRAP_NOWRAP = 1
+
+// word-break and overflow-wrap, which both say a word may be broken
+// but disagree about when. `break-word` breaks only a word that would
+// not fit on a line of its own; `break-all` breaks any word to fill
+// the line it is on.
+const int BREAK_NONE = 0
+const int BREAK_WORD = 1
+const int BREAK_ALL = 2
 
 // list-style-type
 const int LIST_NONE = 0
@@ -339,7 +355,12 @@ struct Style {
     textAlign:int
     textDecoration:int
     textTransform:int
-    whiteSpace:int
+    whiteSpaceCollapse:int
+    textWrapMode:int
+    textAlignLast:int       // -1 = unset, so text-align stands
+    wordBreaking:int        // BREAK_NONE / BREAK_WORD / BREAK_ALL
+    tabSize:int             // a tab's advance in spaces
+    tabSizePx:int           // or in px, when a length was given; -1 otherwise
     listStyle:int
     verticalAlign:int
     floatSide:int

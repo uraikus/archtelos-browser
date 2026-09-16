@@ -62,7 +62,7 @@ fi
 # for a field belonging to another: `outline-style` was registering
 # because declaring it gives the outline a width. The engine did not
 # regress; the measurement got stricter.
-PROPERTIES_MIN=121
+PROPERTIES_MIN=127
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1
