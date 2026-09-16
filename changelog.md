@@ -5,6 +5,34 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Two of Display 3's three corrections
+
+- **`display: contents` generates no box.** The element's children
+  become its parent's, in its place; its own height, border and
+  background describe a box that does not exist. It stays in the tree
+  for inheritance, so its children still inherit from it.
+- **An unknown `display` value is dropped**, as the invalid declaration
+  it is. It was falling through to the property's *initial* value, which
+  is `inline`, rather than to the declaration it had beaten — so
+  `display: bogus` on a `<div>` made it an inline. There is one map of
+  declarations, and a value that reaches it has already won the cascade,
+  so the validity test has to happen where the declaration is applied
+  and not where it is read.
+
+The count does not move: `display` has registered on the property
+instrument since the first commit, and it registered while both of these
+were wrong. What grades them is `tests/unit/test_display.f`, sixteen
+checks against Chromium 141's geometry on the same fixtures.
+
+Two of the checks are of the shape that needs no answer known in
+advance: a wrapper with no box properties of its own must lay out
+identically whether it generates a box or not, and two `contents`
+elements nested must collapse through both.
+
+`inline-table` is still a block-level table, which is the third of the
+three corrections and the one that needs an atomic inline whose inner
+layout is the table algorithm.
+
 ### column-span: all
 
 A direct child of a multi-column container with `column-span: all` is in

@@ -1978,6 +1978,9 @@ void func applyBackgroundShorthand(props:map[text], value:ascii) {
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // `display` is validated here rather than where it is read, because
+    // by then the declaration it beat is gone. See isDisplayKeyword.
+    if name == 'display' && !isDisplayKeyword(value) { return }
     // The logical border shorthands are renamed before anything else,
     // because the shorthand dispatch below reads the name: renaming
     // afterwards left `border-block-start` as a longhand nobody handles.
@@ -2660,6 +2663,17 @@ int func parseAlignValue(v:ascii, dflt:int) {
     if t == 'space-evenly' { return BOXALIGN_SPACE_EVENLY }
     if t == 'auto' { return BOXALIGN_AUTO }
     return dflt
+}
+
+// Whether a value is one this property has. An invalid declaration is
+// dropped rather than applied (CSS Syntax 3 sec. 8.2), and for `display`
+// that is the difference between a `<div>` keeping the block the
+// user-agent stylesheet gave it and becoming an inline: there is one
+// map of declarations, so a value that reaches it has already beaten
+// the user-agent's, and falling back afterwards falls back to the
+// property's initial value rather than to what it replaced.
+bool func isDisplayKeyword(v:ascii) {
+    return parseDisplay(v, -1) != -1
 }
 
 int func parseDisplay(v:ascii, dflt:int) {

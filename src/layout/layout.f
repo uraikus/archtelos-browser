@@ -542,12 +542,28 @@ Box func buildBox(n:Node, parentStyle:Style) {
 
 void func buildChildren(b:Box, n:Node, s:Style) {
     addGeneratedBox(b, n, 'before')
-    for int i = 0, i < n.children.length, i++ {
-        Box c = buildBox(n.children[i], s)
-        if c != null { addChildBox(b, c) }
-    }
+    appendChildBoxes(b, n, s)
     addGeneratedBox(b, n, 'after')
     applyFirstLetter(b, n)
+}
+
+// `display: contents` generates no box of its own: the element's
+// children become its parent's, in its place (Display 3 sec. 3.1). Its
+// own box properties describe a box that does not exist, and are
+// therefore ignored -- but it is still in the tree for inheritance, so
+// its children inherit from it and not from its parent.
+void func appendChildBoxes(b:Box, n:Node, s:Style) {
+    for int i = 0, i < n.children.length, i++ {
+        Node child = n.children[i]
+        if child.kind == NODE_ELEMENT && child.style.display == DISPLAY_CONTENTS {
+            addGeneratedBox(b, child, 'before')
+            appendChildBoxes(b, child, child.style)
+            addGeneratedBox(b, child, 'after')
+            continue
+        }
+        Box c = buildBox(child, s)
+        if c != null { addChildBox(b, c) }
+    }
 }
 
 // How many characters of `t` make up the first letter, starting at the

@@ -264,7 +264,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-21,272 lines of Festina in `src/` and `browser.f`.
+21,304 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -274,13 +274,13 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-three unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-four unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, hyphens, color spaces, fragmentation, shapes, audio, the preload
-scanner), thirteen offscreen render suites that check
+styles, hyphens, color spaces, fragmentation, shapes, box generation,
+audio, the preload scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 object fitting, borders, border images, text decoration, transforms,

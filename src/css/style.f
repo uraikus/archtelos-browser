@@ -752,9 +752,11 @@ bool func displayIsBlockLevel(d:int) {
         || d == DISPLAY_FLEX || d == DISPLAY_TABLE_CAPTION
 }
 
+// DISPLAY_CONTENTS is not here: an element with it generates no box at
+// all, so nothing ever asks what level its box is.
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
-        || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS || d == DISPLAY_INLINE_FLEX
+        || d == DISPLAY_RUBY || d == DISPLAY_INLINE_FLEX
 }
 
 // A positioned box is one that `position` takes out of the ordinary

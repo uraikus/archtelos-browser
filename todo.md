@@ -157,10 +157,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 `@layer` ordering, which is discarded today (Cascade 5); the
 Media Queries 4 range syntax; Color 5 entirely — `color-mix()` and the
 relative colour syntax; the gamut mapping Color 4 asks for, since a
-colour outside sRGB is clamped per channel here; the `display`
-corrections in Display 3 — `contents` generating a box, `inline-table`
-not being inline, and an unknown value falling back to `inline` rather
-than `block`; what is left of Text 3 — `line-break`, which is about
+colour outside sRGB is clamped per channel here; `inline-table`, which lays out
+as a block-level table rather than an inline one (Display 3), and that
+level's two-value syntax; what is left of Text 3 — `line-break`, which is about
 CJK, and `text-wrap-style: balance`, which needs the line breaker run
 more than once — and what is left of Text Decoration 3:
 `text-decoration-skip-ink`, which needs the glyph outlines Festina does
