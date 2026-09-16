@@ -58,6 +58,7 @@ struct Box {
     // is shared between every element that matched the same
     // declarations: writing to one would write to all of them.
     forcedWidthPx:int
+    controlKind:int         // CONTROL_CHECK, CONTROL_FIELD, or neither
     // The words of a text box, after white-space processing and any
     // text-transform. They depend only on the content and the computed
     // style, both fixed once the cascade has run, and they are asked
@@ -385,6 +386,39 @@ bool func isFormControl(tag:text) {
     return tag == 'input' || tag == 'button' || tag == 'select' || tag == 'textarea'
 }
 
+// Which of the two kinds of control this is, for the two things that
+// depend on it: the size the user agent supplies for a checkbox or a
+// radio, and the field width a text-like input gets when it is not
+// sized by its content (CSS UI 4).
+const int CONTROL_NONE = 0
+const int CONTROL_CHECK = 1     // checkbox or radio: a square the UA draws
+const int CONTROL_FIELD = 2     // a text-like field, as wide as `size` says
+
+// A field is twenty characters wide by default, which is what HTML's
+// `size` attribute defaults to and what makes an empty text input a
+// field rather than a few pixels.
+const int FIELD_DEFAULT_CHARS = 20
+const int CHECK_CONTROL_PX = 13
+
+int func formControlKind(n:Node) {
+    if n.tag != 'input' { return CONTROL_NONE }
+    text ty = textLower(getAttr(n, 'type'))
+    if ty == null || ty == '' { ty = 'text' }
+    if ty == 'checkbox' || ty == 'radio' { return CONTROL_CHECK }
+    if ty == 'text' || ty == 'search' || ty == 'email' || ty == 'url'
+        || ty == 'tel' || ty == 'number' || ty == 'password' { return CONTROL_FIELD }
+    return CONTROL_NONE
+}
+
+// How many characters wide a field is: its `size` attribute, or twenty.
+int func fieldCharCount(n:Node) {
+    text sz = getAttr(n, 'size')
+    if sz == null { return FIELD_DEFAULT_CHARS }
+    int got = sz.toInt()
+    if got == null || got <= 0 { return FIELD_DEFAULT_CHARS }
+    return minInt(got, 1000)
+}
+
 // The text a form control displays.
 text func formControlText(n:Node) {
     if n.tag == 'input' {
@@ -467,6 +501,7 @@ Box func buildBox(n:Node, parentStyle:Style) {
     if isFormControl(tag) {
         Box b = newBox(BOX_INLINE_BLOCK, n, s)
         b.blockLevel = displayIsBlockLevel(d)
+        b.controlKind = formControlKind(n)
         if tag == 'button' || tag == 'textarea' {
             buildChildren(b, n, s)
         } else {
@@ -1429,6 +1464,17 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // width
     int edges = b.pl + b.pr + b.bl + b.br
     int width = 0
+    // The size the user agent supplies for a control it draws. It is not
+    // a declared width -- `appearance: none` is exactly the request not
+    // to draw the control, and it has to be able to take the size away
+    // with it, which it could not do if this were a declaration.
+    if b.controlKind != CONTROL_NONE && lenIsAuto(s.width) && b.forcedWidthPx < 0 {
+        if b.controlKind == CONTROL_CHECK && s.appearanceAuto {
+            b.forcedWidthPx = CHECK_CONTROL_PX
+        } else if b.controlKind == CONTROL_FIELD && !s.fieldSizingContent {
+            b.forcedWidthPx = fieldCharCount(b.node) * maxInt(measureWidth(s, '0'), 1)
+        }
+    }
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
     // A definite height and a ratio give the width, block-level or not:
     // Chromium makes `aspect-ratio: 2; height: 40px` eighty pixels wide
@@ -1539,6 +1585,9 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // as with the width, a border-box height already includes the
         // padding and border
         if s.boxSizing == BOX_BORDER { h = maxInt(h - vEdges, 0) }
+    } else if b.controlKind == CONTROL_CHECK && s.appearanceAuto {
+        // and as tall as it is wide, which is what makes it a square
+        h = CHECK_CONTROL_PX
     } else if s.hasAspectRatio {
         int arh = aspectHeightFromWidth(b, width)
         // The content is an automatic minimum in the block axis, and

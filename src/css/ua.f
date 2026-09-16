@@ -64,7 +64,8 @@ sub { vertical-align: bottom; font-size: smaller }
 sup { vertical-align: top; font-size: smaller }
 center { text-align: center }
 mark { background-color: yellow; color: black }
-input, button, select, textarea { display: inline-block; border: 1px solid #767676; padding: 2px 6px; background-color: white; font-size: 13px; color: black }
+input, button, select, textarea { display: inline-block; border: 1px solid #767676; padding: 2px 6px; background-color: white; font-size: 13px; color: black; appearance: auto }
+input[type=checkbox], input[type=radio] { border: 0; padding: 0; background-color: transparent }
 button, input[type=submit], input[type=button], input[type=reset] { background-color: #efefef; padding: 2px 8px; text-align: center }
 textarea { white-space: pre-wrap; display: inline-block }
 img { display: inline }

@@ -1616,9 +1616,23 @@ void func paintAudioControls(b:Box) {
     fillPath()
 }
 
+// The colour a control's own mark is drawn in: `accent-color` when the
+// page named one, and the black this draws otherwise (CSS UI 4). The
+// control chrome here is this engine's own rather than a copy of any
+// browser's, so the accent colours the mark it does draw.
+void func accentFill(s:Style) {
+    if s.accentColor == 0 {
+        fillStyle(0, 0, 0)
+        return
+    }
+    fillStyle(colorRed(s.accentColor), colorGreen(s.accentColor), colorBlue(s.accentColor))
+}
+
 void func paintFormControl(b:Box) {
     Node n = b.node
     if n.tag != 'input' { return }
+    // `appearance: none` asks for no control to be drawn (CSS UI 4).
+    if !b.style.appearanceAuto { return }
     text ty = textLower(getAttr(n, 'type'))
     if ty == 'checkbox' || ty == 'radio' {
         int x = b.x
@@ -1634,11 +1648,11 @@ void func paintFormControl(b:Box) {
             pDrawCircle(x + r, y + r, r - 1)
             borderColor(-1, -1, -1)
             if checked {
-                fillStyle(0, 0, 0)
+                accentFill(b.style)
                 pDrawCircle(x + r, y + r, maxInt(r - 4, 2))
             }
         } else if checked {
-            fillStyle(0, 0, 0)
+            accentFill(b.style)
             beginPath()
             moveTo(x + 3, y + Math.floorDiv(h, 2))
             lineTo(x + Math.floorDiv(w, 2) - 1, y + h - 3)

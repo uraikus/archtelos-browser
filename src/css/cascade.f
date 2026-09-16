@@ -713,14 +713,11 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
             else if ty == '1' { addMatch(matches, 'list-style-type', 'decimal', w) }
         }
     }
-    if tag == 'input' {
-        text ty = getAttr(n, 'type')
-        if ty != null && (textLower(ty) == 'checkbox' || textLower(ty) == 'radio') {
-            addMatch(matches, 'width', '13px', w)
-            addMatch(matches, 'height', '13px', w)
-            addMatch(matches, 'padding', '0', w)
-        }
-    }
+    // A checkbox's size is not a presentational hint: it is the size
+    // the user agent supplies for the control it draws, and
+    // `appearance: none` asks it not to draw one. A hint would still be
+    // a declared width, which `appearance: none` has no way to undo, so
+    // the size is an intrinsic one applied in layout instead.
 }
 
 void func addDimensionHint(matches:arr[Match], prop:text, value:text, w:int) {
@@ -4621,6 +4618,19 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // `fill-box` and `stroke-box` are SVG's own boxes; outside SVG they
     // are the content box and the border box, which is what Chromium
     // 141 renders and all this engine has.
+    ascii appr = styleProp(props, 'appearance')
+    if appr != null { s.appearanceAuto = asciiLower(asciiTrim(appr)) != 'none' }
+    ascii fsz = styleProp(props, 'field-sizing')
+    if fsz != null { s.fieldSizingContent = asciiLower(asciiTrim(fsz)) == 'content' }
+    ascii acc = styleProp(props, 'accent-color')
+    if acc != null {
+        ascii accLow = asciiLower(asciiTrim(acc))
+        if accLow == 'auto' { s.accentColor = 0 }
+        else {
+            int got = parseCssColor(accLow, s.color)
+            if got != COLOR_UNSET { s.accentColor = got }
+        }
+    }
     ascii tbox = styleProp(props, 'transform-box')
     if tbox != null {
         ascii tboxLow = asciiLower(asciiTrim(tbox))

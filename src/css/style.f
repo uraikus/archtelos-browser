@@ -725,6 +725,18 @@ struct Style {
     // is the initial value, so the flag names the other case and a page
     // that never says it carries a false.
     transformBoxContent:bool
+    // CSS UI 4. `appearance`'s initial value is `none`, and the user
+    // agent stylesheet is what puts `auto` on the controls it draws --
+    // so the flag names `auto`, not `none`, and an element that says
+    // nothing carries the initial value rather than the opposite of it.
+    // `appearance: none` on a control is then simply the absence of
+    // `auto`, which takes away both the drawing and the size the user
+    // agent would have supplied.
+    appearanceAuto:bool
+    fieldSizingContent:bool
+    // accent-color, as a packed colour; 0 is `auto`, which is the mark
+    // the control would draw anyway.
+    accentColor:int
     transformOriginX:Len    // an unset Len is auto, which reads as 50%
     transformOriginY:Len
     tableLayoutFixed:bool

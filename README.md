@@ -295,9 +295,9 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-three unit suites (utilities, HTML, CSS parser,
+The runner covers forty-four unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
-aspect ratio, grid areas,
+aspect ratio, grid areas, form controls,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter

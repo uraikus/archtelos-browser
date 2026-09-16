@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `appearance`, `accent-color` and `field-sizing`
+
+Three properties of CSS Basic User Interface 4, taking the count from
+205 to 208. Each moved its own field: `appearance -> appearanceAuto`,
+`accent-color -> accentColor`, `field-sizing -> fieldSizingContent`.
+
+**A text input was fourteen pixels wide.** Every form control here was
+shrink-wrapped to its content, so an empty one was the width of its
+padding and a full one grew with what was typed. `field-sizing` is the
+property that names the difference: the initial `fixed` makes a field as
+wide as its `size` attribute says, or twenty characters, whatever it
+holds, and `content` is the sizing this engine had. So the property
+arrived and a visible bug went with it.
+
+**`appearance`'s initial value is `none`, not `auto`.** The first
+version of this stored a flag meaning "is it none", which is inverted
+against the specification, and the instrument said so at once: the
+property could not register, because the row declares `auto` and an
+unset element already read as not-none. The user-agent stylesheet is
+what puts `auto` on the controls it draws, and the flag names that.
+
+That correction is the whole of why `appearance: none` can take a
+checkbox's size away. The thirteen-pixel square is not a declared width
+any more but an intrinsic size applied in layout, because a
+presentational hint is a declaration and `appearance` has no way to undo
+one. A checkbox with `appearance: none` is 0 by 0, as it is in Chromium
+141; one with a declared width keeps it.
+
+`accent-color` colours the mark a checked control draws. The chrome here
+is this engine's own rather than a copy of any browser's, so the accent
+colours the mark it does draw rather than trying to reproduce a native
+one.
+
 ### `column-fill` and `hyphenate-character`
 
 Two properties off the measured work list, taking the count from 202 to
