@@ -203,6 +203,18 @@ const int RADEXT_CLOSEST_CORNER = 2
 const int RADEXT_FARTHEST_SIDE = 3
 const int RADEXT_EXPLICIT = 4
 
+// One `box-shadow` (Backgrounds and Borders 3 §6). A style with no
+// shadow has an empty list, which is the zero value, so nothing is
+// written per element.
+struct Shadow {
+    dx:int
+    dy:int
+    blur:int
+    spread:int
+    color:int
+    inset:bool
+}
+
 struct Gradient {
     present:bool
     repeating:bool
@@ -254,6 +266,7 @@ struct Style {
     backgroundSizeH:Len
     backgroundClip:int
     backgroundOrigin:int
+    shadows:arr[Shadow]
     // object-fit and object-position, which move a replaced element's
     // content inside its content box and change no geometry.
     objectFit:int

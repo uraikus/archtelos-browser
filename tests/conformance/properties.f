@@ -71,7 +71,8 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.backgroundPosY)}`, `${s.backgroundSizeKind}`, 
         `${lenKey(s.backgroundSizeW)}`, `${lenKey(s.backgroundSizeH)}`, 
         `${s.backgroundClip}`, `${s.backgroundOrigin}`, `${s.objectFit}`, 
-        `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`]
+        `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`,
+        `${shadowKey(s.shadows)}`]
 }
 
 text func styleDigest(s:Style) {
@@ -106,7 +107,16 @@ arr[text] func styleDigestFieldNames() {
         'backgroundUrl', 'backgroundRepeatX', 'backgroundRepeatY', 
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
-        'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY']
+        'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows']
+}
+
+text func shadowKey(list:arr[Shadow]) {
+    if list.length == 0 { return '-' }
+    arr[text] parts = []
+    for int i = 0, i < list.length, i++ {
+        parts.push(`${list[i].dx},${list[i].dy},${list[i].blur},${list[i].spread},${list[i].color},${list[i].inset}`)
+    }
+    return parts.join(';')
 }
 
 text func gradientKey(g:Gradient) {

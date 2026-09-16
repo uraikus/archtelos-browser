@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### box-shadow
+
+An outer shadow with offset, blur, spread and colour, a comma-separated
+list of them, painted beneath the element's own background. The colour
+defaults to the current colour, and the lengths are read in the order
+the standard gives while `inset` and the colour may sit anywhere among
+them.
+
+**The canvas has no blur**, so the falloff is nested rectangles, one per
+pixel of the blur's reach, each drawn at a small alpha: where more of
+them overlap the alpha accumulates, so the shadow is densest against its
+own edge and fades outwards. The shape and the extent are exact; the
+curve of the fade is not. The checks are written to that division — an
+offset and a spread are checked to the pixel, and the blur is checked
+for what any blur must do, which is to reach past the box and to weaken
+with distance.
+
+Twenty-five pixel checks in the new `tests/render/shadow.f`. Paint is
+unmoved on a page with no shadow: median 0.0 ms over 25 interleaved
+paired runs, six slower and ten faster.
+
+Properties **88 → 89**, and this is the first feature graded under the
+rule that arrived with the last commit: `--fields` says
+`box-shadow -> shadows`, so it registers for its own field rather than
+for a neighbour's.
+
+`inset` is parsed and not painted, and todo.md says so rather than
+leaving it to be discovered.
+
 ### The instrument was crediting properties for other properties' fields
 
 Painting borders turned up something the audit could not see: the

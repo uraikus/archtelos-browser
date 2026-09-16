@@ -130,6 +130,51 @@ void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
     bgAreaH = h - bt - bb
 }
 
+// The box's shadows, painted beneath its own background (Backgrounds
+// and Borders 3 §6). Each is the border box offset by its two lengths
+// and grown by its spread.
+//
+// The canvas has no blur. The falloff is drawn as nested rectangles, one
+// per pixel of the blur's reach, each at a small alpha: where more of
+// them overlap the alpha accumulates, so the shadow is densest against
+// its own edge and fades outwards. The shape and extent are exact and
+// the curve of the fade is not, which is the honest trade for a
+// primitive the canvas does not have.
+//
+// `inset` shadows are parsed and not painted; todo.md says so.
+void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
+    if s.shadows.length == 0 { return }
+    for int i = s.shadows.length - 1, i >= 0, i-- {
+        Shadow sh = s.shadows[i]
+        if sh.inset { continue }
+        if !colorIsPaintable(sh.color) { continue }
+        int sx = x + sh.dx - sh.spread
+        int sy = y + sh.dy - sh.spread
+        int sw = w + sh.spread + sh.spread
+        int sh2 = h + sh.spread + sh.spread
+        if sw <= 0 || sh2 <= 0 { continue }
+        if sh.blur <= 0 {
+            paintFill(sh.color, s.effectiveOpacity)
+            pDrawRect(sx, sy, sw, sh2)
+            fillAlpha(1.0)
+            continue
+        }
+        // The blur reaches about the blur radius beyond the shadow's
+        // edge. Each ring is drawn at an alpha that, accumulated over
+        // the rings that cover it, reaches full opacity at the core.
+        int reach = sh.blur
+        float step = 1.0 / (reach + 1).toFloat()
+        applyFillColor(sh.color)
+        for int r = reach, r >= 1, r-- {
+            fillAlpha(step * s.effectiveOpacity)
+            pDrawRect(sx - r, sy - r, sw + r + r, sh2 + r + r)
+        }
+        paintFill(sh.color, s.effectiveOpacity)
+        pDrawRect(sx, sy, sw, sh2)
+        fillAlpha(1.0)
+    }
+}
+
 void func paintBackground(x:int, y:int, w:int, h:int,
                           bl:int, bt:int, br:int, bb:int,
                           pl:int, pt:int, pr:int, pb:int, s:Style) {
@@ -1098,6 +1143,7 @@ bool func boxClipsAnything(b:Box) {
 void func paintClipped(b:Box) {
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
+        paintShadows(b.x, b.y, b.w, b.h, s)
         paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         paintBorders(b)
     }
@@ -1135,6 +1181,8 @@ void func paintBox(b:Box) {
     }
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
+        // a shadow is cast by the border box and lies under it
+        paintShadows(b.x, b.y, b.w, b.h, s)
         if b.kind == BOX_ROW {
             paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         } else {

@@ -1372,6 +1372,33 @@ bool func parseRadialPrelude(t:ascii, fontSize:int) {
 // The stop list is parsed the same way for all four: a stop's position
 // is a fraction of the gradient line for a linear gradient and of the
 // gradient ray for a radial one, which is the same number either way.
+// One shadow of a `box-shadow` list. The lengths come in order --
+// offset-x, offset-y, then blur and spread if they are there -- and the
+// colour and `inset` may sit anywhere among them.
+Shadow func parseShadow(v:ascii, currentColor:int, fontSize:int) {
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return null }
+    Shadow sh
+    sh.color = currentColor
+    arr[int] lengths = []
+    for int i = 0, i < t.length, i++ {
+        // The token is indexed rather than bound, because a bound slice
+        // releases an alias that was never retained (FINDINGS.md,
+        // "ascii aliases are not retained").
+        if asciiLower(t[i]) == 'inset' { sh.inset = true  continue }
+        Len l = parseLength(t[i], fontSize)
+        if l.kind == LEN_PX { lengths.push(roundPx(l.v))  continue }
+        int c = parseCssColor(t[i], COLOR_UNSET)
+        if c != COLOR_UNSET { sh.color = c }
+    }
+    if lengths.length < 2 { return null }
+    sh.dx = lengths[0]
+    sh.dy = lengths[1]
+    if lengths.length > 2 { sh.blur = maxInt(lengths[2], 0) }
+    if lengths.length > 3 { sh.spread = lengths[3] }
+    return sh
+}
+
 Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     Gradient g = noGradient()
     if v == null { return g }
@@ -2264,6 +2291,23 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             if parts[0] == 'top' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(0.0) }
             else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(100.0) }
             else { s.backgroundPosY = lenPercent(50.0) }
+        }
+    }
+    // box-shadow (Backgrounds and Borders 3 §6): a comma-separated list,
+    // each `<offset-x> <offset-y> <blur>? <spread>? <colour>? inset?` in
+    // any order. A style that does not mention it leaves the list empty,
+    // which is the zero value.
+    ascii shadowDecl = styleProp(props, 'box-shadow')
+    if shadowDecl != null {
+        ascii shadowLow = asciiLower(asciiTrim(shadowDecl))
+        if shadowLow != 'none' && shadowLow != '' {
+            arr[Shadow] list = []
+            arr[ascii] pieces = splitTopLevelCommas(shadowDecl)
+            for int i = 0, i < pieces.length, i++ {
+                Shadow sh = parseShadow(pieces[i], s.color, s.fontSize)
+                if sh != null { list.push(sh) }
+            }
+            if list.length > 0 { s.shadows = list }
         }
     }
     // background-clip and background-origin (Backgrounds and Borders 3
