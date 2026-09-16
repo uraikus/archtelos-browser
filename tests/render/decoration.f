@@ -216,4 +216,72 @@ shotText('text-decoration:underline;text-shadow:20px 0 6px red', 'xxxx')
 check(countInk(20, 0, 80, 24) > sharpInk, 'a blurred shadow covers more than a sharp one')
 checkEqInt(countColor(red, 20, 0, 80, 24), 0, 'and none of it is the full colour any more')
 
+// ---- text-emphasis -------------------------------------------------------
+// A mark drawn beside each character, over it by default and under it
+// when asked. The mark is a glyph, so it is antialiased and counted as
+// ink rather than matched by colour -- the same reason the text itself
+// is.
+
+// The fixture is given a tall line box, because an emphasis mark does
+// not reserve space for itself here: in a line only as tall as its
+// font there is nowhere above the ascender for the mark to go, and it
+// would fall outside the line. css-2026.md records that.
+text tall = 'line-height:40px;'
+
+// With a 40px line box and a 16px font the text sits around y=12 to
+// y=24, so the rows above and below it are empty until a mark is asked
+// for.
+shotText(tall, 'xx')
+int plainAbove = countInk(0, 0, 40, 10)
+int plainBelow = countInk(0, 30, 40, 40)
+
+shotText(tall + 'text-emphasis:filled dot', 'xx')
+check(countInk(0, 0, 40, 10) > plainAbove, 'text-emphasis draws a mark above the text')
+checkEqInt(countInk(0, 30, 40, 40), plainBelow, 'and not below it')
+
+shotText(tall + 'text-emphasis:filled dot;text-emphasis-position:under', 'xx')
+check(countInk(0, 30, 40, 40) > plainBelow, 'text-emphasis-position:under puts it below')
+checkEqInt(countInk(0, 0, 40, 10), plainAbove, 'and not above')
+
+// One mark per character, so more characters make more marks.
+shotText(tall + 'text-emphasis:filled dot', 'x')
+int oneMark = countInk(0, 0, 60, 10)
+shotText(tall + 'text-emphasis:filled dot', 'xxx')
+check(countInk(0, 0, 60, 10) > oneMark, 'a mark is drawn beside every character')
+
+// The colour is its own.
+shotText(tall + 'color:red;text-emphasis:filled dot blue', 'xx')
+check(countColor(blue, 0, 0, 40, 10) > 0, 'text-emphasis takes a colour of its own')
+shotText(tall + 'color:red;text-emphasis:filled dot', 'xx')
+checkEqInt(countColor(blue, 0, 0, 40, 10), 0, 'and is the text colour when none is given')
+
+// `none` is the initial value and draws nothing.
+shotText(tall + 'text-emphasis:none', 'xx')
+checkEqInt(countInk(0, 0, 40, 10), plainAbove, 'text-emphasis:none draws no mark')
+
+// The longhands say what the shorthand says.
+shotText(tall + 'text-emphasis:filled dot blue', 'xx')
+int shorthandMark = countInk(0, 0, 40, 10)
+shotText(tall + 'text-emphasis-style:filled dot;text-emphasis-color:blue', 'xx')
+checkEqInt(countInk(0, 0, 40, 10), shorthandMark,
+           'the text-emphasis longhands draw what the shorthand draws')
+
+// A string is drawn as itself.
+shotText(tall + 'text-emphasis:\'*\'', 'xx')
+check(countInk(0, 0, 40, 10) > plainAbove, 'a string emphasis mark is drawn too')
+
+// ---- text-underline-position ---------------------------------------------
+// `under` drops the underline below the descenders instead of sitting
+// it on the alphabetic baseline.
+
+// Four characters, because solidRows asks for a run across the whole
+// width it scans and two would not reach it.
+shotText('text-decoration:underline', 'xxxx')
+arr[int] atBaseline = solidRows(black, 0, 24)
+shotText('text-decoration:underline;text-underline-position:under', 'xxxx')
+arr[int] dropped = solidRows(black, 0, 24)
+check(firstRow(dropped) > firstRow(atBaseline),
+      'text-underline-position:under drops the underline below the baseline')
+check(firstRow(atBaseline) >= 0, 'and both are drawn')
+
 finish('decoration')

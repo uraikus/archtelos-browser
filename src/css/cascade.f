@@ -1765,6 +1765,33 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // value sets the start alone.
     // `border-image` is source, slice, width, outset and repeat, with
     // the three lengths separated by slashes after the slice.
+    // `text-emphasis` is a style and a colour in either order.
+    if name == 'text-emphasis' {
+        arr[ascii] et = cssTokens(value)
+        arr[ascii] styleToks = []
+        for int i = 0, i < et.length, i++ {
+            ascii tok = asciiLower(et[i])
+            if tok == 'none' || tok == 'filled' || tok == 'open' || tok == 'dot'
+                || tok == 'circle' || tok == 'double-circle' || tok == 'triangle'
+                || tok == 'sesame' {
+                styleToks.push(et[i])
+                continue
+            }
+            if et[i].length >= 2 {
+                int first = et[i].charCodeAt(0)
+                if first == CH_QUOTE || first == CH_APOS { styleToks.push(et[i])  continue }
+            }
+            setProp(props, 'text-emphasis-color', et[i])
+        }
+        if styleToks.length > 0 {
+            text joined = ''
+            for int i = 0, i < styleToks.length, i++ {
+                joined = joined + (i > 0 ? ' ' : '') + styleToks[i].toText()
+            }
+            setProp(props, 'text-emphasis-style', joined.toAscii())
+        }
+        return
+    }
     if name == 'border-image' {
         arr[ascii] slashed = splitTopLevelSlash(value)
         arr[ascii] first = cssTokens(slashed[0])
@@ -2268,6 +2295,39 @@ bool func isLineStyleKeyword(t:ascii) {
         || t == 'inset' || t == 'outset'
 }
 
+// The character a text-emphasis-style draws. A `<string>` value is
+// drawn as itself; a keyword pair picks one of the standard's five
+// marks in its filled or open form. Empty means no mark at all.
+text func emphasisMarkFor(v:ascii) {
+    arr[ascii] t = cssTokens(v)
+    bool open = false
+    text shape = ''
+    for int i = 0, i < t.length, i++ {
+        ascii tok = asciiLower(t[i])
+        if tok == 'none' { return '' }
+        if tok == 'open' { open = true  continue }
+        if tok == 'filled' { continue }
+        if tok == 'dot' || tok == 'circle' || tok == 'double-circle'
+            || tok == 'triangle' || tok == 'sesame' {
+            shape = tok.toText()
+            continue
+        }
+        // a quoted string is drawn as itself
+        if t[i].length >= 2 {
+            int first = t[i].charCodeAt(0)
+            if first == CH_QUOTE || first == CH_APOS {
+                return t[i].slice(1, t[i].length - 1).toText()
+            }
+        }
+    }
+    if shape == '' { shape = 'circle' }
+    if shape == 'dot' { return open ? '◦' : '•' }
+    if shape == 'circle' { return open ? '○' : '●' }
+    if shape == 'double-circle' { return open ? '◎' : '◉' }
+    if shape == 'triangle' { return open ? '△' : '▲' }
+    return open ? '﹆' : '﹅'
+}
+
 // One text-decoration-style keyword, or -1 for a token that is not one.
 int func decorationStyleKeyword(t:ascii) {
     if t == 'solid' { return DECOSTYLE_SOLID }
@@ -2674,6 +2734,30 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if tdt2 != null {
         Len l = parseLength(asciiTrim(tdt2), s.fontSize)
         if l.kind == LEN_PX { s.decorationThickness = maxInt(roundPx(l.v), 0) }
+    }
+    // text-emphasis. The style resolves to the character to draw, so
+    // the painter needs no table and a `<string>` value needs no
+    // special case. `filled` and `open` pick between two shapes of the
+    // same mark; `filled` is the default.
+    s.emphasisColor = COLOR_UNSET
+    ascii tes = styleProp(props, 'text-emphasis-style')
+    if tes != null { s.emphasisMark = emphasisMarkFor(tes) }
+    ascii tec = styleProp(props, 'text-emphasis-color')
+    if tec != null {
+        int c = parseCssColor(asciiTrim(tec), s.color)
+        if c != COLOR_UNSET { s.emphasisColor = c }
+    }
+    ascii tep = styleProp(props, 'text-emphasis-position')
+    if tep != null {
+        s.emphasisUnder = asciiIndexOf(asciiLower(tep), 'under'.toAscii(), 0) >= 0
+    }
+    // text-underline-position: `under` drops the underline below the
+    // descenders. `left` and `right` only mean anything in a vertical
+    // writing mode, which this engine does not have, so they behave as
+    // `auto` -- css-2026.md says so.
+    ascii tup = styleProp(props, 'text-underline-position')
+    if tup != null {
+        s.underlinePosUnder = asciiLower(asciiTrim(tup)) == 'under'
     }
     ascii tuo = styleProp(props, 'text-underline-offset')
     if tuo != null {

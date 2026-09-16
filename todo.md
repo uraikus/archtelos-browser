@@ -150,10 +150,11 @@ about CJK; `text-wrap-style: balance`, which needs the line breaker run
 more than once; `text-overflow`, which needs a scrollable area rather
 than only a clip; and a tab that advances to a tab stop rather than
 expanding to whole spaces — and what is left of Text Decoration 3:
-`text-decoration-skip-ink` and `text-emphasis`, which both need the
-glyph outlines Festina does not expose, `text-underline-position`, and a
-`wavy` underline drawn as a curve rather than as stepped segments, which
-needs the path API an image does not have. These sit in the
+`text-decoration-skip-ink`, which needs the glyph outlines Festina does
+not expose; an emphasis mark that reserves space in the line rather than
+falling outside it; and a `wavy` underline drawn as a curve rather than
+as stepped segments, which needs the path API an image does not have.
+These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
 
@@ -162,7 +163,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(168; Chromium reports 373, and four of them cannot be graded by a probe
+(172; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

@@ -106,7 +106,8 @@ corner taking its own radius, from the shorthand, the longhands or
 the logical corner names —
 text with all three decoration lines — `underline`, `overline` and
 `line-through` — in any colour, thickness and offset and in all five
-styles, and `text-shadow` behind it, borders in every CSS style —
+styles, `text-emphasis` marks beside every character, and
+`text-shadow` behind it, borders in every CSS style —
 `solid`, `dashed`, `dotted`, `double`, and the four relief styles that
 shade their edges — with each side keeping its own, `box-shadow`
 with offset, blur, spread, `inset` and a list of shadows, images,

@@ -476,6 +476,13 @@ struct Style {
     decorationThickness:int     // px; 0 = from the font size
     underlineOffset:int         // px; 0 = auto
     textShadows:arr[Shadow]
+    // text-emphasis: a mark drawn beside every character. The style is
+    // kept as the string to draw, which is empty for `none` and so is
+    // the initial value and the zero value both.
+    emphasisMark:text
+    emphasisColor:int       // COLOR_UNSET = the text's own colour
+    emphasisUnder:bool
+    underlinePosUnder:bool
     width:Len
     height:Len
     minWidth:Len

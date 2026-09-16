@@ -391,7 +391,7 @@ text-shadow	0 0 2px red
 text-size-adjust	none
 text-spacing-trim	space-all
 text-transform	uppercase
-text-underline-position	left
+text-underline-position	under
 text-wrap-mode	nowrap
 text-wrap-style	balance
 timeline-scope	--t

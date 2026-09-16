@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### text-emphasis, and an underline that clears the descenders
+
+`text-emphasis` draws a mark beside every character — over the text by
+default, under it when `text-emphasis-position` asks, in its own colour
+— in all five of the standard's shapes in either their filled or open
+form, and from a `<string>` as itself. **Each shape resolves to the
+character that draws it**, so the five need no drawing code between them
+and a string value needs no special case.
+
+The mark does not reserve space in the line. In a line only as tall as
+its font there is nowhere above the ascender for it to go and it falls
+outside the line, which css-2026.md records and todo.md carries; the
+checks give their fixture a tall line box for that reason and say so.
+
+`text-underline-position: under` drops the underline below the
+descenders instead of sitting it on the baseline. `left` and `right`
+behave as `auto`, because they mean something only in a vertical writing
+mode.
+
+**Properties 168 → 172.**
+
+Fourteen checks in `tests/render/decoration.f` (38 → 50).
+
+**A sixth instrument defect, and the first one caught automatically.**
+The `text-underline-position` row carried `left` — valid CSS, and
+Chromium computes it, but a value that can only mean something in a
+vertical writing mode, so it measured a feature no horizontal engine
+has. The `@supports` cross-check added earlier this branch found it
+without being asked: the property was on the supported list and changing
+nothing, which is exactly the disagreement that check exists to catch.
+The row carries `under` now.
+
 ### border-image
 
 The source is cut into nine regions by `border-image-slice` — a number

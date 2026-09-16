@@ -1239,6 +1239,31 @@ void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
     }
 }
 
+// text-emphasis (Text Decoration 3 §8): a mark beside every character,
+// over the text by default and under it when asked. The mark is a
+// character of its own, so the standard's five shapes need no drawing
+// code and a `<string>` value needs no special case.
+void func paintEmphasisMarks(f:Fragment, s:Style) {
+    if s.emphasisMark == '' { return }
+    int c = s.emphasisColor == COLOR_UNSET ? s.color : s.emphasisColor
+    paintFill(c, s.effectiveOpacity)
+    int markW = measureTextWidth(s.emphasisMark)
+    // over the ascender, or below the descender
+    int y = s.emphasisUnder
+        ? f.baseline + fontDescent(s) + roundPx(s.fontSize.toFloat() * 0.6)
+        : f.baseline - fontAscent(s) - roundPx(s.fontSize.toFloat() * 0.1)
+    arr[text] chars = f.content.split('')
+    int x = f.x
+    for int i = 0, i < chars.length, i++ {
+        int cw = measureTextWidth(chars[i]) + s.letterSpacing
+        if chars[i] != ' ' {
+            pDrawText(s.emphasisMark, x + Math.floorDiv(cw - markW, 2), y)
+        }
+        x = x + cw
+    }
+    paintFill(s.color, s.effectiveOpacity)
+}
+
 // text-shadow (Text Decoration 3 §5): a copy of the text behind it,
 // offset and blurred. The canvas has no blur, so as with box-shadow the
 // falloff is approximated -- here by drawing the copy several times
@@ -1281,6 +1306,7 @@ void func paintTextFragment(f:Fragment) {
     paintTextShadows(f, s)
     paintFill(s.color, s.effectiveOpacity)
     drawFragmentGlyphs(f, s, 0, 0)
+    paintEmphasisMarks(f, s)
     // The box's own decoration and the one propagated into it are two
     // decorations, not one: the standard draws each in the colour and
     // style of the box that asked for it, so they cannot be unioned
@@ -1306,7 +1332,10 @@ void func paintDecorationLines(f:Fragment, s:Style, lines:int, c:int, style:int,
     int thickness = thicknessIn > 0 ? thicknessIn : maxInt(1, Math.floorDiv(s.fontSize, 16))
     int col = colorWithOpacity(c, s.effectiveOpacity)
     if decoHas(lines, DECO_UNDERLINE) {
-        paintDecorationLine(f.x + dx, f.baseline + 1 + Math.floorDiv(thickness, 2) + offset + dy,
+        // text-underline-position: under drops the line below the
+        // descenders instead of sitting it on the baseline.
+        int under = s.underlinePosUnder ? fontDescent(s) : 1
+        paintDecorationLine(f.x + dx, f.baseline + under + Math.floorDiv(thickness, 2) + offset + dy,
                             f.w, thickness, style, col, alpha)
     }
     if decoHas(lines, DECO_OVERLINE) {
