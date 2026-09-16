@@ -396,6 +396,30 @@ group or an `overflow: hidden` ancestor is doing it.
 
 ---
 
+## 3l Give a font a real weight, and a way to load one
+
+**Today.** `changeFont(px, style, family)` decides the weight by
+searching the style string for `bold`, and stores it in a
+`cairo_font_weight_t`, which has two members. Every numeric weight
+measures identically to `normal` — `700` included — and `semibold`
+comes out bold because the word contains `bold`. `cairo_select_font_face`
+is Cairo's toy API, so the family is whatever the system already has and
+no font file can be loaded.
+
+**Proposal.** An overload taking the weight as a number —
+`changeFont(px, weight, italic, family)` — resolved through FontConfig or
+`cairo_ft_font_face_create_for_ft_face`, which is also the call that
+would let a font be loaded from a file or a blob.
+
+**What it removes here.** CSS has nine font weights and this browser can
+render two of them, so 400 and 500 look the same and so do 600 and 900.
+The cascade already computes the right number; there is nowhere to put
+it. And `@font-face` — a page shipping its own typeface, which is most
+of the modern web — cannot be implemented at all, which is why CSS Fonts
+3 is the one roadmap item blocked outright rather than merely unstarted.
+
+---
+
 ## 4 Give `text` the operations every text program needs
 
 **Today.** `text` has `s[i]`, `.length`, `.charCodeAt`, `.split`,

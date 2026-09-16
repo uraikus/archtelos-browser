@@ -822,3 +822,46 @@ The asymmetry is in the binding rather than the renderer: the canvas
 entry point and the image entry point both reach the same drawing
 library, and only the image one is missing its nine-argument
 counterpart.
+
+---
+
+## 31 A font has two weights, and no way to load one
+
+`changeFont` takes the weight as part of a style string, and the runtime
+decides it by looking for one word:
+
+```c
+g_font_weight = festina_contains_ci(style, "bold")
+                ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL;
+```
+
+`cairo_font_weight_t` has exactly those two members, so there is nowhere
+for CSS's nine weights to go. Measuring the same string at each of them
+shows it:
+
+```festina
+int func widthAt(style:text) {
+    changeFont(32, style, 'sans-serif')
+    return measureTextWidth('Weight')
+}
+```
+
+| style passed | width |
+|---|---|
+| `normal`, `100`, `300`, `500`, `600`, `700`, `900`, `lighter` | 114 |
+| `bold`, `bolder` | 129 |
+
+Every numeric weight measures as normal, `700` included, because the
+only thing the runtime looks for is the substring `bold` — a program
+that asks for `700` gets normal silently, and one that asks for
+`semibold` gets bold for the wrong reason.
+
+This browser's cascade computes the weight correctly and then has
+nowhere to put it: 400 and 500 render identically, and so do 600 and
+900. A page that distinguishes its headings by weight alone loses that
+distinction entirely.
+
+The same binding closes `@font-face`. `cairo_select_font_face` is
+Cairo's *toy* API: it takes a family name and picks from what the system
+already has, and there is no call in Festina that loads a font file. A
+web font cannot be fetched and used at all.

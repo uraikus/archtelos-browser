@@ -5,6 +5,31 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Why Fonts 3 is blocked, measured rather than assumed
+
+The roadmap listed a numeric `font-weight` and `@font-face` as work to
+be done. Neither can be done from Festina as it stands, and the roadmap
+now says so with the evidence.
+
+`changeFont` takes the weight inside a style string and the runtime
+decides it by searching for one word, storing the answer in a
+`cairo_font_weight_t`, which has two members. Measuring the same string
+at every CSS weight gives 114 pixels for `normal`, `100`, `300`, `500`,
+`600`, `700`, `900` and `lighter`, and 129 for `bold` and `bolder`:
+every number measures as normal, `700` included, and `semibold` would
+come out bold because the word contains `bold`.
+
+This browser's cascade is not the problem — it maps the weights exactly
+as CSS says, 600 and above to bold — and then has nowhere to put the
+number. `@font-face` is closed by the same binding:
+`cairo_select_font_face` is Cairo's toy API, which picks a family from
+what the system has and cannot load a file.
+
+FINDINGS.md gains the measurements and festina.md §3l the proposal: a
+`changeFont` overload taking a numeric weight, resolved through
+FontConfig or `cairo_ft_font_face_create_for_ft_face`, which is the same
+call that would let a font be loaded at all.
+
 ### Ordered lists count in the system they were asked for
 
 `lower-alpha`, `upper-alpha`, `lower-roman` and `upper-roman` were all

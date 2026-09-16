@@ -87,8 +87,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    the smaller inner curve, which needs the rounded-rectangle path that
    an image layer does not have (FINDINGS.md, "an image is a drawable
    surface with a smaller API").
-6. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
-   `@font-face`.
+6. **Fonts 3**, which is **blocked on Festina rather than on effort**: a
+   numeric `font-weight` has nowhere to go, because the runtime stores
+   the weight in a two-valued Cairo enum and decides it by searching the
+   style string for `bold`; and `@font-face` cannot be done at all,
+   because `cairo_select_font_face` picks a family from the system and
+   no call loads a font file. FINDINGS.md has the measurements and
+   festina.md §3l the proposal. Until Festina grows either, the most
+   this item can gain is `font-variant` and `font-stretch`, which are
+   the parts that do not need a font the system lacks.
 7. **Counter Styles 3**: `@counter-style`, and the predefined styles
    beyond the six that number as themselves — the alphabetic and roman
    ones are done, along with the `<ol type>` attribute. What is left is
