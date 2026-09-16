@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,733,240 |
-| This browser, all `.f` source | 895,005 |
+| This browser, the whole program | 2,737,648 |
+| This browser, all `.f` source | 899,340 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -714,6 +714,25 @@ they are different programs that happen to round to the same size. The
 benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
+
+`appearance`, `accent-color` and `field-sizing` cost **4,408 bytes**
+(2,733,240 → 2,737,648) between them. The benchmark page carries no form
+control, so none of it is reached there: eight alternating samples give
+99 to 104 ms against the revision before it at 99 to 108, the same best
+on each side.
+
+**That is the sixth feature running whose benchmark can say nothing**,
+and it is worth stating as a fact about the page rather than repeating
+per feature. `generated.html` has no `<img>`, no counters, no grid, no
+multi-column container, no transform and no form control. What it does
+exercise — block and inline layout over 2,728 elements, the cascade, and
+text — is what the headline number measures, and that number is sound.
+What no run here can show is whether a feature outside that set costs
+what it claims to; for those the binary size is the measurement and the
+timing is a control against regressions elsewhere. todo.md carries the
+trade-off: a page that exercised everything would make each feature
+measurable and would invalidate every number in this file that was taken
+against the present one.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,
