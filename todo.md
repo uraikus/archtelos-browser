@@ -74,7 +74,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    from the intrinsic size and the box and states the derivation beside
    the check. A radial gradient can be graded the same way.
 5. **Backgrounds and Borders 3, completed**: `background-attachment`;
-   more than one background layer per box; `border-image`; a blurred
+   more than one background layer per box; `border-image-repeat`'s
+   `round` and `space`, which fit the last tile rather than cutting it;
+   a blurred
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces. A
    single background image from `url()` with `repeat`,
@@ -160,7 +162,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(163; Chromium reports 373, and four of them cannot be graded by a probe
+(168; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

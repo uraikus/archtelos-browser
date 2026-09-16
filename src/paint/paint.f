@@ -1048,6 +1048,116 @@ bool func cellIsEmpty(b:Box) {
     return true
 }
 
+// border-image (Backgrounds and Borders 3 §6): the source cut into
+// nine regions by the slices, with the four corners drawn at the
+// border's own size, the four edges filling the space between them, and
+// the middle drawn only when `fill` asks.
+//
+// Each region is cut by blitting the source into a blank image at a
+// negative offset, because an image destination has no source-rectangle
+// `drawImage` (FINDINGS.md, finding 30) and a border image inside an
+// `overflow: hidden` subtree is painting into one.
+img func cutRegion(src:img, sx:int, sy:int, sw:int, sh:int) {
+    if sw <= 0 || sh <= 0 { return null }
+    img out = blankImage(sw, sh)
+    out.drawImage(src, -sx, -sy)
+    return out
+}
+
+// Draws one region into a box, stretched to fill it or tiled across it.
+void func paintImageRegion(src:img, sx:int, sy:int, sw:int, sh:int,
+                           dx:int, dy:int, dw:int, dh:int, repeat:bool) {
+    if sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 { return }
+    img region = cutRegion(src, sx, sy, sw, sh)
+    if region == null { return }
+    if !repeat {
+        pDrawImageScaled(region, dx, dy, dw, dh)
+        return
+    }
+    // Tiled at its own size, clipped to the box by a layer, since the
+    // canvas has no clip region.
+    img layer = blankImage(dw, dh)
+    for int ty = 0, ty < dh, ty = ty + sh {
+        for int tx = 0, tx < dw, tx = tx + sw {
+            layer.drawImage(region, tx, ty)
+        }
+    }
+    pDrawImage(layer, dx, dy)
+}
+
+// One slice, as a number of source pixels. A bare number is already
+// that; a percentage is of the source's own size.
+int func slicePx(l:Len, sourceSize:int) {
+    if l.kind == LEN_PERCENT { return maxInt(roundPx(sourceSize.toFloat() * l.v / 100.0), 0) }
+    if l.kind == LEN_PX { return maxInt(roundPx(l.v), 0) }
+    return 0
+}
+
+void func paintBorderImage(b:Box) {
+    Style s = b.style
+    if s.borderImageUrl == '' { return }
+    img src = loadedImages[s.borderImageUrl]
+    if src == null { return }
+    int iw = src.width
+    int ih = src.height
+    if iw <= 0 || ih <= 0 { return }
+    int st = slicePx(s.borderImageSliceTop, ih)
+    int sr = slicePx(s.borderImageSliceRight, iw)
+    int sb = slicePx(s.borderImageSliceBottom, ih)
+    int sl = slicePx(s.borderImageSliceLeft, iw)
+    if st + sb > ih || sl + sr > iw { return }
+
+    // The area the image is drawn into: the border box, pushed out by
+    // the outset. The widths default to the border's own.
+    int o = s.borderImageOutset
+    int ax = b.x - o
+    int ay = b.y - o
+    int aw = b.w + o + o
+    int ah = b.h + o + o
+    int wt = s.borderImageWidthTop >= 0 ? s.borderImageWidthTop : b.bt
+    int wr = s.borderImageWidthRight >= 0 ? s.borderImageWidthRight : b.br
+    int wb = s.borderImageWidthBottom >= 0 ? s.borderImageWidthBottom : b.bb
+    int wl = s.borderImageWidthLeft >= 0 ? s.borderImageWidthLeft : b.bl
+    if aw <= 0 || ah <= 0 { return }
+    // A border image wider than the box it is drawn into would have its
+    // edges overlap, so the widths are cut back in proportion, which is
+    // the standard's own reduction.
+    if wl + wr > aw {
+        int total = maxInt(wl + wr, 1)
+        wl = Math.floorDiv(wl * aw, total)
+        wr = Math.floorDiv(wr * aw, total)
+    }
+    if wt + wb > ah {
+        int total = maxInt(wt + wb, 1)
+        wt = Math.floorDiv(wt * ah, total)
+        wb = Math.floorDiv(wb * ah, total)
+    }
+    bool rep = s.borderImageRepeat == BORDERIMG_REPEAT
+    int midW = aw - wl - wr
+    int midH = ah - wt - wb
+    int srcMidW = iw - sl - sr
+    int srcMidH = ih - st - sb
+
+    // the four corners, each at its own border size
+    paintImageRegion(src, 0, 0, sl, st, ax, ay, wl, wt, false)
+    paintImageRegion(src, iw - sr, 0, sr, st, ax + aw - wr, ay, wr, wt, false)
+    paintImageRegion(src, 0, ih - sb, sl, sb, ax, ay + ah - wb, wl, wb, false)
+    paintImageRegion(src, iw - sr, ih - sb, sr, sb,
+                     ax + aw - wr, ay + ah - wb, wr, wb, false)
+    // the four edges, filling what the corners leave
+    paintImageRegion(src, sl, 0, srcMidW, st, ax + wl, ay, midW, wt, rep)
+    paintImageRegion(src, sl, ih - sb, srcMidW, sb,
+                     ax + wl, ay + ah - wb, midW, wb, rep)
+    paintImageRegion(src, 0, st, sl, srcMidH, ax, ay + wt, wl, midH, rep)
+    paintImageRegion(src, iw - sr, st, sr, srcMidH,
+                     ax + aw - wr, ay + wt, wr, midH, rep)
+    // and the middle, only when `fill` asks for it
+    if s.borderImageFill {
+        paintImageRegion(src, sl, st, srcMidW, srcMidH,
+                         ax + wl, ay + wt, midW, midH, rep)
+    }
+}
+
 // An outline is drawn just outside the border box and takes no space,
 // so it can overlap whatever is next to it (CSS Basic User Interface 3).
 // It is a line with a style, painted through the same code as a border
@@ -1574,7 +1684,11 @@ void func paintBoxUntransformed(b:Box) {
             paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         } else {
             paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+            // A border image replaces the border's own styles where it
+            // is drawn, so it goes over them (Backgrounds and Borders 3
+            // §6.1).
             paintBorders(b)
+            paintBorderImage(b)
         }
         paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
     }

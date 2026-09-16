@@ -5,6 +5,44 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### border-image
+
+The source is cut into nine regions by `border-image-slice` — a number
+or a percentage on each side, and `fill` for the middle. The four
+corners are drawn at the border's own size, the four edges fill what the
+corners leave, stretched or tiled by `border-image-repeat`, and
+`border-image-width` and `border-image-outset` move and resize the area
+they go in. `round` and `space` tile as `repeat` does, differing only in
+how the last tile is fitted, which todo.md records.
+
+Each region is cut by blitting the source into a blank image at a
+negative offset. That is the fifth thing standing in for a capability
+the canvas does not have: an image destination takes no source rectangle
+(FINDINGS.md, finding 30), and a border image inside a clipped subtree
+is painting into an image rather than the canvas.
+
+`tests/fixtures/nine.png` is nine 3x3 regions in CSS-named colours, so a
+slice of 3 cuts exactly those nine and each region can be named by the
+colour it must put on the box. **Its top edge varies across its three
+columns — lime, white, lime — because a uniform edge looks identical
+stretched and tiled**, and telling those apart is the whole of
+`border-image-repeat`.
+
+**Properties 163 → 168.**
+
+Twenty-two checks in the new `tests/render/borderimage.f`.
+
+Three of them had to be rewritten before they measured anything.
+A scaled blit is filtered, so the one-pixel white column of a 3px region
+stretched into 10px blends into the lime on either side and never
+reaches the full colour — the check now asks that the tiled edge lays
+its region down more than once and the stretched one does not, rather
+than counting bands in both. A 3x3 corner scaled into 4x4 is filtered at
+every pixel, so the narrow-width check asks that the corner is painted
+at all. And a fixture using `margin` to inset the box had its margin
+collapse through to the root and vanish, which is a trap this repository
+has now fallen into twice; the wrapper is padded instead.
+
 ### Columns
 
 The third of the snapshot's untouched specifications off zero.

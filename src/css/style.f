@@ -137,6 +137,11 @@ const int BOXALIGN_SPACE_AROUND = 6
 const int BOXALIGN_SPACE_EVENLY = 7
 const int BOXALIGN_AUTO = 8
 
+// border-image-repeat. `round` and `space` differ from `repeat` only in
+// how the last tile is handled, which this engine does not distinguish.
+const int BORDERIMG_STRETCH = 0
+const int BORDERIMG_REPEAT = 1
+
 // pointer-events. Only `none` changes what this engine does, because
 // hit testing is the only interaction it has and a `visibility: hidden`
 // box is already never hit; the rest are kept apart so the computed
@@ -389,6 +394,22 @@ struct Style {
     // A background image from url(). The URL is resolved and fetched by
     // the page pipeline, which stores the decoded image under it.
     backgroundUrl:text
+    // border-image. The slices are fractions of the source, held as
+    // Len so a number and a percentage keep their meaning; the widths
+    // and outsets are px, with -1 meaning "the border's own width",
+    // which is the initial value.
+    borderImageUrl:text
+    borderImageSliceTop:Len
+    borderImageSliceRight:Len
+    borderImageSliceBottom:Len
+    borderImageSliceLeft:Len
+    borderImageFill:bool
+    borderImageWidthTop:int
+    borderImageWidthRight:int
+    borderImageWidthBottom:int
+    borderImageWidthLeft:int
+    borderImageOutset:int
+    borderImageRepeat:int
     backgroundRepeatX:bool
     backgroundRepeatY:bool
     backgroundPosX:Len

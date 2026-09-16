@@ -1763,6 +1763,33 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     // `grid-column` and `grid-row` are `<start> / <end>`, and a single
     // value sets the start alone.
+    // `border-image` is source, slice, width, outset and repeat, with
+    // the three lengths separated by slashes after the slice.
+    if name == 'border-image' {
+        arr[ascii] slashed = splitTopLevelSlash(value)
+        arr[ascii] first = cssTokens(slashed[0])
+        arr[ascii] sliceToks = []
+        for int i = 0, i < first.length, i++ {
+            ascii t = asciiLower(first[i])
+            if asciiStartsWithLower(t, 'url(', 0) {
+                setProp(props, 'border-image-source', first[i])
+            } else if t == 'stretch' || t == 'repeat' || t == 'round' || t == 'space' {
+                setProp(props, 'border-image-repeat', first[i])
+            } else {
+                sliceToks.push(first[i])
+            }
+        }
+        if sliceToks.length > 0 {
+            text joined = ''
+            for int i = 0, i < sliceToks.length, i++ {
+                joined = joined + (i > 0 ? ' ' : '') + sliceToks[i].toText()
+            }
+            setProp(props, 'border-image-slice', joined.toAscii())
+        }
+        if slashed.length > 1 { setProp(props, 'border-image-width', slashed[1]) }
+        if slashed.length > 2 { setProp(props, 'border-image-outset', slashed[2]) }
+        return
+    }
     // `columns` is a width and a count in either order.
     if name == 'columns' {
         arr[ascii] ct = cssTokens(value)
@@ -2820,6 +2847,71 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             s.backgroundUrl = parseUrlValue(bgimg)
             if s.backgroundUrl != '' { anyBackgroundUrl = true }
         }
+    }
+    // border-image. The source goes through the same gathering as a
+    // background url, so anyBackgroundUrl covers it too.
+    s.borderImageUrl = ''
+    ascii bimg = styleProp(props, 'border-image-source')
+    if bimg != null {
+        s.borderImageUrl = parseUrlValue(bimg)
+        if s.borderImageUrl != '' { anyBackgroundUrl = true }
+    }
+    // The slices are four fractions of the source. A bare number is a
+    // count of source pixels and a percentage is of the source's size,
+    // so both keep their kind and the painter resolves them against the
+    // image it has.
+    ascii bslice = styleProp(props, 'border-image-slice')
+    if bslice != null {
+        arr[ascii] st = cssTokens(bslice)
+        arr[Len] sides = []
+        for int i = 0, i < st.length, i++ {
+            if asciiLower(st[i]) == 'fill' { s.borderImageFill = true  continue }
+            Len l = parseLength(st[i], s.fontSize)
+            if l.kind == LEN_PX || l.kind == LEN_PERCENT { sides.push(l) }
+        }
+        if sides.length > 0 {
+            s.borderImageSliceTop = sides[0]
+            s.borderImageSliceRight = sides.length > 1 ? sides[1] : sides[0]
+            s.borderImageSliceBottom = sides.length > 2 ? sides[2] : sides[0]
+            s.borderImageSliceLeft = sides.length > 3 ? sides[3]
+                : (sides.length > 1 ? sides[1] : sides[0])
+        }
+    }
+    s.borderImageWidthTop = -1
+    s.borderImageWidthRight = -1
+    s.borderImageWidthBottom = -1
+    s.borderImageWidthLeft = -1
+    ascii bwid = styleProp(props, 'border-image-width')
+    if bwid != null {
+        arr[ascii] wt = cssTokens(bwid)
+        arr[int] sides = []
+        for int i = 0, i < wt.length, i++ {
+            if asciiLower(wt[i]) == 'auto' { sides.push(-1)  continue }
+            Len l = parseLength(wt[i], s.fontSize)
+            if l.kind == LEN_PX { sides.push(maxInt(roundPx(l.v), 0)) }
+        }
+        if sides.length > 0 {
+            s.borderImageWidthTop = sides[0]
+            s.borderImageWidthRight = sides.length > 1 ? sides[1] : sides[0]
+            s.borderImageWidthBottom = sides.length > 2 ? sides[2] : sides[0]
+            s.borderImageWidthLeft = sides.length > 3 ? sides[3]
+                : (sides.length > 1 ? sides[1] : sides[0])
+        }
+    }
+    s.borderImageOutset = 0
+    ascii bout = styleProp(props, 'border-image-outset')
+    if bout != null {
+        arr[ascii] ot = cssTokens(bout)
+        if ot.length > 0 {
+            Len l = parseLength(ot[0], s.fontSize)
+            if l.kind == LEN_PX { s.borderImageOutset = maxInt(roundPx(l.v), 0) }
+        }
+    }
+    s.borderImageRepeat = BORDERIMG_STRETCH
+    ascii brep = styleProp(props, 'border-image-repeat')
+    if brep != null {
+        ascii t = asciiLower(asciiTrim(brep))
+        if t != 'stretch' { s.borderImageRepeat = BORDERIMG_REPEAT }
     }
     // background-repeat: the two-value form names the axes separately,
     // and the one-value form applies to both.

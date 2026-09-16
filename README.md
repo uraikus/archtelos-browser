@@ -122,6 +122,9 @@ radii and placed with `at`. `background-image: url()`
 paints a fetched image with `background-repeat`,
 `background-position` and `background-size`, which takes `cover`,
 `contain`, lengths, percentages and `auto` on either axis.
+`border-image` cuts an image into nine regions and lays them round the
+border: the corners at their own size, the edges stretched or tiled
+between them, and the middle only if `fill` asks.
 `background-origin` chooses the edge a background is placed from and
 `background-clip` the edge it is cut off at — border, padding or
 content — and a tile that runs past that edge is cut off there. `object-fit` and `object-position` size and place a replaced
@@ -236,11 +239,11 @@ The runner covers twenty-six unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-containment, alignment, grid, columns, audio, the preload scanner), ten offscreen render suites that check
+containment, alignment, grid, columns, audio, the preload scanner), eleven offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
-borders, text decoration, transforms and box shadows — three
-conformance
+borders, border images, text decoration, transforms and box shadows
+— three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

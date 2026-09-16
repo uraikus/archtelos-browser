@@ -609,6 +609,8 @@ arr[text] supportedProperties = [
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',
     'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
+    'border-image', 'border-image-source', 'border-image-slice',
+    'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',
     'column-rule', 'column-rule-width', 'column-rule-style', 'column-rule-color',
     'grid-template-columns', 'grid-template-rows',

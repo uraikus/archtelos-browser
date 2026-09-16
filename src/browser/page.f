@@ -109,7 +109,27 @@ void func gatherImages(page:Page) {
 // the painter can find it. Styles are shared between elements that
 // matched the same rules, so this may see one twice; resolving an
 // already-absolute URL returns it unchanged.
+// Fetches one image a style names and returns the URL it was stored
+// under, which is what the painter looks it up by.
+text func fetchStyleImage(page:Page, raw:text) {
+    ascii a = raw.toAscii()
+    if a == null || asciiStartsWithLower(a, 'data:', 0) { return raw }
+    text target = resolveUrl(page.url, raw)
+    if loadedImages[target] == null {
+        Resource r = fetchUrl(target)
+        if r.ok {
+            http holder = {'url': 'http://localhost/', 'body': r.data}
+            img decoded = holder.toImg()
+            if decoded != null { loadedImages[target] = decoded }
+        }
+    }
+    return target
+}
+
 void func gatherBackgroundImages(page:Page, n:Node) {
+    if n.kind == NODE_ELEMENT && n.style.borderImageUrl != '' {
+        n.style.borderImageUrl = fetchStyleImage(page, n.style.borderImageUrl)
+    }
     if n.kind == NODE_ELEMENT && n.style.backgroundUrl != '' {
         text raw = n.style.backgroundUrl
         ascii a = raw.toAscii()
