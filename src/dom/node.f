@@ -270,6 +270,7 @@ bool func isPresentationalAttr(name:text) {
         || name == 'width' || name == 'height' || name == 'border'
         || name == 'cellspacing' || name == 'cellpadding' || name == 'nowrap'
         || name == 'noshade' || name == 'valign' || name == 'type'
+        || name == 'dir'
 }
 
 void func setAttr(n:Node, name:text, value:text) {

@@ -5,6 +5,52 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The logical inline properties follow `direction`, and `dir` works
+
+`margin-inline-start` was `margin-left` whichever way the text ran.
+css-2026.md had said so for as long as the aliases existed -- "direction:
+rtl reorders the text on a line but does not yet swap the inline edges
+those aliases resolve to" -- and in a right-to-left element the start
+edge is the right one. All twelve inline aliases follow the direction
+now, including the two corner radii that change corner:
+`border-start-start-radius` is the top-left in a left-to-right element
+and the top-right in a right-to-left one.
+
+Where it is resolved is the whole of the difficulty. A logical
+declaration and its physical twin are the same property once the
+direction is known, so the later of the two has to win, which rules out
+mapping them afterwards over the finished property map. The direction is
+worked out first instead, from the element's own declarations -- the
+last `direction` among them, the list being already sorted by weight --
+falling back to the inherited value, and only then are the declarations
+applied. Chromium agrees in both orders: `margin-right: 5px;
+margin-inline-start: 40px` is 40 and the same pair reversed is 5.
+
+HTML's `dir` attribute means `direction`, and nothing here had
+implemented it, so `<p dir="rtl">` did nothing at all. It arrives as a
+presentational hint rather than as a `[dir=rtl]` rule in the user-agent
+stylesheet: such a rule has no tag, class or id to bucket on and would
+be tested against every element of every page, where a hint is looked at
+only for an element that carries one.
+
+A page that never mentions `direction` and carries no `dir` does not
+even scan for it. That rests on `&&` short-circuiting, which is now
+checked rather than assumed and written into CLAUDE.md, because every
+per-document flag in this codebase is worth nothing without it.
+
+The first version of the hint cost about two milliseconds on the
+benchmark page, which the alternating measurement caught: four samples
+of the revision before it gave 100, 100, 100 and 100 ms against 103,
+103, 102 and 100. `presentationalHints` runs for every table cell
+whether it carries an attribute or not -- a cell inherits `border` and
+`cellpadding` from its table -- so the page's 1,560 cells were each
+paying for a `dir` lookup they could not have needed. Only an element
+with a presentational attribute can carry `dir`, so the lookup sits
+behind that test now, and the two series overlap completely: 100, 103,
+101, 100 against 102, 102, 103, 100.
+
+Twenty-one of the eighty-nine checks fail with the swap disabled.
+
 ### @container is evaluated, and CSS Conditional 4 comes off the Nothing row
 
 A container query asks about the size of an ancestor, which layout

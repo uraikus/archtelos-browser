@@ -1,11 +1,11 @@
 // Logical properties (CSS Logical Properties 1, via the box and border
 // specifications that define their physical twins).
 //
-// Every one of these is an alias in a left-to-right horizontal writing
-// mode, which is what this engine assumes throughout: `inline-start` is
-// the left edge, `block-start` the top. That assumption is recorded in
-// css-2026.md under Writing Modes 3, and it is what makes these a
-// mapping rather than a layout feature.
+// The block aliases are a renaming in the horizontal writing mode this
+// engine lays out in: `block-start` is the top. The inline ones are not
+// a renaming, because `direction` decides which physical edge each
+// stands for -- `inline-start` is the left edge in a left-to-right
+// element and the right edge in a right-to-left one.
 //
 // So each check asks the question the rule in CLAUDE.md asks of two
 // things that must agree: the logical spelling and the physical one
@@ -49,6 +49,13 @@ void func checkSameLen(logical:text, physical:text, read:text, label:text) {
     else if read == 'maxHeight' { va = resolveLen(a.maxHeight, 0, -1)  vb = resolveLen(b.maxHeight, 0, -1) }
     else if read == 'paddingTop' { va = resolveLen(a.paddingTop, 0, -1)  vb = resolveLen(b.paddingTop, 0, -1) }
     else if read == 'paddingBottom' { va = resolveLen(a.paddingBottom, 0, -1)  vb = resolveLen(b.paddingBottom, 0, -1) }
+    else if read == 'paddingLeft' { va = resolveLen(a.paddingLeft, 0, -1)  vb = resolveLen(b.paddingLeft, 0, -1) }
+    else if read == 'paddingRight' { va = resolveLen(a.paddingRight, 0, -1)  vb = resolveLen(b.paddingRight, 0, -1) }
+    else if read == 'marginLeft' { va = resolveLen(a.marginLeft, 0, -1)  vb = resolveLen(b.marginLeft, 0, -1) }
+    else if read == 'marginRight' { va = resolveLen(a.marginRight, 0, -1)  vb = resolveLen(b.marginRight, 0, -1) }
+    else if read == 'marginTop' { va = resolveLen(a.marginTop, 0, -1)  vb = resolveLen(b.marginTop, 0, -1) }
+    else if read == 'width' { va = resolveLen(a.width, 0, -1)  vb = resolveLen(b.width, 0, -1) }
+    else if read == 'height' { va = resolveLen(a.height, 0, -1)  vb = resolveLen(b.height, 0, -1) }
     else if read == 'overflowHidden' { va = a.overflowHidden ? 1 : 0  vb = b.overflowHidden ? 1 : 0 }
     else if read == 'radiusTopLeft' { va = a.radiusTopLeft  vb = b.radiusTopLeft }
     else if read == 'radiusTopRight' { va = a.radiusTopRight  vb = b.radiusTopRight }
@@ -131,5 +138,87 @@ checkSameLen('border-end-start-radius:9px', 'border-bottom-left-radius:9px',
              'radiusBottomLeft', 'border-end-start-radius is the bottom-left corner')
 checkSameLen('border-end-end-radius:9px', 'border-bottom-right-radius:9px',
              'radiusBottomRight', 'border-end-end-radius is the bottom-right corner')
+
+// ---- the inline edges follow `direction` -------------------------------
+// In a right-to-left element `inline-start` is the RIGHT edge. Each
+// check is the same agreement as the rest of this file, asked with
+// `direction: rtl` in front of both spellings: the logical one and the
+// physical one it should now mean must compute alike.
+void func checkRtlPair(logical:text, physical:text, read:text, label:text) {
+    checkSameLen('direction:rtl;' + logical, 'direction:rtl;' + physical, read, label)
+}
+
+checkRtlPair('margin-inline-start:40px', 'margin-right:40px', 'marginRight',
+             'margin-inline-start is the right margin under rtl')
+checkRtlPair('margin-inline-end:40px', 'margin-left:40px', 'marginLeft',
+             'margin-inline-end is the left margin under rtl')
+checkRtlPair('padding-inline-start:40px', 'padding-right:40px', 'paddingRight',
+             'padding-inline-start is the right padding under rtl')
+checkRtlPair('padding-inline-end:40px', 'padding-left:40px', 'paddingLeft',
+             'padding-inline-end is the left padding under rtl')
+checkRtlPair('border-inline-start-width:7px;border-inline-start-style:solid',
+             'border-right-width:7px;border-right-style:solid', 'borderRight',
+             'border-inline-start is the right border under rtl')
+checkRtlPair('border-inline-end-width:7px;border-inline-end-style:solid',
+             'border-left-width:7px;border-left-style:solid', 'borderLeft',
+             'border-inline-end is the left border under rtl')
+checkRtlPair('position:absolute;inset-inline-start:11px', 'position:absolute;right:11px',
+             'right', 'inset-inline-start is the right inset under rtl')
+checkRtlPair('position:absolute;inset-inline-end:11px', 'position:absolute;left:11px',
+             'left', 'inset-inline-end is the left inset under rtl')
+checkRtlPair('border-start-start-radius:9px', 'border-top-right-radius:9px',
+             'radiusTopRight', 'border-start-start-radius is the top-right corner under rtl')
+checkRtlPair('border-end-end-radius:9px', 'border-bottom-left-radius:9px',
+             'radiusBottomLeft', 'border-end-end-radius is the bottom-left corner under rtl')
+
+// The block axis is untouched by `direction`, which is what says the
+// swap reached the inline edges and only those.
+checkRtlPair('margin-block-start:40px', 'margin-top:40px', 'marginTop',
+             'margin-block-start is still the top margin under rtl')
+checkRtlPair('inline-size:120px', 'width:120px', 'width',
+             'inline-size is still the width under rtl')
+
+// And a left-to-right element is unchanged, so these are a swap rather
+// than a reversal of the whole mapping.
+checkSameLen('direction:ltr;margin-inline-start:40px', 'margin-left:40px', 'marginLeft',
+             'margin-inline-start is the left margin under ltr')
+
+// ---- order between a logical and a physical declaration ----------------
+// The two are the same property once the direction is known, so the
+// later one wins. This is what a mapping done after the cascade would
+// get wrong.
+checkEqInt(resolveLen(styleOf('direction:rtl;margin-right:5px;margin-inline-start:40px').marginRight, 0, -1),
+           40, 'a logical declaration after a physical one wins')
+checkEqInt(resolveLen(styleOf('direction:rtl;margin-inline-start:40px;margin-right:5px').marginRight, 0, -1),
+           5, 'and a physical one after a logical one wins')
+
+// ---- the direction can be inherited ------------------------------------
+cascadeReset()
+Node rtlDoc = parseHtmlText('<html><body><div style="direction:rtl">'
+    + '<p id="t" style="margin-inline-start:40px">x</p></div></body></html>')
+cascadeAddDocumentStyles(rtlDoc)
+computeStyles(rtlDoc)
+arr[Node] rtlPs = []
+collectElements(rtlDoc, 'p', rtlPs)
+checkEqInt(resolveLen(rtlPs[0].style.marginRight, 0, -1), 40,
+           'a direction inherited from an ancestor decides the edge')
+
+// ---- the `dir` attribute -----------------------------------------------
+// HTML's `dir` is what real right-to-left content carries, and it means
+// `direction` (HTML, "Rendering"). It reaches the cascade as a
+// presentational hint, so an element without one pays nothing for it.
+cascadeReset()
+Node dirDoc = parseHtmlText('<html><body><p id="t" dir="rtl" style="margin-inline-start:40px">x</p>'
+    + '<p id="u" dir="ltr" style="margin-inline-start:40px">y</p></body></html>')
+cascadeAddDocumentStyles(dirDoc)
+computeStyles(dirDoc)
+arr[Node] dirPs = []
+collectElements(dirDoc, 'p', dirPs)
+checkEqInt(resolveLen(dirPs[0].style.marginRight, 0, -1), 40,
+           'dir="rtl" puts the inline-start margin on the right')
+check(dirPs[0].style.directionRtl, 'and makes the element right-to-left')
+checkEqInt(resolveLen(dirPs[1].style.marginLeft, 0, -1), 40,
+           'dir="ltr" leaves it on the left')
+check(!dirPs[1].style.directionRtl, 'and the element left-to-right')
 
 finish('logical properties')

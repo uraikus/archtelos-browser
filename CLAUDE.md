@@ -333,6 +333,11 @@ how a struct graph is shaped, gets a valgrind run.
   an id registry. This is load-bearing, not a style preference: a
   back-pointer makes every release of a live alias walk the whole
   document (FINDINGS.md, finding 1). Do not add one.
+- **`&&` and `||` short-circuit**, which is what makes the per-document
+  flags above cost what they claim to: `cascadeSawDirection && scan(...)`
+  does not call `scan` on a page that never said `direction`. Verified
+  rather than assumed — a flag guarding an expensive right-hand side is
+  worth nothing if both sides always run.
 - `ARCHTELOS_TIMING=1` makes the pipeline print per-phase timings.
 - `ARCHTELOS_NO_PRELOAD=1` turns the preload scanner off, so a benchmark
   can measure one binary with and without it.

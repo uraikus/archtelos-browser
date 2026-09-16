@@ -106,6 +106,13 @@ bool cascadeSawClip = false
 // below is skipped, `cssSchemeIsDark` stays false, and the nineteen
 // system colours answer from the one table they always answered from.
 bool cascadeSawColorScheme = false
+// Whether anything on this page said which way the inline axis runs.
+// The logical inline aliases resolve to the left edge in a left-to-right
+// element and the right edge in a right-to-left one, so an element's
+// direction has to be known before its declarations are applied -- and
+// on a page that never mentions one, it is known without asking.
+bool cascadeSawDirection = false
+bool cascadeApplyRtl = false
 
 // What the container queries came to, keyed by element and query. It is
 // filled by layoutDocument from the box tree of the pass before, so it
@@ -126,6 +133,8 @@ void func cascadeReset() {
     cascadeSawTransform = false
     cascadeSawClip = false
     cascadeSawColorScheme = false
+    cascadeSawDirection = false
+    cascadeApplyRtl = false
     map[int] emptyContainerAnswers = {}
     containerQueryAnswers = emptyContainerAnswers
     cssResetContainerQueries()
@@ -224,6 +233,11 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawColorScheme {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'color-scheme' { cascadeSawColorScheme = true  break }
+                }
+            }
+            if !cascadeSawDirection {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'direction' { cascadeSawDirection = true  break }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -592,6 +606,27 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
     bool isCell = tag == 'td' || tag == 'th'
     if !n.hasPresHint && !isCell { return }
     int w = matchWeight(false, ORIGIN_AUTHOR, CASCADE_NO_LAYER, 0, 0)
+    // HTML's `dir` is what right-to-left content actually carries, and
+    // it means `direction` (HTML, "Rendering"). It arrives here rather
+    // than as a `[dir=rtl]` rule in the user-agent stylesheet because
+    // such a rule has no tag, class or id to bucket on and would be
+    // tested against every element of every page; a presentational hint
+    // is looked at only for an element that has one.
+    // Only an element that carries a presentational attribute can carry
+    // this one, `dir` being in that list, so the cell path below -- which
+    // runs for every cell whether it has an attribute or not -- must not
+    // pay for the lookup. It did, and the benchmark page's 1,560 cells
+    // made that about two milliseconds.
+    if n.hasPresHint {
+        text dirAttr = getAttr(n, 'dir')
+        if dirAttr != null {
+            ascii d = asciiLower(dirAttr.toAscii())
+            if d == 'rtl' || d == 'ltr' {
+                cascadeSawDirection = true
+                addMatch(matches, 'direction', d.toText(), w)
+            }
+        }
+    }
     text align = getAttr(n, 'align')
     if align != null {
         ascii a = asciiLower(align.toAscii())
@@ -778,6 +813,9 @@ arr[Match] func collectMatches(n:Node) {
             if !anyQuotes && decls[d].name == 'quotes' { anyQuotes = true }
             if !cascadeSawColorScheme && decls[d].name == 'color-scheme' {
                 cascadeSawColorScheme = true
+            }
+            if !cascadeSawDirection && decls[d].name == 'direction' {
+                cascadeSawDirection = true
             }
             Match m
             m.decl = decls[d]
@@ -1100,6 +1138,7 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     arr[Match] matches = collectPseudoMatches(n, which)
     if matches.length == 0 { return }
     map[text] props = {}
+    cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
     for int i = 0, i < matches.length, i++ {
         applyDecl(props, matches[i].decl.name, matches[i].decl.value)
     }
@@ -1123,6 +1162,7 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     arr[Match] matches = collectPseudoMatches(n, 'first-letter')
     if matches.length == 0 { return }
     map[text] props = {}
+    cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
     for int i = 0, i < matches.length, i++ {
         applyDecl(props, matches[i].decl.name, matches[i].decl.value)
     }
@@ -2092,6 +2132,26 @@ void func applyBackgroundPositionShorthand(props:map[text], value:ascii) {
     }
 }
 
+// Which way the inline axis runs for the element these matches belong
+// to. The list is sorted by weight, so the last `direction` in it is the
+// one that wins; a value that is neither keyword -- `inherit`, or
+// anything unparseable -- leaves the parent's answer standing, which is
+// what the computed value does with it too.
+//
+// This has to be answered before the declarations are applied, because
+// applying `margin-inline-start` means choosing an edge. A page that
+// never mentions `direction` or carries a `dir` skips it entirely.
+bool func matchedDirectionRtl(matches:arr[Match], parentRtl:bool) {
+    bool rtl = parentRtl
+    for int i = 0, i < matches.length, i++ {
+        if matches[i].decl.name != 'direction' { continue }
+        ascii v = asciiLower(asciiTrim(matches[i].decl.value))
+        if v == 'rtl' { rtl = true }
+        else if v == 'ltr' { rtl = false }
+    }
+    return rtl
+}
+
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
     // `display` is validated here rather than where it is read, because
@@ -2102,8 +2162,8 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // afterwards left `border-block-start` as a longhand nobody handles.
     if name == 'border-block-start' { name = 'border-top' }
     else if name == 'border-block-end' { name = 'border-bottom' }
-    else if name == 'border-inline-start' { name = 'border-left' }
-    else if name == 'border-inline-end' { name = 'border-right' }
+    else if name == 'border-inline-start' { name = cascadeApplyRtl ? 'border-right' : 'border-left' }
+    else if name == 'border-inline-end' { name = cascadeApplyRtl ? 'border-left' : 'border-right' }
     else if name == 'border-block' {
         applyBorderShorthand(props, ['top', 'bottom'], value)
         return
@@ -2261,10 +2321,15 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'overflow-x' || name == 'overflow-y' { name = 'overflow' }
     if name == 'inline-size' { name = 'width' }
     if name == 'block-size' { name = 'height' }
-    if name == 'margin-inline-start' { name = 'margin-left' }
-    if name == 'margin-inline-end' { name = 'margin-right' }
-    if name == 'padding-inline-start' { name = 'padding-left' }
-    if name == 'padding-inline-end' { name = 'padding-right' }
+    // The inline edges. `inline-start` is the left edge of a
+    // left-to-right element and the right edge of a right-to-left one,
+    // which is why these are resolved here, where the cascade order
+    // between a logical declaration and its physical twin is still
+    // intact, rather than afterwards over the finished property map.
+    if name == 'margin-inline-start' { name = cascadeApplyRtl ? 'margin-right' : 'margin-left' }
+    if name == 'margin-inline-end' { name = cascadeApplyRtl ? 'margin-left' : 'margin-right' }
+    if name == 'padding-inline-start' { name = cascadeApplyRtl ? 'padding-right' : 'padding-left' }
+    if name == 'padding-inline-end' { name = cascadeApplyRtl ? 'padding-left' : 'padding-right' }
     if name == 'margin-block-start' { name = 'margin-top' }
     if name == 'margin-block-end' { name = 'margin-bottom' }
     // The rest of the logical box, which in a left-to-right horizontal
@@ -2276,29 +2341,29 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'padding-block-end' { name = 'padding-bottom' }
     if name == 'inset-block-start' { name = 'top' }
     if name == 'inset-block-end' { name = 'bottom' }
-    if name == 'inset-inline-start' { name = 'left' }
-    if name == 'inset-inline-end' { name = 'right' }
+    if name == 'inset-inline-start' { name = cascadeApplyRtl ? 'right' : 'left' }
+    if name == 'inset-inline-end' { name = cascadeApplyRtl ? 'left' : 'right' }
     if name == 'min-inline-size' { name = 'min-width' }
     if name == 'max-inline-size' { name = 'max-width' }
     if name == 'min-block-size' { name = 'min-height' }
     if name == 'max-block-size' { name = 'max-height' }
     if name == 'overflow-block' || name == 'overflow-inline' { name = 'overflow' }
-    if name == 'border-start-start-radius' { name = 'border-top-left-radius' }
-    if name == 'border-start-end-radius' { name = 'border-top-right-radius' }
-    if name == 'border-end-start-radius' { name = 'border-bottom-left-radius' }
-    if name == 'border-end-end-radius' { name = 'border-bottom-right-radius' }
+    if name == 'border-start-start-radius' { name = cascadeApplyRtl ? 'border-top-right-radius' : 'border-top-left-radius' }
+    if name == 'border-start-end-radius' { name = cascadeApplyRtl ? 'border-top-left-radius' : 'border-top-right-radius' }
+    if name == 'border-end-start-radius' { name = cascadeApplyRtl ? 'border-bottom-right-radius' : 'border-bottom-left-radius' }
+    if name == 'border-end-end-radius' { name = cascadeApplyRtl ? 'border-bottom-left-radius' : 'border-bottom-right-radius' }
     if name == 'border-block-start-width' { name = 'border-top-width' }
     if name == 'border-block-end-width' { name = 'border-bottom-width' }
-    if name == 'border-inline-start-width' { name = 'border-left-width' }
-    if name == 'border-inline-end-width' { name = 'border-right-width' }
+    if name == 'border-inline-start-width' { name = cascadeApplyRtl ? 'border-right-width' : 'border-left-width' }
+    if name == 'border-inline-end-width' { name = cascadeApplyRtl ? 'border-left-width' : 'border-right-width' }
     if name == 'border-block-start-style' { name = 'border-top-style' }
     if name == 'border-block-end-style' { name = 'border-bottom-style' }
-    if name == 'border-inline-start-style' { name = 'border-left-style' }
-    if name == 'border-inline-end-style' { name = 'border-right-style' }
+    if name == 'border-inline-start-style' { name = cascadeApplyRtl ? 'border-right-style' : 'border-left-style' }
+    if name == 'border-inline-end-style' { name = cascadeApplyRtl ? 'border-left-style' : 'border-right-style' }
     if name == 'border-block-start-color' { name = 'border-top-color' }
     if name == 'border-block-end-color' { name = 'border-bottom-color' }
-    if name == 'border-inline-start-color' { name = 'border-left-color' }
-    if name == 'border-inline-end-color' { name = 'border-right-color' }
+    if name == 'border-inline-start-color' { name = cascadeApplyRtl ? 'border-right-color' : 'border-left-color' }
+    if name == 'border-inline-end-color' { name = cascadeApplyRtl ? 'border-left-color' : 'border-right-color' }
     if name == 'inset' {
         applyFourSidesInset(props, value)
         return
@@ -2872,6 +2937,8 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     arr[Match] matches = collectMatches(n)
     if archtelosTiming { profCollectMs = profCollectMs + (now() - t0) }
     int t1 = archtelosTiming ? now() : 0
+    cascadeApplyRtl = cascadeSawDirection
+        && matchedDirectionRtl(matches, isRoot ? false : parent.directionRtl)
     for int i = 0, i < matches.length, i++ {
         applyDecl(props, matches[i].decl.name, matches[i].decl.value)
     }
