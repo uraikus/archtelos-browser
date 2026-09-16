@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### background-origin and background-clip
+
+`background-origin` chooses the edge a background image is placed and
+sized from; `background-clip` chooses the edge the whole background is
+cut off at. Both take `border-box`, `padding-box` and `content-box`, and
+they are independent: the origin anchors the tile grid, the clip decides
+what survives.
+
+- **Each constant is numbered so its own initial value is zero** —
+  `border-box` for the clip, `padding-box` for the origin — so the two
+  do not share a numbering and a style that mentions neither writes
+  nothing. The alternative, one shared enum, would have made every
+  element on every page set a field to say what the zero value already
+  said.
+- **Neither area is worked out unless it is asked for.**
+  `paintBackground` runs for every box on the page: the clip rectangle
+  is computed only when it is not the border box it defaults to, and the
+  origin only when there is an image to put in it. The paint phase is
+  unmoved — a median of 0.0 ms over 25 interleaved paired runs, nine
+  slower and nine faster.
+- **A gradient is clipped too.** It takes its geometry from the
+  positioning area and must not paint outside the painting area, so when
+  the two differ it goes through an image the size of the clip. That is
+  the fourth thing standing in for the clip region the canvas does not
+  have, after `overflow: hidden`, background tiling and `object-fit`.
+
+Thirteen more pixel checks. The clip ones use the background colour
+alone, with a transparent border so what happens underneath is visible —
+no image, no scaling, so the colours are exact and the check is purely
+about which rectangle was painted.
+
+Properties **87 → 89**, both registered end to end.
+
+One thing deliberately not done: a background clipped to the padding or
+content edge keeps the border box's `border-radius` rather than deriving
+the smaller inner curve. The corner would need a rounded-rectangle path
+on an image layer, which has no path API (FINDINGS.md, "an image is a
+drawable surface with a smaller API"). todo.md and css-2026.md say so.
+
 ### The audit pinned the rows to one Chromium and turned CI red
 
 The properties audit passed here and failed in CI on its first run,

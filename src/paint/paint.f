@@ -98,27 +98,115 @@ void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
     closePath()
 }
 
-void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
+// The rectangle `background-clip` paints within and the one
+// `background-origin` places the image in (Backgrounds and Borders 3
+// §3.7, §3.8), chosen from the box's three edges. The caller passes the
+// border box and the two inset quadruples rather than a struct, because
+// this runs for every box on the page and a struct here would be an
+// allocation for each one.
+int bgAreaX = 0
+int bgAreaY = 0
+int bgAreaW = 0
+int bgAreaH = 0
+
+void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
+                         x:int, y:int, w:int, h:int,
+                         bl:int, bt:int, br:int, bb:int,
+                         pl:int, pt:int, pr:int, pb:int) {
+    if which == borderEdge {
+        bgAreaX = x  bgAreaY = y  bgAreaW = w  bgAreaH = h
+        return
+    }
+    if which == contentEdge {
+        bgAreaX = x + bl + pl
+        bgAreaY = y + bt + pt
+        bgAreaW = w - bl - br - pl - pr
+        bgAreaH = h - bt - bb - pt - pb
+        return
+    }
+    bgAreaX = x + bl
+    bgAreaY = y + bt
+    bgAreaW = w - bl - br
+    bgAreaH = h - bt - bb
+}
+
+void func paintBackground(x:int, y:int, w:int, h:int,
+                          bl:int, bt:int, br:int, bb:int,
+                          pl:int, pt:int, pr:int, pb:int, s:Style) {
     if w <= 0 || h <= 0 { return }
+    // This runs for every box on the page, so neither area is worked
+    // out unless it is asked for: the clip only when it is not the
+    // border box it defaults to, and the origin only when there is an
+    // image to place in it.
+    int clipX = x
+    int clipY = y
+    int clipW = w
+    int clipH = h
+    if s.backgroundClip != BGCLIP_BORDER {
+        backgroundArea(s.backgroundClip, BGCLIP_BORDER, BGCLIP_CONTENT,
+                       x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+        clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
+        if clipW <= 0 || clipH <= 0 { return }
+    }
+
     if colorIsPaintable(s.background) {
         paintFill(s.background, s.effectiveOpacity)
         if s.borderRadius > 0 {
-            pFillRounded(x, y, w, h, s.borderRadius)
+            // The radius is the border box's; a clipped background keeps
+            // it rather than deriving the smaller inner curve.
+            pFillRounded(clipX, clipY, clipW, clipH, s.borderRadius)
         } else {
-            pDrawRect(x, y, w, h)
+            pDrawRect(clipX, clipY, clipW, clipH)
         }
         fillAlpha(1.0)
     }
     // the background image paints over the colour
+    bool hasImage = s.backgroundImage.present || s.backgroundUrl != ''
+    if !hasImage { return }
+    backgroundArea(s.backgroundOrigin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
+                   x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+    int origX = bgAreaX
+    int origY = bgAreaY
+    int origW = bgAreaW
+    int origH = bgAreaH
+    if origW <= 0 || origH <= 0 { origX = clipX  origY = clipY  origW = clipW  origH = clipH }
     if s.backgroundImage.present {
-        if s.backgroundImage.radial {
-            paintRadialGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
-        } else {
-            paintLinearGradient(x, y, w, h, s.backgroundImage, s.effectiveOpacity)
-        }
-    } else if s.backgroundUrl != '' {
-        paintBackgroundImage(x, y, w, h, s)
+        paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+    } else {
+        paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
     }
+}
+
+// A gradient takes its geometry from the positioning area and must not
+// paint outside the painting area. When the two are the same rectangle
+// -- which they are unless `background-clip` says otherwise -- it paints
+// straight onto the target. Otherwise it goes through an image the size
+// of the painting area, the clip region the canvas does not have.
+void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
+                               origX:int, origY:int, origW:int, origH:int, s:Style) {
+    if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
+        if s.backgroundImage.radial {
+            paintRadialGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        } else {
+            paintLinearGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        }
+        return
+    }
+    img prev = paintLayer
+    img layer = blankImage(clipW, clipH)
+    // the layer carries the offset, so the gradient is still painted in
+    // document coordinates
+    layer.translate(0 - clipX, 0 - clipY)
+    paintLayer = layer
+    if s.backgroundImage.radial {
+        paintRadialGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    } else {
+        paintLinearGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    }
+    paintLayer = prev
+    fillAlpha(s.effectiveOpacity)
+    pDrawImage(layer, clipX, clipY)
+    fillAlpha(1.0)
 }
 
 // One axis of a position, resolved against the space the image leaves
@@ -169,8 +257,9 @@ void func backgroundTileSize(s:Style, iw:int, ih:int, w:int, h:int) {
     if autoH { bgTileH = roundPx(ih.toFloat() * bgTileW.toFloat() / iw.toFloat()) }
 }
 
-void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
-    if w <= 0 || h <= 0 { return }
+void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
+                               x:int, y:int, w:int, h:int, s:Style) {
+    if w <= 0 || h <= 0 || clipW <= 0 || clipH <= 0 { return }
     img src = loadedImages[s.backgroundUrl]
     if src == null { return }
     int srcW = src.width
@@ -193,7 +282,13 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
     if s.backgroundRepeatX { while startX > 0 { startX = startX - iw } }
     if s.backgroundRepeatY { while startY > 0 { startY = startY - ih } }
 
-    img layer = blankImage(w, h)
+    // The tiles are laid out in the positioning area and painted into
+    // an image the size of the painting area, so `background-clip` cuts
+    // them off wherever it says. The offset between the two carries the
+    // difference; it is zero unless the clip and the origin disagree.
+    int shiftX = x - clipX
+    int shiftY = y - clipY
+    img layer = blankImage(clipW, clipH)
     int ty = startY
     bool moreY = true
     while moreY {
@@ -202,8 +297,8 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
         while moreX {
             // An unscaled blit is exact to the pixel and a scaled one
             // is filtered, so the tile is only scaled when it has to be.
-            if scaled { layer.drawImage(src, tx, ty, iw, ih) }
-            else { layer.drawImage(src, tx, ty) }
+            if scaled { layer.drawImage(src, tx + shiftX, ty + shiftY, iw, ih) }
+            else { layer.drawImage(src, tx + shiftX, ty + shiftY) }
             if !s.backgroundRepeatX { moreX = false }
             else {
                 tx = tx + iw
@@ -222,7 +317,7 @@ void func paintBackgroundImage(x:int, y:int, w:int, h:int, s:Style) {
     // again as the layer is composited -- and leaving it unset paints a
     // fully opaque image on a half-transparent box.
     fillAlpha(s.effectiveOpacity)
-    pDrawImage(layer, x, y)
+    pDrawImage(layer, clipX, clipY)
     fillAlpha(1.0)
 }
 
@@ -728,7 +823,9 @@ void func paintInlineBackground(f:Fragment) {
     Box ib = f.box
     Style s = ib.style
     if s.hidden || f.w <= 0 { return }
-    paintBackground(f.x, f.y, f.w, f.h, s)
+    // an inline fragment carries no padding or border of its own, so
+    // its three background areas are all the fragment's own rectangle
+    paintBackground(f.x, f.y, f.w, f.h, 0, 0, 0, 0, 0, 0, 0, 0, s)
     if s.borderStyle != BORDER_NONE {
         if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
             paintFill(s.borderTopColor, s.effectiveOpacity)
@@ -946,7 +1043,7 @@ bool func boxClipsAnything(b:Box) {
 void func paintClipped(b:Box) {
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
-        paintBackground(b.x, b.y, b.w, b.h, s)
+        paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         paintBorders(b)
     }
     int px = b.x + b.bl
@@ -984,9 +1081,9 @@ void func paintBox(b:Box) {
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
         if b.kind == BOX_ROW {
-            paintBackground(b.x, b.y, b.w, b.h, s)
+            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         } else {
-            paintBackground(b.x, b.y, b.w, b.h, s)
+            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
             paintBorders(b)
         }
     }

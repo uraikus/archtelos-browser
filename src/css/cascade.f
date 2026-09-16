@@ -2247,6 +2247,23 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             else { s.backgroundPosY = lenPercent(50.0) }
         }
     }
+    // background-clip and background-origin (Backgrounds and Borders 3
+    // §3.7, §3.8). Both initial values are the zero value of their
+    // field, so a style that names neither writes nothing here.
+    ascii bgclip = styleProp(props, 'background-clip')
+    if bgclip != null {
+        ascii bgclipLow = asciiLower(asciiTrim(bgclip))
+        if bgclipLow == 'padding-box' { s.backgroundClip = BGCLIP_PADDING }
+        else if bgclipLow == 'content-box' { s.backgroundClip = BGCLIP_CONTENT }
+        else { s.backgroundClip = BGCLIP_BORDER }
+    }
+    ascii bgorigin = styleProp(props, 'background-origin')
+    if bgorigin != null {
+        ascii bgoriginLow = asciiLower(asciiTrim(bgorigin))
+        if bgoriginLow == 'border-box' { s.backgroundOrigin = BGORIGIN_BORDER }
+        else if bgoriginLow == 'content-box' { s.backgroundOrigin = BGORIGIN_CONTENT }
+        else { s.backgroundOrigin = BGORIGIN_PADDING }
+    }
     // background-size (Backgrounds and Borders 3 §3.9). `auto` is the
     // initial value on both axes and is the zero value of these fields,
     // so a style that does not mention it writes nothing here.

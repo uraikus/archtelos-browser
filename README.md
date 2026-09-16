@@ -102,8 +102,10 @@ or an ellipse, sized by any of the four extent keywords or explicit
 radii and placed with `at`. `background-image: url()`
 paints a fetched image with `background-repeat`,
 `background-position` and `background-size`, which takes `cover`,
-`contain`, lengths, percentages and `auto` on either axis — a tile that
-runs off the edge is cut off there. `object-fit` and `object-position` size and place a replaced
+`contain`, lengths, percentages and `auto` on either axis.
+`background-origin` chooses the edge a background is placed from and
+`background-clip` the edge it is cut off at — border, padding or
+content — and a tile that runs past that edge is cut off there. `object-fit` and `object-position` size and place a replaced
 element's own content inside its box, in all five fitting values, and
 clip it to the content box.
 

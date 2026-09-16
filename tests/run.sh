@@ -58,7 +58,7 @@ if ! python3 tests/chromium.py properties-audit tests/conformance/css-properties
 fi
 
 # Which CSS properties actually change what renders.
-PROPERTIES_MIN=87
+PROPERTIES_MIN=89
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1

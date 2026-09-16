@@ -121,6 +121,108 @@ paintPage(p9, 0, 0, 300)
 check(getPixelColor(2, 2) == grey, 'a box with no background image is its colour')
 check(getPixelColor(50, 30) == grey, 'throughout')
 
+// ---- background-origin and background-clip -------------------------------
+// One box throughout: 60x20 of content, 15px of padding and a 10px
+// border, so the border box is 110x70 at the origin, the padding box is
+// 90x50 at (10,10) and the content box is 60x20 at (25,25). The border
+// is transparent, which paints nothing, so what the background does
+// under it is visible.
+//
+// `background-clip` bounds what is painted; `background-origin` bounds
+// where the image is placed. The clip checks use the background colour
+// alone, so the colours are exact -- no image, no scaling, nothing
+// filtered.
+text areaBox = 'width:60px;height:20px;padding:15px;border:10px solid transparent'
+
+Page c1 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd'
+    + '"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(c1, 0, 0, 300)
+check(getPixelColor(2, 2) == grey, 'background-clip defaults to border-box, under the border')
+check(getPixelColor(12, 12) == grey, 'and across the padding')
+check(getPixelColor(27, 27) == grey, 'and the content')
+
+Page c2 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-clip:padding-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(c2, 0, 0, 300)
+check(getPixelColor(2, 2) == white, 'background-clip: padding-box paints nothing under the border')
+check(getPixelColor(12, 12) == grey, 'and starts at the padding edge')
+check(getPixelColor(27, 27) == grey, 'covering the content too')
+
+Page c3 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-clip:content-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(c3, 0, 0, 300)
+check(getPixelColor(2, 2) == white, 'background-clip: content-box paints nothing under the border')
+check(getPixelColor(12, 12) == white, 'nor across the padding')
+check(getPixelColor(27, 27) == grey, 'only the content box')
+
+// `border-box` written out must mean what leaving it off means.
+Page c4 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-clip:border-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(c4, 0, 0, 300)
+check(getPixelColor(2, 2) == grey, 'background-clip: border-box written out is the default')
+check(getPixelColor(27, 27) == grey, 'throughout')
+
+// background-origin places the image. The tile is 10x10 and unscaled,
+// so these boundaries are exact.
+Page o1 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat"></div></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(o1, 0, 0, 300)
+check(getPixelColor(12, 12) == blue, 'background-origin defaults to padding-box, so the tile starts at (10,10)')
+check(getPixelColor(17, 12) == green, 'with its green half beside it')
+check(getPixelColor(2, 2) == grey, 'and nothing of it under the border')
+
+Page o2 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-origin:border-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(o2, 0, 0, 300)
+check(getPixelColor(2, 2) == blue, 'background-origin: border-box starts the tile at the border edge')
+check(getPixelColor(7, 2) == green, 'halves intact')
+check(getPixelColor(12, 12) == grey, 'and it has ended before the padding edge')
+
+Page o3 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-origin:content-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(o3, 0, 0, 300)
+check(getPixelColor(27, 27) == blue, 'background-origin: content-box starts it at the content edge')
+check(getPixelColor(32, 27) == green, 'halves intact')
+check(getPixelColor(12, 12) == grey, 'with nothing of it in the padding')
+
+Page o4 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-repeat:no-repeat;'
+    + 'background-origin:padding-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(o4, 0, 0, 300)
+check(getPixelColor(12, 12) == blue, 'background-origin: padding-box written out is the default')
+check(getPixelColor(2, 2) == grey, 'to the pixel')
+
+// The two are independent: the origin anchors the tile grid, the clip
+// decides what survives. Anchored at the border edge the grid falls on
+// multiples of ten, so the content box -- which starts at 25 -- shows
+// each tile from its sixth pixel, where the green half is.
+Page b1 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-origin:border-box;'
+    + 'background-clip:content-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(b1, 0, 0, 300)
+check(getPixelColor(12, 12) == white, 'clip content-box paints nothing in the padding')
+check(getPixelColor(27, 27) == green, 'and the grid anchored at 0 puts x=27 seven pixels into a tile')
+
+Page b2 = pageFromHtml(head + '<div style="' + areaBox + ';background-color:#dddddd;'
+    + 'background-image:url(tile.png);background-origin:content-box;'
+    + 'background-clip:content-box"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(b2, 0, 0, 300)
+check(getPixelColor(27, 27) == blue, 'anchored at the content edge instead, x=27 is two pixels in')
+check(getPixelColor(32, 27) == green, 'and the green half follows five later')
+
 // ---- background-size ----------------------------------------------------
 // The tile is drawn at the size this gives it, and that size is then
 // what `background-position` distributes the leftover of and what

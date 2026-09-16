@@ -55,6 +55,7 @@ text func styleDigest(s:Style) {
         + `|${s.backgroundUrl}|${s.backgroundRepeatX}|${s.backgroundRepeatY}`
         + `|${lenKey(s.backgroundPosX)}|${lenKey(s.backgroundPosY)}`
         + `|${s.backgroundSizeKind}|${lenKey(s.backgroundSizeW)}|${lenKey(s.backgroundSizeH)}`
+        + `|${s.backgroundClip}|${s.backgroundOrigin}`
         + `|${s.objectFit}|${lenKey(s.objectPosX)}|${lenKey(s.objectPosY)}`
 }
 

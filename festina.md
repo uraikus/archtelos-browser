@@ -534,7 +534,7 @@ file grew a function of the same name.
 |---|---|
 | `blob.toImg()` | An image fetched over HTTP can only be decoded by building an `http` literal whose body is the blob and calling `.toImg()` on it. |
 | `fontAscent()` / `fontDescent()` | Text metrics give an advance width and an inked height, and nothing else, so every baseline in `src/layout/layout.f` is placed with hard-coded DejaVu ratios. Any other font is laid out slightly wrong. |
-| A clip region on the canvas | `overflow: hidden`, background tiling and `object-fit` all clip by painting into an intermediate image the size of the clip and blitting it back, because an image clips at its own bounds and the canvas cannot. Each one costs an allocation and a composite that a clip region would not. |
+| A clip region on the canvas | `overflow: hidden`, background tiling, `object-fit` and `background-clip` all clip by painting into an intermediate image the size of the clip and blitting it back, because an image clips at its own bounds and the canvas cannot. Each one costs an allocation and a composite that a clip region would not, and each new feature that needs a clip adds another. |
 | A settable window title | The page title has to live in the status bar. |
 | `ascii.toInt()` | The semantic analyzer accepts it; codegen rejects it with `cannot access field 'toInt' on ascii`. `a.toText().toInt()` works. |
 | Bitwise operators and hex literals | Colors are packed with `*`, `/` and `%`, and 148 CSS color constants are generated as decimal because there is no `0xRRGGBB`. |

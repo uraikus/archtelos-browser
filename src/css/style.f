@@ -86,6 +86,20 @@ const int FLEXWRAP_NOWRAP = 0
 const int FLEXWRAP_WRAP = 1
 const int FLEXWRAP_WRAP_REVERSE = 2
 
+// background-clip and background-origin (Backgrounds and Borders 3
+// §3.7, §3.8). Each is numbered so that its own initial value is zero --
+// `border-box` for the clip and `padding-box` for the origin -- which is
+// why the two do not share a numbering. A style that mentions neither
+// then writes nothing, and `noGradient`-style per-element work is
+// avoided.
+const int BGCLIP_BORDER = 0
+const int BGCLIP_PADDING = 1
+const int BGCLIP_CONTENT = 2
+
+const int BGORIGIN_PADDING = 0
+const int BGORIGIN_BORDER = 1
+const int BGORIGIN_CONTENT = 2
+
 // background-size (Backgrounds and Borders 3 §3.9). `auto` is the
 // initial value, so it is 0 and a style that never mentions the
 // property needs no work -- and neither do the two `Len` fields, whose
@@ -232,6 +246,8 @@ struct Style {
     backgroundSizeKind:int
     backgroundSizeW:Len
     backgroundSizeH:Len
+    backgroundClip:int
+    backgroundOrigin:int
     // object-fit and object-position, which move a replaced element's
     // content inside its content box and change no geometry.
     objectFit:int
