@@ -141,7 +141,8 @@ void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
 // the curve of the fade is not, which is the honest trade for a
 // primitive the canvas does not have.
 //
-// `inset` shadows are parsed and not painted; todo.md says so.
+// `inset` shadows are painted by paintInsetShadows, after the
+// background rather than under it.
 void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
     if s.shadows.length == 0 { return }
     for int i = s.shadows.length - 1, i >= 0, i-- {
@@ -171,6 +172,63 @@ void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
         }
         paintFill(sh.color, s.effectiveOpacity)
         pDrawRect(sx, sy, sw, sh2)
+        fillAlpha(1.0)
+    }
+}
+
+// The area between two rectangles -- the outer one minus the inner --
+// as four rectangles. The inner is clamped to the outer first, so a
+// shadow offset further than the box is wide fills it rather than
+// painting a negative band.
+void func fillFrame(ox:int, oy:int, ow:int, oh:int, ix:int, iy:int, iw:int, ih:int) {
+    int left = maxInt(ix, ox)
+    int top = maxInt(iy, oy)
+    int right = minInt(ix + iw, ox + ow)
+    int bottom = minInt(iy + ih, oy + oh)
+    if right < left { right = left }
+    if bottom < top { bottom = top }
+    if top > oy { pDrawRect(ox, oy, ow, top - oy) }
+    if bottom < oy + oh { pDrawRect(ox, bottom, ow, oy + oh - bottom) }
+    if left > ox { pDrawRect(ox, top, left - ox, bottom - top) }
+    if right < ox + ow { pDrawRect(right, top, ox + ow - right, bottom - top) }
+}
+
+// `inset` shadows (Backgrounds and Borders 3 §6). The shadow is the
+// padding box minus that box offset by the shadow's lengths and shrunk
+// by its spread, so it reads as a band inside an edge rather than a
+// shape outside the box. It paints over the background and under the
+// content, which is why it is a second pass rather than part of the one
+// that puts the outer shadows underneath.
+//
+// The blur works the way the outer one does and inwards: a frame per
+// pixel of reach, each at a small alpha, so the alpha accumulates
+// against the edge and thins towards the middle.
+void func paintInsetShadows(x:int, y:int, w:int, h:int,
+                            bl:int, bt:int, br:int, bb:int, s:Style) {
+    if s.shadows.length == 0 { return }
+    int px = x + bl
+    int py = y + bt
+    int pw = w - bl - br
+    int ph = h - bt - bb
+    if pw <= 0 || ph <= 0 { return }
+    for int i = s.shadows.length - 1, i >= 0, i-- {
+        Shadow sh = s.shadows[i]
+        if !sh.inset { continue }
+        if !colorIsPaintable(sh.color) { continue }
+        int ix = px + sh.dx + sh.spread
+        int iy = py + sh.dy + sh.spread
+        int iw = pw - sh.spread - sh.spread
+        int ih = ph - sh.spread - sh.spread
+        if sh.blur > 0 {
+            applyFillColor(sh.color)
+            float step = 1.0 / (sh.blur + 1).toFloat()
+            for int d = 1, d <= sh.blur, d++ {
+                fillAlpha(step * s.effectiveOpacity)
+                fillFrame(px, py, pw, ph, ix + d, iy + d, iw - d - d, ih - d - d)
+            }
+        }
+        paintFill(sh.color, s.effectiveOpacity)
+        fillFrame(px, py, pw, ph, ix, iy, iw, ih)
         fillAlpha(1.0)
     }
 }
@@ -1146,6 +1204,7 @@ void func paintClipped(b:Box) {
         paintShadows(b.x, b.y, b.w, b.h, s)
         paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
         paintBorders(b)
+        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
     }
     int px = b.x + b.bl
     int py = b.y + b.bt
@@ -1189,6 +1248,7 @@ void func paintBox(b:Box) {
             paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
             paintBorders(b)
         }
+        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
     }
     if b.kind == BOX_IMAGE {
         if !s.hidden { paintImage(b) }

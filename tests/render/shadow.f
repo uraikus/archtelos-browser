@@ -92,4 +92,38 @@ shot('none')
 check(getPixelColor(85, 65) == white, 'box-shadow: none paints no shadow')
 check(getPixelColor(40, 40) == blue, 'and leaves the box alone')
 
+// ---- inset shadows fall inside the box ---------------------------------
+// An inset shadow is the box's own padding area minus that area offset
+// and shrunk by the spread, so it reads as a band inside the edge rather
+// than a shape outside it.
+
+// Five pixels of spread, no offset: a band all the way round, inside.
+shot('inset 0 0 0 5px red')
+check(getPixelColor(22, 40) == red, 'an inset shadow bands the left edge from inside')
+check(getPixelColor(40, 22) == red, 'the top edge')
+check(getPixelColor(78, 40) == red, 'the right')
+check(getPixelColor(40, 58) == red, 'and the bottom')
+check(getPixelColor(40, 40) == blue, 'leaving the middle of the box alone')
+check(getPixelColor(15, 40) == white, 'and painting nothing outside it')
+
+// Offset with no spread. The hole is the padding box moved by the
+// offsets, so shifting it right by 12 uncovers a band twelve wide on the
+// *left* -- the shadow falls opposite the direction it is offset, which
+// is what casting a shadow inward from that edge means.
+shot('inset 12px 0 0 red')
+check(getPixelColor(24, 40) == red, 'a rightward offset bands the left edge')
+check(getPixelColor(60, 40) == blue, 'not the middle')
+check(getPixelColor(75, 40) == blue, 'and not the edge it moved towards')
+
+// A blurred inset shadow reaches inward and weakens.
+shot('inset 0 0 10px red')
+check(getPixelColor(22, 40) != blue, 'a blurred inset shadow darkens the inside edge')
+check(getPixelColor(50, 40) == blue, 'and leaves the centre')
+check(getPixelColor(15, 40) == white, 'without escaping the box')
+
+// An inset shadow and an outer one on the same box are independent.
+shot('inset 0 0 0 5px red, 15px 0 0 blue')
+check(getPixelColor(22, 40) == red, 'the inset shadow still bands the inside')
+check(getPixelColor(90, 40) == blue, 'while the outer one falls outside')
+
 finish('box shadow')

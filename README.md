@@ -95,7 +95,7 @@ controls are drawn as boxes.
 **Painting** covers backgrounds, borders with rounded corners,
 text with underline and line-through, borders in `solid`, `dashed`,
 `dotted` and `double` with each side keeping its own style, `box-shadow`
-with offset, blur, spread and a list of shadows, images,
+with offset, blur, spread, `inset` and a list of shadows, images,
 broken-image placeholders,
 list markers — `disc`, `circle`, `square`, `decimal`, `lower-alpha`,
 `upper-alpha`, `lower-roman` and `upper-roman`, and the `<ol type>`

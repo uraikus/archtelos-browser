@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### inset shadows
+
+`box-shadow`'s `inset` keyword was parsed and thrown away. It paints
+now, which closes the hole the last commit documented rather than
+leaving it open.
+
+An inset shadow is the padding box minus that box offset by the shadow's
+lengths and shrunk by its spread — a band inside an edge rather than a
+shape outside the box — drawn as the four rectangles between the two.
+It goes over the background and under the content, so it is a second
+pass rather than part of the one that puts the outer shadows underneath.
+
+Seven more pixel checks, valgrind clean; stubbing the inset branch back
+out fails seven of them.
+
+**Two of those checks were wrong before the code was.** I had written
+that an offset inset shadow bands the side it is offset towards. It is
+the other way round: the *hole* is what moves, so shifting it right by
+twelve uncovers a band twelve wide on the left. The standard says so
+(§6.2, the inner rectangle is the padding box offset by the shadow's
+offsets), and the implementation had it right — which is the fourth time
+this session the measurement was the thing at fault rather than the
+code.
+
 ### Why Fonts 3 is blocked, measured rather than assumed
 
 The roadmap listed a numeric `font-weight` and `@font-face` as work to

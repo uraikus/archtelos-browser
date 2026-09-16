@@ -74,8 +74,7 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    from the intrinsic size and the box and states the derivation beside
    the check. A radial gradient can be graded the same way.
 5. **Backgrounds and Borders 3, completed**: `background-attachment`;
-   more than one background layer per box; `border-image`; `inset`
-   shadows, which `box-shadow` parses and does not paint; a blurred
+   more than one background layer per box; `border-image`; a blurred
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces; and
    `groove`, `ridge`, `inset` and `outset`, which paint solid
