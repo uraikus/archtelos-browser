@@ -167,16 +167,34 @@ more than once — and what is left of Text Decoration 3:
 not expose; an emphasis mark that reserves space in the line rather than
 falling outside it; and a `wavy` underline drawn as a curve rather than
 as stepped segments, which needs the path API an image does not have.
+What is left of Masking 1: the masks themselves — `mask` and its seven
+longhands, `mask-type` and `clip-rule` — and `inset()`'s `round`
+radius, both of which want the path API too; and a `clip-path` inside
+another clipped subtree, which does not clip again, the same limit
+`overflow: hidden` has here.
 These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
+
+**`overflow-clip-margin` needs its meaning pinned down before it is
+worth implementing.** It was written far enough to register on the
+property instrument and then removed: on a box 60px wide with a 10px
+border and `overflow: clip`, Chromium keeps a child's pixel 75px from
+the border box's left edge, which the padding box (which ends at 70)
+does not contain and the border box (which ends at 80) does. With
+`overflow-clip-margin: 20px` the same probe puts the edge at 90, which
+is the padding box plus the margin and not the border box plus it. The
+two readings disagree by a border width, and a property whose meaning is
+not settled is not one to ship for the sake of a count. The probe is
+`document.elementFromPoint` at each pixel's centre, which is how
+`clip-path`'s own expectations were read.
 
 ### The instrument
 
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(181; Chromium reports 373, and four of them cannot be graded by a probe
+(183; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

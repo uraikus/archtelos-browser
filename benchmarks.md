@@ -489,7 +489,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 20,444 lines of Festina across `browser.f` and `src/` |
+| Source | 20,984 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,13 +498,13 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,605,648 |
-| This browser, all `.f` source | 737,129 |
+| This browser, the whole program | 2,627,888 |
+| This browser, all `.f` source | 757,635 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
-**The binary is about 178 times smaller than Chromium's executable
-alone**, and 240 times smaller than the tree it ships in. The comparison
+**The binary is about 176 times smaller than Chromium's executable
+alone**, and 238 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
 absent from the 2.6 MB — a JavaScript engine, a compositor, a sandbox,
 a network stack, an extension system, ICU — is most of what is in the
@@ -533,4 +533,13 @@ and nothing at render time either, for the same reason: all of it is
 inside `layoutColumns`, which a page with no multi-column container
 never calls, and the five extra declarations are read once per distinct
 computed style, which is 24 times on `generated.html`.
+
+`clip-path` and `clip` cost **22,240 bytes** (2,605,648 → 2,627,888),
+and again nothing at render time: `cascadeSawClip` is false on a page
+with neither, so the painter never asks a box, and the two extra
+declarations are read once per distinct computed style. What the feature
+does cost is paid only by the boxes that use it, and it is not small: a
+shape that is not a rectangle is blitted back one scanline at a time, so
+a clipped box the height of the viewport is 600 image allocations where
+a rectangle is one.
 

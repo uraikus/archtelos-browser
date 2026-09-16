@@ -215,6 +215,15 @@ painting them into an offscreen image — the canvas has no clip region
 and an image clips at its own bounds. A `border-radius` inside such a
 box is drawn square, because an image has no path API.
 
+**`clip-path`** cuts a box to a shape: `inset()`, `circle()`,
+`ellipse()`, `polygon()` or one of the four geometry boxes. It clips the
+box itself as well as its contents, which is what separates it from
+`overflow`. The same offscreen image does the work, but a shape is not a
+rectangle, so it is blitted back one scanline at a time with the span
+the shape covers at that row; a pixel belongs to the shape when its
+centre does. CSS2's `clip` reaches the same rectangle from the other
+side, on an absolutely positioned box.
+
 **Subresources are prefetched while the page is parsed.** A preload
 scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>` and
 `<script src>` before tree construction and hands the absolute URLs to
@@ -246,7 +255,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-20,444 lines of Festina in `src/` and `browser.f`.
+20,984 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -261,11 +270,11 @@ cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, hyphens, color spaces, fragmentation, audio, the preload scanner), twelve offscreen render suites that check
+styles, hyphens, color spaces, fragmentation, audio, the preload scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
-radial gradients, overflow clipping, background images, object fitting,
-borders, border images, text decoration, transforms, right-to-left
-text and box shadows — three conformance
+radial gradients, overflow clipping, clip paths, background images,
+object fitting, borders, border images, text decoration, transforms,
+right-to-left text and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

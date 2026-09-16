@@ -94,9 +94,13 @@ int styleDepth = 0
 // page with no transform pays one bool for the feature (CLAUDE.md, "a
 // feature must not cost anything to the pages that do not use it").
 bool cascadeSawTransform = false
+// The same question for `clip-path` and the legacy `clip`: a page with
+// neither pays one bool, and the painter never asks a box.
+bool cascadeSawClip = false
 
 void func cascadeReset() {
     cascadeSawTransform = false
+    cascadeSawClip = false
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -1548,6 +1552,208 @@ Transform func parseTransformFunction(name:text, args:arr[ascii], fontSize:int) 
 }
 
 // The `transform` property: a list of functions, applied left to right.
+// CSS Masking 1's <basic-shape> and <geometry-box>. What comes back is
+// the shape as written: the reference box is not known until layout has
+// run, so every length stays a Len and the painter resolves it.
+//
+// The value is lowered into a buffer this function owns, and every
+// slice is taken from that one value rather than from another slice,
+// which is what FINDINGS.md's first entry asks for.
+ClipShape func parseClipPath(v:ascii, fontSize:int) {
+    ClipShape sh
+    sh.kind = CLIPSHAPE_NONE
+    sh.geoBox = GEOBOX_BORDER
+    if v == null { return sh }
+    ascii t = asciiLower(asciiTrim(v))
+    if t.length == 0 || t == 'none' { return sh }
+    int i = 0
+    while i < t.length {
+        while i < t.length && isSpaceCode(t.charCodeAt(i)) { i++ }
+        if i >= t.length { break }
+        int start = i
+        while i < t.length && !isSpaceCode(t.charCodeAt(i)) && t.charCodeAt(i) != CH_LPAREN { i++ }
+        if i < t.length && t.charCodeAt(i) == CH_LPAREN {
+            int close = asciiMatchingParen(t, i)
+            if close < 0 { break }
+            if asciiRegionEquals(t, start, i, 'inset') {
+                readInsetShape(sh, t.slice(i + 1, close), fontSize)
+            } else if asciiRegionEquals(t, start, i, 'circle') {
+                readRadialShape(sh, t.slice(i + 1, close), fontSize, true)
+            } else if asciiRegionEquals(t, start, i, 'ellipse') {
+                readRadialShape(sh, t.slice(i + 1, close), fontSize, false)
+            } else if asciiRegionEquals(t, start, i, 'polygon') {
+                readPolygonShape(sh, t.slice(i + 1, close), fontSize)
+            }
+            i = close + 1
+            continue
+        }
+        int box = geometryBoxAt(t, start, i)
+        if box >= 0 {
+            sh.geoBox = box
+            // A geometry box on its own is the shape. Beside a function
+            // it only says what that function resolves against, which
+            // is why this does not overwrite a shape already read.
+            if sh.kind == CLIPSHAPE_NONE { sh.kind = CLIPSHAPE_RECT }
+        }
+    }
+    return sh
+}
+
+// Which reference box a region of `src` names, or -1 for none of them.
+// The SVG boxes -- `fill-box`, `stroke-box`, `view-box` -- name a box
+// this engine cannot produce, so they are none of them too.
+int func geometryBoxAt(src:ascii, from:int, to:int) {
+    if asciiRegionEquals(src, from, to, 'border-box') { return GEOBOX_BORDER }
+    if asciiRegionEquals(src, from, to, 'padding-box') { return GEOBOX_PADDING }
+    if asciiRegionEquals(src, from, to, 'content-box') { return GEOBOX_CONTENT }
+    if asciiRegionEquals(src, from, to, 'margin-box') { return GEOBOX_MARGIN }
+    return -1
+}
+
+// inset( <length-percentage>{1,4} [round <radius>]? ) -- the same one to
+// four shorthand as margin. A `round` radius is read and dropped: a
+// rounded clip needs the path API an image does not have (FINDINGS.md).
+void func readInsetShape(sh:ClipShape, args:ascii, fontSize:int) {
+    sh.kind = CLIPSHAPE_RECT
+    arr[ascii] parts = cssTokens(args)
+    arr[Len] sides = []
+    for int i = 0, i < parts.length, i++ {
+        if parts[i] == 'round' { break }
+        Len l = parseLength(parts[i], fontSize)
+        if l.kind == LEN_AUTO { continue }
+        sides.push(l)
+    }
+    if sides.length == 0 { return }
+    sh.insetTop = sides[0]
+    sh.insetRight = sides.length > 1 ? sides[1] : sides[0]
+    sh.insetBottom = sides.length > 2 ? sides[2] : sides[0]
+    sh.insetLeft = sides.length > 3 ? sides[3] : sh.insetRight
+}
+
+// circle( <radius>? [at <position>]? ) and ellipse(), which differ only
+// in how many radii they take.
+void func readRadialShape(sh:ClipShape, args:ascii, fontSize:int, isCircle:bool) {
+    sh.kind = isCircle ? CLIPSHAPE_CIRCLE : CLIPSHAPE_ELLIPSE
+    sh.centreX = lenPercent(50.0)
+    sh.centreY = lenPercent(50.0)
+    sh.radiusXKind = CLIPRAD_CLOSEST
+    sh.radiusYKind = CLIPRAD_CLOSEST
+    arr[ascii] parts = cssTokens(args)
+    int at = -1
+    for int i = 0, i < parts.length, i++ {
+        if parts[i] == 'at' {
+            at = i
+            break
+        }
+    }
+    int radiiEnd = at < 0 ? parts.length : at
+    int taken = 0
+    for int i = 0, i < radiiEnd, i++ {
+        int kind = CLIPRAD_LENGTH
+        Len l = lenAuto()
+        if parts[i] == 'closest-side' { kind = CLIPRAD_CLOSEST }
+        else if parts[i] == 'farthest-side' { kind = CLIPRAD_FARTHEST }
+        else {
+            l = parseLength(parts[i], fontSize)
+            if l.kind == LEN_AUTO { continue }
+        }
+        if taken == 0 {
+            sh.radiusX = l
+            sh.radiusXKind = kind
+            // A circle has one radius, which serves both axes.
+            if isCircle {
+                sh.radiusY = l
+                sh.radiusYKind = kind
+            }
+        } else if taken == 1 && !isCircle {
+            sh.radiusY = l
+            sh.radiusYKind = kind
+        }
+        taken++
+    }
+    if at < 0 { return }
+    int seen = 0
+    for int i = at + 1, i < parts.length, i++ {
+        if seen == 0 { sh.centreX = clipPositionLen(parts[i], fontSize, false) }
+        else if seen == 1 { sh.centreY = clipPositionLen(parts[i], fontSize, true) }
+        seen++
+    }
+}
+
+// One component of a position inside a basic shape: a length, a
+// percentage, or the side keyword that stands for one.
+Len func clipPositionLen(t:ascii, fontSize:int, vertical:bool) {
+    if t == 'center' { return lenPercent(50.0) }
+    if !vertical && t == 'left' { return lenPercent(0.0) }
+    if !vertical && t == 'right' { return lenPercent(100.0) }
+    if vertical && t == 'top' { return lenPercent(0.0) }
+    if vertical && t == 'bottom' { return lenPercent(100.0) }
+    Len l = parseLength(t, fontSize)
+    if l.kind == LEN_AUTO { return lenPercent(50.0) }
+    return l
+}
+
+// polygon( <fill-rule>? , [<length-percentage> <length-percentage>]# ).
+// The fill rule is read and dropped: `nonzero` and `evenodd` describe
+// the same region unless the polygon crosses itself.
+void func readPolygonShape(sh:ClipShape, args:ascii, fontSize:int) {
+    arr[ascii] pairs = splitTopLevelCommas(args)
+    arr[Len] xs = []
+    arr[Len] ys = []
+    for int i = 0, i < pairs.length, i++ {
+        arr[ascii] two = cssTokens(pairs[i])
+        if two.length < 2 { continue }
+        Len x = parseLength(two[0], fontSize)
+        Len y = parseLength(two[1], fontSize)
+        if x.kind == LEN_AUTO || y.kind == LEN_AUTO { continue }
+        xs.push(x)
+        ys.push(y)
+    }
+    if xs.length < 3 { return }
+    sh.kind = CLIPSHAPE_POLYGON
+    sh.pointsX = xs
+    sh.pointsY = ys
+}
+
+// The CSS2 `clip`, which said the same thing about an absolutely
+// positioned box before clip-path existed: rect(top, right, bottom,
+// left) is a rectangle measured from the border box's top and left
+// edges, so it becomes the four insets the painter already cuts by.
+// `auto` on a side means that side of the box, which is no inset.
+ClipShape func parseClipRect(v:ascii, fontSize:int) {
+    ClipShape sh
+    sh.kind = CLIPSHAPE_NONE
+    sh.geoBox = GEOBOX_BORDER
+    if v == null { return sh }
+    ascii t = asciiLower(asciiTrim(v))
+    int open = asciiIndexOf(t, '('.toAscii(), 0)
+    if open <= 0 || !asciiEndsWith(t, ')') { return sh }
+    if !asciiRegionEquals(t, 0, open, 'rect') { return sh }
+    arr[ascii] parts = splitTopLevelCommas(t.slice(open + 1, t.length - 1))
+    // rect() is written with commas or with spaces; both are four
+    // values and the standard accepts either.
+    if parts.length == 1 { parts = cssTokens(parts[0]) }
+    if parts.length < 4 { return sh }
+    sh.kind = CLIPSHAPE_RECT
+    sh.insetTop = clipRectEdge(parts[0], fontSize, false)
+    sh.insetRight = clipRectEdge(parts[1], fontSize, true)
+    sh.insetBottom = clipRectEdge(parts[2], fontSize, true)
+    sh.insetLeft = clipRectEdge(parts[3], fontSize, false)
+    return sh
+}
+
+// One edge of a rect(). Top and left are already insets. Right and
+// bottom are distances from the same two edges, so the inset from the
+// far side is the box's own size less the distance -- which is a
+// percentage of 100 minus a length, and that is what a calc Len holds.
+Len func clipRectEdge(t:ascii, fontSize:int, fromFarSide:bool) {
+    if t == 'auto' { return lenPx(0.0) }
+    Len l = parseLength(t, fontSize)
+    if l.kind != LEN_PX { return lenPx(0.0) }
+    if !fromFarSide { return l }
+    return lenCalc(0.0 - l.v, 100.0)
+}
+
 arr[Transform] func parseTransformList(v:ascii, fontSize:int) {
     arr[Transform] out = []
     if v == null { return out }
@@ -3799,6 +4005,25 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         // `sticky` behaves as `relative` with no scroll offset applied,
         // which is what it is until scrolling is part of layout.
         else if t == 'sticky' { s.position = POS_RELATIVE }
+    }
+    // CSS Masking 1. A shape stays as it was written and is resolved
+    // against the box at paint time; `clip` is the same rectangle said
+    // in CSS2's words, and it applies only to a positioned box.
+    ascii clipPathProp = styleProp(props, 'clip-path')
+    if clipPathProp != null {
+        ClipShape shape = parseClipPath(clipPathProp, s.fontSize)
+        if shape.kind != CLIPSHAPE_NONE {
+            s.clipShape = shape
+            cascadeSawClip = true
+        }
+    }
+    ClipShape rect = parseClipRect(styleProp(props, 'clip'), s.fontSize)
+    if rect.kind != CLIPSHAPE_NONE {
+        // `clip` computes on any box and is used only by a positioned
+        // one, so it is kept whatever this element's position is and
+        // the painter asks.
+        s.clipRect = rect
+        cascadeSawClip = true
     }
     s.top = lenProp(props, 'top', s.fontSize, lenAuto())
     s.right = lenProp(props, 'right', s.fontSize, lenAuto())

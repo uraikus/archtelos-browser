@@ -1657,6 +1657,256 @@ bool func boxClipsAnything(b:Box) {
     return b.children.length > 0
 }
 
+// ---- clip-path ------------------------------------------------------
+//
+// The canvas has no clip region and no path API, so a shape is cut the
+// way every other clip here is cut: the subtree is painted into an
+// image, and the image is blitted back. What differs is that a shape is
+// not a rectangle, so the blit goes one scanline at a time, each with
+// the span the shape covers at that row (FINDINGS.md, "an image
+// destination cannot take drawImage's source rectangle" and "a clip
+// region on the canvas").
+//
+// A pixel belongs to the shape when its centre does. That is the rule a
+// rasteriser without antialiasing has to use, and it is the rule the
+// expected grids in tests/render/clip.f were read from Chromium under.
+
+// The shape resolved against one box, in document pixels.
+struct ClipGeom {
+    kind:int
+    x0:int
+    y0:int
+    x1:int
+    y1:int
+    centreX:float
+    centreY:float
+    radiusX:float
+    radiusY:float
+    pointsX:arr[float]
+    pointsY:arr[float]
+}
+
+// The reference box a shape resolves against.
+int clipRefX = 0
+int clipRefY = 0
+int clipRefW = 0
+int clipRefH = 0
+
+void func clipReferenceBox(b:Box, which:int) {
+    if which == GEOBOX_MARGIN {
+        clipRefX = b.x - b.ml
+        clipRefY = b.y - b.mt
+        clipRefW = b.w + b.ml + b.mr
+        clipRefH = b.h + b.mt + b.mb
+        return
+    }
+    clipRefX = b.x
+    clipRefY = b.y
+    clipRefW = b.w
+    clipRefH = b.h
+    if which == GEOBOX_BORDER { return }
+    clipRefX = clipRefX + b.bl
+    clipRefY = clipRefY + b.bt
+    clipRefW = clipRefW - b.bl - b.br
+    clipRefH = clipRefH - b.bt - b.bb
+    if which == GEOBOX_PADDING { return }
+    clipRefX = clipRefX + b.pl
+    clipRefY = clipRefY + b.pt
+    clipRefW = clipRefW - b.pl - b.pr
+    clipRefH = clipRefH - b.pt - b.pb
+}
+
+// One radius, which may be a length, a percentage or a keyword. The
+// keywords measure from the centre to the nearest or furthest edge of
+// the reference box along this axis.
+float func clipRadius(l:Len, kind:int, base:int, centre:float, lo:float, hi:float) {
+    if kind == CLIPRAD_CLOSEST { return minFloat(centre - lo, hi - centre) }
+    if kind == CLIPRAD_FARTHEST { return maxFloat(centre - lo, hi - centre) }
+    return resolveLen(l, base, 0).toFloat()
+}
+
+// Which shape clips this box: its `clip-path`, or the CSS2 `clip` that
+// applies only where the box is positioned.
+ClipShape func boxClipShape(b:Box) {
+    if b.style.clipShape.kind != CLIPSHAPE_NONE { return b.style.clipShape }
+    if b.style.position == POS_ABSOLUTE || b.style.position == POS_FIXED {
+        return b.style.clipRect
+    }
+    ClipShape none
+    none.kind = CLIPSHAPE_NONE
+    return none
+}
+
+ClipGeom func resolveClipShape(b:Box) {
+    ClipShape sh = boxClipShape(b)
+    ClipGeom g
+    g.kind = sh.kind
+    clipReferenceBox(b, sh.geoBox)
+    int rx = clipRefX
+    int ry = clipRefY
+    int rw = clipRefW
+    int rh = clipRefH
+    if sh.kind == CLIPSHAPE_RECT {
+        g.x0 = rx + resolveLen(sh.insetLeft, rw, 0)
+        g.y0 = ry + resolveLen(sh.insetTop, rh, 0)
+        g.x1 = rx + rw - resolveLen(sh.insetRight, rw, 0)
+        g.y1 = ry + rh - resolveLen(sh.insetBottom, rh, 0)
+        return g
+    }
+    if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE {
+        g.centreX = (rx + resolveLen(sh.centreX, rw, 0)).toFloat()
+        g.centreY = (ry + resolveLen(sh.centreY, rh, 0)).toFloat()
+        // A circle's percentage radius is of the reference box's
+        // diagonal over root two, which for a square is its side.
+        int circleBase = rw
+        if sh.kind == CLIPSHAPE_CIRCLE {
+            float w = rw.toFloat()
+            float h = rh.toFloat()
+            circleBase = Math.round(Math.sqrt((w * w + h * h) / 2.0))
+        }
+        g.radiusX = clipRadius(sh.radiusX, sh.radiusXKind,
+            sh.kind == CLIPSHAPE_CIRCLE ? circleBase : rw,
+            g.centreX, rx.toFloat(), (rx + rw).toFloat())
+        g.radiusY = clipRadius(sh.radiusY, sh.radiusYKind,
+            sh.kind == CLIPSHAPE_CIRCLE ? circleBase : rh,
+            g.centreY, ry.toFloat(), (ry + rh).toFloat())
+        if sh.kind == CLIPSHAPE_CIRCLE && sh.radiusXKind != CLIPRAD_LENGTH {
+            // closest-side and farthest-side on a circle measure both
+            // axes and take the one the keyword asks for.
+            float a = clipRadius(sh.radiusX, sh.radiusXKind, circleBase,
+                g.centreX, rx.toFloat(), (rx + rw).toFloat())
+            float c = clipRadius(sh.radiusY, sh.radiusYKind, circleBase,
+                g.centreY, ry.toFloat(), (ry + rh).toFloat())
+            float r = sh.radiusXKind == CLIPRAD_CLOSEST ? minFloat(a, c) : maxFloat(a, c)
+            g.radiusX = r
+            g.radiusY = r
+        }
+        g.x0 = Math.floor(g.centreX - g.radiusX)
+        g.x1 = Math.ceil(g.centreX + g.radiusX)
+        g.y0 = Math.floor(g.centreY - g.radiusY)
+        g.y1 = Math.ceil(g.centreY + g.radiusY)
+        return g
+    }
+    if sh.kind == CLIPSHAPE_POLYGON {
+        arr[float] xs = []
+        arr[float] ys = []
+        for int i = 0, i < sh.pointsX.length, i++ {
+            xs.push((rx + resolveLen(sh.pointsX[i], rw, 0)).toFloat())
+            ys.push((ry + resolveLen(sh.pointsY[i], rh, 0)).toFloat())
+        }
+        g.pointsX = xs
+        g.pointsY = ys
+        float lox = xs[0]
+        float hix = xs[0]
+        float loy = ys[0]
+        float hiy = ys[0]
+        for int i = 1, i < xs.length, i++ {
+            lox = minFloat(lox, xs[i])
+            hix = maxFloat(hix, xs[i])
+            loy = minFloat(loy, ys[i])
+            hiy = maxFloat(hiy, ys[i])
+        }
+        g.x0 = Math.floor(lox)
+        g.x1 = Math.ceil(hix)
+        g.y0 = Math.floor(loy)
+        g.y1 = Math.ceil(hiy)
+        return g
+    }
+    return g
+}
+
+// The spans one scanline of the shape covers, as x ranges that include
+// the start and exclude the end. Written to globals because a function
+// answers with one value (FINDINGS.md).
+arr[int] clipSpanStart = []
+arr[int] clipSpanEnd = []
+
+void func clipSpansAt(g:ClipGeom, y:int) {
+    clipSpanStart = []
+    clipSpanEnd = []
+    if g.kind == CLIPSHAPE_RECT {
+        clipSpanStart.push(g.x0)
+        clipSpanEnd.push(g.x1)
+        return
+    }
+    float cy = y.toFloat() + 0.5
+    if g.kind == CLIPSHAPE_CIRCLE || g.kind == CLIPSHAPE_ELLIPSE {
+        if g.radiusX <= 0.0 || g.radiusY <= 0.0 { return }
+        float dy = (cy - g.centreY) / g.radiusY
+        if dy < -1.0 || dy > 1.0 { return }
+        float half = g.radiusX * Math.sqrt(1.0 - dy * dy)
+        clipSpanStart.push(Math.ceil(g.centreX - half - 0.5))
+        clipSpanEnd.push(Math.floor(g.centreX + half - 0.5) + 1)
+        return
+    }
+    if g.kind != CLIPSHAPE_POLYGON { return }
+    // Where the scanline crosses each edge, sorted, and filled between
+    // the pairs. For a polygon that does not cross itself this is what
+    // both fill rules say.
+    arr[float] hits = []
+    int n = g.pointsX.length
+    for int i = 0, i < n, i++ {
+        int j = i + 1 < n ? i + 1 : 0
+        float ay = g.pointsY[i]
+        float by = g.pointsY[j]
+        if ay == by { continue }
+        float lo = minFloat(ay, by)
+        float hi = maxFloat(ay, by)
+        if cy < lo || cy >= hi { continue }
+        float t = (cy - ay) / (by - ay)
+        hits.push(g.pointsX[i] + t * (g.pointsX[j] - g.pointsX[i]))
+    }
+    if hits.length < 2 { return }
+    for int i = 1, i < hits.length, i++ {
+        float v = hits[i]
+        int k = i - 1
+        while k >= 0 && hits[k] > v {
+            hits[k + 1] = hits[k]
+            k--
+        }
+        hits[k + 1] = v
+    }
+    for int i = 0, i + 1 < hits.length, i = i + 2 {
+        int lo = Math.ceil(hits[i] - 0.5)
+        int hi = Math.floor(hits[i + 1] - 0.5) + 1
+        if hi > lo {
+            clipSpanStart.push(lo)
+            clipSpanEnd.push(hi)
+        }
+    }
+}
+
+// Paints a box through its clip shape. The layer is the shape's
+// bounding box, because nothing outside it survives the clip.
+void func paintShaped(b:Box) {
+    ClipGeom g = resolveClipShape(b)
+    int lx = g.x0
+    int ly = g.y0
+    int lw = g.x1 - g.x0
+    int lh = g.y1 - g.y0
+    if lw <= 0 || lh <= 0 { return }
+    img layer = blankImage(lw, lh)
+    layer.translate(0 - lx, 0 - ly)
+    paintLayer = layer
+    paintBoxInner(b)
+    paintLayer = null
+    // A rectangle is one blit; a shape is one per scanline.
+    if g.kind == CLIPSHAPE_RECT {
+        pDrawImage(layer, lx, ly)
+        return
+    }
+    for int row = 0, row < lh, row++ {
+        clipSpansAt(g, ly + row)
+        for int i = 0, i < clipSpanStart.length, i++ {
+            int sx = maxInt(clipSpanStart[i], lx)
+            int ex = minInt(clipSpanEnd[i], lx + lw)
+            if ex <= sx { continue }
+            img piece = cutRegion(layer, sx - lx, row, ex - sx, 1)
+            if piece != null { pDrawImage(piece, sx, ly + row) }
+        }
+    }
+}
+
 // Paints a box whose descendants are clipped: the box itself onto the
 // current target, then its children into a layer the size of its
 // padding box, which is blitted back. An image clips at its own bounds,
@@ -1729,6 +1979,18 @@ void func paintBox(b:Box) {
 void func paintBoxUntransformed(b:Box) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
+    // A clip-path (or the legacy `clip`) clips the box itself as well
+    // as its contents, so everything goes into the layer -- which is
+    // what separates it from `overflow`, below. The question is asked
+    // once per document rather than of every box.
+    if cascadeSawClip && !paintingToLayer() && boxClipShape(b).kind != CLIPSHAPE_NONE {
+        paintShaped(b)
+        return
+    }
+    paintBoxInner(b)
+}
+
+void func paintBoxInner(b:Box) {
     // `overflow: hidden` clips this box's descendants to its padding box
     // (CSS2 §11.1.1). The box itself -- its background and border -- is
     // not clipped, so it paints normally and only the inside goes to a

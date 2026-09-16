@@ -5,6 +5,46 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### clip-path, and a spec that was on the "Nothing" row
+
+- **`clip-path`** over the basic shapes — `inset()` with its one to four
+  lengths, `circle()` and `ellipse()` with a radius per axis, a centre
+  and the `closest-side` and `farthest-side` keywords, and `polygon()` —
+  and over the four geometry boxes, each of which names a rectangle.
+- **`clip`**, the CSS2 rectangle that preceded it, on an absolutely
+  positioned box. It computes on every box, as the standard says, and
+  applies only where the box is positioned.
+
+**Properties 181 → 183.** CSS Masking 1 moves from Nothing to Partial.
+
+The canvas has no clip region and no path API. A rectangle was already
+cut by painting the subtree into an image and blitting it back; a shape
+is the same image blitted back one scanline at a time, each with the
+span the shape covers at that row. A pixel belongs to the shape when its
+centre does, which is the rule a rasteriser without antialiasing has to
+use.
+
+`overflow-clip-margin` was implemented far enough to register and then
+taken out again. Chromium's answer for it on a bordered box did not
+agree with the padding-box clip edge the standard describes, and the
+two readings differ by a border width; a property whose meaning is not
+pinned down is not one to ship for the sake of a count. It is on the
+work list with what was measured.
+
+The expected pixels are Chromium 141's. `document.elementFromPoint`
+respects both properties, so asking it at each pixel's centre is asking
+that engine which pixels a clip keeps, with no screenshot to decode. A
+pixel whose answer Chromium changes within three pixels — the boundary
+itself — is copied from the actual grid rather than compared, because
+an engine that antialiases and one that does not are entitled to differ
+there and nowhere else.
+
+Four of the checks are of the shape that does not need the answer known
+in advance: a circle is an ellipse with two equal radii, a rectangle is
+a four-sided polygon, the content box of a box with 25px of padding is
+an inset of 25px, and the legacy `clip` reaches that same rectangle from
+the other side.
+
 ### Where a column may break
 
 - **`break-before` and `break-after`** take `column` to force a column

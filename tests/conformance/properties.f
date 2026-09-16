@@ -80,6 +80,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.columnRuleWidth}`, `${s.columnRuleStyle}`, `${s.columnRuleColor}`, 
         `${s.breakBefore}`, `${s.breakAfter}`, `${s.breakInsideAvoid}`, 
         `${s.orphans}`, `${s.widows}`, 
+        `${clipKey(s.clipShape)}`, `${clipKey(s.clipRect)}`, 
         `${trackKey(s.gridCols)}`, `${trackKey(s.gridRows)}`, 
         `${trackKey(s.gridAutoCols)}`, `${trackKey(s.gridAutoRows)}`, 
         `${s.gridAutoFlowColumn}`, `${lineKey(s.gridColStart)}`, 
@@ -145,6 +146,7 @@ arr[text] func styleDigestFieldNames() {
         'columnCount', 'columnWidth', 'columnRuleWidth', 
         'columnRuleStyle', 'columnRuleColor', 
         'breakBefore', 'breakAfter', 'breakInsideAvoid', 'orphans', 'widows', 
+        'clipShape', 'clipRect', 
         'gridCols', 'gridRows', 'gridAutoCols', 'gridAutoRows', 
         'gridAutoFlowColumn', 'gridColStart', 'gridColEnd', 
         'gridRowStart', 'gridRowEnd', 'justifyItems', 'justifySelf', 'textOverflowEllipsis', 
@@ -165,6 +167,20 @@ text func trackKey(list:arr[Track]) {
     text out = ''
     for int i = 0, i < list.length, i++ {
         out = out + `${list[i].kind}:${lenKey(list[i].size)}/${list[i].fr};`
+    }
+    return out
+}
+
+// Every field of a clip shape, so a change to any part of it registers.
+text func clipKey(sh:ClipShape) {
+    text out = `${sh.kind}:${sh.geoBox}`
+    out = out + `:${lenKey(sh.insetTop)}/${lenKey(sh.insetRight)}`
+    out = out + `/${lenKey(sh.insetBottom)}/${lenKey(sh.insetLeft)}`
+    out = out + `:${lenKey(sh.centreX)}/${lenKey(sh.centreY)}`
+    out = out + `:${lenKey(sh.radiusX)}/${lenKey(sh.radiusY)}`
+    out = out + `:${sh.radiusXKind}/${sh.radiusYKind}`
+    for int i = 0, i < sh.pointsX.length, i++ {
+        out = out + `;${lenKey(sh.pointsX[i])},${lenKey(sh.pointsY[i])}`
     }
     return out
 }

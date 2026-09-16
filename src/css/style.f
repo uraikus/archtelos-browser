@@ -200,6 +200,52 @@ const int BRK_AUTO = 0
 const int BRK_COLUMN = 1
 const int BRK_AVOID = 2
 
+// CSS Masking 1's `clip-path`, and the CSS2 `clip` that preceded it.
+// A shape is kept as it was written -- lengths and percentages -- and
+// resolved against the box at paint time, because the reference box is
+// not known until layout has run.
+const int CLIPSHAPE_NONE = 0
+const int CLIPSHAPE_RECT = 1        // inset(), or a bare geometry box
+const int CLIPSHAPE_CIRCLE = 2
+const int CLIPSHAPE_ELLIPSE = 3
+const int CLIPSHAPE_POLYGON = 4
+
+// Which box a clip resolves against. `clip-path`'s default is the
+// border box; `overflow`'s clip is the padding box.
+const int GEOBOX_BORDER = 0
+const int GEOBOX_PADDING = 1
+const int GEOBOX_CONTENT = 2
+const int GEOBOX_MARGIN = 3
+
+// A radius written as a keyword rather than a length.
+const int CLIPRAD_LENGTH = 0
+const int CLIPRAD_CLOSEST = 1
+const int CLIPRAD_FARTHEST = 2
+
+struct ClipShape {
+    kind:int
+    geoBox:int
+    // inset(): how far in from each edge of the reference box. For the
+    // legacy `clip` these hold the same thing, since rect()'s edges are
+    // turned into insets when the declaration is read.
+    insetTop:Len
+    insetRight:Len
+    insetBottom:Len
+    insetLeft:Len
+    // circle() and ellipse(): the centre, and a radius per axis. A
+    // circle uses `rx` for both.
+    centreX:Len
+    centreY:Len
+    radiusX:Len
+    radiusY:Len
+    radiusXKind:int
+    radiusYKind:int
+    // polygon(): the vertices, x and y in parallel arrays because
+    // Festina has no tuples.
+    pointsX:arr[Len]
+    pointsY:arr[Len]
+}
+
 // box-sizing
 const int BOX_CONTENT = 0
 const int BOX_BORDER = 1
@@ -534,6 +580,12 @@ struct Style {
     // column may break. `breakBefore` and `breakAfter` are BRK_*;
     // `breakInsideAvoid` is the only value of break-inside that changes
     // anything here. Orphans and widows are the standard's initial 2.
+    // CSS Masking 1. `clipShape.kind` is CLIPSHAPE_NONE on a box with
+    // no clip, which is every box on almost every page. `clipRect` is
+    // the CSS2 `clip`, kept separately because it computes on every box
+    // and applies only to a positioned one (CSS2 11.1.2).
+    clipShape:ClipShape
+    clipRect:ClipShape
     breakBefore:int
     breakAfter:int
     breakInsideAvoid:bool
