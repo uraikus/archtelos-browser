@@ -64,7 +64,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.right)}`, `${lenKey(s.bottom)}`, `${lenKey(s.left)}`, 
         `${s.zIndex}`, `${s.floatSide}`, `${s.clearSide}`, 
         `${lenKey(s.maxHeight)}`, `${s.boxSizing}`, `${s.captionSide}`, 
-        `${s.wordSpacing}`, `${s.outlineWidth}`, `${s.outlineColor}`, 
+        `${s.wordSpacing}`, `${s.outlineWidth}`, `${s.outlineStyle}`, `${s.outlineColor}`, 
         `${s.flexDirection}`, `${s.justifyContent}`, `${s.alignItems}`, 
         `${s.alignSelf}`, `${s.flexWrap}`, `${s.alignContent}`, 
         `${s.flexGrow}`, `${s.flexShrink}`, `${lenKey(s.flexBasis)}`, 
@@ -107,7 +107,7 @@ arr[text] func styleDigestFieldNames() {
         'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 
         'fontKey', 'position', 'top', 'right', 'bottom', 'left', 'zIndex', 
         'floatSide', 'clearSide', 'maxHeight', 'boxSizing', 'captionSide', 
-        'wordSpacing', 'outlineWidth', 'outlineColor', 'flexDirection', 
+        'wordSpacing', 'outlineWidth', 'outlineStyle', 'outlineColor', 'flexDirection', 
         'justifyContent', 'alignItems', 'alignSelf', 'flexWrap', 
         'alignContent', 'flexGrow', 'flexShrink', 'flexBasis', 'rowGap', 
         'columnGap', 'order', 'backgroundImage', 'overflowHidden', 
@@ -185,6 +185,23 @@ int gradeable = 0
 int implemented = 0
 arr[text] inert = []
 arr[text] ungradeable = []
+// `@supports` answers from `supportedProperties` in the CSS parser,
+// and that list is written by hand while this instrument measures the
+// engine, so the two drift apart silently and in both directions. They
+// must agree: a property this engine implements that `@supports`
+// denies sends a page down a fallback path it does not need, and one
+// `@supports` claims that changes nothing is the lie `@supports` exists
+// to prevent.
+//
+// The two can disagree honestly in one direction only. `@supports`
+// answers for the engine, this instrument for an ordinary element, so
+// a property implemented somewhere an ordinary element cannot reach it
+// registers as changing nothing here: `content` works on `::before`
+// and `::after` and does nothing on a `<p>`. Each such property is
+// named here with its reason; every other disagreement fails the run.
+arr[text] supportsExempt = ['content']
+arr[text] supportsDenied = []
+arr[text] supportsOverclaimed = []
 
 for int i = 0, i < lines.length, i++ {
     text line = lines[i]
@@ -231,8 +248,20 @@ for int i = 0, i < lines.length, i++ {
     if context != '' { rowBaseFields = digestFieldsFor(context) }
     text rowBaseline = rowBaseFields.join('\u0001')
     arr[text] gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
-    if gotFields.join('\u0001') == rowBaseline { inert.push(prop)  continue }
+    bool known = cssKnownProperty(prop.toAscii())
+    if gotFields.join('\u0001') == rowBaseline {
+        inert.push(prop)
+        if known {
+            bool exempt = false
+            for int e = 0, e < supportsExempt.length, e++ {
+                if supportsExempt[e] == prop { exempt = true }
+            }
+            if !exempt { supportsOverclaimed.push(prop) }
+        }
+        continue
+    }
     implemented++
+    if !known { supportsDenied.push(prop) }
     if showFields {
         // Which fields moved, not just that something did. A property
         // that registers only through a field belonging to a different
@@ -256,6 +285,18 @@ if verbose {
     for int i = 0, i < ungradeable.length, i++ { log(`    ${ungradeable[i]}`) }
 }
 log(`properties: ${implemented}/${gradeable} CSS properties change the computed style`)
+if supportsDenied.length > 0 || supportsOverclaimed.length > 0 {
+    log('properties: FAILED -- @supports and this instrument disagree')
+    for int i = 0, i < supportsDenied.length, i++ {
+        log(`    ${supportsDenied[i]}: changes the computed style, and @supports says no`)
+    }
+    for int i = 0, i < supportsOverclaimed.length, i++ {
+        log(`    ${supportsOverclaimed[i]}: @supports says yes, and it changes nothing`)
+    }
+    log('    add it to supportedProperties in src/css/parser.f, remove it from there,')
+    log('    or name it in supportsExempt with the reason an ordinary element cannot show it')
+    close(1)
+}
 if ungradeable.length > 0 {
     log(`properties: ${ungradeable.length} of ${total} rows carry a value that could never show a difference (--verbose lists them)`)
 }

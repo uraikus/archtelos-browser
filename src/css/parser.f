@@ -608,6 +608,13 @@ arr[text] supportedProperties = [
     'justify-content', 'align-items', 'align-self', 'align-content',
     'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
+    'background-position', 'background-repeat', 'background-size',
+    'background-origin', 'background-clip',
+    'border-top-left-radius', 'border-top-right-radius',
+    'border-bottom-right-radius', 'border-bottom-left-radius',
+    'border-start-start-radius', 'border-start-end-radius',
+    'border-end-start-radius', 'border-end-end-radius',
+    'box-shadow', 'object-fit', 'object-position',
     // A property belongs here when something reads it, not when the
     // cascade merely computes it: claiming otherwise is the lie
     // @supports exists to prevent (css-2026.md). `overflow` was absent
@@ -617,7 +624,20 @@ arr[text] supportedProperties = [
     'inline-size', 'block-size',
     'margin-inline', 'margin-inline-start', 'margin-inline-end',
     'margin-block', 'margin-block-start', 'margin-block-end',
-    'padding-inline', 'padding-inline-start', 'padding-inline-end', 'padding-block'
+    'padding-inline', 'padding-inline-start', 'padding-inline-end', 'padding-block',
+    'padding-block-start', 'padding-block-end',
+    'min-inline-size', 'max-inline-size', 'min-block-size', 'max-block-size',
+    'border-block', 'border-inline',
+    'border-block-start', 'border-block-end', 'border-inline-start', 'border-inline-end',
+    'border-block-start-width', 'border-block-end-width',
+    'border-inline-start-width', 'border-inline-end-width',
+    'border-block-start-style', 'border-block-end-style',
+    'border-inline-start-style', 'border-inline-end-style',
+    'border-block-start-color', 'border-block-end-color',
+    'border-inline-start-color', 'border-inline-end-color',
+    'inset', 'inset-block', 'inset-inline',
+    'inset-block-start', 'inset-block-end', 'inset-inline-start', 'inset-inline-end',
+    'overflow-block', 'overflow-inline'
 ]
 
 bool func cssKnownProperty(prop:ascii) {

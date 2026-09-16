@@ -220,4 +220,64 @@ check(getPixelColor(1, 1) != red, 'two values round the first diagonal, top-left
 check(getPixelColor(38, 38) != red, 'and bottom-right')
 check(getPixelColor(38, 1) == red, 'leaving the other diagonal square')
 
+
+
+// ---- outline styles ------------------------------------------------------
+// An outline is drawn just outside the border box and took no style at
+// all: the cascade read `outline-style` only to decide whether the
+// outline existed, and every outline painted solid. `@supports` said it
+// was implemented, which is the lie the property instrument now catches.
+//
+// The outline is painted through the same code as a border side, so
+// these ask the question the border checks ask -- is the line broken --
+// rather than inventing a dash length.
+// The wrapper is padded rather than the box margined, because a top
+// margin here collapses through to the root and is dropped, which would
+// put the outline's top edge above the canvas.
+void func shotOutline(style:text) {
+    Page p = pageFromHtml(head + '<div style="padding:10px"><div style="width:60px;'
+        + 'height:20px;' + style + '"></div></div></body>',
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+// The box starts at (10,10), and the outline is drawn outside it, so
+// its top edge is the four rows above y=10 and it runs four pixels
+// wider on each side.
+shotOutline('outline:4px solid red')
+scanRow(7, 10, 70)
+check(runRed == 60, 'a solid outline paints every pixel along its edge')
+check(runGap == 0, 'with no gaps')
+
+shotOutline('outline:4px dashed red')
+scanRow(7, 10, 70)
+check(runRed > 0, 'a dashed outline paints something')
+check(runGap > 0, 'and leaves gaps -- it is not the solid line it used to be')
+int outlineDashedMarks = runMarks
+
+shotOutline('outline:4px dotted red')
+scanRow(7, 10, 70)
+check(runGap > 0, 'a dotted outline leaves gaps too')
+check(runMarks > outlineDashedMarks, 'and breaks the line into more marks than dashed')
+
+// The longhand says the same as the shorthand's keyword.
+shotOutline('outline-width:4px;outline-style:dashed;outline-color:red')
+scanRow(7, 10, 70)
+int longhandRed = runRed
+int longhandMarks = runMarks
+shotOutline('outline:4px dashed red')
+scanRow(7, 10, 70)
+checkEqInt(longhandRed, runRed, 'the outline longhands paint what the shorthand does')
+checkEqInt(longhandMarks, runMarks, 'and break it in the same places')
+
+// An outline with a style but no width is the medium three pixels, and
+// one with no style at all paints nothing however wide it is asked to be.
+shotOutline('outline-style:solid;outline-color:red')
+scanRow(8, 10, 70)
+check(runRed == 60, 'a styled outline with no width takes the medium width')
+shotOutline('outline-width:4px;outline-color:red')
+scanRow(7, 10, 70)
+checkEqInt(runRed, 0, 'and an outline with no style paints nothing at all')
+
 finish('borders')

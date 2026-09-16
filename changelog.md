@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### @supports was answering from a list nobody checked
+
+`@supports` answers from `supportedProperties`, a list written by hand
+in the CSS parser, while the property instrument measures what the
+engine actually does. Nothing compared the two, and they had drifted in
+both directions: **forty properties this engine implements were denied**
+— every background longhand, `box-shadow`, `object-fit`, all eight
+per-corner radii and the whole logical box — so a page testing for them
+would take a fallback path it did not need.
+
+The other direction was worse. `outline-style` was on the list, and the
+engine had no outline style at all: the cascade read the keyword only to
+decide whether the outline existed, and every outline painted solid. The
+list's own comment says a property belongs there when something reads
+it, "because claiming otherwise is the lie `@supports` exists to
+prevent", and that is exactly what it was doing.
+
+So `outline-style` is implemented rather than removed. An outline is
+painted through the same code as a border side now, so `dashed`,
+`dotted`, `double` and the four relief styles paint as themselves;
+`none` draws nothing however wide it is asked to be, and a style with no
+width takes `medium`. **Properties 127 → 128.** Fourteen checks in
+`tests/render/borders.f` (52 → 62), including the longhands against the
+shorthand.
+
+The two lists are checked against each other on every run now. A
+property that changes the computed style and is not on the list, or is
+on the list and changes nothing, fails the suite and is named. One
+honest disagreement is possible — `@supports` answers for the engine and
+the instrument for an ordinary element, so `content`, which works on
+`::before` and `::after`, registers as changing nothing on a `<p>` — and
+that one is declared with its reason rather than tolerated silently.
+
+This is the fourth instrument on this branch found unable to fail, and
+the first that was not an instrument at all until now: nothing was
+measuring `@supports`, so it could say anything.
+
 ### white-space was two properties all along
 
 `white-space` is a shorthand for two independent questions — whether

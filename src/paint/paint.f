@@ -984,16 +984,20 @@ Line func firstLineOf(b:Box) {
 
 // An outline is drawn just outside the border box and takes no space,
 // so it can overlap whatever is next to it (CSS Basic User Interface 3).
-// Every outline style paints solid, as every border style does.
+// It is a line with a style, painted through the same code as a border
+// side, so every style paints as itself here too.
 void func paintOutline(b:Box) {
     Style s = b.style
     int w = s.outlineWidth
-    if w <= 0 || b.w <= 0 || b.h <= 0 { return }
-    applyFillColor(colorWithOpacity(s.outlineColor, s.effectiveOpacity))
-    pDrawRect(b.x - w, b.y - w, b.w + w + w, w)
-    pDrawRect(b.x - w, b.y + b.h, b.w + w + w, w)
-    pDrawRect(b.x - w, b.y, w, b.h)
-    pDrawRect(b.x + b.w, b.y, w, b.h)
+    if w <= 0 || b.w <= 0 || b.h <= 0 || s.outlineStyle == BORDER_NONE { return }
+    int c = colorWithOpacity(s.outlineColor, s.effectiveOpacity)
+    float o = s.effectiveOpacity
+    // The relief styles shade an edge against its opposite, so each
+    // side says whether it is the leading one -- top and left are.
+    paintBorderSide(b.x - w, b.y - w, b.w + w + w, w, true, true, s.outlineStyle, c, o)
+    paintBorderSide(b.x - w, b.y + b.h, b.w + w + w, w, true, false, s.outlineStyle, c, o)
+    paintBorderSide(b.x - w, b.y, w, b.h, false, true, s.outlineStyle, c, o)
+    paintBorderSide(b.x + b.w, b.y, w, b.h, false, false, s.outlineStyle, c, o)
     fillAlpha(1.0)
 }
 

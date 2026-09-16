@@ -396,6 +396,7 @@ struct Style {
     captionSide:int
     wordSpacing:int
     outlineWidth:int
+    outlineStyle:int
     outlineColor:int
     minHeightSet:bool
     marginTop:Len

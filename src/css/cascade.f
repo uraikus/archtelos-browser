@@ -1945,15 +1945,9 @@ int func cornerRadiusProp(props:map[text], name:text, fontSize:int, dflt:int) {
 
 // One side's border-style. Anything the painter does not know paints
 // solid.
-int func borderStyleProp(props:map[text], side:text) {
-    ascii v = styleProp(props, `border-${side}-style`)
-    // The initial value is `none`, and saying so matters beyond tidiness:
-    // while this answered `solid` for an undeclared border, declaring
-    // `border-top-style: solid` changed no style field at all, and the
-    // property registered as implemented only through the width that a
-    // declared style gives its side.
-    if v == null { return BORDER_NONE }
-    ascii t = asciiLower(asciiTrim(v))
+// One line-style keyword. Anything the painter does not know paints
+// solid; `none` and `hidden` mean no line at all.
+int func lineStyleKeyword(t:ascii) {
     if t == 'none' || t == 'hidden' { return BORDER_NONE }
     if t == 'dashed' { return BORDER_DASHED }
     if t == 'dotted' { return BORDER_DOTTED }
@@ -1963,6 +1957,25 @@ int func borderStyleProp(props:map[text], side:text) {
     if t == 'inset' { return BORDER_INSET }
     if t == 'outset' { return BORDER_OUTSET }
     return BORDER_SOLID
+}
+
+// Whether a token is one of the line-style keywords at all, which the
+// `outline` shorthand needs in order to tell a style from a colour.
+bool func isLineStyleKeyword(t:ascii) {
+    return t == 'none' || t == 'hidden' || t == 'solid' || t == 'dashed'
+        || t == 'dotted' || t == 'double' || t == 'groove' || t == 'ridge'
+        || t == 'inset' || t == 'outset'
+}
+
+int func borderStyleProp(props:map[text], side:text) {
+    ascii v = styleProp(props, `border-${side}-style`)
+    // The initial value is `none`, and saying so matters beyond tidiness:
+    // while this answered `solid` for an undeclared border, declaring
+    // `border-top-style: solid` changed no style field at all, and the
+    // property registered as implemented only through the width that a
+    // declared style gives its side.
+    if v == null { return BORDER_NONE }
+    return lineStyleKeyword(asciiLower(asciiTrim(v)))
 }
 
 int func borderWidthProp(props:map[text], side:text, fontSize:int) {
@@ -2770,8 +2783,16 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if cs2 != null && asciiLower(cs2) == 'bottom' { s.captionSide = CAPTION_BOTTOM }
     s.wordSpacing = isRoot ? 0 : parent.wordSpacing
     s.wordSpacing = pxProp(props, 'word-spacing', s.fontSize, s.wordSpacing)
-    s.outlineWidth = 0
+    // An outline has a style of its own, like a border side: the
+    // keyword used to decide only whether the outline existed, so every
+    // outline painted solid however it was declared -- and `@supports`
+    // answered yes for `outline-style`, which is the lie it exists to
+    // prevent. The width is kept separate from the style so that the
+    // absent width can fall back to `medium` exactly when a style says
+    // there is a line to draw.
+    s.outlineStyle = BORDER_NONE
     s.outlineColor = s.color
+    int declaredWidth = -1
     ascii ow = styleProp(props, 'outline-width')
     ascii ost = styleProp(props, 'outline-style')
     ascii oc = styleProp(props, 'outline-color')
@@ -2781,25 +2802,32 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         arr[ascii] parts = cssTokens(osh)
         for int i = 0, i < parts.length, i++ {
             ascii t = asciiLower(parts[i])
-            if t == 'none' || t == 'hidden' { s.outlineWidth = 0 }
-            else if t == 'solid' || t == 'dashed' || t == 'dotted' || t == 'double'
-                 || t == 'groove' || t == 'ridge' || t == 'inset' || t == 'outset' {
-                if s.outlineWidth == 0 { s.outlineWidth = 3 }
-            } else {
+            if isLineStyleKeyword(t) { s.outlineStyle = lineStyleKeyword(t) }
+            else {
                 int c = parseCssColor(t, s.color)
                 if c != COLOR_UNSET { s.outlineColor = c }
                 else {
                     Len l = parseLength(t, s.fontSize)
-                    if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+                    if l.kind == LEN_PX { declaredWidth = maxInt(roundPx(l.v), 0) }
                 }
             }
         }
     }
+    if ost != null { s.outlineStyle = lineStyleKeyword(asciiLower(asciiTrim(ost))) }
     if ow != null {
-        Len l = parseLength(ow, s.fontSize)
-        if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+        ascii t = asciiLower(asciiTrim(ow))
+        if t == 'thin' { declaredWidth = 1 }
+        else if t == 'medium' { declaredWidth = 3 }
+        else if t == 'thick' { declaredWidth = 5 }
+        else {
+            Len l = parseLength(t, s.fontSize)
+            if l.kind == LEN_PX { declaredWidth = maxInt(roundPx(l.v), 0) }
+        }
     }
-    if ost != null && (asciiLower(ost) == 'none' || asciiLower(ost) == 'hidden') { s.outlineWidth = 0 }
+    // `none` draws nothing however wide it is asked to be, and a style
+    // with no width takes `medium`.
+    s.outlineWidth = s.outlineStyle == BORDER_NONE ? 0
+                   : (declaredWidth >= 0 ? declaredWidth : 3)
     if oc != null {
         int c = parseCssColor(oc, s.color)
         if c != COLOR_UNSET { s.outlineColor = c }
