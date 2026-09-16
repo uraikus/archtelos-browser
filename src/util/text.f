@@ -227,6 +227,16 @@ arr[ascii] func asciiSplitChar(s:ascii, sep:int) {
 }
 
 // Splits on runs of whitespace.
+// Whether every character is a full stop, which is how a grid template
+// writes a cell belonging to no area: `.` and `...` mean the same.
+bool func asciiIsAllDots(s:ascii) {
+    if s == null || s.length == 0 { return false }
+    for int i = 0, i < s.length, i++ {
+        if s.charCodeAt(i) != CH_DOT { return false }
+    }
+    return true
+}
+
 arr[ascii] func asciiSplitSpace(s:ascii) {
     arr[ascii] out = []
     int n = s.length

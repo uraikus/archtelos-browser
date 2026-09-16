@@ -2165,13 +2165,46 @@ Track func parseTrack(tok:ascii, fontSize:int) {
 // A track list, with `repeat(n, <list>)` expanded in place. The count
 // is capped because a template is written by hand and a runaway repeat
 // would be a denial of service rather than a layout.
+// The names a track list wrote in brackets, and the line each sits at.
+// They come back in globals because a Festina function returns one
+// value (FINDINGS.md, "one value out of a function"), and they are
+// reset here so a caller that ignores them never reads the last list's.
+arr[text] trackLineNames = []
+arr[int] trackLineAt = []
+
 arr[Track] func parseTrackList(v:ascii, fontSize:int) {
+    arr[text] freshNames = []
+    arr[int] freshAt = []
+    trackLineNames = freshNames
+    trackLineAt = freshAt
     arr[Track] out = []
     if v == null { return out }
     ascii t = asciiTrim(v)
     if t == '' || asciiLower(t) == 'none' { return out }
     arr[ascii] toks = cssTokens(t)
     for int i = 0, i < toks.length, i++ {
+        // `[a b]` names the line before the next track. cssTokens splits
+        // on whitespace and knows nothing of brackets, so a bracketed
+        // run arrives as several tokens and is gathered back here.
+        if toks[i].charCodeAt(0) == CH_LBRACKET {
+            int j = i
+            while j < toks.length {
+                ascii piece = asciiTrim(toks[j])
+                int from = piece.charCodeAt(0) == CH_LBRACKET ? 1 : 0
+                bool last = piece.charCodeAt(piece.length - 1) == CH_RBRACKET
+                ascii inner = asciiTrim(piece.slice(from, last ? piece.length - 1 : piece.length))
+                if inner.length > 0 {
+                    trackLineNames.push(asciiLower(inner).toText())
+                    // Line numbers count from 1, and this names the line
+                    // before the track that follows.
+                    trackLineAt.push(out.length + 1)
+                }
+                if last { break }
+                j++
+            }
+            i = j
+            continue
+        }
         // The token is indexed rather than bound, because a bound
         // element releases an alias that was never retained
         // (FINDINGS.md, "ascii aliases are not retained"). Only
@@ -2192,6 +2225,18 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
         out.push(parseTrack(toks[i], fontSize))
     }
     return out
+}
+
+// Whether one edge of `grid-area` is a name rather than a number,
+// `span`, or `auto` -- only a name is copied to the edges left out.
+bool func gridEdgeIsName(v:ascii) {
+    if v == null { return false }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return false }
+    ascii first = asciiLower(asciiTrim(t[0]))
+    if first == 'span' || first == 'auto' || first.length == 0 { return false }
+    parseNumberAt(first, 0)
+    return !numOk
 }
 
 // One edge of a grid placement: a line number, `span n`, or `auto`.
@@ -2215,8 +2260,87 @@ GridLine func parseGridLine(v:ascii) {
     if numOk && roundPx(numValue) != 0 {
         g.kind = GRIDLINE_NUMBER
         g.n = roundPx(numValue)
+        return g
+    }
+    // Anything else is a line name. Which line it is depends on the
+    // container's template, so it is carried as a name and resolved in
+    // layout, where the grid it belongs to is in hand.
+    ascii nameTok = asciiTrim(t[0])
+    if nameTok.length > 0 && !numOk {
+        g.kind = GRIDLINE_NAME
+        g.name = asciiLower(nameTok).toText()
     }
     return g
+}
+
+// `grid-template-areas`: one quoted string per row, each a row of cell
+// names with `.` for a cell belonging to no area (Grid 1 §7.3). The
+// whole declaration is invalid -- and dropped, leaving no areas at all
+// -- if the rows are not all the same length or if any name covers
+// something other than a rectangle. Chromium 141 drops both.
+//
+// The result is a flat row-major array of names; the row width comes
+// back in `areaTemplateCols` and is 0 when there is no template.
+arr[text] areaTemplateNames = []
+int areaTemplateCols = 0
+
+void func parseGridAreas(v:ascii) {
+    arr[text] fresh = []
+    areaTemplateNames = fresh
+    areaTemplateCols = 0
+    if v == null { return }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 || asciiLower(t) == 'none' { return }
+    arr[ascii] rows = cssTokens(t)
+    if rows.length == 0 { return }
+    arr[text] cells = []
+    int cols = -1
+    for int r = 0, r < rows.length, r++ {
+        ascii row = asciiTrim(rows[r])
+        if row.length < 2 { return }
+        int q = row.charCodeAt(0)
+        if q != CH_QUOTE && q != CH_APOS { return }
+        if row.charCodeAt(row.length - 1) != q { return }
+        arr[ascii] names = asciiSplitSpace(asciiTrim(row.slice(1, row.length - 1)))
+        if names.length == 0 { return }
+        if cols < 0 { cols = names.length }
+        else if names.length != cols { return }
+        for int c = 0, c < names.length, c++ {
+            // A run of dots is one null cell, however many dots.
+            cells.push(asciiIsAllDots(names[c]) ? '' : asciiLower(names[c]).toText())
+        }
+    }
+    if cols <= 0 { return }
+    // Every name must cover a rectangle and nothing else: find each
+    // name's bounding box and require it to be full and to hold no
+    // other name.
+    int rowCount = Math.floorDiv(cells.length, cols)
+    for int i = 0, i < cells.length, i++ {
+        if cells[i] == '' { continue }
+        bool seen = false
+        for int j = 0, j < i, j++ { if cells[j] == cells[i] { seen = true  break } }
+        if seen { continue }
+        int minR = rowCount
+        int maxR = -1
+        int minC = cols
+        int maxC = -1
+        for int j = 0, j < cells.length, j++ {
+            if cells[j] != cells[i] { continue }
+            int rr = Math.floorDiv(j, cols)
+            int cc = j % cols
+            if rr < minR { minR = rr }
+            if rr > maxR { maxR = rr }
+            if cc < minC { minC = cc }
+            if cc > maxC { maxC = cc }
+        }
+        for int rr = minR, rr <= maxR, rr++ {
+            for int cc = minC, cc <= maxC, cc++ {
+                if cells[rr * cols + cc] != cells[i] { return }
+            }
+        }
+    }
+    areaTemplateNames = cells
+    areaTemplateCols = cols
 }
 
 Shadow func parseShadow(v:ascii, currentColor:int, fontSize:int) {
@@ -2513,10 +2637,25 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     if name == 'grid-area' {
         arr[ascii] parts = splitTopLevelSlash(value)
+        // An omitted edge copies the one it mirrors when that one is a
+        // name, and is otherwise automatic (Grid 1 §8.4). This is what
+        // makes `grid-area: a` set all four edges, and it is the whole
+        // of how an item lands in a named area.
         if parts.length > 0 { setProp(props, 'grid-row-start', parts[0]) }
         if parts.length > 1 { setProp(props, 'grid-column-start', parts[1]) }
+        else if parts.length > 0 && gridEdgeIsName(parts[0]) {
+            setProp(props, 'grid-column-start', parts[0])
+        }
         if parts.length > 2 { setProp(props, 'grid-row-end', parts[2]) }
+        else if parts.length > 0 && gridEdgeIsName(parts[0]) {
+            setProp(props, 'grid-row-end', parts[0])
+        }
         if parts.length > 3 { setProp(props, 'grid-column-end', parts[3]) }
+        else if parts.length > 1 && gridEdgeIsName(parts[1]) {
+            setProp(props, 'grid-column-end', parts[1])
+        } else if parts.length == 1 && gridEdgeIsName(parts[0]) {
+            setProp(props, 'grid-column-end', parts[0])
+        }
         return
     }
     if name == 'list-style' {
@@ -4164,7 +4303,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // every other property here, so a page with no grid on it allocates
     // nothing: an absent template is an empty list.
     s.gridCols = parseTrackList(styleProp(props, 'grid-template-columns'), s.fontSize)
+    s.gridColLineNames = trackLineNames
+    s.gridColLineAt = trackLineAt
     s.gridRows = parseTrackList(styleProp(props, 'grid-template-rows'), s.fontSize)
+    s.gridRowLineNames = trackLineNames
+    s.gridRowLineAt = trackLineAt
+    parseGridAreas(styleProp(props, 'grid-template-areas'))
+    s.gridAreaNames = areaTemplateNames
+    s.gridAreaCols = areaTemplateCols
     s.gridAutoCols = parseTrackList(styleProp(props, 'grid-auto-columns'), s.fontSize)
     s.gridAutoRows = parseTrackList(styleProp(props, 'grid-auto-rows'), s.fontSize)
     ascii gaf = styleProp(props, 'grid-auto-flow')

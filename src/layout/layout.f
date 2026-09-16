@@ -3031,6 +3031,90 @@ int gridResolvedStart = 0
 int gridResolvedSpan = 1
 bool gridResolvedAuto = false
 
+// ---- named grid lines ------------------------------------------------------
+//
+// A line name is resolved against the container's template, not the
+// item's own style, so it stays a name in the cascade and is looked up
+// here. Two sources: the names a track list wrote in brackets, and the
+// `<name>-start` and `<name>-end` lines every area of
+// `grid-template-areas` creates around itself (Grid 1 §7.3).
+//
+// `grid-row-start: foo` prefers a line named `foo-start` and falls back
+// to one named `foo`, which is what makes `grid-area: foo` land on the
+// area rather than on a line that happens to share its name; the end
+// edge prefers `foo-end` the same way.
+
+// The line a name sits at in `s`'s template for one axis, or 0 for
+// none. Lines count from 1.
+int func gridNamedLine(s:Style, name:text, inline:bool) {
+    arr[text] names = inline ? s.gridColLineNames : s.gridRowLineNames
+    arr[int] at = inline ? s.gridColLineAt : s.gridRowLineAt
+    for int i = 0, i < names.length, i++ {
+        if names[i] == name { return at[i] }
+    }
+    return 0
+}
+
+// The line an area's edge sits at: `edgeStart` asks for the first line
+// of the area, otherwise the line after its last track.
+int func gridAreaLine(s:Style, name:text, inline:bool, edgeStart:bool) {
+    int cols = s.gridAreaCols
+    if cols <= 0 || name == '' { return 0 }
+    int found = -1
+    int minAt = -1
+    int maxAt = -1
+    for int i = 0, i < s.gridAreaNames.length, i++ {
+        if s.gridAreaNames[i] != name { continue }
+        int at = inline ? i % cols : Math.floorDiv(i, cols)
+        if found < 0 { minAt = at  maxAt = at  found = i }
+        else {
+            if at < minAt { minAt = at }
+            if at > maxAt { maxAt = at }
+        }
+    }
+    if found < 0 { return 0 }
+    return edgeStart ? minAt + 1 : maxAt + 2
+}
+
+// One edge, named: the `-start`/`-end` line an area makes, then a line
+// of that exact name. 0 when the template knows neither, which leaves
+// the edge automatic.
+int func gridResolveName(s:Style, name:text, inline:bool, edgeStart:bool) {
+    if name == null || name == '' { return 0 }
+    // The bare name of an area: `grid-area: a` on a start edge is the
+    // area's first line, on an end edge the line after its last.
+    int fromArea = gridAreaLine(s, name, inline, edgeStart)
+    if fromArea > 0 { return fromArea }
+    // The area also creates lines literally named `a-start` and
+    // `a-end`, which is how `grid-column: a-start / a-end` reaches the
+    // same rectangle by another route.
+    ascii lowered = name.toAscii()
+    if asciiEndsWith(lowered, '-start'.toAscii()) {
+        int n = gridAreaLine(s, lowered.slice(0, lowered.length - 6).toText(), inline, true)
+        if n > 0 { return n }
+    }
+    if asciiEndsWith(lowered, '-end'.toAscii()) {
+        int n = gridAreaLine(s, lowered.slice(0, lowered.length - 4).toText(), inline, false)
+        if n > 0 { return n }
+    }
+    int suffixed = gridNamedLine(s, edgeStart ? `${name}-start` : `${name}-end`, inline)
+    if suffixed > 0 { return suffixed }
+    return gridNamedLine(s, name, inline)
+}
+
+// A copy of `g` with any name resolved to a number against `s`.
+GridLine func gridLineResolved(g:GridLine, s:Style, inline:bool, edgeStart:bool) {
+    if g.kind != GRIDLINE_NAME { return g }
+    GridLine out
+    out.kind = GRIDLINE_AUTO
+    int n = gridResolveName(s, g.name, inline, edgeStart)
+    if n > 0 {
+        out.kind = GRIDLINE_NUMBER
+        out.n = n
+    }
+    return out
+}
+
 void func resolveGridEdges(startL:GridLine, endL:GridLine, explicitCount:int) {
     gridResolvedAuto = false
     gridResolvedSpan = 1
@@ -3096,8 +3180,13 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     int rowGap = s.rowGap
 
     // ---- pass 1: place every item ----------------------------------
-    int explicitCols = s.gridCols.length
-    int explicitRows = s.gridRows.length
+    // `grid-template-areas` declares tracks of its own: the strings say
+    // how many rows there are and how many cells each has, whether or
+    // not a template names their sizes.
+    int areaRows = s.gridAreaCols > 0
+        ? Math.floorDiv(s.gridAreaNames.length, s.gridAreaCols) : 0
+    int explicitCols = maxInt(s.gridCols.length, s.gridAreaCols)
+    int explicitRows = maxInt(s.gridRows.length, areaRows)
     arr[GridArea] areas = []
     arr[Box] autoItems = []
     for int i = 0, i < b.children.length, i++ {
@@ -3108,11 +3197,13 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         a.box = c
         a.colSpan = 1
         a.rowSpan = 1
-        resolveGridEdges(c.style.gridColStart, c.style.gridColEnd, explicitCols)
+        resolveGridEdges(gridLineResolved(c.style.gridColStart, s, true, true),
+                         gridLineResolved(c.style.gridColEnd, s, true, false), explicitCols)
         bool colAuto = gridResolvedAuto
         a.col = gridResolvedStart
         a.colSpan = gridResolvedSpan
-        resolveGridEdges(c.style.gridRowStart, c.style.gridRowEnd, explicitRows)
+        resolveGridEdges(gridLineResolved(c.style.gridRowStart, s, false, true),
+                         gridLineResolved(c.style.gridRowEnd, s, false, false), explicitRows)
         bool rowAuto = gridResolvedAuto
         a.row = gridResolvedStart
         a.rowSpan = gridResolvedSpan

@@ -55,10 +55,15 @@ struct Track {
 const int GRIDLINE_AUTO = 0
 const int GRIDLINE_NUMBER = 1
 const int GRIDLINE_SPAN = 2
+// A line named rather than numbered. Which line that is depends on the
+// container's template, so it stays a name until layout, where both the
+// item and the grid it sits in are in hand.
+const int GRIDLINE_NAME = 3
 
 struct GridLine {
     kind:int
     n:int
+    name:text
 }
 
 // text-align
@@ -628,6 +633,19 @@ struct Style {
     // that axis, which is the initial value and costs no allocation.
     gridCols:arr[Track]
     gridRows:arr[Track]
+    // grid-template-areas: the cell names row-major with the row width
+    // beside them. Festina rejects `map[arr[T]]` (FINDINGS.md 11-13)
+    // and a template is a rectangle, so one flat array and a width is
+    // the whole of it. An empty name is a cell belonging to no area.
+    gridAreaNames:arr[text]
+    gridAreaCols:int
+    // The names a track list writes in brackets: name i sits at line
+    // number `gridColLineAt[i]`. Two arrays rather than a map, because
+    // one line may carry several names and one name several lines.
+    gridColLineNames:arr[text]
+    gridColLineAt:arr[int]
+    gridRowLineNames:arr[text]
+    gridRowLineAt:arr[int]
     gridAutoCols:arr[Track]
     gridAutoRows:arr[Track]
     gridAutoFlowColumn:bool

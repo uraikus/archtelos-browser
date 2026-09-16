@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `grid-template-areas` and named grid lines
+
+CSS Grid 1 §7.3 and §8.3, and the property count goes from 200 to 201 on
+`grid-template-areas -> gridAreas`. This was the largest of Grid's
+remaining holes.
+
+A template is one string per row, each cell a name or a `.` for no area.
+The strings say how many rows and columns the explicit grid has, whether
+or not a track list sizes them, so `grid-template-areas: 'a a' 'b b'`
+alone gives a two-row grid. A template whose rows are of unequal length,
+or in which a name covers something that is not a rectangle, is invalid
+and dropped whole -- both of which Chromium 141 does.
+
+Lines can also be named in brackets between the tracks of a template,
+several names to a line and one name on as many lines as like. Every
+area names the lines around itself as well, `<name>-start` and
+`<name>-end`, which is why `grid-area: a` and
+`grid-column: a-start / a-end` land on the same rectangle; the test
+asserts that they agree rather than that either matches a number.
+
+A name is resolved against the *container's* template, not the item's
+own style, so it stays a name through the cascade and is looked up in
+layout where both are in hand.
+
+Two things had to be corrected to make it work. `grid-area: a` was
+setting only `grid-row-start`, because the shorthand filled its four
+longhands positionally and stopped; an edge left out copies the one it
+mirrors when that one is a name (§8.4), which is the whole of how an
+item lands in an area. And the lines an area creates had to be findable
+by their literal names, not only by the area's bare name.
+
+One divergence is left and todo.md records it: a placement naming a line
+the template does not know leaves that edge automatic, where the
+standard creates an implicit line of that name after the explicit grid.
+
 ### `counter-set`, and the `counter-reset` scoping it could not be told apart from
 
 CSS Lists 3 §4.2, and the property count goes from 199 to 200 on
