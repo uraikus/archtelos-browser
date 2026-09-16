@@ -9,7 +9,6 @@ Box func layoutHtml(html:text, width:int) {
     cascadeAddDocumentStyles(doc)
     computeStyles(doc)
     Box root = layoutDocument(doc, width)
-    numberListItems(root)
     return root
 }
 
@@ -146,5 +145,66 @@ checkEqInt(findBox(ws4, 'span').w, wsPlain, 'a space between two inline elements
 // by one starting with a space still separates them by a single space.
 Box ws5 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A <em> B</em></span></body>', 600)
 checkEqInt(findBox(ws5, 'span').w, wsPlain, 'two collapsing spaces are still one space')
+
+// ---- table-layout: fixed (CSS2 17.5.2.1) ---------------------------------
+// The fixed algorithm takes its column widths from the first row alone
+// and ignores every cell's content, which is the whole reason it
+// exists: a table can be laid out without measuring what is in it. The
+// automatic algorithm widens a column to fit its widest cell.
+
+text twoCol = '<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;TL"><tr><td>a</td><td>b</td></tr>'
+    + '<tr><td>aaaaaaaaaaaaaaaaaaaaaaaa</td><td>b</td></tr></table></body>'
+
+Box tAuto = layoutHtml(twoCol.replace(regex('TL', 'g'), ''), 600)
+Box tFixed = layoutHtml(twoCol.replace(regex('TL', 'g'), 'table-layout:fixed'), 600)
+
+arr[Box] autoCells = []
+collectBoxesForTag(tAuto, 'td', autoCells)
+arr[Box] fixedCells = []
+collectBoxesForTag(tFixed, 'td', fixedCells)
+check(autoCells.length == 4 && fixedCells.length == 4, 'the fixture has four cells')
+check(autoCells[0].w > autoCells[1].w,
+      'the automatic algorithm widens the column holding the long cell')
+checkEqInt(fixedCells[0].w, fixedCells[1].w,
+           'the fixed algorithm shares the width equally, whatever the cells hold')
+checkEqInt(fixedCells[0].w + fixedCells[1].w, 300, 'and the columns fill the table')
+
+// A width on a first-row cell is honoured, and the rest share what is
+// left -- the part of the algorithm that makes it useful.
+Box tFixedW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;table-layout:fixed">'
+    + '<tr><td style="width:100px">a</td><td>b</td><td>c</td></tr>'
+    + '<tr><td>aaaaaaaaaaaaaaaaaaaaaaaa</td><td>b</td><td>c</td></tr></table></body>', 600)
+arr[Box] fwCells = []
+collectBoxesForTag(tFixedW, 'td', fwCells)
+checkEqInt(fwCells[0].w, 100, 'a width in the first row is honoured')
+checkEqInt(fwCells[1].w, fwCells[2].w, 'and the rest share what is left')
+checkEqInt(fwCells[1].w + fwCells[2].w, 200, 'which is all of it')
+
+// A width in a later row is ignored, which is what "first row" means.
+Box tLater = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;table-layout:fixed">'
+    + '<tr><td>a</td><td>b</td></tr>'
+    + '<tr><td style="width:250px">a</td><td>b</td></tr></table></body>', 600)
+arr[Box] laterCells = []
+collectBoxesForTag(tLater, 'td', laterCells)
+checkEqInt(laterCells[0].w, laterCells[1].w, 'a width in a later row is ignored')
+
+// ---- list-style-position: inside -----------------------------------------
+// An outside marker hangs in the margin and the text starts at the
+// content edge; an inside marker is part of the first line and pushes
+// the text along.
+
+Box liOutside = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding:0"><li>xx</li></ul></body>', 600)
+Box liInside = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding:0"><li style="list-style-position:inside">xx</li></ul></body>', 600)
+Box loBox = findBox(liOutside, 'li')
+Box liBox = findBox(liInside, 'li')
+check(loBox.lines.length > 0 && liBox.lines.length > 0, 'both list items have a line')
+check(liBox.lines[0].frags[0].x > loBox.lines[0].frags[0].x,
+      'an inside marker pushes the first line along; an outside one does not')
+checkEqInt(loBox.w, liBox.w, 'and neither changes the item box itself')
 
 finish('layout')

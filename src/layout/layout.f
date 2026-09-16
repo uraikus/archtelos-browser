@@ -1406,11 +1406,29 @@ void func applyFloatsToLine() {
     if ifcX < l { ifcX = l }
 }
 
+// The horizontal space an inside marker takes at the start of the first
+// line. The painter draws the marker into exactly this space, so the
+// two agree by construction rather than by two formulas that look
+// alike.
+int func listMarkerAdvance(s:Style, index:int) {
+    if s.listStyle == LIST_NONE { return 0 }
+    int fs = s.fontSize
+    if s.listStyle == LIST_DISC || s.listStyle == LIST_CIRCLE || s.listStyle == LIST_SQUARE {
+        return roundPx(fs.toFloat() * 1.3)
+    }
+    return measureWidth(s, `${listMarkerLabel(index, s.listStyle)}.`) + roundPx(fs.toFloat() * 0.5)
+}
+
 void func beginLine() {
     ifcFrags = []
     applyFloatsToLine()
     ifcX = ifcLineStart
     if ifcLineCount == 0 && ifcBox.style.textIndent != 0 { ifcX = ifcX + ifcBox.style.textIndent }
+    // An inside marker is part of the first line and pushes the content
+    // along; an outside one hangs in the margin and costs nothing here.
+    if ifcLineCount == 0 && ifcBox.isListItem && ifcBox.style.listInside {
+        ifcX = ifcX + listMarkerAdvance(ifcBox.style, ifcBox.listIndex)
+    }
     ifcPendingSpace = false
     ifcLineHasContent = false
     // re-open the inline boxes that continue from the previous line
@@ -1900,6 +1918,56 @@ arr[ColumnInfo] func tableColumns(b:Box) {
     return out
 }
 
+// table-layout: fixed -- the column widths come from the first row and
+// nothing else (CSS2 17.5.2.1). A cell with a width gets it; the rest
+// share what is left equally. No cell's content is measured, which is
+// the whole point of the algorithm and the reason it is a separate
+// pass rather than a flag inside the automatic one.
+arr[int] func fixedTableColumnWidths(b:Box, target:int, spacing:int) {
+    int cols = tableColumnCount(b)
+    arr[int] widths = []
+    for int i = 0, i < cols, i++ { widths.push(-1) }
+    int available = target - spacing * (cols + 1)
+    for int i = 0, i < b.children.length, i++ {
+        Box row = b.children[i]
+        if row.kind != BOX_ROW { continue }
+        int col = 0
+        for int j = 0, j < row.children.length, j++ {
+            Box cell = row.children[j]
+            int span = cell.colspan
+            if span == 1 && col < cols {
+                if cell.style.width.kind == LEN_PX {
+                    widths[col] = maxInt(roundPx(cell.style.width.v), 0)
+                } else if cell.style.width.kind == LEN_PERCENT {
+                    widths[col] = maxInt(roundPx(available.toFloat() * cell.style.width.v / 100.0), 0)
+                }
+            }
+            col = col + span
+        }
+        break
+    }
+    int assigned = 0
+    int flexible = 0
+    for int i = 0, i < cols, i++ {
+        if widths[i] >= 0 { assigned = assigned + widths[i] } else { flexible++ }
+    }
+    int left = maxInt(available - assigned, 0)
+    if flexible > 0 {
+        int each = Math.floorDiv(left, flexible)
+        // the last flexible column takes the remainder, so the columns
+        // add up to the table's width exactly rather than to a pixel less
+        int placed = 0
+        int seen = 0
+        for int i = 0, i < cols, i++ {
+            if widths[i] >= 0 { continue }
+            seen++
+            widths[i] = seen == flexible ? left - placed : each
+            placed = placed + widths[i]
+        }
+    }
+    return widths
+}
+
 void func computeTableIntrinsic(b:Box) {
     arr[ColumnInfo] cols = tableColumns(b)
     int spacing = b.style.borderCollapse ? 0 : b.style.borderSpacing
@@ -1922,23 +1990,36 @@ void func computeTableIntrinsic(b:Box) {
 void func layoutTable(b:Box, cx:int, y:int, cw:int) {
     Style s = b.style
     int spacing = s.borderCollapse ? 0 : s.borderSpacing
-    arr[ColumnInfo] cols = tableColumns(b)
-    int n = cols.length
+    bool fixedLayout = s.tableLayoutFixed
+    // the automatic algorithm's intrinsic pass is skipped entirely when
+    // the widths do not depend on the cells
+    arr[ColumnInfo] cols = []
+    if !fixedLayout { cols = tableColumns(b) }
+    int n = fixedLayout ? tableColumnCount(b) : cols.length
     int edges = b.pl + b.pr + b.bl + b.br
     int totalMin = spacing
     int totalMax = spacing
-    for int i = 0, i < n, i++ {
+    for int i = 0, i < cols.length, i++ {
         totalMin = totalMin + cols[i].minW + spacing
         totalMax = totalMax + maxInt(cols[i].maxW, cols[i].fixedW) + spacing
     }
     int avail = cw - b.ml - b.mr - edges
     int target = 0
     bool fixedWidth = !lenIsAuto(s.width)
-    if fixedWidth {
+    if fixedLayout {
+        // with no intrinsic widths to fall back on, an auto width is
+        // the space available
+        target = fixedWidth ? resolveLen(s.width, cw, 0) : avail
+    } else if fixedWidth {
         target = maxInt(resolveLen(s.width, cw, 0), totalMin)
     } else {
         target = minInt(totalMax, avail)
         if target < totalMin { target = totalMin }
+    }
+    if fixedLayout {
+        arr[int] fw = fixedTableColumnWidths(b, target, spacing)
+        layoutTableWithWidths(b, cx, y, cw, fw, spacing, edges, target, true)
+        return
     }
     // percent columns first, then distribute what remains
     arr[int] widths = []
@@ -1980,6 +2061,17 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
         widths[i] = w
     }
     if !fixedWidth && flexCount == 0 { }
+    layoutTableWithWidths(b, cx, y, cw, widths, spacing, edges, target, fixedWidth)
+}
+
+// Everything after the column widths are known: the table's own width,
+// its margins, then the rows and cells placed into those widths. Both
+// column algorithms end here, which is what keeps `table-layout: fixed`
+// a different way of choosing widths rather than a second table layout.
+void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
+                                spacing:int, edges:int, target:int, fixedWidth:bool) {
+    Style s = b.style
+    int n = widths.length
     int tableContentW = spacing
     for int i = 0, i < n, i++ { tableContentW = tableContentW + widths[i] + spacing }
     if fixedWidth { tableContentW = maxInt(tableContentW, target) }
@@ -2753,6 +2845,12 @@ Box func layoutDocument(doc:Node, width:int) {
     Box root = buildBox(html, html.style)
     if archtelosTiming { profBuildMs = profBuildMs + (now() - t0) }
     if root == null { return null }
+    // The items are numbered as soon as the tree exists rather than
+    // after it is laid out, because an inside marker is part of the
+    // first line and its width is the width of its own label: "10." is
+    // wider than "9.", and layout cannot reserve the space without
+    // knowing which one it is.
+    numberListItems(root)
     root.depth = 0
     // the root box: the top margin of body collapses into it
     // NOTE: topM is the margin that collapses into the root, and it is

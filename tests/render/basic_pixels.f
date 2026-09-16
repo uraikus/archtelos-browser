@@ -134,4 +134,37 @@ check(!sameInk(one1, oneA), 'an ol type=a marker differs from type=1')
 check(!sameInk(one1, oneI), 'and type=I differs from both')
 check(!sameInk(oneA, oneI), 'as the attribute is meant to')
 
+// ---- empty-cells (CSS2 17.6.1.1) -----------------------------------------
+// In the separated borders model a cell with no content draws no
+// background and no border when `empty-cells: hide`. The initial value
+// is `show`, so the contrast is between the two.
+
+text emptyCellDoc = '<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="border-spacing:0;EC"><tr>'
+    + '<td style="width:40px;height:20px;background:red"></td>'
+    + '<td style="width:40px;height:20px;background:blue">x</td>'
+    + '</tr></table></body>'
+
+Page pShow = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:show'),
+                          'test.html', 400)
+clearCanvas()
+paintPage(pShow, 0, 0, 300)
+check(getPixelColor(10, 10) == red, 'empty-cells:show paints the empty cell')
+check(getPixelColor(60, 10) == blue, 'and the cell that has content')
+
+Page pHide = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:hide'),
+                          'test.html', 400)
+clearCanvas()
+paintPage(pHide, 0, 0, 300)
+check(getPixelColor(10, 10) == white, 'empty-cells:hide leaves the empty cell unpainted')
+check(getPixelColor(60, 10) == blue, 'and leaves the one with content alone')
+
+// A cell holding only collapsible whitespace is empty too.
+Page pBlank = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:hide')
+                               .replace(regex('background:red"></td>', 'g'), 'background:red"> </td>'),
+                           'test.html', 400)
+clearCanvas()
+paintPage(pBlank, 0, 0, 300)
+check(getPixelColor(10, 10) == white, 'a cell holding only whitespace counts as empty')
+
 finish('render')

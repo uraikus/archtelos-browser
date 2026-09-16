@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Four properties the machinery was already there for
+
+- **`outline-offset`** moves the outline away from the border box and
+  leaves the gap between them empty. The outline had no offset at all.
+- **`table-layout: fixed`** (CSS2 17.5.2.1) takes its column widths from
+  the first row and never measures a cell's content, which is the whole
+  reason it exists: it skips the intrinsic-width pass rather than
+  running it and ignoring the answer. A width in the first row is
+  honoured and the rest share what is left; a width in a later row is
+  ignored, which is what "first row" means and what the checks ask.
+- **`empty-cells: hide`** (CSS2 17.6.1.1) drops a cell's background and
+  border when it has nothing in it. A cell holding only collapsible
+  whitespace counts as empty, because the whitespace is already gone by
+  the time anything is painted.
+- **`list-style-position: inside`** puts the marker in the first line
+  instead of hanging it in the margin, so the content starts after it.
+  Layout reserves the space and the painter draws into exactly that
+  space, from one function, so the two agree by construction.
+
+The last of those needed the list items numbered before layout rather
+than after it: an inside marker's width is the width of its own label,
+and `10.` is wider than `9.`. `numberListItems` runs as soon as the box
+tree exists now, which also removes the two redundant walks the page
+pipeline was making after every layout.
+
+**Properties 131 → 135**, each on the field that names it.
+
+Four checks in `tests/render/borders.f` (62 → 66), three in
+`tests/render/basic_pixels.f` (35 → 40) and eleven in
+`tests/unit/test_layout.f` (47 → 58).
+
 ### Text Decoration 3
 
 The engine had `underline` and `line-through` and nothing else: one

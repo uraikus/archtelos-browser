@@ -423,6 +423,10 @@ struct Style {
     wordSpacing:int
     outlineWidth:int
     outlineStyle:int
+    outlineOffset:int
+    tableLayoutFixed:bool
+    emptyCellsHide:bool
+    listInside:bool
     outlineColor:int
     minHeightSet:bool
     marginTop:Len

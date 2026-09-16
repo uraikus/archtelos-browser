@@ -610,6 +610,7 @@ arr[text] supportedProperties = [
     'justify-content', 'align-items', 'align-self', 'align-content',
     'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
+    'outline-offset', 'table-layout', 'empty-cells', 'list-style-position',
     'background-position', 'background-repeat', 'background-size',
     'background-origin', 'background-clip',
     'border-top-left-radius', 'border-top-right-radius',

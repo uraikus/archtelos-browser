@@ -90,7 +90,10 @@ with word wrapping and baseline alignment, inline-blocks with
 shrink-to-fit widths, replaced images with intrinsic sizes and aspect
 ratio, preserved whitespace, list markers, and automatic table layout
 with fixed and percentage columns, `colspan`, row heights and vertical
-alignment. `white-space` is kept as the two things it is a shorthand
+alignment, in both the automatic algorithm and the fixed one that takes
+its column widths from the first row alone. An empty cell can be hidden
+with `empty-cells`, and a list marker can sit inside the box as well as
+outside it. `white-space` is kept as the two things it is a shorthand
 for, so `pre-line` keeps newlines while collapsing runs of spaces, and
 either half can be set alone as `white-space-collapse` or
 `text-wrap-mode`. A tab advances by `tab-size`, `word-break` and

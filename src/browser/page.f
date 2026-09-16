@@ -216,7 +216,6 @@ Box func loadFrameDocument(url:text, width:int, height:int) {
     gatherImages(inner)
     computeStyles(doc)
     Box root = layoutDocument(doc, width)
-    if root != null { numberListItems(root) }
     frameDepth--
     return root
 }
@@ -291,7 +290,6 @@ void func layoutPage(page:Page, width:int) {
         page.height = 0
         return
     }
-    numberListItems(page.root)
     page.height = page.root.h + page.root.mt + page.root.mb
 }
 

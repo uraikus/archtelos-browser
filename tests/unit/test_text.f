@@ -39,7 +39,6 @@ Box func layoutHtml(html:text, width:int) {
     cascadeAddDocumentStyles(doc)
     computeStyles(doc)
     Box root = layoutDocument(doc, width)
-    numberListItems(root)
     return root
 }
 

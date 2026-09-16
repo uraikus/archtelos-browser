@@ -99,8 +99,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    the parts that do not need a font the system lacks.
 7. **Counter Styles 3**: `@counter-style`, and the predefined styles
    beyond the six that number as themselves — the alphabetic and roman
-   ones are done, along with the `<ol type>` attribute. What is left is
-   `list-style-position` and `list-style-image` from Lists 3, and
+   ones are done, along with the `<ol type>` attribute and
+   `list-style-position`. What is left is `list-style-image` from
+   Lists 3, which needs a fetched image for the marker, and
    `decimal-leading-zero`, which parses as plain decimal.
 8. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
@@ -131,7 +132,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(131; Chromium reports 373, and four of them cannot be graded by a probe
+(135; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

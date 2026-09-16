@@ -280,4 +280,27 @@ shotOutline('outline-width:4px;outline-color:red')
 scanRow(7, 10, 70)
 checkEqInt(runRed, 0, 'and an outline with no style paints nothing at all')
 
+// ---- outline-offset ------------------------------------------------------
+// The offset moves the outline away from the border box, leaving the
+// gap between them empty. It took no offset at all before.
+
+shotOutline('outline:4px solid red')
+int flushTop = -1
+for int y = 0, y < 10, y++ {
+    if flushTop < 0 && getPixelColor(20, y) == red { flushTop = y }
+}
+check(flushTop >= 0, 'an outline with no offset sits against the border box')
+
+shotOutline('outline:4px solid red;outline-offset:3px')
+int offsetTop = -1
+for int y = 0, y < 10, y++ {
+    if offsetTop < 0 && getPixelColor(20, y) == red { offsetTop = y }
+}
+check(offsetTop >= 0, 'an offset outline is still drawn')
+checkEqInt(flushTop - offsetTop, 3, 'and outline-offset moves it out by exactly that many pixels')
+
+// The gap it opens is empty, not filled by the outline stretching.
+shotOutline('outline:4px solid red;outline-offset:3px')
+check(getPixelColor(20, 8) == white, 'the gap the offset opens is left empty')
+
 finish('borders')

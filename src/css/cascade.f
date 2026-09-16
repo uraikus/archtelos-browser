@@ -1548,7 +1548,9 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         arr[ascii] t = cssTokens(value)
         for int i = 0, i < t.length, i++ {
             ascii tok = asciiLower(t[i])
-            if tok == 'none' || tok == 'disc' || tok == 'circle' || tok == 'square' || tok == 'decimal' || tok == 'lower-alpha' || tok == 'upper-alpha' || tok == 'lower-roman' || tok == 'upper-roman' {
+            if tok == 'inside' || tok == 'outside' {
+                setProp(props, 'list-style-position', tok)
+            } else if tok == 'none' || tok == 'disc' || tok == 'circle' || tok == 'square' || tok == 'decimal' || tok == 'lower-alpha' || tok == 'upper-alpha' || tok == 'lower-roman' || tok == 'upper-roman' {
                 setProp(props, 'list-style-type', tok)
             }
         }
@@ -2923,6 +2925,34 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if oc != null {
         int c = parseCssColor(oc, s.color)
         if c != COLOR_UNSET { s.outlineColor = c }
+    }
+    s.outlineOffset = 0
+    ascii ooff = styleProp(props, 'outline-offset')
+    if ooff != null {
+        Len l = parseLength(asciiTrim(ooff), s.fontSize)
+        if l.kind == LEN_PX { s.outlineOffset = roundPx(l.v) }
+    }
+    // table-layout: fixed takes the column widths from the first row
+    // and ignores every cell's content (CSS2 17.5.2.1).
+    s.tableLayoutFixed = false
+    ascii tl = styleProp(props, 'table-layout')
+    if tl != null && asciiLower(asciiTrim(tl)) == 'fixed' { s.tableLayoutFixed = true }
+    // empty-cells inherits, because a table sets it and the cells obey.
+    s.emptyCellsHide = isRoot ? false : parent.emptyCellsHide
+    ascii ec = styleProp(props, 'empty-cells')
+    if ec != null {
+        ascii t = asciiLower(asciiTrim(ec))
+        if t == 'hide' { s.emptyCellsHide = true }
+        else if t == 'show' { s.emptyCellsHide = false }
+    }
+    // list-style-position inherits, so a rule on the <ul> reaches the
+    // items, which is how it is nearly always written.
+    s.listInside = isRoot ? false : parent.listInside
+    ascii lsp = styleProp(props, 'list-style-position')
+    if lsp != null {
+        ascii t = asciiLower(asciiTrim(lsp))
+        if t == 'inside' { s.listInside = true }
+        else if t == 'outside' { s.listInside = false }
     }
     s.clearSide = CLEAR_NONE
     ascii cl = styleProp(props, 'clear')

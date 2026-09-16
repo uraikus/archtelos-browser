@@ -982,6 +982,28 @@ Line func firstLineOf(b:Box) {
     return null
 }
 
+// Whether a cell has anything in it. A cell holding only collapsible
+// whitespace is empty, and the layout has already dropped that text, so
+// a cell with no child boxes and no line boxes is the question.
+bool func cellIsEmpty(b:Box) {
+    for int i = 0, i < b.lines.length, i++ {
+        if b.lines[i].frags.length > 0 { return false }
+    }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT {
+            if !textIsCollapsibleBlank(c.content) { return false }
+            continue
+        }
+        if c.kind == BOX_ANON {
+            if !cellIsEmpty(c) { return false }
+            continue
+        }
+        return false
+    }
+    return true
+}
+
 // An outline is drawn just outside the border box and takes no space,
 // so it can overlap whatever is next to it (CSS Basic User Interface 3).
 // It is a line with a style, painted through the same code as a border
@@ -992,12 +1014,21 @@ void func paintOutline(b:Box) {
     if w <= 0 || b.w <= 0 || b.h <= 0 || s.outlineStyle == BORDER_NONE { return }
     int c = colorWithOpacity(s.outlineColor, s.effectiveOpacity)
     float o = s.effectiveOpacity
+    // outline-offset moves the outline away from the border box and
+    // leaves the gap empty, so the outline surrounds a rectangle
+    // inflated by the offset rather than the border box itself.
+    int off = s.outlineOffset
+    int rx = b.x - off
+    int ry = b.y - off
+    int rw = b.w + off + off
+    int rh = b.h + off + off
+    if rw <= 0 || rh <= 0 { return }
     // The relief styles shade an edge against its opposite, so each
     // side says whether it is the leading one -- top and left are.
-    paintBorderSide(b.x - w, b.y - w, b.w + w + w, w, true, true, s.outlineStyle, c, o)
-    paintBorderSide(b.x - w, b.y + b.h, b.w + w + w, w, true, false, s.outlineStyle, c, o)
-    paintBorderSide(b.x - w, b.y, w, b.h, false, true, s.outlineStyle, c, o)
-    paintBorderSide(b.x + b.w, b.y, w, b.h, false, false, s.outlineStyle, c, o)
+    paintBorderSide(rx - w, ry - w, rw + w + w, w, true, true, s.outlineStyle, c, o)
+    paintBorderSide(rx - w, ry + rh, rw + w + w, w, true, false, s.outlineStyle, c, o)
+    paintBorderSide(rx - w, ry, w, rh, false, true, s.outlineStyle, c, o)
+    paintBorderSide(rx + rw, ry, w, rh, false, false, s.outlineStyle, c, o)
     fillAlpha(1.0)
 }
 
@@ -1009,14 +1040,18 @@ void func paintListMarker(b:Box) {
     int fs = s.fontSize
     paintFill(s.color, s.effectiveOpacity)
     int edge = contentX(b)
+    // An inside marker sits in the space layout reserved for it at the
+    // start of the first line; an outside one hangs to the left of the
+    // content edge and takes no space at all.
+    bool inside = s.listInside
     if s.listStyle != LIST_DISC && s.listStyle != LIST_CIRCLE && s.listStyle != LIST_SQUARE {
         text label = `${listMarkerLabel(b.listIndex, s.listStyle)}.`
         setFontFor(s)
         int w = measureTextWidth(label)
-        pDrawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)
+        pDrawText(label, inside ? edge : edge - w - roundPx(fs.toFloat() * 0.5), baseline)
     } else {
         int r = maxInt(roundPx(fs.toFloat() * 0.19), 2)
-        int cx = edge - roundPx(fs.toFloat() * 0.9)
+        int cx = inside ? edge + roundPx(fs.toFloat() * 0.4) : edge - roundPx(fs.toFloat() * 0.9)
         int cy = baseline - roundPx(fs.toFloat() * 0.33)
         if s.listStyle == LIST_DISC {
             pDrawCircle(cx, cy, r)
@@ -1441,6 +1476,11 @@ void func paintBox(b:Box) {
         return
     }
     Style s = b.style
+    // empty-cells: hide -- a cell with nothing in it draws neither
+    // background nor border in the separated borders model (CSS2
+    // 17.6.1.1). The cell still takes its space; only its own
+    // decoration goes.
+    if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return }
     if b.kind != BOX_ANON && !s.hidden {
         // a shadow is cast by the border box and lies under it
         paintShadows(b.x, b.y, b.w, b.h, s)
