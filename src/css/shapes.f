@@ -1,0 +1,325 @@
+// A basic shape resolved against a box, and the horizontal span it
+// covers at a given row. Two features need this and they are on
+// opposite sides of the engine: the painter cuts a box to a `clip-path`
+// shape, and the layout engine pushes line boxes aside from a float's
+// `shape-outside`. Neither can call the other -- the painter imports
+// the layout engine -- so the geometry lives here, taking the reference
+// box as four numbers rather than as a Box.
+//
+// A pixel or a point belongs to the shape when its centre does. That is
+// the rule a rasteriser without antialiasing has to use, and it is the
+// rule tests/render/clip.f's expected grids were read from Chromium
+// under.
+
+import style.f
+
+// One shape, resolved into document pixels.
+struct ShapeGeom {
+    kind:int
+    // The bounding box, and for a rectangle the rectangle itself. The
+    // x range includes x0 and excludes x1, as a pixel range does.
+    x0:int
+    y0:int
+    x1:int
+    y1:int
+    centreX:float
+    centreY:float
+    radiusX:float
+    radiusY:float
+    pointsX:arr[float]
+    pointsY:arr[float]
+    // shape-margin, which grows the shape on every side. For a
+    // rectangle, a circle and an ellipse it is folded into the geometry
+    // above; a polygon carries it here, because the true outset of a
+    // polygon is not a polygon.
+    margin:int
+}
+
+float func shapeMin(a:float, b:float) {
+    return a < b ? a : b
+}
+
+float func shapeMax(a:float, b:float) {
+    return a > b ? a : b
+}
+
+// One radius, which may be a length, a percentage or a keyword. The
+// keywords measure from the centre to the nearest or furthest edge of
+// the reference box along this axis.
+float func shapeRadius(l:Len, kind:int, base:int, centre:float, lo:float, hi:float) {
+    if kind == CLIPRAD_CLOSEST { return shapeMin(centre - lo, hi - centre) }
+    if kind == CLIPRAD_FARTHEST { return shapeMax(centre - lo, hi - centre) }
+    return resolveLen(l, base, 0).toFloat()
+}
+
+// Resolves a shape against a reference box, growing it by `margin` on
+// every side.
+ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin:int) {
+    ShapeGeom g
+    g.kind = sh.kind
+    if sh.kind == CLIPSHAPE_RECT {
+        g.x0 = rx + resolveLen(sh.insetLeft, rw, 0) - margin
+        g.y0 = ry + resolveLen(sh.insetTop, rh, 0) - margin
+        g.x1 = rx + rw - resolveLen(sh.insetRight, rw, 0) + margin
+        g.y1 = ry + rh - resolveLen(sh.insetBottom, rh, 0) + margin
+        return g
+    }
+    if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE {
+        g.centreX = (rx + resolveLen(sh.centreX, rw, 0)).toFloat()
+        g.centreY = (ry + resolveLen(sh.centreY, rh, 0)).toFloat()
+        float w = rw.toFloat()
+        float h = rh.toFloat()
+        // A circle's percentage radius is of the reference box's
+        // diagonal over root two, which for a square is its side.
+        int circleBase = Math.round(Math.sqrt((w * w + h * h) / 2.0))
+        int baseX = sh.kind == CLIPSHAPE_CIRCLE ? circleBase : rw
+        int baseY = sh.kind == CLIPSHAPE_CIRCLE ? circleBase : rh
+        g.radiusX = shapeRadius(sh.radiusX, sh.radiusXKind, baseX,
+            g.centreX, rx.toFloat(), (rx + rw).toFloat())
+        g.radiusY = shapeRadius(sh.radiusY, sh.radiusYKind, baseY,
+            g.centreY, ry.toFloat(), (ry + rh).toFloat())
+        if sh.kind == CLIPSHAPE_CIRCLE && sh.radiusXKind != CLIPRAD_LENGTH {
+            // A circle has one radius, so the two keywords compare both
+            // axes and take the side the keyword asks for.
+            float r = sh.radiusXKind == CLIPRAD_CLOSEST
+                ? shapeMin(g.radiusX, g.radiusY)
+                : shapeMax(g.radiusX, g.radiusY)
+            g.radiusX = r
+            g.radiusY = r
+        }
+        g.radiusX = g.radiusX + margin.toFloat()
+        g.radiusY = g.radiusY + margin.toFloat()
+        g.x0 = Math.floor(g.centreX - g.radiusX)
+        g.x1 = Math.ceil(g.centreX + g.radiusX)
+        g.y0 = Math.floor(g.centreY - g.radiusY)
+        g.y1 = Math.ceil(g.centreY + g.radiusY)
+        return g
+    }
+    if sh.kind == CLIPSHAPE_POLYGON {
+        arr[float] xs = []
+        arr[float] ys = []
+        for int i = 0, i < sh.pointsX.length, i++ {
+            xs.push((rx + resolveLen(sh.pointsX[i], rw, 0)).toFloat())
+            ys.push((ry + resolveLen(sh.pointsY[i], rh, 0)).toFloat())
+        }
+        g.pointsX = xs
+        g.pointsY = ys
+        g.margin = margin
+        float lox = xs[0]
+        float hix = xs[0]
+        float loy = ys[0]
+        float hiy = ys[0]
+        for int i = 1, i < xs.length, i++ {
+            lox = shapeMin(lox, xs[i])
+            hix = shapeMax(hix, xs[i])
+            loy = shapeMin(loy, ys[i])
+            hiy = shapeMax(hiy, ys[i])
+        }
+        g.x0 = Math.floor(lox) - margin
+        g.x1 = Math.ceil(hix) + margin
+        g.y0 = Math.floor(loy) - margin
+        g.y1 = Math.ceil(hiy) + margin
+        return g
+    }
+    return g
+}
+
+// The spans one row of the shape covers, as x ranges that include the
+// start and exclude the end. Written to globals because a function
+// answers with one value (FINDINGS.md, "one value out of a function").
+//
+// This is the painter's question -- which pixels a clip keeps -- and a
+// clip has no shape-margin, so `margin` plays no part in it. The
+// exclusion edge a float needs is a different question, answered
+// further down against a continuous band rather than a pixel row.
+arr[int] shapeSpanStart = []
+arr[int] shapeSpanEnd = []
+
+void func shapeSpansAt(g:ShapeGeom, y:int) {
+    shapeSpanStart = []
+    shapeSpanEnd = []
+    if g.kind == CLIPSHAPE_RECT {
+        if y < g.y0 || y >= g.y1 { return }
+        shapeSpanStart.push(g.x0)
+        shapeSpanEnd.push(g.x1)
+        return
+    }
+    float cy = y.toFloat() + 0.5
+    if g.kind == CLIPSHAPE_CIRCLE || g.kind == CLIPSHAPE_ELLIPSE {
+        if g.radiusX <= 0.0 || g.radiusY <= 0.0 { return }
+        float dy = (cy - g.centreY) / g.radiusY
+        if dy < -1.0 || dy > 1.0 { return }
+        float half = g.radiusX * Math.sqrt(1.0 - dy * dy)
+        shapeSpanStart.push(Math.ceil(g.centreX - half - 0.5))
+        shapeSpanEnd.push(Math.floor(g.centreX + half - 0.5) + 1)
+        return
+    }
+    if g.kind != CLIPSHAPE_POLYGON { return }
+    float row = cy
+    // Where the row crosses each edge, sorted, and filled between the
+    // pairs. For a polygon that does not cross itself this is what both
+    // fill rules say.
+    arr[float] hits = []
+    int n = g.pointsX.length
+    for int i = 0, i < n, i++ {
+        int j = i + 1 < n ? i + 1 : 0
+        float ay = g.pointsY[i]
+        float by = g.pointsY[j]
+        if ay == by { continue }
+        float lo = shapeMin(ay, by)
+        float hi = shapeMax(ay, by)
+        if row < lo || row >= hi { continue }
+        float t = (row - ay) / (by - ay)
+        hits.push(g.pointsX[i] + t * (g.pointsX[j] - g.pointsX[i]))
+    }
+    if hits.length < 2 { return }
+    for int i = 1, i < hits.length, i++ {
+        float v = hits[i]
+        int k = i - 1
+        while k >= 0 && hits[k] > v {
+            hits[k + 1] = hits[k]
+            k--
+        }
+        hits[k + 1] = v
+    }
+    for int i = 0, i + 1 < hits.length, i = i + 2 {
+        int lo = Math.ceil(hits[i] - 0.5)
+        int hi = Math.floor(hits[i + 1] - 0.5) + 1
+        if hi > lo {
+            shapeSpanStart.push(lo)
+            shapeSpanEnd.push(hi)
+        }
+    }
+}
+
+// ---- the exclusion edge of a float ----------------------------------
+//
+// A line box is a rectangle, so it must clear the widest part of
+// whatever it shares a band with. The band is continuous here rather
+// than a run of pixel centres: a line box from y to y+h is excluded by
+// the shape's extreme anywhere in [y, y+h], endpoints included, which
+// is what Chromium's own line starts show.
+
+// The furthest left and right the polygon reaches at one row.
+bool polyRowHit = false
+float polyRowMinX = 0.0
+float polyRowMaxX = 0.0
+
+void func polygonRowAt(g:ShapeGeom, y:float) {
+    polyRowHit = false
+    polyRowMinX = 0.0
+    polyRowMaxX = 0.0
+    int n = g.pointsX.length
+    for int i = 0, i < n, i++ {
+        int j = i + 1 < n ? i + 1 : 0
+        float ay = g.pointsY[i]
+        float by = g.pointsY[j]
+        float lo = shapeMin(ay, by)
+        float hi = shapeMax(ay, by)
+        if y < lo || y > hi { continue }
+        float x = g.pointsX[i]
+        if ay != by {
+            float t = (y - ay) / (by - ay)
+            x = g.pointsX[i] + t * (g.pointsX[j] - g.pointsX[i])
+        }
+        if !polyRowHit {
+            polyRowMinX = x
+            polyRowMaxX = x
+            polyRowHit = true
+        } else {
+            polyRowMinX = shapeMin(polyRowMinX, x)
+            polyRowMaxX = shapeMax(polyRowMaxX, x)
+        }
+        // A horizontal edge lies entirely on this row, so both of its
+        // ends count.
+        if ay == by {
+            polyRowMinX = shapeMin(polyRowMinX, g.pointsX[j])
+            polyRowMaxX = shapeMax(polyRowMaxX, g.pointsX[j])
+        }
+    }
+}
+
+// Both answers come back in globals: whether the shape reaches the band
+// at all, and how far.
+bool shapeEdgeFound = false
+int shapeEdgeValue = 0
+
+// The rows a polygon's own vertices occupy, before shape-margin.
+float polyLoY = 0.0
+float polyHiY = 0.0
+
+void func polygonYRange(g:ShapeGeom) {
+    polyLoY = g.pointsY[0]
+    polyHiY = g.pointsY[0]
+    for int i = 1, i < g.pointsY.length, i++ {
+        polyLoY = shapeMin(polyLoY, g.pointsY[i])
+        polyHiY = shapeMax(polyHiY, g.pointsY[i])
+    }
+}
+
+// Sets shapeEdgeValue to the extreme x the shape reaches anywhere in
+// [top, bottom]; `wantRight` picks which extreme.
+void func shapeEdgeOver(g:ShapeGeom, top:int, bottom:int, wantRight:bool) {
+    shapeEdgeFound = false
+    shapeEdgeValue = 0
+    if bottom <= top { return }
+    float ftop = top.toFloat()
+    float fbottom = bottom.toFloat()
+    if g.kind == CLIPSHAPE_RECT {
+        if bottom <= g.y0 || top >= g.y1 { return }
+        shapeEdgeValue = wantRight ? g.x1 : g.x0
+        shapeEdgeFound = true
+        return
+    }
+    if g.kind == CLIPSHAPE_CIRCLE || g.kind == CLIPSHAPE_ELLIPSE {
+        if g.radiusX <= 0.0 || g.radiusY <= 0.0 { return }
+        float lo = g.centreY - g.radiusY
+        float hi = g.centreY + g.radiusY
+        if fbottom <= lo || ftop >= hi { return }
+        // The widest row of an ellipse is its centre, so the extreme
+        // over a band is at whichever row in the band is nearest it.
+        float row = g.centreY
+        if row < ftop { row = ftop }
+        if row > fbottom { row = fbottom }
+        float dy = (row - g.centreY) / g.radiusY
+        float half = g.radiusX * Math.sqrt(1.0 - dy * dy)
+        shapeEdgeValue = Math.round(wantRight ? g.centreX + half : g.centreX - half)
+        shapeEdgeFound = true
+        return
+    }
+    if g.kind != CLIPSHAPE_POLYGON { return }
+    if bottom <= g.y0 || top >= g.y1 { return }
+    polygonYRange(g)
+    // The extreme over a band is at one of its ends or at a vertex
+    // inside it, because between vertices every edge is straight.
+    arr[float] rows = []
+    rows.push(shapeMax(polyLoY, shapeMin(polyHiY, ftop)))
+    rows.push(shapeMax(polyLoY, shapeMin(polyHiY, fbottom)))
+    for int i = 0, i < g.pointsY.length, i++ {
+        if g.pointsY[i] > ftop && g.pointsY[i] < fbottom { rows.push(g.pointsY[i]) }
+    }
+    float best = 0.0
+    for int i = 0, i < rows.length, i++ {
+        polygonRowAt(g, rows[i])
+        if !polyRowHit { continue }
+        float v = wantRight ? polyRowMaxX : polyRowMinX
+        if !shapeEdgeFound {
+            best = v
+            shapeEdgeFound = true
+        } else if wantRight {
+            best = shapeMax(best, v)
+        } else {
+            best = shapeMin(best, v)
+        }
+    }
+    if !shapeEdgeFound { return }
+    shapeEdgeValue = Math.round(best) + (wantRight ? g.margin : 0 - g.margin)
+}
+
+void func shapeRightEdgeOver(g:ShapeGeom, top:int, bottom:int) {
+    shapeEdgeOver(g, top, bottom, true)
+}
+
+void func shapeLeftEdgeOver(g:ShapeGeom, top:int, bottom:int) {
+    shapeEdgeOver(g, top, bottom, false)
+}

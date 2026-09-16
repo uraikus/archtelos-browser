@@ -167,6 +167,9 @@ more than once — and what is left of Text Decoration 3:
 not expose; an emphasis mark that reserves space in the line rather than
 falling outside it; and a `wavy` underline drawn as a curve rather than
 as stepped segments, which needs the path API an image does not have.
+What is left of Shapes 1: `shape-image-threshold`, which needs a shape
+read out of an image's alpha channel, and the round outset
+`shape-margin` asks for on a polygon, which is a square one here.
 What is left of Masking 1: the masks themselves — `mask` and its seven
 longhands, `mask-type` and `clip-rule` — and `inset()`'s `round`
 radius, both of which want the path API too; and a `clip-path` inside
@@ -194,7 +197,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(183; Chromium reports 373, and four of them cannot be graded by a probe
+(185; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

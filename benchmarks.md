@@ -489,7 +489,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 20,984 lines of Festina across `browser.f` and `src/` |
+| Source | 21,222 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,13 +498,13 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,627,888 |
-| This browser, all `.f` source | 757,635 |
+| This browser, the whole program | 2,632,632 |
+| This browser, all `.f` source | 767,532 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
 **The binary is about 176 times smaller than Chromium's executable
-alone**, and 238 times smaller than the tree it ships in. The comparison
+alone**, and 237 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
 absent from the 2.6 MB — a JavaScript engine, a compositor, a sandbox,
 a network stack, an extension system, ICU — is most of what is in the
@@ -542,4 +542,13 @@ does cost is paid only by the boxes that use it, and it is not small: a
 shape that is not a rectangle is blitted back one scanline at a time, so
 a clipped box the height of the viewport is 600 image allocations where
 a rectangle is one.
+
+`shape-outside` and `shape-margin` cost **4,744 bytes**
+(2,627,888 → 2,632,632) and nothing at render time: `cascadeSawShape` is
+false on a page with neither, so no float grows a shape and the edge
+scan is the rectangle test it always was. Where a shape does exist the
+scan is arithmetic rather than a loop over rows — an ellipse's widest
+row in a band is the row in it nearest the centre, and a polygon's is a
+band end or a vertex — so a shaped float costs about what an unshaped
+one does.
 

@@ -97,10 +97,13 @@ bool cascadeSawTransform = false
 // The same question for `clip-path` and the legacy `clip`: a page with
 // neither pays one bool, and the painter never asks a box.
 bool cascadeSawClip = false
+// And for `shape-outside`, which the float code asks once per document.
+bool cascadeSawShape = false
 
 void func cascadeReset() {
     cascadeSawTransform = false
     cascadeSawClip = false
+    cascadeSawShape = false
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -1590,6 +1593,7 @@ ClipShape func parseClipPath(v:ascii, fontSize:int) {
         int box = geometryBoxAt(t, start, i)
         if box >= 0 {
             sh.geoBox = box
+            sh.geoBoxExplicit = true
             // A geometry box on its own is the shape. Beside a function
             // it only says what that function resolves against, which
             // is why this does not overwrite a shape already read.
@@ -3644,6 +3648,25 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
                 }
             }
         }
+    }
+    // CSS Shapes 1. The same basic shapes, resolved against the float's
+    // margin box unless the declaration names another, and grown by
+    // `shape-margin`. It does nothing on a box that does not float,
+    // which is where the float code asks rather than here.
+    ascii shapeProp = styleProp(props, 'shape-outside')
+    if shapeProp != null {
+        ClipShape outside = parseClipPath(shapeProp, s.fontSize)
+        if outside.kind != CLIPSHAPE_NONE {
+            if !outside.geoBoxExplicit { outside.geoBox = GEOBOX_MARGIN }
+            s.shapeOutside = outside
+            cascadeSawShape = true
+        }
+    }
+    s.shapeMargin = 0
+    ascii shapeMarginProp = styleProp(props, 'shape-margin')
+    if shapeMarginProp != null {
+        Len l = parseLength(shapeMarginProp, s.fontSize)
+        if l.kind == LEN_PX { s.shapeMargin = maxInt(roundPx(l.v), 0) }
     }
     // CSS Fragmentation 3: where a column break may or must happen.
     // `orphans` and `widows` are inherited, since they describe a

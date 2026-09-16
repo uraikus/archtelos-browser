@@ -11,6 +11,7 @@
 // (font, word).
 
 import ../css/cascade.f
+import ../css/shapes.f
 import ../util/bidi.f
 
 const int BOX_BLOCK = 1
@@ -3423,12 +3424,50 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
 // Every rectangle here is in document coordinates, like every other
 // box, so one list serves the whole block formatting context.
 
+// One of the four boxes a shape may resolve against, written to
+// globals because a function answers with one value (FINDINGS.md). Both
+// `clip-path` and `shape-outside` ask for it, and they are in different
+// files, so it lives with the Box it is about.
+int boxRefX = 0
+int boxRefY = 0
+int boxRefW = 0
+int boxRefH = 0
+
+void func boxReferenceBox(b:Box, which:int) {
+    if which == GEOBOX_MARGIN {
+        boxRefX = b.x - b.ml
+        boxRefY = b.y - b.mt
+        boxRefW = b.w + b.ml + b.mr
+        boxRefH = b.h + b.mt + b.mb
+        return
+    }
+    boxRefX = b.x
+    boxRefY = b.y
+    boxRefW = b.w
+    boxRefH = b.h
+    if which == GEOBOX_BORDER { return }
+    boxRefX = boxRefX + b.bl
+    boxRefY = boxRefY + b.bt
+    boxRefW = boxRefW - b.bl - b.br
+    boxRefH = boxRefH - b.bt - b.bb
+    if which == GEOBOX_PADDING { return }
+    boxRefX = boxRefX + b.pl
+    boxRefY = boxRefY + b.pt
+    boxRefW = boxRefW - b.pl - b.pr
+    boxRefH = boxRefH - b.pt - b.pb
+}
+
 struct FloatRect {
     left:int
     top:int
     right:int
     bottom:int
     side:int
+    // CSS Shapes 1: the float's exclusion follows this shape rather
+    // than the rectangle above, which stays the margin box the float
+    // itself occupies and the edge the shape is clamped to.
+    hasShape:bool
+    shape:ShapeGeom
 }
 
 arr[FloatRect] bfcFloats = []
@@ -3438,11 +3477,25 @@ void func resetFloats() {
 }
 
 // The left edge available to content in the band [top, bottom).
+// How far in from the left a band [top, bottom) is pushed. A shaped
+// float is asked for the furthest right its shape reaches anywhere in
+// the band -- a line box is a rectangle, so it must clear the widest
+// part of what it shares a band with -- and that answer is clamped to
+// the float's own margin box, which is as far as an exclusion goes.
 int func floatLeftEdge(cbLeft:int, top:int, bottom:int) {
     int edge = cbLeft
     for int i = 0, i < bfcFloats.length, i++ {
         FloatRect f = bfcFloats[i]
         if f.side != FLOAT_LEFT { continue }
+        if f.hasShape {
+            // The exclusion cannot leave the float's own margin box:
+            // there is no float above or below it to exclude anything.
+            shapeRightEdgeOver(f.shape, maxInt(top, f.top), minInt(bottom, f.bottom))
+            if !shapeEdgeFound { continue }
+            int e = minInt(shapeEdgeValue, f.right)
+            if e > edge { edge = e }
+            continue
+        }
         if f.bottom <= top || f.top >= bottom { continue }
         if f.right > edge { edge = f.right }
     }
@@ -3454,6 +3507,13 @@ int func floatRightEdge(cbRight:int, top:int, bottom:int) {
     for int i = 0, i < bfcFloats.length, i++ {
         FloatRect f = bfcFloats[i]
         if f.side != FLOAT_RIGHT { continue }
+        if f.hasShape {
+            shapeLeftEdgeOver(f.shape, maxInt(top, f.top), minInt(bottom, f.bottom))
+            if !shapeEdgeFound { continue }
+            int e = maxInt(shapeEdgeValue, f.left)
+            if e < edge { edge = e }
+            continue
+        }
         if f.bottom <= top || f.top >= bottom { continue }
         if f.left < edge { edge = f.left }
     }
@@ -3512,6 +3572,15 @@ void func placeFloat(b:Box, cbLeft:int, cbRight:int, startY:int) {
             rect.right = x + w
             rect.bottom = y + h
             rect.side = b.style.floatSide
+            // The shape is resolved now, against the box this float has
+            // just been given. A document with no shape in it never
+            // reaches this and never grows a FloatRect that carries one.
+            if cascadeSawShape && b.style.shapeOutside.kind != CLIPSHAPE_NONE {
+                boxReferenceBox(b, b.style.shapeOutside.geoBox)
+                rect.shape = resolveShape(b.style.shapeOutside, boxRefX, boxRefY,
+                                          boxRefW, boxRefH, b.style.shapeMargin)
+                rect.hasShape = true
+            }
             bfcFloats.push(rect)
             return
         }

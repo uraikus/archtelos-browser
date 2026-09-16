@@ -224,6 +224,13 @@ the shape covers at that row; a pixel belongs to the shape when its
 centre does. CSS2's `clip` reaches the same rectangle from the other
 side, on an absolutely positioned box.
 
+**`shape-outside`** does the opposite: instead of cutting a box to a
+shape it lets text follow one. A float's exclusion edge follows the
+shape rather than its margin box, so a circle lets the corners of a
+square float be written into. A line box is a rectangle, so it clears
+the furthest the shape reaches anywhere in the band it occupies, and
+`shape-margin` grows the shape on every side.
+
 **Subresources are prefetched while the page is parsed.** A preload
 scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>` and
 `<script src>` before tree construction and hands the absolute URLs to
@@ -246,7 +253,7 @@ what is deliberately not.
 | `src/browser/page.f` | the page pipeline: fetch, parse, stylesheets, images, cascade, layout, paint |
 | `src/html/` | `decode.f`, `entities.f`, `named_refs.f` (the standard's reference table), `tokenizer.f`, `parser.f` |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's serialization) |
-| `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f` |
+| `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f`, `counterstyles.f`, `shapes.f` |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, floats, positioning, flex |
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and its worker threads) |
@@ -255,7 +262,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-20,984 lines of Festina in `src/` and `browser.f`.
+21,222 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -265,12 +272,13 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-two unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-three unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, hyphens, color spaces, fragmentation, audio, the preload scanner), thirteen offscreen render suites that check
+styles, hyphens, color spaces, fragmentation, shapes, audio, the preload
+scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 object fitting, borders, border images, text decoration, transforms,

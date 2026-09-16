@@ -933,7 +933,7 @@ arr[text] supportedProperties = [
     'columns', 'column-count', 'column-width',
     'column-rule', 'column-rule-width', 'column-rule-style', 'column-rule-color',
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
-    'clip-path', 'clip',
+    'clip-path', 'clip', 'shape-outside', 'shape-margin',
     'grid-template-columns', 'grid-template-rows',
     'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow',
     'grid-column', 'grid-row', 'grid-area',

@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### shape-outside, from the machinery clip-path had just built
+
+- **`shape-outside`** over `inset()`, `circle()`, `ellipse()`,
+  `polygon()` and the four geometry boxes, the default being the margin
+  box. A float's exclusion edge follows the shape, so a circle lets the
+  corners of a square float be written into.
+- **`shape-margin`**, which grows the shape on every side.
+
+**Properties 183 → 185.** CSS Shapes 1 moves from Nothing to Partial.
+
+The shape geometry moved into `src/css/shapes.f`, because the two
+features that want it are on opposite sides of the engine: the painter
+cuts a box to a `clip-path` shape and the layout engine pushes line
+boxes aside from a float's, and the painter imports the layout engine,
+so neither could call the other. It takes the reference box as four
+numbers rather than as a Box, which is what let it move.
+
+The two ask different questions of the same shape, and the difference is
+a pixel. A clip asks which pixels it keeps, so it samples at pixel
+centres. A float asks how far a line box must clear, and a line box is a
+rectangle over a continuous band, so the answer is the shape's extreme
+anywhere in `[y, y+h]` — endpoints included. Sampling pixel centres for
+that is one row short, and three of Chromium's line starts said so.
+
+An exclusion is clamped to the float's own margin box in both axes,
+which is not an optimisation: outside the float there is no float to
+exclude anything. `circle(50px) shape-margin:10px` on a 100px float
+reaches 102px horizontally and 110px vertically, and Chromium excludes
+neither.
+
 ### clip-path, and a spec that was on the "Nothing" row
 
 - **`clip-path`** over the basic shapes — `inset()` with its one to four

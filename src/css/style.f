@@ -225,6 +225,10 @@ const int CLIPRAD_FARTHEST = 2
 struct ClipShape {
     kind:int
     geoBox:int
+    // Whether a geometry box was written. `clip-path` resolves against
+    // the border box when none was, `shape-outside` against the margin
+    // box, so the two need to tell "unsaid" from "border-box".
+    geoBoxExplicit:bool
     // inset(): how far in from each edge of the reference box. For the
     // legacy `clip` these hold the same thing, since rect()'s edges are
     // turned into insets when the declaration is read.
@@ -586,6 +590,10 @@ struct Style {
     // and applies only to a positioned one (CSS2 11.1.2).
     clipShape:ClipShape
     clipRect:ClipShape
+    // CSS Shapes 1. A float's exclusion follows this shape rather than
+    // its margin box, grown on every side by `shapeMargin`.
+    shapeOutside:ClipShape
+    shapeMargin:int
     breakBefore:int
     breakAfter:int
     breakInsideAvoid:bool

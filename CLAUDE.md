@@ -296,13 +296,13 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/browser/page.f` | the page pipeline the shell and the tests share: fetch, parse, stylesheets, images, cascade, layout, paint |
 | `src/html/` | `decode.f` (bytes to an ASCII-safe form), `entities.f` (character references), `named_refs.f` (the standard's generated reference table), `tokenizer.f`, `parser.f` (tree construction) |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's tree serialization, which the conformance suite compares against) |
-| `src/css/` | `parser.f` (rules, selectors, `@media`), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values) |
+| `src/css/` | `parser.f` (rules, selectors, `@media`), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values), `counterstyles.f` (`@counter-style` and the predefined list styles), `shapes.f` (a basic shape resolved against a box, which the painter and the layout engine both ask for) |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, intrinsic widths |
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and the worker threads that prefetch what it finds) |
-| `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f` |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade rules, values, layout geometry, box properties, positioning, floats, flex, iframes, pseudo-elements, counters, audio, the preload scanner |
-| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor` |
+| `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f`, `bidi.f` (UAX #9) |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, positioning, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, audio, the preload scanner |
+| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, overflow clipping, clip paths, background images, object fitting, borders, border images, text decoration, transforms, right-to-left text, box shadows |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
 | `tests/latencyserver.py` | a local HTTP server that answers slowly, so the preload scanner has latency to hide |
