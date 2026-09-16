@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,701,152 |
-| This browser, all `.f` source | 850,614 |
+| This browser, the whole program | 2,706,304 |
+| This browser, all `.f` source | 862,742 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -637,6 +637,22 @@ again, repeating while any answer changes. A page whose sheets never say
 it: `generated.html` renders in 102 ms with the feature in, against a
 recorded 101 whose spread is 99 to 104, and the run's own control
 qualified at 4.6%.
+
+`content: url()` costs **5,024 bytes** (2,701,280 → 2,706,304) and
+nothing per page to a document whose generated content names no image:
+one boolean decides whether the tree is walked for content images, and
+a `content` with no url in it never builds the arrays a run would need.
+The revision before it, rebuilt and sampled alternately with this one in
+the same minutes, gives 100, 104, 102, 101, 103, 106, 103, 100, 103,
+100, 102 and 102 ms against this one's 113, 102, 106, 101, 105, 106,
+108, 106, 101, 103, 102 and 104 — 100 to 106 against 101 to 113, two
+series that overlap, with the best of each a millisecond apart. The
+run's own control qualified at 5.0%.
+
+The `2,701,152` this table carried before that measurement was two
+commits stale: `direction` and `dir` had taken the binary to 2,701,280
+without an entry here. The cost above is measured against that, not
+against the number that was written down.
 
 CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
 `memchr` per rule on a page that does not nest. A rule body with no `{`
