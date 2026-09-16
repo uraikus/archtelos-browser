@@ -456,7 +456,15 @@ var PAYLOAD = "%s"; var data = %s;
 var host = document.getElementById('host'); var bad = [];
 for (var i = 0; i < data.rows.length; i++) {
   var prop = data.rows[i][0], val = data.rows[i][1];
-  host.innerHTML = '<p id="a"></p><p id="b" style="' + prop + ': ' + val + '"></p>';
+  // A row may carry declarations beyond the property under test, because
+  // some properties do nothing without one. Those are context: the row
+  // must differ from an element that already has them, or it is the
+  // context doing the work and the row proves nothing about the property.
+  var semi = val.indexOf(';');
+  var own = semi < 0 ? val : val.slice(0, semi);
+  var context = semi < 0 ? '' : val.slice(semi + 1);
+  host.innerHTML = '<p id="a" style="' + context + '"></p>'
+                 + '<p id="b" style="' + prop + ': ' + own + ';' + context + '"></p>';
   var before = getComputedStyle(document.getElementById('a')).getPropertyValue(prop);
   var after  = getComputedStyle(document.getElementById('b')).getPropertyValue(prop);
   if (after === before) bad.push([prop, val]);

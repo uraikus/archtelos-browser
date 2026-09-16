@@ -1823,7 +1823,12 @@ int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
 // `outset` get: the right width and colour, without the relief.
 int func borderStyleProp(props:map[text], side:text) {
     ascii v = styleProp(props, `border-${side}-style`)
-    if v == null { return BORDER_SOLID }
+    // The initial value is `none`, and saying so matters beyond tidiness:
+    // while this answered `solid` for an undeclared border, declaring
+    // `border-top-style: solid` changed no style field at all, and the
+    // property registered as implemented only through the width that a
+    // declared style gives its side.
+    if v == null { return BORDER_NONE }
     ascii t = asciiLower(asciiTrim(v))
     if t == 'none' || t == 'hidden' { return BORDER_NONE }
     if t == 'dashed' { return BORDER_DASHED }

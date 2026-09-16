@@ -184,6 +184,18 @@ path beside an unclipped one, a new syntax beside the old one — the test
 that earns its place asserts they agree, not that each one matches a
 number.
 
+**A count that goes up is not yet evidence the feature works.** A
+property can register because of a field belonging to a different
+property: declaring `border-top-style` gives that side the medium width,
+and the width alone moved the digest, so the instrument scored the
+property while the engine threw the declared keyword away. Declaring
+`outline-style` did the same and the engine has no outline style at all.
+So when a count moves, ask *which field moved* —
+`tests/conformance/properties.f --fields` prints it — and require one
+that means the property. Where a property genuinely cannot act alone, its
+row carries the declarations it needs as context and is graded against an
+element that already has them, so the context cannot do the work for it.
+
 **Run the benchmarks on an idle machine, and check a number you did not
 change.** "Best of N" does not rescue a contended run, because every one
 of the N runs is contended: a benchmark run here beside a valgrind job

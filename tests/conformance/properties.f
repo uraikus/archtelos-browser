@@ -28,36 +28,85 @@ arr[text] func blobLines(f:blob) {
     return lines
 }
 
-// Every field of a computed Style that something reads, in one string.
+// Every field of a computed Style that something reads, one per entry.
 // Every field here is one something reads. `overflowHidden` was left
 // out while the cascade computed it and nothing looked; the painter
 // clips by it now, so it counts.
+//
+// This is a list rather than a joined string because a value can
+// contain whatever character the join would use -- `fontKey` holds a
+// pipe -- and splitting it back would then misalign every field after
+// it against its name.
+arr[text] func styleDigestFields(s:Style) {
+    return [`${s.display}`, `${s.color}`, `${s.background}`, `${s.fontSize}`, 
+        `${s.fontBold}`, `${s.fontItalic}`, `${s.fontFamily}`, 
+        `${s.lineHeight}`, `${s.textAlign}`, `${s.textDecoration}`, 
+        `${s.inheritedDecoration}`, `${s.textTransform}`, `${s.whiteSpace}`, 
+        `${s.listStyle}`, `${s.verticalAlign}`, `${s.opacity}`, 
+        `${s.effectiveOpacity}`, `${lenKey(s.width)}`, `${lenKey(s.height)}`, 
+        `${lenKey(s.minWidth)}`, `${lenKey(s.maxWidth)}`, 
+        `${lenKey(s.minHeight)}`, `${lenKey(s.marginTop)}`, 
+        `${lenKey(s.marginRight)}`, `${lenKey(s.marginBottom)}`, 
+        `${lenKey(s.marginLeft)}`, `${lenKey(s.paddingTop)}`, 
+        `${lenKey(s.paddingRight)}`, `${lenKey(s.paddingBottom)}`, 
+        `${lenKey(s.paddingLeft)}`, `${s.borderTop}`, `${s.borderRight}`, 
+        `${s.borderBottom}`, `${s.borderLeft}`, `${s.borderTopColor}`, 
+        `${s.borderRightColor}`, `${s.borderBottomColor}`, 
+        `${s.borderLeftColor}`, `${s.borderStyle}`, `${s.borderRadius}`, 
+        `${s.borderSpacing}`, `${s.borderCollapse}`, `${s.borderTopStyle}`, 
+        `${s.borderRightStyle}`, `${s.borderBottomStyle}`, 
+        `${s.borderLeftStyle}`, `${s.textIndent}`, `${s.letterSpacing}`, 
+        `${s.hidden}`, `${s.fontKey}`, `${s.position}`, `${lenKey(s.top)}`, 
+        `${lenKey(s.right)}`, `${lenKey(s.bottom)}`, `${lenKey(s.left)}`, 
+        `${s.zIndex}`, `${s.floatSide}`, `${s.clearSide}`, 
+        `${lenKey(s.maxHeight)}`, `${s.boxSizing}`, `${s.captionSide}`, 
+        `${s.wordSpacing}`, `${s.outlineWidth}`, `${s.outlineColor}`, 
+        `${s.flexDirection}`, `${s.justifyContent}`, `${s.alignItems}`, 
+        `${s.alignSelf}`, `${s.flexWrap}`, `${s.alignContent}`, 
+        `${s.flexGrow}`, `${s.flexShrink}`, `${lenKey(s.flexBasis)}`, 
+        `${s.rowGap}`, `${s.columnGap}`, `${s.order}`, 
+        `${gradientKey(s.backgroundImage)}`, `${s.overflowHidden}`, 
+        `${s.backgroundUrl}`, `${s.backgroundRepeatX}`, 
+        `${s.backgroundRepeatY}`, `${lenKey(s.backgroundPosX)}`, 
+        `${lenKey(s.backgroundPosY)}`, `${s.backgroundSizeKind}`, 
+        `${lenKey(s.backgroundSizeW)}`, `${lenKey(s.backgroundSizeH)}`, 
+        `${s.backgroundClip}`, `${s.backgroundOrigin}`, `${s.objectFit}`, 
+        `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`]
+}
+
 text func styleDigest(s:Style) {
-    return `${s.display}|${s.color}|${s.background}|${s.fontSize}|${s.fontBold}|${s.fontItalic}`
-        + `|${s.fontFamily}|${s.lineHeight}|${s.textAlign}|${s.textDecoration}|${s.inheritedDecoration}`
-        + `|${s.textTransform}|${s.whiteSpace}|${s.listStyle}|${s.verticalAlign}`
-        + `|${s.opacity}|${s.effectiveOpacity}|${lenKey(s.width)}|${lenKey(s.height)}`
-        + `|${lenKey(s.minWidth)}|${lenKey(s.maxWidth)}|${lenKey(s.minHeight)}`
-        + `|${lenKey(s.marginTop)}|${lenKey(s.marginRight)}|${lenKey(s.marginBottom)}|${lenKey(s.marginLeft)}`
-        + `|${lenKey(s.paddingTop)}|${lenKey(s.paddingRight)}|${lenKey(s.paddingBottom)}|${lenKey(s.paddingLeft)}`
-        + `|${s.borderTop}|${s.borderRight}|${s.borderBottom}|${s.borderLeft}`
-        + `|${s.borderTopColor}|${s.borderRightColor}|${s.borderBottomColor}|${s.borderLeftColor}`
-        + `|${s.borderStyle}|${s.borderRadius}|${s.borderSpacing}|${s.borderCollapse}`
-        + `|${s.borderTopStyle}|${s.borderRightStyle}|${s.borderBottomStyle}|${s.borderLeftStyle}`
-        + `|${s.textIndent}|${s.letterSpacing}|${s.hidden}|${s.fontKey}`
-        + `|${s.position}|${lenKey(s.top)}|${lenKey(s.right)}|${lenKey(s.bottom)}|${lenKey(s.left)}|${s.zIndex}`
-        + `|${s.floatSide}|${s.clearSide}`
-        + `|${lenKey(s.maxHeight)}|${s.boxSizing}|${s.captionSide}|${s.wordSpacing}`
-        + `|${s.outlineWidth}|${s.outlineColor}`
-        + `|${s.flexDirection}|${s.justifyContent}|${s.alignItems}|${s.alignSelf}`
-        + `|${s.flexWrap}|${s.alignContent}`
-        + `|${s.flexGrow}|${s.flexShrink}|${lenKey(s.flexBasis)}|${s.rowGap}|${s.columnGap}|${s.order}`
-        + `|${gradientKey(s.backgroundImage)}|${s.overflowHidden}`
-        + `|${s.backgroundUrl}|${s.backgroundRepeatX}|${s.backgroundRepeatY}`
-        + `|${lenKey(s.backgroundPosX)}|${lenKey(s.backgroundPosY)}`
-        + `|${s.backgroundSizeKind}|${lenKey(s.backgroundSizeW)}|${lenKey(s.backgroundSizeH)}`
-        + `|${s.backgroundClip}|${s.backgroundOrigin}`
-        + `|${s.objectFit}|${lenKey(s.objectPosX)}|${lenKey(s.objectPosY)}`
+    return styleDigestFields(s).join('\u0001')
+}
+
+// The names of the digest's fields, in the order `styleDigest` writes
+// them. Two lists that must agree is a hazard, so they are checked
+// against each other at startup rather than trusted: a field added to
+// one and not the other stops the instrument instead of silently
+// mislabelling every property after it.
+arr[text] func styleDigestFieldNames() {
+    return ['display', 'color', 'background', 'fontSize', 'fontBold', 
+        'fontItalic', 'fontFamily', 'lineHeight', 'textAlign', 
+        'textDecoration', 'inheritedDecoration', 'textTransform', 
+        'whiteSpace', 'listStyle', 'verticalAlign', 'opacity', 
+        'effectiveOpacity', 'width', 'height', 'minWidth', 'maxWidth', 
+        'minHeight', 'marginTop', 'marginRight', 'marginBottom', 
+        'marginLeft', 'paddingTop', 'paddingRight', 'paddingBottom', 
+        'paddingLeft', 'borderTop', 'borderRight', 'borderBottom', 
+        'borderLeft', 'borderTopColor', 'borderRightColor', 
+        'borderBottomColor', 'borderLeftColor', 'borderStyle', 
+        'borderRadius', 'borderSpacing', 'borderCollapse', 
+        'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 
+        'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 
+        'fontKey', 'position', 'top', 'right', 'bottom', 'left', 'zIndex', 
+        'floatSide', 'clearSide', 'maxHeight', 'boxSizing', 'captionSide', 
+        'wordSpacing', 'outlineWidth', 'outlineColor', 'flexDirection', 
+        'justifyContent', 'alignItems', 'alignSelf', 'flexWrap', 
+        'alignContent', 'flexGrow', 'flexShrink', 'flexBasis', 'rowGap', 
+        'columnGap', 'order', 'backgroundImage', 'overflowHidden', 
+        'backgroundUrl', 'backgroundRepeatX', 'backgroundRepeatY', 
+        'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
+        'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
+        'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY']
 }
 
 text func gradientKey(g:Gradient) {
@@ -73,22 +122,25 @@ text func lenKey(l:Len) {
     return `${l.kind}:${l.v}`
 }
 
-text func digestFor(decl:text) {
+arr[text] func digestFieldsFor(decl:text) {
     cascadeReset()
     Node doc = parseHtmlText(`<html><body><table><tr><td><p id="t" style="${decl}">x</p></td></tr></table></body></html>`)
     cascadeAddDocumentStyles(doc)
     computeStyles(doc)
     arr[Node] ps = []
     collectElements(doc, 'p', ps)
-    if ps.length == 0 { return 'MISSING' }
-    return styleDigest(ps[0].style)
+    arr[text] missing = ['MISSING']
+    if ps.length == 0 { return missing }
+    return styleDigestFields(ps[0].style)
 }
 
 bool verbose = false
+bool showFields = false
 int minimum = -1
 for int i = 1, i < argv.length, i++ {
     text arg = argv[i]
     if arg == '--verbose' { verbose = true }
+    else if arg == '--fields' { showFields = true }
     else if arg == '--min' && i + 1 < argv.length {
         int m = argv[i + 1].toInt()
         if m != null { minimum = m }
@@ -102,7 +154,14 @@ if !f.exists() {
     close(0)
 }
 
-text baseline = digestFor('')
+arr[text] baseFields = digestFieldsFor('')
+text baseline = baseFields.join('\u0001')
+arr[text] fieldNames = styleDigestFieldNames()
+if baseFields.length != fieldNames.length {
+    log(`properties: FAILED -- styleDigest writes ${baseFields.length} fields and `
+        + `styleDigestFieldNames lists ${fieldNames.length}; they must agree`)
+    close(1)
+}
 arr[text] lines = blobLines(f)
 int total = 0
 int gradeable = 0
@@ -138,8 +197,39 @@ for int i = 0, i < lines.length, i++ {
         continue
     }
     gradeable++
-    if digestFor(`${prop}: ${val}`) != baseline { implemented++ }
-    else { inert.push(prop) }
+    // A row may carry declarations beyond the property under test,
+    // because some properties do nothing without one: a border width
+    // computes to zero unless that side has a style. Those extras are
+    // context, and the row is graded against a baseline that already
+    // has them -- otherwise the context alone moves the digest and the
+    // row registers whether or not the property itself is implemented.
+    arr[text] halves = val.split(';')
+    text own = halves[0]
+    text context = ''
+    for int hi = 1, hi < halves.length, hi++ {
+        if halves[hi] == '' { continue }
+        context = context + halves[hi] + ';'
+    }
+    arr[text] rowBaseFields = baseFields
+    if context != '' { rowBaseFields = digestFieldsFor(context) }
+    text rowBaseline = rowBaseFields.join('\u0001')
+    arr[text] gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
+    if gotFields.join('\u0001') == rowBaseline { inert.push(prop)  continue }
+    implemented++
+    if showFields {
+        // Which fields moved, not just that something did. A property
+        // that registers only through a field belonging to a different
+        // property is being scored for a side effect: `border-top-style`
+        // used to move nothing but the border's *width*, because
+        // declaring a style gives that side the medium width. The
+        // instrument cannot judge which field means which property, so
+        // it prints the mapping and leaves the reading to a person.
+        arr[text] moved = []
+        for int k = 0, k < fieldNames.length && k < gotFields.length, k++ {
+            if gotFields[k] != rowBaseFields[k] { moved.push(fieldNames[k]) }
+        }
+        log(`    ${prop} -> ${moved.join(', ')}`)
+    }
 }
 
 if verbose {

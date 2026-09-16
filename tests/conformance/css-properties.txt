@@ -10,6 +10,12 @@
 # declarations where one is not enough -- a border width needs a border
 # style beside it or it computes to zero.
 #
+# Only the first declaration in a row is the property under test; any
+# that follow are context, and the row is graded against an element that
+# already has them. Without that, `border-top-width: 10px; border-style:
+# solid` registered on the strength of the `solid` alone, and would have
+# gone on registering if width parsing were deleted outright.
+#
 # A value must differ from the initial value on every Chromium build,
 # not just the one it was chosen against. A width of 3px does not:
 # `medium` is 3px, so a build reporting the computed rather than the

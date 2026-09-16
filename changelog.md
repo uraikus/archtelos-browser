@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The instrument was crediting properties for other properties' fields
+
+Painting borders turned up something the audit could not see: the
+physical `border-*-style` rows had been registering all along, for an
+engine that threw the declared keyword away. Declaring a style gives
+that side the medium width, and the width alone moved the digest.
+
+Three things came of chasing it.
+
+**The digest can now say which field moved.** It was ninety-one values
+joined with `|`, and nothing named them — so the instrument could report
+*that* a property moved something and never *what*. It is a list now,
+with a parallel list of names checked against it at startup, so a field
+added to one and not the other stops the instrument rather than
+mislabelling every property after it. `--fields` prints the mapping. The
+join is no longer `|` either: `fontKey` contains one, so splitting the
+old digest back gave ninety-four fields for ninety-one values and
+misaligned everything past it. That was found by the startup check, on
+its first run.
+
+**A row's extra declarations are context now, not part of the test.**
+Some properties do nothing alone — a border width computes to zero
+unless that side has a style — so those rows carry a second declaration.
+Graded against a bare element, the second declaration did the work:
+`border-top-width: 10px; border-style: solid` registered on the strength
+of the `solid`, and would have gone on registering if width parsing were
+deleted outright. Each row is graded against an element that already has
+its context, so the property has to move something itself. The audit
+isolates the same way, so the two agree about what a row proves.
+
+**`border-*-style`'s initial value was wrong.** The cascade answered
+`solid` for an undeclared border. CSS says `none`. Nothing rendered
+wrong, because a width of zero already stopped the paint, but it is why
+declaring `border-top-style: solid` changed no style field: the field
+already said solid. It says `none` now, and the row registers for its
+own field.
+
+**The count went down, from 89 to 88, and the engine did not regress.**
+`outline-style` was registering only through the width a declared
+outline style gives, and this engine has no outline style at all. The
+floor in `tests/run.sh` moved down with it, with the reason beside it.
+
+A count that goes up is not yet evidence the feature works, which is now
+a rule in CLAUDE.md. Ask which field moved.
+
 ### Borders paint as the style they were given
 
 Every border painted solid. The cascade derived one style for the whole

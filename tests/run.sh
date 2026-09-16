@@ -57,8 +57,12 @@ if ! python3 tests/chromium.py properties-audit tests/conformance/css-properties
     echo "FAILED: tests/conformance/css-properties.txt"; failed=1
 fi
 
-# Which CSS properties actually change what renders.
-PROPERTIES_MIN=89
+# Which CSS properties actually change what renders. This floor went
+# down once, from 89, when the instrument stopped crediting a property
+# for a field belonging to another: `outline-style` was registering
+# because declaring it gives the outline a width. The engine did not
+# regress; the measurement got stricter.
+PROPERTIES_MIN=88
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1
