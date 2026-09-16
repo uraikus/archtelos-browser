@@ -101,7 +101,9 @@ controls are drawn as boxes.
 **Painting** covers backgrounds, borders with rounded corners — each
 corner taking its own radius, from the shorthand, the longhands or
 the logical corner names —
-text with underline and line-through, borders in every CSS style —
+text with all three decoration lines — `underline`, `overline` and
+`line-through` — in any colour, thickness and offset and in all five
+styles, and `text-shadow` behind it, borders in every CSS style —
 `solid`, `dashed`, `dotted`, `double`, and the four relief styles that
 shade their edges — with each side keeping its own, `box-shadow`
 with offset, blur, spread, `inset` and a list of shadows, images,
@@ -203,10 +205,10 @@ The runner covers twenty-two unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-audio, the preload scanner), eight offscreen render suites that check
+audio, the preload scanner), nine offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
-borders and box shadows — three conformance
+borders, text decoration and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

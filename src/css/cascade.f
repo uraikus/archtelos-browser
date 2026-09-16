@@ -1554,7 +1554,6 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         }
         return
     }
-    if name == 'text-decoration-line' { name = 'text-decoration' }
     if name == 'overflow-x' || name == 'overflow-y' { name = 'overflow' }
     if name == 'inline-size' { name = 'width' }
     if name == 'block-size' { name = 'height' }
@@ -1967,6 +1966,16 @@ bool func isLineStyleKeyword(t:ascii) {
         || t == 'inset' || t == 'outset'
 }
 
+// One text-decoration-style keyword, or -1 for a token that is not one.
+int func decorationStyleKeyword(t:ascii) {
+    if t == 'solid' { return DECOSTYLE_SOLID }
+    if t == 'double' { return DECOSTYLE_DOUBLE }
+    if t == 'dotted' { return DECOSTYLE_DOTTED }
+    if t == 'dashed' { return DECOSTYLE_DASHED }
+    if t == 'wavy' { return DECOSTYLE_WAVY }
+    return -1
+}
+
 int func borderStyleProp(props:map[text], side:text) {
     ascii v = styleProp(props, `border-${side}-style`)
     // The initial value is `none`, and saying so matters beyond tidiness:
@@ -2287,16 +2296,99 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // propagate the decoration of an ancestor to the boxes inside it,
     // which is what inheritedDecoration carries for the painter.
     s.inheritedDecoration = isRoot ? DECO_NONE : decoUnion(parent.inheritedDecoration, parent.textDecoration)
+    // How a propagated decoration is drawn travels with it: the
+    // standard draws an ancestor's decoration in the ancestor's colour
+    // and style across every descendant it crosses. A parent that
+    // decorates something hands its own appearance down; one that does
+    // not passes on what it was handed.
+    if isRoot {
+        s.inheritedDecoColor = COLOR_UNSET
+        s.inheritedDecoStyle = DECOSTYLE_SOLID
+        s.inheritedDecoThickness = 0
+        s.inheritedDecoOffset = 0
+    } else if parent.textDecoration != DECO_NONE {
+        s.inheritedDecoColor = parent.decorationColor == COLOR_UNSET ? parent.color : parent.decorationColor
+        s.inheritedDecoStyle = parent.decorationStyle
+        s.inheritedDecoThickness = parent.decorationThickness
+        s.inheritedDecoOffset = parent.underlineOffset
+    } else {
+        s.inheritedDecoColor = parent.inheritedDecoColor
+        s.inheritedDecoStyle = parent.inheritedDecoStyle
+        s.inheritedDecoThickness = parent.inheritedDecoThickness
+        s.inheritedDecoOffset = parent.inheritedDecoOffset
+    }
+    // `text-decoration` is the shorthand for the line, the colour and
+    // the style, so all three are read from it before the longhands
+    // override any of them.
     s.textDecoration = DECO_NONE
+    s.decorationColor = COLOR_UNSET
+    s.decorationStyle = DECOSTYLE_SOLID
+    s.decorationThickness = 0
+    s.underlineOffset = 0
     ascii td = styleProp(props, 'text-decoration')
     if td != null {
-        ascii t = asciiLower(td)
-        if asciiIndexOf(t, 'none', 0) >= 0 { s.textDecoration = DECO_NONE }
-        else {
-            int deco = 0
-            if asciiIndexOf(t, 'underline', 0) >= 0 { deco = deco + DECO_UNDERLINE }
-            if asciiIndexOf(t, 'line-through', 0) >= 0 { deco = deco + DECO_LINE_THROUGH }
-            if deco > 0 { s.textDecoration = deco }
+        arr[ascii] tdt = cssTokens(td)
+        int deco = 0
+        for int i = 0, i < tdt.length, i++ {
+            ascii t = asciiLower(tdt[i])
+            if t == 'none' { continue }
+            if t == 'underline' { deco = deco + DECO_UNDERLINE  continue }
+            if t == 'line-through' { deco = deco + DECO_LINE_THROUGH  continue }
+            if t == 'overline' { deco = deco + DECO_OVERLINE  continue }
+            if t == 'blink' { continue }
+            int st = decorationStyleKeyword(t)
+            if st >= 0 { s.decorationStyle = st  continue }
+            int c = parseCssColor(t, s.color)
+            if c != COLOR_UNSET { s.decorationColor = c }
+        }
+        s.textDecoration = deco
+    }
+    ascii tdl = styleProp(props, 'text-decoration-line')
+    if tdl != null {
+        arr[ascii] lt = cssTokens(tdl)
+        int deco = 0
+        for int i = 0, i < lt.length, i++ {
+            ascii t = asciiLower(lt[i])
+            if t == 'underline' { deco = deco + DECO_UNDERLINE }
+            else if t == 'line-through' { deco = deco + DECO_LINE_THROUGH }
+            else if t == 'overline' { deco = deco + DECO_OVERLINE }
+        }
+        s.textDecoration = deco
+    }
+    ascii tdc = styleProp(props, 'text-decoration-color')
+    if tdc != null {
+        int c = parseCssColor(asciiTrim(tdc), s.color)
+        if c != COLOR_UNSET { s.decorationColor = c }
+    }
+    ascii tds = styleProp(props, 'text-decoration-style')
+    if tds != null {
+        int st = decorationStyleKeyword(asciiLower(asciiTrim(tds)))
+        if st >= 0 { s.decorationStyle = st }
+    }
+    // `auto` and `from-font` both leave the thickness to the engine,
+    // which derives it from the font size, and that is the zero value.
+    ascii tdt2 = styleProp(props, 'text-decoration-thickness')
+    if tdt2 != null {
+        Len l = parseLength(asciiTrim(tdt2), s.fontSize)
+        if l.kind == LEN_PX { s.decorationThickness = maxInt(roundPx(l.v), 0) }
+    }
+    ascii tuo = styleProp(props, 'text-underline-offset')
+    if tuo != null {
+        Len l = parseLength(asciiTrim(tuo), s.fontSize)
+        if l.kind == LEN_PX { s.underlineOffset = roundPx(l.v) }
+    }
+    // text-shadow is box-shadow's grammar without `inset` or a spread.
+    ascii tsh = styleProp(props, 'text-shadow')
+    if tsh != null {
+        ascii tshLow = asciiLower(asciiTrim(tsh))
+        if tshLow != 'none' && tshLow != '' {
+            arr[Shadow] list = []
+            arr[ascii] pieces = splitTopLevelCommas(tsh)
+            for int i = 0, i < pieces.length, i++ {
+                Shadow sh = parseShadow(pieces[i], s.color, s.fontSize)
+                if sh != null { sh.spread = 0  sh.inset = false  list.push(sh) }
+            }
+            if list.length > 0 { s.textShadows = list }
         }
     }
     s.textTransform = isRoot ? TT_NONE : parent.textTransform

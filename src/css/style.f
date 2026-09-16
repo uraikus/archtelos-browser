@@ -33,10 +33,21 @@ const int ALIGN_LEFT = 0
 const int ALIGN_CENTER = 1
 const int ALIGN_RIGHT = 2
 
-// text-decoration (a bit set built with + since there are no bitwise ops)
+// text-decoration-line (a bit set built with + since there are no
+// bitwise ops)
 const int DECO_NONE = 0
 const int DECO_UNDERLINE = 1
 const int DECO_LINE_THROUGH = 2
+const int DECO_OVERLINE = 4
+
+// text-decoration-style. The first four are the line styles a border
+// has, and are painted by the same code; `wavy` has no border
+// counterpart.
+const int DECOSTYLE_SOLID = 0
+const int DECOSTYLE_DOUBLE = 1
+const int DECOSTYLE_DOTTED = 2
+const int DECOSTYLE_DASHED = 3
+const int DECOSTYLE_WAVY = 4
 
 // white-space-collapse: what happens to a run of spaces and to a
 // newline. `white-space` is a shorthand for this and text-wrap-mode,
@@ -374,6 +385,21 @@ struct Style {
     opacity:float           // the element's own computed opacity
     effectiveOpacity:float  // it, multiplied by every ancestor's: paint uses this
     inheritedDecoration:int // decoration propagated from ancestors, for paint
+    // How that propagated decoration is drawn. The standard draws an
+    // ancestor's decoration across its descendants in the ancestor's
+    // own colour, style and thickness, not the descendant's, so those
+    // travel with the bits. Where two ancestors decorate the same text
+    // differently only the nearer one's appearance survives, since one
+    // set of fields cannot hold two answers; css-2026.md records it.
+    inheritedDecoColor:int
+    inheritedDecoStyle:int
+    inheritedDecoThickness:int  // px; 0 = from the font size
+    inheritedDecoOffset:int     // px; 0 = auto
+    decorationColor:int         // COLOR_UNSET = the text's own colour
+    decorationStyle:int
+    decorationThickness:int     // px; 0 = from the font size
+    underlineOffset:int         // px; 0 = auto
+    textShadows:arr[Shadow]
     width:Len
     height:Len
     minWidth:Len
@@ -441,12 +467,18 @@ struct Style {
     customProps:map[text]   // custom properties in scope, inherited
 }
 
-// text-decoration is a bit set built with +, so a union has to check
-// each bit rather than use an operator (FINDINGS.md, "no bitwise ops").
+// text-decoration-line is a bit set built with +, so reading a bit and
+// taking a union both have to divide rather than use an operator
+// (FINDINGS.md, "no bitwise ops").
+bool func decoHas(set:int, bit:int) {
+    return Math.floorDiv(set, bit) % 2 == 1
+}
+
 int func decoUnion(a:int, b:int) {
     int out = 0
-    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
-    if Math.floor(a / 2) % 2 == 1 || Math.floor(b / 2) % 2 == 1 { out = out + DECO_LINE_THROUGH }
+    if decoHas(a, DECO_UNDERLINE) || decoHas(b, DECO_UNDERLINE) { out = out + DECO_UNDERLINE }
+    if decoHas(a, DECO_LINE_THROUGH) || decoHas(b, DECO_LINE_THROUGH) { out = out + DECO_LINE_THROUGH }
+    if decoHas(a, DECO_OVERLINE) || decoHas(b, DECO_OVERLINE) { out = out + DECO_OVERLINE }
     return out
 }
 

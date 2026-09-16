@@ -5,6 +5,55 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Text Decoration 3
+
+The engine had `underline` and `line-through` and nothing else: one
+solid pixel in the text's own colour. It has the whole specification's
+appearance now — `overline`, `text-decoration-color`,
+`text-decoration-style` in all five values, `text-decoration-thickness`,
+`text-underline-offset` and `text-shadow`.
+
+Four of the five styles are the ones a border has and are painted by
+the border code, so `double`, `dotted` and `dashed` behave here exactly
+as they do on a border. `wavy` has no border counterpart and is drawn
+as stepped segments, because the canvas has no curve to follow.
+
+**A decoration belongs to the box that asked for it.** `text-decoration`
+does not inherit; the standard propagates it to descendant boxes and has
+the *ancestor* draw it, in the ancestor's colour and style, across
+everything it crosses. This drew it in the colour of whichever box it
+was painting, so a blue `<span>` inside a red underlined paragraph broke
+the underline into two colours. The colour, style, thickness and offset
+travel with the propagated bits now. Where two ancestors decorate the
+same text differently only the nearer one's appearance survives, which
+css-2026.md records.
+
+`text-shadow` casts the shadow of the text *and its decorations*, as the
+standard says, which is also what makes it checkable: a glyph is
+antialiased and never matches a colour exactly, while a decoration line
+is flat colour.
+
+**Properties 128 → 131** — `text-decoration-color`,
+`text-decoration-style` and `text-shadow`; `text-decoration-thickness`
+and `text-underline-offset` are implemented but cannot be graded,
+because Chromium 141 does not report them on a computed style.
+
+Thirty-eight checks in the new `tests/render/decoration.f`. The
+benchmark was re-run on an idle machine: parse, style and lay out
+generated.html is 93 ms against the 93 ms recorded, paint 5 ms against
+6, so the per-fragment shadow test costs nothing measurable. Chromium's
+control row moved 25.3 to 23.9 ms, inside the spread this file already
+records for it, so no table is rewritten on this run's strength.
+
+### An `arr` index is unchecked
+
+Reading past the end of an `arr` is not a range error: an `arr[int]`
+hands back whatever follows the buffer and an `arr[text]` segfaults in
+`strdup`. A test here asked for the rows a decoration painted on, got an
+empty list because the feature was not written yet, read `[0]` and
+reported a row number in the trillions. FINDINGS.md gains finding 32
+with the valgrind output and festina.md §3m the proposal.
+
 ### @supports was answering from a list nobody checked
 
 `@supports` answers from `supportedProperties`, a list written by hand

@@ -865,3 +865,58 @@ The same binding closes `@font-face`. `cairo_select_font_face` is
 Cairo's *toy* API: it takes a family name and picks from what the system
 already has, and there is no call in Festina that loads a font file. A
 web font cannot be fetched and used at all.
+
+---
+
+## 32 Reading past the end of an `arr` is unchecked
+
+An index beyond an `arr`'s length is not a range error. What happens
+instead depends on the element type, and neither outcome is a
+diagnostic.
+
+```festina
+arr[int] empty = []
+log(`length: ${empty.length}`)
+int v = empty[0]
+log(`empty[0]: ${v}`)
+arr[text] words = []
+text w = words[3]
+log(`words[3]: ${w}`)
+```
+
+```
+length: 0
+empty[0]: 0
+Segmentation fault
+```
+
+An `arr[int]` hands back whatever the word after the buffer holds — `0`
+here, and not reliably so; the same read in a longer-running program
+returned a pointer-sized number. An `arr[text]` reads a garbage pointer
+and hands it to `strdup`, which dies. Under valgrind both reads are
+visible before the crash:
+
+```
+==21112== Invalid read of size 8
+==21112==    at 0x1158F0: __festina_main
+==21112==  Address 0x4b7c230 is 0 bytes after a block of size 0 alloc'd
+...
+==21112== Invalid read of size 1
+==21112==    at 0x484F226: strlen
+==21112==    by 0x4A1C372: strdup (strdup.c:41)
+==21112==    by 0x117F4A: festina_text_own
+==21112==  Address 0x40 is not stack'd, malloc'd or (recently) free'd
+```
+
+The silent case is the dangerous one, and it is the common one, because
+`arr[int]` is how this program carries every list of coordinates. A
+function that returns an empty `arr[int]` for "nothing found" and a
+caller that reads `[0]` without checking `.length` produce a plausible
+number rather than a failure — a test written that way passed while
+reporting a pixel row it had never found, which is how this was noticed.
+The program had no undefined behaviour of its own: an ordinary index on
+an ordinary list is enough.
+
+The workaround is discipline — every index guarded by a `.length` test —
+which is what a bounds check exists to make unnecessary, and which
+nothing in the language or the tooling enforces.

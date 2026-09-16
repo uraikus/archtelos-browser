@@ -596,6 +596,8 @@ arr[text] supportedProperties = [
     'border-spacing', 'border-collapse',
     'font', 'font-size', 'font-weight', 'font-style', 'font-family', 'line-height',
     'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
+    'text-decoration-color', 'text-decoration-style',
+    'text-decoration-thickness', 'text-underline-offset', 'text-shadow',
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
     'word-break', 'overflow-wrap', 'tab-size',

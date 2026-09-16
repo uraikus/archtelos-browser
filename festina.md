@@ -594,3 +594,28 @@ Worth saying, because this document is otherwise a list of gaps.
   `file:line:column` on every error.
 - **The result is one 2.3 MB native binary** that starts in 6 ms,
   against 448 ms for the browser it is measured beside.
+
+---
+
+## 3m Check an `arr` index
+
+**Today.** An index past the end of an `arr` is unchecked. `arr[int]`
+returns whatever follows the buffer, which is often a plausible number;
+`arr[text]` reads a garbage pointer and `strdup` segfaults on it
+(FINDINGS.md, finding 32). Neither is a diagnostic, and the silent one
+is the common one.
+
+**Proposal.** Bounds-check the index and abort with the index, the
+length and the source position — the same shape of message the compiler
+already produces for a type error. Where the cost matters, an explicit
+unchecked accessor, or a build flag that removes the check, keeps it
+opt-in rather than absent; the check is a compare and a branch against a
+length the runtime already stores beside the buffer.
+
+**What it removes here.** A test in this repository asked a helper for
+the rows a decoration painted on, got an empty list because the feature
+was not implemented yet, read `[0]` from it and reported a row number it
+had never found. The failure it printed named a number in the trillions,
+which is the only reason anybody looked. Every list of coordinates in
+the layout and paint code is an `arr[int]`, and every one of them is one
+unguarded index away from the same thing.

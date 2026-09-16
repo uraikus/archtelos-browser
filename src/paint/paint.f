@@ -1034,34 +1034,149 @@ void func paintListMarker(b:Box) {
     fillAlpha(1.0)
 }
 
+// The fragment's glyphs, at an offset from where the fragment sits.
+void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
+    if s.letterSpacing == 0 {
+        pDrawText(f.content, f.x + dx, f.baseline + dy)
+        return
+    }
+    // letter-spacing: one glyph at a time, each advanced by its
+    // own width plus the spacing (drawText has no spacing itself)
+    arr[text] chars = f.content.split('')
+    int x = f.x + dx
+    for int i = 0, i < chars.length, i++ {
+        pDrawText(chars[i], x, f.baseline + dy)
+        x = x + measureTextWidth(chars[i]) + s.letterSpacing
+    }
+}
+
+// text-shadow (Text Decoration 3 §5): a copy of the text behind it,
+// offset and blurred. The canvas has no blur, so as with box-shadow the
+// falloff is approximated -- here by drawing the copy several times
+// around the offset at a fraction of the alpha, which is the same
+// accumulation the box shadows use and is honest about being an
+// approximation rather than a Gaussian.
+void func paintTextShadows(f:Fragment, s:Style) {
+    if s.textShadows.length == 0 { return }
+    // last first, so the first shadow in the list ends up on top
+    for int i = s.textShadows.length - 1, i >= 0, i-- {
+        Shadow sh = s.textShadows[i]
+        int c = colorWithOpacity(sh.color, s.effectiveOpacity)
+        if sh.blur <= 0 {
+            paintFill(c, s.effectiveOpacity)
+            drawFragmentGlyphs(f, s, sh.dx, sh.dy)
+            paintDecorationsAt(f, s, sh.color, sh.dx, sh.dy, s.effectiveOpacity)
+            continue
+        }
+        int r = maxInt(1, Math.floorDiv(sh.blur, 2))
+        int steps = 0
+        for int oy = -r, oy <= r, oy++ {
+            for int ox = -r, ox <= r, ox++ { steps++ }
+        }
+        float a = s.effectiveOpacity / steps.toFloat()
+        for int oy = -r, oy <= r, oy++ {
+            for int ox = -r, ox <= r, ox++ {
+                paintFill(c, a)
+                drawFragmentGlyphs(f, s, sh.dx + ox, sh.dy + oy)
+                paintDecorationsAt(f, s, sh.color, sh.dx + ox, sh.dy + oy, a)
+            }
+        }
+    }
+    fillAlpha(1.0)
+}
+
 void func paintTextFragment(f:Fragment) {
     Style s = f.box.style
     if s.hidden { return }
     setFontFor(s)
+    paintTextShadows(f, s)
     paintFill(s.color, s.effectiveOpacity)
-    if s.letterSpacing == 0 {
-        pDrawText(f.content, f.x, f.baseline)
-    } else {
-        // letter-spacing: one glyph at a time, each advanced by its
-        // own width plus the spacing (drawText has no spacing itself)
-        arr[text] chars = f.content.split('')
-        int x = f.x
-        for int i = 0, i < chars.length, i++ {
-            pDrawText(chars[i], x, f.baseline)
-            x = x + measureTextWidth(chars[i]) + s.letterSpacing
-        }
+    drawFragmentGlyphs(f, s, 0, 0)
+    // The box's own decoration and the one propagated into it are two
+    // decorations, not one: the standard draws each in the colour and
+    // style of the box that asked for it, so they cannot be unioned
+    // into a single set of bits and painted once.
+    if s.textDecoration != DECO_NONE {
+        int dc = s.decorationColor == COLOR_UNSET ? s.color : s.decorationColor
+        paintDecorationLines(f, s, s.textDecoration, dc, s.decorationStyle,
+                             s.decorationThickness, s.underlineOffset, 0, 0, s.effectiveOpacity)
     }
-    int deco = decoUnion(s.textDecoration, s.inheritedDecoration)
-    if deco > 0 {
-        int thickness = maxInt(1, Math.floorDiv(s.fontSize, 16))
-        if deco == DECO_UNDERLINE || deco == DECO_UNDERLINE + DECO_LINE_THROUGH {
-            pDrawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
-        }
-        if deco >= DECO_LINE_THROUGH {
-            pDrawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
-        }
+    if s.inheritedDecoration != DECO_NONE {
+        int ic = s.inheritedDecoColor == COLOR_UNSET ? s.color : s.inheritedDecoColor
+        paintDecorationLines(f, s, s.inheritedDecoration, ic, s.inheritedDecoStyle,
+                             s.inheritedDecoThickness, s.inheritedDecoOffset, 0, 0, s.effectiveOpacity)
     }
     fillAlpha(1.0)
+}
+
+// One decoration: whichever of the three lines it names, drawn in its
+// own colour and style. The line styles a border has are painted by the
+// border code; `wavy` has no border counterpart and is drawn here.
+void func paintDecorationLines(f:Fragment, s:Style, lines:int, c:int, style:int,
+                               thicknessIn:int, offset:int, dx:int, dy:int, alpha:float) {
+    int thickness = thicknessIn > 0 ? thicknessIn : maxInt(1, Math.floorDiv(s.fontSize, 16))
+    int col = colorWithOpacity(c, s.effectiveOpacity)
+    if decoHas(lines, DECO_UNDERLINE) {
+        paintDecorationLine(f.x + dx, f.baseline + 1 + Math.floorDiv(thickness, 2) + offset + dy,
+                            f.w, thickness, style, col, alpha)
+    }
+    if decoHas(lines, DECO_OVERLINE) {
+        paintDecorationLine(f.x + dx, f.baseline - fontAscent(s) + dy, f.w, thickness,
+                            style, col, alpha)
+    }
+    if decoHas(lines, DECO_LINE_THROUGH) {
+        paintDecorationLine(f.x + dx, f.baseline - roundPx(s.fontSize.toFloat() * 0.3) + dy,
+                            f.w, thickness, style, col, alpha)
+    }
+}
+
+// Every line this fragment carries -- its own and the one propagated
+// into it -- at an offset, in one colour. This is how a shadow draws
+// them: the standard casts the shadow of the text decorations along
+// with the text (Text Decoration 3 §5).
+void func paintDecorationsAt(f:Fragment, s:Style, c:int, dx:int, dy:int, alpha:float) {
+    if s.textDecoration != DECO_NONE {
+        paintDecorationLines(f, s, s.textDecoration, c, s.decorationStyle,
+                             s.decorationThickness, s.underlineOffset, dx, dy, alpha)
+    }
+    if s.inheritedDecoration != DECO_NONE {
+        paintDecorationLines(f, s, s.inheritedDecoration, c, s.inheritedDecoStyle,
+                             s.inheritedDecoThickness, s.inheritedDecoOffset, dx, dy, alpha)
+    }
+}
+
+void func paintDecorationLine(x:int, y:int, w:int, thickness:int, style:int,
+                              c:int, opacity:float) {
+    if w <= 0 || thickness <= 0 { return }
+    if style == DECOSTYLE_WAVY {
+        paintWavyLine(x, y, w, thickness, c, opacity)
+        return
+    }
+    int border = BORDER_SOLID
+    if style == DECOSTYLE_DOUBLE { border = BORDER_DOUBLE }
+    else if style == DECOSTYLE_DOTTED { border = BORDER_DOTTED }
+    else if style == DECOSTYLE_DASHED { border = BORDER_DASHED }
+    // `double` splits the thickness it is given into two lines and a
+    // gap, so it needs three times the thickness to draw two lines of
+    // it -- which is what makes a double underline read as double.
+    int h = style == DECOSTYLE_DOUBLE ? thickness * 3 : thickness
+    paintBorderSide(x, y, w, h, true, true, border, c, opacity)
+}
+
+// A wave, drawn as a run of short steps alternating above and below the
+// line. The canvas has no curve this could follow (FINDINGS.md, "an
+// image is a drawable surface with a smaller API"), and the standard
+// fixes only that the line is wavy, so the amplitude is the thickness.
+void func paintWavyLine(x:int, y:int, w:int, thickness:int, c:int, opacity:float) {
+    paintFill(c, opacity)
+    int step = maxInt(2, thickness * 2)
+    int amp = maxInt(1, thickness)
+    bool up = true
+    for int px = x, px < x + w, px = px + step {
+        int seg = minInt(step, x + w - px)
+        pDrawRect(px, up ? y - amp : y + amp, seg, thickness)
+        up = !up
+    }
 }
 
 void func paintInlineBackground(f:Fragment) {
