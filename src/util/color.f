@@ -131,6 +131,7 @@ int func parseCssColor(raw:ascii, currentColor:int) {
         ascii inner = s.slice(paren + 1, s.length - 1)
         bool isRgb = fn == 'rgb' || fn == 'rgba'
         bool isHsl = fn == 'hsl' || fn == 'hsla'
+        if fn == 'color-mix' { return parseColorMix(inner, currentColor) }
         if !isRgb && !isHsl { return parseWideColor(fn, inner) }
         arr[float] nums = parseColorComponents(inner, isHsl)
         if nums.length < 3 { return COLOR_UNSET }
@@ -557,4 +558,397 @@ int func parseWideColor(fn:ascii, inner:ascii) {
         return oklchToPacked(c4Component(0, 1.0), c4Component(1, 0.4), c4Hue(2), alpha)
     }
     return COLOR_UNSET
+}
+
+// ---------------------------------------------------------------------
+// CSS Color 5's `color-mix()`.
+//
+// Two colours are mixed on the components of the space they are mixed
+// in, which is why the same pair gives a different colour in each: sRGB
+// mixes gamma-encoded channels, srgb-linear and XYZ mix light, Lab and
+// Oklab mix perceptual axes, and the polar spaces mix an angle. Every
+// one of those needs the conversion the wider colour spaces above do
+// not: sRGB *into* the space rather than out of it.
+//
+// Mixing is done premultiplied, so a transparent colour contributes its
+// alpha and nothing else (CSS Color 4 sec. 12.3). A hue is not
+// premultiplied, being an angle rather than a quantity.
+
+const int MIXSPACE_SRGB = 0
+const int MIXSPACE_SRGB_LINEAR = 1
+const int MIXSPACE_XYZ65 = 2
+const int MIXSPACE_XYZ50 = 3
+const int MIXSPACE_LAB = 4
+const int MIXSPACE_OKLAB = 5
+const int MIXSPACE_HSL = 6
+const int MIXSPACE_HWB = 7
+const int MIXSPACE_LCH = 8
+const int MIXSPACE_OKLCH = 9
+
+// How a hue travels from one angle to the other.
+const int HUEWAY_SHORTER = 0
+const int HUEWAY_LONGER = 1
+const int HUEWAY_INCREASING = 2
+const int HUEWAY_DECREASING = 3
+
+// Whether the space's first component is an angle. Every polar space
+// here keeps the hue first, as its own syntax writes it.
+bool func mixSpaceIsPolar(space:int) {
+    return space == MIXSPACE_HSL || space == MIXSPACE_HWB
+        || space == MIXSPACE_LCH || space == MIXSPACE_OKLCH
+}
+
+int func mixSpaceNamed(t:ascii) {
+    if t == 'srgb' { return MIXSPACE_SRGB }
+    if t == 'srgb-linear' { return MIXSPACE_SRGB_LINEAR }
+    if t == 'xyz' || t == 'xyz-d65' { return MIXSPACE_XYZ65 }
+    if t == 'xyz-d50' { return MIXSPACE_XYZ50 }
+    if t == 'lab' { return MIXSPACE_LAB }
+    if t == 'oklab' { return MIXSPACE_OKLAB }
+    if t == 'hsl' { return MIXSPACE_HSL }
+    if t == 'hwb' { return MIXSPACE_HWB }
+    if t == 'lch' { return MIXSPACE_LCH }
+    if t == 'oklch' { return MIXSPACE_OKLCH }
+    return -1
+}
+
+// A cube root that keeps the sign, which Math has no call for.
+float func cubeRoot(v:float) {
+    if v < 0.0 { return 0.0 - Math.pow(0.0 - v, 1.0 / 3.0) }
+    return Math.pow(v, 1.0 / 3.0)
+}
+
+// One colour in one space: three components and an alpha out of one.
+// Globals, because a function answers with one value (FINDINGS.md).
+float mixA1 = 0.0
+float mixA2 = 0.0
+float mixA3 = 0.0
+float mixAlpha = 1.0
+
+// The inverse of srgbEncode: a gamma-encoded channel back to light.
+float func srgbDecode(c:float) {
+    float sign = c < 0.0 ? -1.0 : 1.0
+    float v = Math.abs(c)
+    if v <= 0.04045 { return sign * v / 12.92 }
+    return sign * Math.pow((v + 0.055) / 1.055, 2.4)
+}
+
+// Linear-light sRGB to XYZ with a D65 white point.
+float xyzX = 0.0
+float xyzY = 0.0
+float xyzZ = 0.0
+
+void func linearToXyz65(r:float, g:float, b:float) {
+    xyzX = 0.41239079926595934 * r + 0.35758433938387800 * g + 0.18048078840183430 * b
+    xyzY = 0.21263900587151027 * r + 0.71516867876775600 * g + 0.07219231536073371 * b
+    xyzZ = 0.01933081871559182 * r + 0.11919477979462598 * g + 0.95053215224966070 * b
+}
+
+// D65 to D50, the Bradford adaptation the other way round.
+void func xyz65ToXyz50(x:float, y:float, z:float) {
+    xyzX = 1.04792982084054880 * x + 0.02294679334101909 * y - 0.05019222954313557 * z
+    xyzY = 0.02962781568815934 * x + 0.99043448457324900 * y - 0.01707382502938514 * z
+    xyzZ = -0.00924305815259118 * x + 0.01505514489657790 * y + 0.75187428995800080 * z
+}
+
+// Reads a packed colour into the space's own components.
+void func colorIntoSpace(c:int, space:int) {
+    mixAlpha = colorAlpha(c).toFloat() / 255.0
+    float r = colorRed(c).toFloat() / 255.0
+    float g = colorGreen(c).toFloat() / 255.0
+    float b = colorBlue(c).toFloat() / 255.0
+    if space == MIXSPACE_SRGB {
+        mixA1 = r
+        mixA2 = g
+        mixA3 = b
+        return
+    }
+    if space == MIXSPACE_HSL || space == MIXSPACE_HWB {
+        srgbToHueSpace(r, g, b, space)
+        return
+    }
+    float lr = srgbDecode(r)
+    float lg = srgbDecode(g)
+    float lb = srgbDecode(b)
+    if space == MIXSPACE_SRGB_LINEAR {
+        mixA1 = lr
+        mixA2 = lg
+        mixA3 = lb
+        return
+    }
+    if space == MIXSPACE_OKLAB || space == MIXSPACE_OKLCH {
+        srgbToOklab(lr, lg, lb)
+        if space == MIXSPACE_OKLCH { rectToPolar() }
+        return
+    }
+    linearToXyz65(lr, lg, lb)
+    if space == MIXSPACE_XYZ65 {
+        mixA1 = xyzX
+        mixA2 = xyzY
+        mixA3 = xyzZ
+        return
+    }
+    xyz65ToXyz50(xyzX, xyzY, xyzZ)
+    if space == MIXSPACE_XYZ50 {
+        mixA1 = xyzX
+        mixA2 = xyzY
+        mixA3 = xyzZ
+        return
+    }
+    xyz50ToLab(xyzX, xyzY, xyzZ)
+    if space == MIXSPACE_LCH { rectToPolar() }
+}
+
+// Lab and Oklab hold lightness first and a rectangular pair after it;
+// their polar forms keep the lightness and turn the pair into a chroma
+// and an angle. The angle goes first here, because that is where every
+// polar space in this engine keeps it.
+void func rectToPolar() {
+    float l = mixA1
+    float a = mixA2
+    float b = mixA3
+    float chroma = Math.sqrt(a * a + b * b)
+    float hue = Math.atan2(b, a) * 180.0 / CSS_PI
+    if hue < 0.0 { hue = hue + 360.0 }
+    mixA1 = hue
+    mixA2 = chroma
+    mixA3 = l
+}
+
+void func polarToRect() {
+    float hue = mixA1 * CSS_PI / 180.0
+    float chroma = mixA2
+    float l = mixA3
+    mixA1 = l
+    mixA2 = chroma * Math.cos(hue)
+    mixA3 = chroma * Math.sin(hue)
+}
+
+void func srgbToOklab(lr:float, lg:float, lb:float) {
+    float l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb
+    float m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb
+    float s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb
+    float lr3 = cubeRoot(l)
+    float mr3 = cubeRoot(m)
+    float sr3 = cubeRoot(s)
+    mixA1 = 0.2104542553 * lr3 + 0.7936177850 * mr3 - 0.0040720468 * sr3
+    mixA2 = 1.9779984951 * lr3 - 2.4285922050 * mr3 + 0.4505937099 * sr3
+    mixA3 = 0.0259040371 * lr3 + 0.7827717662 * mr3 - 0.8086757660 * sr3
+}
+
+void func xyz50ToLab(x:float, y:float, z:float) {
+    float whiteX = 0.3457 / 0.3585
+    float whiteZ = (1.0 - 0.3457 - 0.3585) / 0.3585
+    float fx = labF(x / whiteX)
+    float fy = labF(y)
+    float fz = labF(z / whiteZ)
+    mixA1 = 116.0 * fy - 16.0
+    mixA2 = 500.0 * (fx - fy)
+    mixA3 = 200.0 * (fy - fz)
+}
+
+float func labF(t:float) {
+    float epsilon = 216.0 / 24389.0
+    float kappa = 24389.0 / 27.0
+    if t > epsilon { return cubeRoot(t) }
+    return (kappa * t + 16.0) / 116.0
+}
+
+// sRGB to HSL or HWB, both of which are read off the gamma-encoded
+// channels rather than off light.
+void func srgbToHueSpace(r:float, g:float, b:float, space:int) {
+    float mx = r > g ? (r > b ? r : b) : (g > b ? g : b)
+    float mn = r < g ? (r < b ? r : b) : (g < b ? g : b)
+    float hue = 0.0
+    float d = mx - mn
+    if d > 0.0 {
+        if mx == r { hue = (g - b) / d }
+        else if mx == g { hue = (b - r) / d + 2.0 }
+        else { hue = (r - g) / d + 4.0 }
+        hue = hue * 60.0
+        if hue < 0.0 { hue = hue + 360.0 }
+    }
+    mixA1 = hue
+    if space == MIXSPACE_HWB {
+        mixA2 = mn
+        mixA3 = 1.0 - mx
+        return
+    }
+    float l = (mx + mn) / 2.0
+    float sat = 0.0
+    if d > 0.0 && l > 0.0 && l < 1.0 { sat = d / (1.0 - Math.abs(2.0 * l - 1.0)) }
+    mixA2 = sat
+    mixA3 = l
+}
+
+// The components back to a packed colour.
+int func colorFromSpace(space:int, alpha:int) {
+    if space == MIXSPACE_SRGB {
+        return packColor(clampChannel(mixA1 * 255.0), clampChannel(mixA2 * 255.0),
+                         clampChannel(mixA3 * 255.0), alpha)
+    }
+    if space == MIXSPACE_SRGB_LINEAR {
+        return packColor(linearToChannel(mixA1), linearToChannel(mixA2),
+                         linearToChannel(mixA3), alpha)
+    }
+    if space == MIXSPACE_HSL {
+        return hslToPacked(mixA1, mixA2, mixA3, alpha)
+    }
+    if space == MIXSPACE_HWB {
+        return hwbToPacked(mixA1, mixA2, mixA3, alpha)
+    }
+    if space == MIXSPACE_LCH {
+        polarToRect()
+        return labToPacked(mixA1, mixA2, mixA3, alpha)
+    }
+    if space == MIXSPACE_OKLCH {
+        polarToRect()
+        return oklabToPacked(mixA1, mixA2, mixA3, alpha)
+    }
+    if space == MIXSPACE_LAB { return labToPacked(mixA1, mixA2, mixA3, alpha) }
+    if space == MIXSPACE_OKLAB { return oklabToPacked(mixA1, mixA2, mixA3, alpha) }
+    if space == MIXSPACE_XYZ50 { return xyz50ToPacked(mixA1, mixA2, mixA3, alpha) }
+    return xyz65ToPacked(mixA1, mixA2, mixA3, alpha)
+}
+
+// The second hue moved so that interpolating towards it travels the way
+// the method asks (CSS Color 4 sec. 12.4).
+float func hueEndpoint(h1:float, h2In:float, way:int) {
+    float h2 = h2In
+    float d = h2 - h1
+    if way == HUEWAY_SHORTER {
+        if d > 180.0 { h2 = h2 - 360.0 }
+        else if d < -180.0 { h2 = h2 + 360.0 }
+        return h2
+    }
+    if way == HUEWAY_LONGER {
+        if d > -180.0 && d < 180.0 {
+            h2 = d > 0.0 ? h2 - 360.0 : h2 + 360.0
+        }
+        // a difference of exactly zero has no longer way round
+        return h2
+    }
+    if way == HUEWAY_INCREASING {
+        if d < 0.0 { h2 = h2 + 360.0 }
+        return h2
+    }
+    if d > 0.0 { h2 = h2 - 360.0 }
+    return h2
+}
+
+// Mixes two colours, `w1` of the first and one less of it of the
+// second, premultiplied.
+int func mixColors(c1:int, c2:int, space:int, way:int, w1:float, alphaScale:float) {
+    float w2 = 1.0 - w1
+    colorIntoSpace(c1, space)
+    float p1 = mixA1
+    float q1 = mixA2
+    float r1 = mixA3
+    float alpha1 = mixAlpha
+    colorIntoSpace(c2, space)
+    float p2 = mixA1
+    float q2 = mixA2
+    float r2 = mixA3
+    float alpha2 = mixAlpha
+    float alpha = alpha1 * w1 + alpha2 * w2
+    bool polar = mixSpaceIsPolar(space)
+    if polar { p2 = hueEndpoint(p1, p2, way) }
+    // Premultiplication is by alpha, and a hue is an angle rather than
+    // a quantity, so it is interpolated as it stands.
+    float m1 = polar ? p1 * w1 + p2 * w2
+                     : (p1 * alpha1 * w1 + p2 * alpha2 * w2)
+    float m2 = q1 * alpha1 * w1 + q2 * alpha2 * w2
+    float m3 = r1 * alpha1 * w1 + r2 * alpha2 * w2
+    if alpha > 0.0 {
+        if !polar { m1 = m1 / alpha }
+        m2 = m2 / alpha
+        m3 = m3 / alpha
+    }
+    mixA1 = m1
+    mixA2 = m2
+    mixA3 = m3
+    float outAlpha = alpha * alphaScale
+    if outAlpha < 0.0 { outAlpha = 0.0 }
+    if outAlpha > 1.0 { outAlpha = 1.0 }
+    return colorFromSpace(space, Math.round(outAlpha * 255.0))
+}
+
+// Splits on commas that are not inside parentheses, which `rgb(1, 2, 3)`
+// as an argument makes necessary.
+arr[ascii] func splitTopCommas(v:ascii) {
+    arr[ascii] out = []
+    int depth = 0
+    int start = 0
+    for int i = 0, i < v.length, i++ {
+        int c = v.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_COMMA && depth == 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+    }
+    out.push(asciiTrim(v.slice(start, v.length)))
+    return out
+}
+
+// One `<color> <percentage>?` argument. The percentage comes back in a
+// global, negative when it was not written.
+float mixArgPercent = -1.0
+
+int func parseMixArgument(arg:ascii, currentColor:int) {
+    mixArgPercent = -1.0
+    // The percentage is the last token, and a colour function may hold
+    // spaces of its own, so the split is from the right.
+    int end = arg.length
+    if end > 0 && arg.charCodeAt(end - 1) == CH_PERCENT {
+        int at = end - 1
+        while at > 0 && !isSpaceCode(arg.charCodeAt(at - 1)) { at-- }
+        parseNumberAt(arg, at)
+        if numOk && numEnd == end - 1 {
+            mixArgPercent = numValue
+            return parseCssColor(asciiTrim(arg.slice(0, at)), currentColor)
+        }
+    }
+    return parseCssColor(arg, currentColor)
+}
+
+// `color-mix( in <space> <hue-method>? , <color> <pct>? , <color> <pct>? )`
+int func parseColorMix(inner:ascii, currentColor:int) {
+    arr[ascii] args = splitTopCommas(inner)
+    if args.length != 3 { return COLOR_UNSET }
+    // The first argument is `in <space>` and, for a polar space, how the
+    // hue travels.
+    arr[ascii] head = asciiSplitSpace(args[0])
+    if head.length < 2 || head[0] != 'in' { return COLOR_UNSET }
+    int space = mixSpaceNamed(head[1])
+    if space < 0 { return COLOR_UNSET }
+    int way = HUEWAY_SHORTER
+    if head.length >= 4 && head[3] == 'hue' {
+        if head[2] == 'shorter' { way = HUEWAY_SHORTER }
+        else if head[2] == 'longer' { way = HUEWAY_LONGER }
+        else if head[2] == 'increasing' { way = HUEWAY_INCREASING }
+        else if head[2] == 'decreasing' { way = HUEWAY_DECREASING }
+        else { return COLOR_UNSET }
+    }
+    int c1 = parseMixArgument(args[1], currentColor)
+    float p1 = mixArgPercent
+    int c2 = parseMixArgument(args[2], currentColor)
+    float p2 = mixArgPercent
+    if c1 == COLOR_UNSET || c2 == COLOR_UNSET { return COLOR_UNSET }
+    // An absent percentage is whatever the other one leaves.
+    if p1 < 0.0 && p2 < 0.0 {
+        p1 = 50.0
+        p2 = 50.0
+    } else if p1 < 0.0 {
+        p1 = 100.0 - p2
+    } else if p2 < 0.0 {
+        p2 = 100.0 - p1
+    }
+    float sum = p1 + p2
+    if sum <= 0.0 { return COLOR_UNSET }
+    // Percentages that do not add to a hundred are normalised, and the
+    // result's alpha carries what they came to.
+    float scale = sum < 100.0 ? sum / 100.0 : 1.0
+    return mixColors(c1, c2, space, way, p1 / sum, scale)
 }

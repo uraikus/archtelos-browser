@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### color-mix()
+
+Over every interpolation space the standard names: the rectangular
+`srgb`, `srgb-linear`, `xyz`, `xyz-d65`, `xyz-d50`, `lab` and `oklab`,
+and the polar `hsl`, `hwb`, `lch` and `oklch` with `shorter`, `longer`,
+`increasing` and `decreasing` hue. CSS Color 5 moves from Nothing to
+Partial; what it still does not have is the relative colour syntax.
+
+Mixing is premultiplied, so `color-mix(in srgb, transparent, blue)` is
+blue at half alpha rather than a dark blue. A hue is not premultiplied,
+being an angle rather than a quantity. Percentages that do not add to a
+hundred are normalised, and what they came to is carried into the
+result's alpha: `red 30%, blue 30%` is the halfway colour at six tenths
+alpha.
+
+Every space needed the conversion the wider colour spaces did not: sRGB
+*into* it rather than out of it. That is what the polar spaces were
+waiting on, and it is what the relative colour syntax will want next.
+
+Every expected pixel is Chromium 141's, read by setting the colour as a
+canvas fill. Eleven of the fifty-six checks need no reference at all: a
+colour mixed with itself is itself, in each of the ten spaces and for a
+colour that is not a primary. A conversion wrong in both directions
+passes every other check here and fails those.
+
+With the space forced to sRGB, twenty-five of the fifty-six fail.
+
 ### @layer orders the cascade
 
 The blocks were parsed and the ordering -- the entire point -- was
