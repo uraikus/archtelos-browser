@@ -5,6 +5,75 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The property instrument was measuring against the wrong denominator
+
+The row list in `tests/conformance/css-properties.txt` was built from
+Chromium's indexed enumeration of a computed style, and its header said
+so: "every CSS property Chromium 141 reports on a computed style". That
+enumeration reports 406 names, 33 of them `-webkit-` prefixed, which is
+where the 373 rows came from. It also **omits 120 properties Chromium
+computes perfectly well** and answers for through `getPropertyValue`.
+
+Eighty-one of the 120 are shorthands and six are legacy aliases --
+`page-break-before`, `word-wrap`, `grid-gap` and the rest -- and neither
+belongs in a per-longhand instrument. The classification is Chromium's,
+not an opinion: a shorthand expands to more than one longhand when set
+on an inline style, and an alias expands to exactly one with a different
+name. That leaves **33 ordinary longhands**, and every one of them
+grades.
+
+**Seven were already implemented here and had never been counted**:
+`quotes`, `counter-increment`, `counter-reset`, `contain`,
+`content-visibility`, `text-decoration-thickness` and
+`text-underline-offset`. The file's header had noticed three of those
+and drawn the wrong conclusion, saying they "cannot appear here at all"
+-- the enumeration is how the list was discovered, not a limit on what
+can be graded.
+
+The count is now **193 of 405**, against 186 of 369. Each of the seven
+was checked with `--fields` for which field moved, and each moved one
+that means the property.
+
+### Three rows were excused for reasons nobody had tested
+
+`d`, `grid-template-areas` and `hyphenate-character` carried a third
+column declaring them ungradeable, with a reason each: that `d` applies
+only to an SVG path, that `grid-template-areas` computes `none` off a
+grid container, that `hyphenate-character` computes `auto` unless
+hyphenation is applied. All three reasons were guesses, and all three
+are wrong. The real cause was the same for all of them and had nothing
+to do with the properties: their values are CSS strings written with
+double quotes, and both the audit and the runner deliver a value inside
+a double-quoted `style` attribute, which the first quote ends. The
+value arrived as nothing and the property computed its initial value,
+which reads exactly like a property Chromium cannot tell apart.
+
+Written with single quotes, all three grade. The audit now names this
+case in its own words instead of reporting it as Chromium computing no
+difference, so the next one is diagnosed rather than excused. One row
+remains genuinely ungradeable: `overlay`, which only the user agent can
+set.
+
+### A counter in a style attribute was dropped
+
+`anyCounters` and `anyQuotes` are the per-document flags that let
+counters and `quotes` cost nothing to the pages that do not use them,
+and both were raised by walking the stylesheet rules -- which an inline
+declaration is not in. So `<span style="counter-increment: c">` numbered
+nothing, on any page whose stylesheets mentioned no counter.
+
+The flags are now raised where the inline declarations are parsed,
+which reaches only elements that carry a `style` attribute and only
+until the answer is yes, and which happens before that element's own
+values are computed, so the element that raises the flag benefits from
+it. The check that holds it is the same counting written both ways,
+asserted equal, with the absolute values beside it so that breaking
+both forms together could not pass.
+
+The `@supports` cross-check found this one on its own: `counter-reset`
+and `counter-increment` were claimed by `supportedProperties` and
+changed nothing the instrument could see.
+
 ### The benchmark's control row is the script's job now
 
 `tests/bench.sh` compares Chromium's render of the benchmark page

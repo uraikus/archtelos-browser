@@ -108,4 +108,34 @@ Page p7 = pageFromHtml(head + '<style>'
     + '<div class="r"><span class="u" id="r1">a</span></div></body>', 'about:blank', 600)
 checkEq(generatedBefore(p7.root, 'r1'), '11', 'a reset to ten then incremented is eleven')
 
+// ---- the same counting, declared two ways ---------------------------
+// A counter written in a stylesheet and the same counter written in a
+// `style` attribute must number identically. They did not: `anyCounters`
+// -- the per-document flag that lets this feature cost nothing to the
+// pages without counters -- was raised by walking the stylesheet rules
+// and nothing else, so a counter that appeared only in a style
+// attribute was dropped and its element numbered nothing at all.
+//
+// This is the check that does not depend on either answer being known:
+// two ways of saying the same thing have to land on the same text.
+Page p8 = pageFromHtml(head + '<style>.v { display:inline-block }'
+    + '.v::before { content: counter(z) }'
+    + '#w { counter-reset: z 0 } #v1 { counter-increment: z } #v2 { counter-increment: z 3 }'
+    + '</style>' + '<div id="w"><span class="v" id="v1">a</span>'
+    + '<span class="v" id="v2">a</span></div></body>', 'about:blank', 600)
+Page p9 = pageFromHtml(head + '<style>.v { display:inline-block }'
+    + '.v::before { content: counter(z) }</style>'
+    + '<div style="counter-reset: z 0">'
+    + '<span class="v" id="v1" style="counter-increment: z">a</span>'
+    + '<span class="v" id="v2" style="counter-increment: z 3">a</span></div></body>',
+    'about:blank', 600)
+checkEq(generatedBefore(p9.root, 'v1'), generatedBefore(p8.root, 'v1'),
+        'a counter in a style attribute counts as one in a stylesheet does')
+checkEq(generatedBefore(p9.root, 'v2'), generatedBefore(p8.root, 'v2'),
+        'and so does one carrying a value')
+// The absolute values too, so a regression that broke both forms
+// together could not pass the comparison above.
+checkEq(generatedBefore(p8.root, 'v1'), '1', 'the stylesheet form numbers one')
+checkEq(generatedBefore(p9.root, 'v2'), '4', 'the style-attribute form numbers four')
+
 finish('counters')

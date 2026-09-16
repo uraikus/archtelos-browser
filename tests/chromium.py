@@ -440,13 +440,21 @@ def properties_audit(path):
     if not chrome:
         print("properties audit: skipped -- no chromium")
         return 0
-    rows, excused = [], {}
+    rows, excused, undeliverable = [], {}, []
     for line in open(path):
         line = line.rstrip("\n")
         if not line or line.startswith("#") or "\t" not in line:
             continue
         parts = line.split("\t")
         rows.append([parts[0], parts[1]])
+        # The value is delivered inside a double-quoted style attribute,
+        # by this audit and by the runner alike, so one containing a
+        # double quote never arrives. Chromium then computes the initial
+        # value and the row looks like a property it cannot tell apart,
+        # which is a different fault with a different fix: write the CSS
+        # string with single quotes.
+        if '"' in parts[1]:
+            undeliverable.append(parts[0])
         if len(parts) >= 3 and parts[2]:
             excused[parts[0]] = parts[2]
     payload = encode_payload({"rows": rows})
@@ -481,7 +489,12 @@ report(bad);
                                  text=True, timeout=30).stdout.strip() or "unknown"
     except Exception:
         pass
-    unexpected = [b for b in bad if b[0] not in excused]
+    undeliverable = [p for p in undeliverable if p not in excused]
+    for prop in undeliverable:
+        print("properties audit: %s carries a double quote, which cannot survive "
+              "the style attribute it is delivered in -- write the CSS string "
+              "with single quotes" % prop)
+    unexpected = [b for b in bad if b[0] not in excused and b[0] not in undeliverable]
     stale = [p for p in excused if p not in {b[0] for b in bad}]
     for prop, val in unexpected:
         print("properties audit: %s = %r cannot register -- %s computes it "
@@ -489,9 +502,9 @@ report(bad);
     for prop in stale:
         print("properties audit: %s is marked ungradeable but Chromium can now "
               "tell it from the initial value -- drop the third column" % prop)
-    if unexpected or stale:
+    if unexpected or stale or undeliverable:
         print("properties audit: FAILED -- %d row(s) measure nothing"
-              % (len(unexpected) + len(stale)))
+              % (len(unexpected) + len(stale) + len(undeliverable)))
         return 1
     print("properties audit: all %d rows can register against %s "
           "(%d declared ungradeable)"

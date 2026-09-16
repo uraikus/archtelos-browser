@@ -722,6 +722,19 @@ arr[Match] func collectMatches(n:Node) {
         if ia == null { ia = textToAsciiSafeForCss(inline) }
         arr[Decl] decls = parseDeclarations(stripCssComments(ia))
         for int d = 0, d < decls.length, d++ {
+            // `anyCounters` and `anyQuotes` are what let these features
+            // cost nothing to the pages without them, and they were
+            // raised by walking the stylesheet rules -- which an inline
+            // declaration is not in. A counter written only in a style
+            // attribute was therefore dropped, and its element numbered
+            // nothing. Asked here, the question reaches only elements
+            // that carry a style attribute, and only until it is
+            // answered yes; it is asked before this element's own
+            // values are computed, which is what makes the element that
+            // raises the flag benefit from it.
+            if !anyCounters && (decls[d].name == 'counter-reset'
+                || decls[d].name == 'counter-increment') { anyCounters = true }
+            if !anyQuotes && decls[d].name == 'quotes' { anyQuotes = true }
             Match m
             m.decl = decls[d]
             m.weight = matchWeight(decls[d].important, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, d)

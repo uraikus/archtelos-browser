@@ -27,14 +27,27 @@
 # denominator and named by --verbose, rather than counted as properties
 # this engine has not implemented.
 #
-# Chromium enumerates 406; the 33 not here are all `-webkit-` prefixed,
-# which the CSS Snapshot does not define and this engine deliberately
-# drops. The denominator is therefore standard properties, on purpose.
+# A value must also be one the style attribute can carry, because that
+# is how both this file's grader and its audit deliver it. A CSS string
+# written with double quotes ends the attribute early and arrives as
+# nothing, and the property then computes its initial value -- which
+# reads exactly like a property Chromium cannot tell apart. Three rows
+# sat here excused as ungradeable for invented reasons on the strength
+# of that, and all three grade perfectly once their strings are written
+# with single quotes. The audit names this case separately now.
 #
-# Some properties cannot appear here at all, because Chromium does not
-# enumerate them on a computed style: `counter-reset`,
-# `counter-increment` and `quotes` are implemented or not without this
-# count moving. They are measured by tests/unit/test_counters.f.
+# The list is not Chromium's indexed enumeration of a computed style.
+# That enumeration reports 406 names, of which 33 are `-webkit-`
+# prefixed -- the CSS Snapshot does not define those and this engine
+# deliberately drops them -- but it also omits 120 properties Chromium
+# computes perfectly well and answers for through getPropertyValue.
+# Eighty-one of those are shorthands and six are legacy aliases, neither
+# of which belongs in a per-longhand instrument; the remaining 33 are
+# ordinary longhands and are here. Seven of them -- `quotes`,
+# `counter-increment`, `counter-reset`, `contain`, `content-visibility`,
+# `text-decoration-thickness` and `text-underline-offset` -- this engine
+# already implemented, and went uncounted for as long as the list was
+# taken from the enumeration.
 #
 #     property <TAB> value
 #
@@ -76,6 +89,7 @@ animation-timeline	none
 animation-timing-function	linear
 app-region	none
 appearance	auto
+aspect-ratio	16 / 9
 backdrop-filter	blur(2px)
 backface-visibility	hidden
 background-attachment	fixed
@@ -85,6 +99,8 @@ background-color	#123456
 background-image	linear-gradient(to right, red, blue)
 background-origin	content-box
 background-position	right bottom
+background-position-x	30px
+background-position-y	30px
 background-repeat	no-repeat
 background-size	10px
 baseline-shift	10px
@@ -147,13 +163,16 @@ color	#123456
 color-interpolation	auto
 color-interpolation-filters	auto
 color-rendering	optimizeSpeed
+color-scheme	dark
 column-count	2
+column-fill	auto
 column-gap	10px
 column-rule-color	#123456
 column-rule-style	solid
 column-rule-width	10px; column-rule-style: solid
 column-span	all
 column-width	10px
+contain	layout paint
 contain-intrinsic-block-size	10px
 contain-intrinsic-height	10px
 contain-intrinsic-inline-size	10px
@@ -162,6 +181,7 @@ contain-intrinsic-width	10px
 container-name	sidebar
 container-type	size
 content	url(a.png)
+content-visibility	hidden
 corner-bottom-left-shape	square
 corner-bottom-right-shape	square
 corner-end-end-shape	square
@@ -170,10 +190,13 @@ corner-start-end-shape	square
 corner-start-start-shape	square
 corner-top-left-shape	square
 corner-top-right-shape	square
+counter-increment	chapter 2
+counter-reset	chapter 3
+counter-set	chapter 4
 cursor	none
 cx	10px
 cy	10px
-d	path("M 0 0 L 1 1")	applies only to an SVG path element; the probe is a <p>
+d	path('M 0 0 L 1 1')
 direction	rtl
 display	inline-block
 dominant-baseline	hanging
@@ -193,6 +216,7 @@ float	left
 flood-color	#123456
 flood-opacity	50%
 font-family	monospace
+font-feature-settings	'liga' 0
 font-kerning	none
 font-optical-sizing	none
 font-palette	dark
@@ -211,7 +235,9 @@ font-variant-emoji	text
 font-variant-ligatures	none
 font-variant-numeric	oldstyle-nums
 font-variant-position	sub
+font-variation-settings	'wght' 700
 font-weight	bold
+forced-color-adjust	none
 grid-auto-columns	100px
 grid-auto-flow	column
 grid-auto-rows	100px
@@ -219,11 +245,11 @@ grid-column-end	span 2
 grid-column-start	2
 grid-row-end	span 2
 grid-row-start	2
-grid-template-areas	"head" "body"	Chromium computes none for it on a probe that is not a grid container
+grid-template-areas	'head' 'body'
 grid-template-columns	100px 200px
 grid-template-rows	100px 200px
 height	45px
-hyphenate-character	"x"	Chromium computes auto unless hyphenation is actually applied
+hyphenate-character	'x'
 hyphenate-limit-chars	2
 hyphens	none
 image-orientation	none
@@ -305,6 +331,8 @@ overflow-y	hidden
 overlay	initial	only the user agent can set it; no author declaration changes it
 overscroll-behavior-block	none
 overscroll-behavior-inline	none
+overscroll-behavior-x	contain
+overscroll-behavior-y	contain
 padding-block-end	10px
 padding-block-start	10px
 padding-bottom	7px
@@ -313,6 +341,7 @@ padding-inline-start	7px
 padding-left	7px
 padding-right	7px
 padding-top	7px
+page	chapter
 paint-order	stroke
 perspective	10px
 perspective-origin	left
@@ -324,6 +353,7 @@ position-try-fallbacks	center
 position-try-order	most-width
 position-visibility	no-overflow
 print-color-adjust	exact
+quotes	'<' '>'
 r	10px
 reading-flow	source-order
 reading-order	2
@@ -340,13 +370,24 @@ scroll-behavior	smooth
 scroll-initial-target	nearest
 scroll-margin-block-end	10px
 scroll-margin-block-start	10px
+scroll-margin-bottom	7px
 scroll-margin-inline-end	10px
 scroll-margin-inline-start	10px
+scroll-margin-left	7px
+scroll-margin-right	7px
+scroll-margin-top	7px
 scroll-marker-group	before
 scroll-padding-block-end	10px
 scroll-padding-block-start	10px
+scroll-padding-bottom	7px
 scroll-padding-inline-end	10px
 scroll-padding-inline-start	10px
+scroll-padding-left	7px
+scroll-padding-right	7px
+scroll-padding-top	7px
+scroll-snap-align	center
+scroll-snap-stop	always
+scroll-snap-type	x mandatory
 scroll-target-group	auto
 scroll-timeline-axis	x
 scroll-timeline-name	--t
@@ -376,21 +417,25 @@ text-anchor	end
 text-autospace	normal
 text-box-edge	text
 text-box-trim	trim-both
+text-combine-upright	all
 text-decoration	underline
 text-decoration-color	#123456
 text-decoration-line	underline
 text-decoration-skip-ink	none
 text-decoration-style	wavy
+text-decoration-thickness	3px
 text-emphasis-color	#123456
 text-emphasis-position	under
 text-emphasis-style	dot
 text-indent	9px
+text-orientation	upright
 text-overflow	ellipsis
 text-rendering	optimizeSpeed
 text-shadow	0 0 2px red
 text-size-adjust	none
 text-spacing-trim	space-all
 text-transform	uppercase
+text-underline-offset	4px
 text-underline-position	under
 text-wrap-mode	nowrap
 text-wrap-style	balance
@@ -398,6 +443,7 @@ timeline-scope	--t
 top	11px
 touch-action	none
 transform	translateX(10px)
+transform-box	content-box
 transform-origin	left
 transform-style	preserve-3d
 transition-behavior	allow-discrete

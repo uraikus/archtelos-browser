@@ -199,10 +199,10 @@ not settled is not one to ship for the sake of a count. The probe is
 ### The instrument
 
 **Three measurements exist**, each with a floor in `tests/run.sh`:
-`tests/conformance/properties.f` reports how many of the 369 CSS
+`tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(186; Chromium reports 373, and four of them cannot be graded by a probe
-that is an ordinary element),
+(193; Chromium answers for 406, and one of them -- `overlay` -- only the
+user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
 `tests/conformance/selectors.f` how many of 61 selectors match the same
@@ -211,6 +211,12 @@ the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed
 style, so `tests/unit/test_color4.f` is what grades them.
+
+**`background-position-x` and `background-position-y`** have rows now
+and do not register: the engine parses the `background-position`
+shorthand into `backgroundPosX` and `backgroundPosY` and has no
+longhands to set them separately. It is the shortest remaining item on
+this list -- two names into the same two fields.
 
 **Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
 against the standard's own tests, level with Chromium, and the only

@@ -62,7 +62,13 @@ fi
 # for a field belonging to another: `outline-style` was registering
 # because declaring it gives the outline a width. The engine did not
 # regress; the measurement got stricter.
-PROPERTIES_MIN=186
+#
+# Both numbers moved together when the denominator was corrected: the
+# row list had been taken from Chromium's indexed enumeration of a
+# computed style, which omits 120 properties it computes perfectly well,
+# and 33 of those are ordinary longhands. Seven were already
+# implemented here and had never been counted.
+PROPERTIES_MIN=193
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1
