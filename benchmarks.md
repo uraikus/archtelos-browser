@@ -22,7 +22,9 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
   Chromium 141.0.7390.37, headless, `--disable-gpu --no-sandbox`.
 - **Statistic**: best of 5 runs. The best run is the one least
   disturbed by whatever else the machine was doing; medians and means
-  on a shared container mostly measure the neighbours.
+  on a shared container mostly measure the neighbours. Best-of-5 does
+  not rescue a contended machine, though, because all five runs are
+  contended — which is what the control check below is for.
 - **Both engines get the same canvas**, 800x600, and the rendering
   comparison is measured from inside both engines rather than by
   subtracting a start-up baseline. Both of those are easy to get wrong
@@ -114,24 +116,47 @@ container, and a forced layout, timed inside the page with
 and layout phases that `ARCHTELOS_TIMING=1` reports. Same work, same
 page, both measured from inside.
 
+Both figures in the large row are the middle of eight best-of-5 samples
+rather than one run of five, because one run of five is not enough here:
+see the spread below.
+
 | Page | Size | This browser | Chromium | Ratio |
 |---|---|---|---|---|
 | hello.html | 4 KB | 11 ms | 1.1 ms | 10x |
 | css.html | 3 KB | 11 ms | 0.9 ms | 12x |
-| generated.html | 51 KB | 98 ms | 25.6 ms | **3.8x** |
+| generated.html | 51 KB | 101 ms | 26.0 ms | **3.9x** |
 
 **Chromium renders the 51 KB page about four times faster**, and the gap
 is wider on small pages because a fixed cost of about 10 ms has nothing
 to amortize against. The cascade and layout are where it lives; the
 section after next says where inside them.
 
-Four of our 98 ms are the preload scanner's worker threads taxing every
+Neither column is one number. Eight best-of-5 samples of Chromium taken
+back to back on an idle machine give 25.3, 25.6, 25.6, 25.9, 26.1, 26.1,
+27.4 and 28.8 ms; eight of this browser give 99, 100, 101, 101, 102,
+103, 103 and 104. Sampled that way each is tight — 3% below to 11% above
+26.0, and about 2% either side of 101 — but a whole `tests/bench.sh` run,
+which reaches this table after a dozen Chromium launches and several
+hundred renders, has put our row at 98 on one occasion and 110 on
+another. So the row records the middle of the samples, and a difference
+under about 10% between two runs of this table is the machine.
+
+Chromium's own row is also the control, and that is what its spread is
+for. A run whose control falls
+outside 15% of 26.0 is measuring the machine rather than either engine,
+and `tests/bench.sh` now says so and exits non-zero rather than leaving
+the reader to notice: the run that prompted it reported 30.4 ms, which
+is 17% out, and printed without comment beside a table that looked
+ordinary. `CONTROL_MS` and `CONTROL_TOLERANCE` override it, and a new
+reference browser is a new control rather than a bad run.
+
+Four of our 101 ms are the preload scanner's worker threads taxing every
 allocation in the process, on a page that prefetches nothing — see
 "what the preload scanner is worth" below. The movement from the 93 ms
 this file carried before is the machine, not the code: the previous
 revision, rebuilt and run alternately with this one in the same
 minutes, gives 97 to 104 ms against this one's 96 to 104. Chromium's
-own row is the control — 25.6 ms today against 25.3 ms then — and it
+own row is the control — 26.0 ms today against 25.3 ms then — and it
 did not move, which is what makes the run worth recording at all.
 
 ## HTML parsing alone
@@ -153,7 +178,7 @@ across runs, so a single ratio would be reporting that spread rather
 than a difference — the row gives the run this table came from. Call it
 6 MB/s against 13 to 25. For a tokenizer and tree builder written in a
 young language against one of the most optimized parsers in software
-that is a reasonable place to be, and at 8 ms of a 98 ms render it is
+that is a reasonable place to be, and at 8 ms of a 101 ms render it is
 not where the time goes.
 
 ## Where the time actually goes
@@ -172,7 +197,7 @@ not where the time goes.
 
 The cascade and layout are **93%** of it. Parsing is 9%, and paint —
 once it is not also encoding six megapixels — is 7 ms. Chromium does the
-first four of those phases in 25.6 ms against our 98; the whole gap is
+first four of those phases in 26.0 ms against our 101; the whole gap is
 here, and **layout is the larger half of it**.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
@@ -592,8 +617,8 @@ paints it.
 CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
 `memchr` per rule on a page that does not nest. A rule body with no `{`
 and no `@` in it cannot contain a nested rule, so it takes the path it
-always took; `generated.html` renders in 98 ms with the feature in, the
-same as without it, and Chromium's control row moved from 24.9 to 25.6
-ms between the two runs, which is the size of the difference the
-measurement could see.
+always took. The revision before it, rebuilt and sampled alternately
+with this one in the same minutes, gives 100, 102, 102 and 112 ms
+against this one's 99, 101, 101 and 103 — two series that overlap, with
+the higher reading on the side that does not have the feature.
 

@@ -345,7 +345,7 @@ local server.
 ## Performance
 
 Chromium parses, styles and lays out the 51 KB page about **four times
-faster** — 25.6 ms against 98 — with both sides measured from inside and
+faster** — 26.0 ms against 101 — with both sides measured from inside and
 start-up outside the timer (benchmarks.md). The cascade and layout are
 93% of our time and all of the gap, and **layout is the larger half
 of the two**. In order:

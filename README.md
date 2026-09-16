@@ -336,7 +336,7 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Parse, style and lay out 51 KB | 98 ms | 25.6 ms |
+| Parse, style and lay out 51 KB | 101 ms | 26.0 ms |
 | Parse 51 KB of HTML | 8 ms | 2.0–3.9 ms |
 | Peak memory, 51 KB page | 18.0 MB | 194.5 MB |
 | Binary | 2.6 MB | 463 MB |

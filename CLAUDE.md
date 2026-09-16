@@ -207,6 +207,19 @@ could not possibly have moved — Chromium's, usually — is checked against
 what it said last time. A row that shifted is the run disqualifying
 itself.
 
+That check is the script's now rather than the reader's: `tests/bench.sh`
+compares Chromium's render of the benchmark page against `CONTROL_MS`,
+says how far out it is, and exits non-zero when it is beyond
+`CONTROL_TOLERANCE`. Leaving it to be remembered was not enough — a run
+reporting Chromium at 30.4 ms where benchmarks.md records 26.0 printed
+without a word of complaint beside a table that looked ordinary. The
+tolerance is set from Chromium's measured spread on this machine, which
+benchmarks.md records beside the table, and not from an opinion about
+how much noise is acceptable: a band tight enough to fail honest runs is
+a band that gets ignored. A new reference browser is a new control, so
+raise `CONTROL_MS` and record the new spread; do not widen the
+tolerance to make a bad run pass.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.

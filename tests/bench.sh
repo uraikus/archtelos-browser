@@ -26,6 +26,32 @@ RUNS="${RUNS:-5}"
 BENCH=build/bench
 mkdir -p "$BENCH"
 
+# The control row. CLAUDE.md requires that, before any number here is
+# copied into benchmarks.md, one row this change could not possibly have
+# moved -- Chromium's, usually -- is checked against what it said last
+# time, and that a row which shifted disqualifies the run. That was a
+# thing to remember rather than a thing this script did, and a run
+# reporting Chromium at 30.4 ms on the page where benchmarks.md records
+# 25.6 printed without a word of complaint. The question is asked below
+# instead, of the one number no change to this browser can move.
+#
+# CONTROL_MS is the middle of Chromium's own distribution rather than any
+# one run of it, and the tolerance is set from that distribution's width
+# rather than chosen: eight best-of-5 samples on an idle machine gave
+# 25.3, 25.6, 25.6, 25.9, 26.1, 26.1, 27.4 and 28.8 ms, which is -3% to
+# +11% around 26.0, and the contended run this check exists for sat at
+# 30.4, which is +17%. Fifteen per cent separates them with room on both
+# sides. A tighter band would fail honest runs, which is how a check
+# earns being ignored.
+#
+# Raise CONTROL_MS when the reference browser itself changes -- a new
+# Chromium is a new control, not a bad run -- and record the new
+# distribution in benchmarks.md when you do.
+CONTROL_PAGE="${CONTROL_PAGE:-generated.html}"
+CONTROL_MS="${CONTROL_MS:-26.0}"
+CONTROL_TOLERANCE="${CONTROL_TOLERANCE:-15}"
+CONTROL_SEEN="-"
+
 echo "building..."
 "$FESTINA_HOME/bin/festina" compile browser.f -o "$BENCH/browser" >/dev/null || exit 1
 
@@ -155,8 +181,32 @@ for page in $PAGES; do
     done
     cms=$(echo "$CHROME_RENDER" | awk -v n="$(basename "$page")" '$2 == n {printf "%.1f", $3}')
     [ -z "$cms" ] && cms="-"
+    [ "$(basename "$page")" = "$CONTROL_PAGE" ] && CONTROL_SEEN="$cms"
     printf "%-26s %8s %12s %12s\n" "$(basename "$page")" "$(human_size "$page")" "$best" "$cms"
 done
+
+# The control, asked of the row above rather than left to the reader.
+CONTROL_BAD=0
+if [ "$CONTROL_SEEN" = "-" ]; then
+    echo
+    echo "control: Chromium did not report $CONTROL_PAGE, so nothing here is checked"
+    CONTROL_BAD=1
+else
+    control_drift=$(awk -v got="$CONTROL_SEEN" -v want="$CONTROL_MS" 'BEGIN {
+        d = (got - want) / want * 100; if (d < 0) d = -d; printf "%.1f", d }')
+    if awk -v d="$control_drift" -v t="$CONTROL_TOLERANCE" 'BEGIN { exit !(d > t) }'; then
+        echo
+        echo "control: Chromium is ${CONTROL_SEEN} ms on $CONTROL_PAGE against ${CONTROL_MS} recorded" \
+             "-- ${control_drift}% out, over the ${CONTROL_TOLERANCE}% this run is allowed."
+        echo "control: this run is measuring the machine. Do not copy its numbers into benchmarks.md;" \
+             "run it again on an idle machine, and raise CONTROL_MS only if the reference browser changed."
+        CONTROL_BAD=1
+    else
+        echo
+        echo "control: Chromium is ${CONTROL_SEEN} ms on $CONTROL_PAGE against ${CONTROL_MS} recorded," \
+             "${control_drift}% -- within the ${CONTROL_TOLERANCE}% this run is allowed."
+    fi
+fi
 
 # ---- what a full-document canvas costs -------------------------------------
 # Not a comparison: headless Chromium will not produce this. It is here
@@ -374,3 +424,8 @@ if [ -n "${WPT_HTML_TESTS:-}" ]; then
     fi
 fi
 echo
+
+# A disqualified control fails the run, so a script that copies these
+# numbers anywhere has to decide what to do about it rather than not
+# notice.
+exit "$CONTROL_BAD"

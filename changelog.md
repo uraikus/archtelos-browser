@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The benchmark's control row is the script's job now
+
+`tests/bench.sh` compares Chromium's render of the benchmark page
+against `CONTROL_MS`, prints how far out it is, and exits non-zero when
+it is beyond `CONTROL_TOLERANCE`. CLAUDE.md had required that check
+since the run that reported Chromium at 93 ms on a page where it takes
+26, but required it of the reader; a run today reporting 30.4 ms where
+the middle of the distribution is 26.0 printed without a word of
+complaint beside a table that looked ordinary.
+
+The tolerance is measured rather than chosen. Eight best-of-5 samples of
+Chromium on an idle machine give 25.3, 25.6, 25.6, 25.9, 26.1, 26.1,
+27.4 and 28.8 ms: a middle of 26.0, and a band from 3% below it to 11%
+above. The contended run sat at 17% above. Fifteen per cent separates
+them with room on both sides, and a band tight enough to fail honest
+runs is a band that gets ignored.
+
+Asking the same question of this browser's own row moved the recorded
+number: eight samples give 99 to 104, while two whole-script runs gave
+98 and 110, the script reaching that table after a dozen Chromium
+launches. The table now records the middle of the samples — 101 ms
+against Chromium's 26.0 — rather than the best run of one afternoon,
+which was the low end of the spread and flattered us by three per cent.
+
 ### CSS Nesting 1
 
 A style rule may be written inside a style rule. `&` stands for the
@@ -34,7 +58,10 @@ blue and `.a { blue; & { red } }` is red.
 A rule body with no `{` and no `@` in it cannot hold a nested rule, and
 takes the path it always took. That is every rule on a page that does
 not nest, so the feature costs those pages one scan for a byte that is
-not there.
+not there. The revision before it, rebuilt and sampled alternately with
+this one, renders the benchmark page in 100, 102, 102 and 112 ms against
+this one's 99, 101, 101 and 103: two series that overlap, with the
+higher reading on the side without the feature.
 
 An `&` inside `:is()`, `:where()`, `:not()` or `:has()` is left in
 place rather than substituted, which makes the selector unparseable and
