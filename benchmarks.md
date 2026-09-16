@@ -489,7 +489,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 21,222 lines of Festina across `browser.f` and `src/` |
+| Source | 21,272 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,8 +498,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,632,632 |
-| This browser, all `.f` source | 767,532 |
+| This browser, the whole program | 2,636,848 |
+| This browser, all `.f` source | 769,781 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -551,4 +551,9 @@ scan is arithmetic rather than a loop over rows — an ellipse's widest
 row in a band is the row in it nearest the centre, and a polygon's is a
 band end or a vertex — so a shaped float costs about what an unshaped
 one does.
+
+`column-span: all` costs **4,216 bytes** (2,632,632 → 2,636,848) and
+nothing at render time. A container with no spanner takes one run
+through the same code that laid out every child before, and a document
+with no multi-column container never reaches it at all.
 

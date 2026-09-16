@@ -132,4 +132,79 @@ checkEqInt(findById(one, 'c').h, findById(plain, 'c').h, 'one column is as tall 
 checkEqInt(findById(one, 'b3').y, findById(plain, 'b3').y, 'and lays out the same way')
 checkEqInt(findById(one, 'b0').w, findById(plain, 'b0').w, 'at the same width')
 
+// ---- column-span: all ----------------------------------------------------
+// A spanner splits the container: what is before it is columnised, the
+// spanner itself is laid out across every column, and what follows
+// starts fresh columns under it.
+//
+// The expected geometry is Chromium 141's, on fixtures whose sections
+// divide evenly into two columns -- Chromium will split a block across
+// a column boundary to balance and this engine will not, so a section
+// with an odd number of blocks is a difference about fragmentation
+// rather than about spanning.
+
+Box func spanColumns(n:int, at:int) {
+    text out = ''
+    for int i = 0, i < n, i++ {
+        text style = 'height:30px'
+        if i == at { style = style + ';column-span:all' }
+        out = out + '<div id="b' + i.toText() + '" style="' + style + '"></div>'
+    }
+    return layoutHtml(head + '<div id="c" style="width:300px;column-gap:0;column-count:2">'
+        + out + '</div></body>', 400)
+}
+
+// Two blocks, a spanner, four blocks.
+Box spanMid = spanColumns(7, 2)
+checkEqInt(findById(spanMid, 'b0').x, 0, 'the block before a spanner is in the first column')
+checkEqInt(findById(spanMid, 'b1').x, 150, 'and the next in the second')
+checkEqInt(findById(spanMid, 'b2').x, 0, 'the spanner starts at the container edge')
+checkEqInt(findById(spanMid, 'b2').y, 30, 'below the columns before it')
+checkEqInt(findById(spanMid, 'b2').w, 300, 'and is as wide as every column together')
+checkEqInt(findById(spanMid, 'b3').x, 0, 'what follows starts a fresh first column')
+checkEqInt(findById(spanMid, 'b3').y, 60, 'under the spanner')
+checkEqInt(findById(spanMid, 'b4').y, 90, 'with room for two blocks in it')
+checkEqInt(findById(spanMid, 'b5').x, 150, 'and two in the second')
+checkEqInt(findById(spanMid, 'b5').y, 60, 'starting at the same height')
+checkEqInt(findById(spanMid, 'c').h, 120, 'the container is the three sections stacked')
+
+// A spanner first, with nothing above it.
+Box spanFirst = spanColumns(5, 0)
+checkEqInt(findById(spanFirst, 'b0').y, 0, 'a spanner first starts at the top')
+checkEqInt(findById(spanFirst, 'b0').w, 300, 'at the full width')
+checkEqInt(findById(spanFirst, 'b1').y, 30, 'and the columns begin below it')
+checkEqInt(findById(spanFirst, 'b3').x, 150, 'balanced two and two')
+checkEqInt(findById(spanFirst, 'c').h, 90, 'so the container is a spanner and two rows')
+
+// A spanner last, with nothing below it.
+Box spanLast = spanColumns(5, 4)
+checkEqInt(findById(spanLast, 'b2').x, 150, 'four blocks above a spanner balance two and two')
+checkEqInt(findById(spanLast, 'b4').y, 60, 'and the spanner goes under them')
+checkEqInt(findById(spanLast, 'b4').w, 300, 'across every column')
+checkEqInt(findById(spanLast, 'c').h, 90, 'making the container ninety tall')
+
+// `column-span: none` is the initial value, so it must lay out exactly
+// as no declaration does -- a check that fails for an implementation
+// that treats any value of the property as a spanner.
+text noneOut = ''
+for int i = 0, i < 6, i++ {
+    text st = 'height:30px'
+    if i == 2 { st = st + ';column-span:none' }
+    noneOut = noneOut + '<div id="b' + i.toText() + '" style="' + st + '"></div>'
+}
+Box spanNone = layoutHtml(head + '<div id="c" style="width:300px;column-gap:0;column-count:2">'
+    + noneOut + '</div></body>', 400)
+Box plainTwo = layoutHtml(head + '<div id="c" style="width:300px;column-gap:0;column-count:2">'
+    + blocks + '</div></body>', 400)
+checkEqInt(findById(spanNone, 'c').h, findById(plainTwo, 'c').h,
+           'column-span:none lays out as no column-span does')
+checkEqInt(findById(spanNone, 'b3').x, findById(plainTwo, 'b3').x, 'with the same columns')
+
+// A spanner outside a multi-column container is an ordinary block.
+Box spanNoColumns = layoutHtml(head + '<div id="c" style="width:300px">'
+    + '<div id="b0" style="height:30px;column-span:all"></div>'
+    + '<div id="b1" style="height:30px"></div></div></body>', 400)
+checkEqInt(findById(spanNoColumns, 'b1').y, 30, 'outside a column container a spanner is a block')
+checkEqInt(findById(spanNoColumns, 'b0').w, 300, 'at the width it would have had anyway')
+
 finish('multicol')

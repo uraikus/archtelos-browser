@@ -1378,20 +1378,57 @@ struct ColumnUnit {
     widows:int
 }
 
-// Lays the content out at the column width, then moves it into columns
-// of equal height. Returns the height of the tallest column, which is
-// the container's content height.
+// Lays a multi-column container out. A child with `column-span: all`
+// is not in any column: it splits the container into the run before it,
+// itself at the full width, and the run after. With no spanner -- which
+// is every multi-column container on almost every page -- this is one
+// call to layoutColumnRun and nothing else.
+//
+// Only a direct child can span. The standard lets a spanner sit deeper
+// and breaks its ancestors around it; that needs the fragment boxes
+// css-2026.md records as missing.
 int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
+    if hasInlineContent(b) {
+        return layoutColumnRun(b, innerX, innerY, width, count, 0, b.children.length)
+    }
+    arr[int] spanners = []
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
+        if c.style.columnSpanAll { spanners.push(i) }
+    }
+    if spanners.length == 0 {
+        return layoutColumnRun(b, innerX, innerY, width, count, 0, b.children.length)
+    }
+    int y = innerY
+    int start = 0
+    for int k = 0, k < spanners.length, k++ {
+        int at = spanners[k]
+        if at > start { y = y + layoutColumnRun(b, innerX, y, width, count, start, at) }
+        y = y + layoutBlockChildrenRange(b, innerX, y, width, at, at + 1)
+        start = at + 1
+    }
+    if start < b.children.length {
+        y = y + layoutColumnRun(b, innerX, y, width, count, start, b.children.length)
+    }
+    return y - innerY
+}
+
+// One run of children laid out at the column width and then moved into
+// columns of equal height. Returns the height of the tallest column,
+// which is the run's height.
+int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, from:int, to:int) {
     Style s = b.style
     int gap = s.columnGap
     int colW = Math.floorDiv(width - gap * (count - 1), count)
     if colW < 1 { colW = 1 }
     int flowH = hasInlineContent(b)
         ? layoutInlineContent(b, innerX, innerY, colW)
-        : layoutBlockChildren(b, innerX, innerY, colW)
+        : layoutBlockChildrenRange(b, innerX, innerY, colW, from, to)
 
     arr[ColumnUnit] units = []
-    collectColumnUnits(b, units)
+    collectColumnUnits(b, units, from, to)
     if units.length == 0 { return flowH }
 
     // Balance: aim for an equal share and grow the target until every
@@ -1434,7 +1471,7 @@ int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
     // A child whose lines were split no longer occupies one rectangle.
     // Its box is cut back to the part that stayed in the first column
     // it appears in, so its background does not smear across the gap.
-    for int i = 0, i < b.children.length, i++ { refitFragmentedChild(b.children[i]) }
+    for int i = from, i < to, i++ { refitFragmentedChild(b.children[i]) }
     return tallest
 }
 
@@ -1504,10 +1541,10 @@ int func columnBreakPoint(units:arr[ColumnUnit], i:int, colStart:int) {
     return -1
 }
 
-void func collectColumnUnits(b:Box, out:arr[ColumnUnit]) {
+void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
     bool pendingForce = false
     bool pendingAvoid = false
-    for int i = 0, i < b.children.length, i++ {
+    for int i = from, i < to, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
         if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
@@ -1585,12 +1622,19 @@ void func refitFragmentedChild(c:Box) {
 }
 
 int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
+    return layoutBlockChildrenRange(b, cx, cy, cw, 0, b.children.length)
+}
+
+// The same, over a run of the children rather than all of them, which
+// is what a multi-column container needs once a `column-span: all`
+// child has split it into sections.
+int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:int) {
     int y = cy
     int prevBottomMargin = 0
     bool first = true
     bool parentAbsorbsTop = b.bt == 0 && b.pt == 0 && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK && !b.isListItem
     int lastMarginBottom = 0
-    for int i = 0, i < b.children.length, i++ {
+    for int i = from, i < to, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
         // An absolutely positioned box is out of flow: it takes no

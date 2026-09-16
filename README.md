@@ -155,7 +155,9 @@ at the column width and then broken into columns of equal height, and
 the breaks fall is under `break-before`, `break-after` and
 `break-inside`, which force a column break or forbid one, and under
 `orphans` and `widows`, which say how few lines of a paragraph may be
-left at the foot of a column or carried to the head of the next.
+left at the foot of a column or carried to the head of the next. A child
+with `column-span: all` is in no column: it splits the container into
+the run before it, itself across the full width, and the run after.
 
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and
@@ -262,7 +264,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-21,222 lines of Festina in `src/` and `browser.f`.
+21,272 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 

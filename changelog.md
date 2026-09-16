@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### column-span: all
+
+A direct child of a multi-column container with `column-span: all` is in
+no column. It splits the container into three: the run before it,
+columnised and balanced on its own; the spanner at the full width; and
+the run after, columnised and balanced on its own again.
+
+**Properties 185 → 186.** It is the gap css-2026.md named for
+Multi-column 1.
+
+`layoutColumns` laid out every child of the container and then moved
+them; it now lays out a run of them, and a container with no spanner --
+which is every multi-column container on almost every page -- takes one
+run and is the function it always was. `layoutBlockChildren` and
+`collectColumnUnits` grew a range for the same reason.
+
+Only a direct child can span. The standard lets a spanner sit deeper and
+breaks its ancestors around it, which needs the fragment boxes this
+engine does not make.
+
+The fixtures divide evenly into two columns, because Chromium will split
+a block across a column boundary to balance and this engine will not:
+seven blocks in two columns is a difference about fragmentation rather
+than about spanning, and a test that used it would be measuring the
+wrong thing.
+
+One check asks what the feature is *not*: `column-span: none` is the
+initial value, so it has to lay out exactly as no declaration does. An
+implementation that treated any value of the property as a spanner
+would pass every other check here.
+
 ### shape-outside, from the machinery clip-path had just built
 
 - **`shape-outside`** over `inset()`, `circle()`, `ellipse()`,

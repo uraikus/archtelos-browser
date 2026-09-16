@@ -3676,6 +3676,8 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
     s.orphans = countProp(props, 'orphans', isRoot ? 2 : parent.orphans)
     s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
+    ascii cspan = styleProp(props, 'column-span')
+    if cspan != null { s.columnSpanAll = asciiLower(asciiTrim(cspan)) == 'all' }
     ascii crs = styleProp(props, 'column-rule-style')
     if crs != null { s.columnRuleStyle = lineStyleKeyword(asciiLower(asciiTrim(crs))) }
     ascii crw = styleProp(props, 'column-rule-width')

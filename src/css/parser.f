@@ -932,6 +932,7 @@ arr[text] supportedProperties = [
     'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',
     'column-rule', 'column-rule-width', 'column-rule-style', 'column-rule-color',
+    'column-span',
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
     'clip-path', 'clip', 'shape-outside', 'shape-margin',
     'grid-template-columns', 'grid-template-rows',

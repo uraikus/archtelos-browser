@@ -580,6 +580,9 @@ struct Style {
     columnRuleWidth:int
     columnRuleStyle:int
     columnRuleColor:int
+    // column-span: all, which takes a child out of the columns and lays
+    // it across every one of them, splitting the container in two.
+    columnSpanAll:bool
     // CSS Fragmentation 3 and CSS2 orphans/widows, which decide where a
     // column may break. `breakBefore` and `breakAfter` are BRK_*;
     // `breakInsideAvoid` is the only value of break-inside that changes

@@ -127,11 +127,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     `auto-fill` and `auto-fit`, dense packing, and subgrid. An `auto`
     track is sized by the largest item that sits in it alone, so an
     item spanning two auto tracks does not grow either of them.
-12. **Multi-column 1, completed**: `column-span: all`, which needs the
-    container split around the spanner; `column-fill: auto`; and real
-    fragment boxes, so that a subtree nested below the container's own
-    children can be broken and a split child's background paints in
-    each column rather than only the first. Fragment boxes are what
+12. **Multi-column 1, completed**: `column-fill: auto`; a spanner that
+    sits below the container's own children, which needs its ancestors
+    broken around it; and real fragment boxes, so that a subtree nested
+    below those children can be broken and a split child's background
+    paints in each column rather than only the first. Fragment boxes are what
     Fragmentation 3 still wants too: `break-before` and `break-after`
     decide where a column breaks, but a break can only fall between
     the container's own children or between one child's lines, so
@@ -197,7 +197,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(185; Chromium reports 373, and four of them cannot be graded by a probe
+(186; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
