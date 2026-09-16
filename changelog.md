@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Containment
+
+The second untouched specification off zero. `contain` takes `size`,
+`layout`, `paint` and `style` in any combination, and both shorthands —
+`strict` is all four, `content` is all but size, which is the whole
+difference between them and what two of the checks ask.
+
+**Size containment is the one that changes geometry.** A box with it is
+laid out as if it had no content: its height is zero however much is
+inside, and its intrinsic-width pass is *skipped* rather than run and
+discarded, which is half of what the property is for. The five
+`contain-intrinsic-*` properties supply the size an automatic one
+resolves to instead. An explicit width or height still wins, because an
+intrinsic size is a fallback rather than an override.
+
+Each of those five does nothing without size containment, and a check
+says so: `contain-intrinsic-height` on its own leaves the box measuring
+its content. Without that check the property could pass by being applied
+everywhere, which would be a different feature.
+
+**Paint containment** clips the descendants to the padding box, through
+the same offscreen image `overflow: hidden` uses — the fifth feature now
+standing in for the clip region the canvas does not have.
+**`content-visibility: hidden`** skips the contents entirely, painting
+the box and nothing in it, and carries size containment with it.
+
+Layout and style containment are computed and change nothing, and
+todo.md says why: nothing escapes a box that way yet.
+
+**Properties 140 → 145.**
+
+Twenty-three checks in the new `tests/unit/test_contain.f` and five in
+`tests/render/overflow.f` (11 → 16). Two of the new ones compare an
+axis spelling with its physical twin and would have passed vacuously
+while both were broken, so each also asserts the value is not the
+uncontained one.
+
+### Compositing and Blending 1 is blocked on Festina
+
+`mix-blend-mode`, `isolation` and `background-blend-mode` all need a
+compositing operator. The runtime sets `CAIRO_OPERATOR_SOURCE` at every
+draw and exposes no call to change it, and Cairo has every Porter-Duff
+and separable blend operator behind that one line. Recorded in todo.md
+beside Fonts 3, which is blocked the same way.
+
 ### Transforms
 
 The first of the snapshot's eight untouched specifications to move off

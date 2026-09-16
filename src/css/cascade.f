@@ -2050,6 +2050,30 @@ int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     return c
 }
 
+// The lengths of a contain-intrinsic-size value, with a leading `auto`
+// dropped: `auto 200px` means "the remembered size, or 200px", and this
+// engine never remembers one.
+arr[ascii] func intrinsicSizeLengths(v:ascii) {
+    arr[ascii] t = cssTokens(v)
+    arr[ascii] out = []
+    for int i = 0, i < t.length, i++ {
+        if asciiLower(t[i]) == 'auto' { continue }
+        if asciiLower(t[i]) == 'none' { return out }
+        out.push(t[i])
+    }
+    return out
+}
+
+Len func intrinsicSizeProp(props:map[text], name:text, fontSize:int, dflt:Len) {
+    ascii v = styleProp(props, name)
+    if v == null { return dflt }
+    arr[ascii] t = intrinsicSizeLengths(v)
+    if t.length == 0 { return dflt }
+    Len l = parseLength(t[0], fontSize)
+    if l.kind != LEN_PX { return dflt }
+    return l
+}
+
 // One corner's radius, or the value the shorthand already gave it.
 int func cornerRadiusProp(props:map[text], name:text, fontSize:int, dflt:int) {
     ascii v = styleProp(props, name)
@@ -3126,6 +3150,58 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             if oy.kind == LEN_PX || oy.kind == LEN_PERCENT { s.transformOriginY = oy }
         }
     }
+    // contain: a list of keywords, or one of the two shorthands.
+    // `strict` is all four; `content` is all of them but size, which is
+    // the whole difference between them.
+    s.containSize = false
+    s.containLayout = false
+    s.containPaint = false
+    s.containStyle = false
+    ascii containDecl = styleProp(props, 'contain')
+    if containDecl != null {
+        arr[ascii] ct = cssTokens(containDecl)
+        for int i = 0, i < ct.length, i++ {
+            ascii t = asciiLower(ct[i])
+            if t == 'strict' {
+                s.containSize = true  s.containLayout = true
+                s.containPaint = true  s.containStyle = true
+            } else if t == 'content' {
+                s.containLayout = true  s.containPaint = true  s.containStyle = true
+            } else if t == 'size' { s.containSize = true }
+            else if t == 'layout' { s.containLayout = true }
+            else if t == 'paint' { s.containPaint = true }
+            else if t == 'style' { s.containStyle = true }
+        }
+    }
+    // content-visibility: hidden skips the contents, which carries size
+    // containment with it (Containment 2 §4).
+    s.contentHidden = false
+    ascii cvis = styleProp(props, 'content-visibility')
+    if cvis != null && asciiLower(asciiTrim(cvis)) == 'hidden' {
+        s.contentHidden = true
+        s.containSize = true
+        s.containLayout = true
+        s.containPaint = true
+        s.containStyle = true
+    }
+    // contain-intrinsic-size and the four axis spellings. `auto <len>`
+    // is the remembered-size form, whose remembered size this engine
+    // never has, so the length after it is what is used.
+    ascii ciSize = styleProp(props, 'contain-intrinsic-size')
+    if ciSize != null {
+        arr[ascii] cst = intrinsicSizeLengths(ciSize)
+        if cst.length > 0 {
+            Len a = parseLength(cst[0], s.fontSize)
+            if a.kind == LEN_PX {
+                s.intrinsicWidth = a
+                s.intrinsicHeight = cst.length > 1 ? parseLength(cst[1], s.fontSize) : a
+            }
+        }
+    }
+    s.intrinsicWidth = intrinsicSizeProp(props, 'contain-intrinsic-width', s.fontSize, s.intrinsicWidth)
+    s.intrinsicWidth = intrinsicSizeProp(props, 'contain-intrinsic-inline-size', s.fontSize, s.intrinsicWidth)
+    s.intrinsicHeight = intrinsicSizeProp(props, 'contain-intrinsic-height', s.fontSize, s.intrinsicHeight)
+    s.intrinsicHeight = intrinsicSizeProp(props, 'contain-intrinsic-block-size', s.fontSize, s.intrinsicHeight)
     s.outlineOffset = 0
     ascii ooff = styleProp(props, 'outline-offset')
     if ooff != null {

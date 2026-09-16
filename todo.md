@@ -110,10 +110,19 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    out. `skew()` and `matrix()` are blocked on Festina rather than on
    effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
-9. The remainder of the official definition, lower value for this
+9. **Containment 1, completed**: layout and style containment are
+   computed and change nothing, because nothing escapes a box that way
+   yet — there is no counter or quote scope to cut, and a float does
+   not leave its formatting context because none is established.
+   `content-visibility: auto` needs to know what is on screen.
+10. **Compositing and Blending 1 is blocked on Festina**, like Fonts 3:
+   `mix-blend-mode`, `isolation` and `background-blend-mode` all need a
+   compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
+   everywhere with no call to change it. Cairo has every Porter-Duff
+   and separable blend operator; the entry point is what is missing.
+11. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
-   User Interface 3, Multi-column 1, Compositing and Blending 1,
-   Containment 1, Easing 1, Namespaces 3.
+   User Interface 3, Multi-column 1, Easing 1, Namespaces 3.
 
 ### After the official definition
 
@@ -139,7 +148,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(140; Chromium reports 373, and four of them cannot be graded by a probe
+(145; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

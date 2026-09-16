@@ -443,6 +443,16 @@ struct Style {
     outlineWidth:int
     outlineStyle:int
     outlineOffset:int
+    // Containment. Size containment is the one that changes geometry:
+    // the box is laid out as if it had no content, and the two
+    // intrinsic sizes are what an automatic size resolves to instead.
+    containSize:bool
+    containLayout:bool
+    containPaint:bool
+    containStyle:bool
+    contentHidden:bool      // content-visibility: hidden
+    intrinsicWidth:Len
+    intrinsicHeight:Len
     transforms:arr[Transform]
     transformOriginX:Len    // an unset Len is auto, which reads as 50%
     transformOriginY:Len

@@ -1527,7 +1527,13 @@ void func paintBoxUntransformed(b:Box) {
     // (CSS2 §11.1.1). The box itself -- its background and border -- is
     // not clipped, so it paints normally and only the inside goes to a
     // layer.
-    if b.style.overflowHidden && !paintingToLayer() && boxClipsAnything(b) {
+    // Paint containment clips a box's descendants to its padding box,
+    // which is what `overflow: hidden` does, so it goes through the
+    // same layer (Containment 1 §3.3).
+    // A box whose contents are not rendered at all has nothing to clip,
+    // so it never needs the layer.
+    if (b.style.overflowHidden || b.style.containPaint) && !b.style.contentHidden
+        && !paintingToLayer() && boxClipsAnything(b) {
         paintClipped(b)
         return
     }
@@ -1561,6 +1567,11 @@ void func paintBoxUntransformed(b:Box) {
         return
     }
     if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+    // content-visibility: hidden skips the contents entirely
+    // (Containment 2 §4). The box's own background, border and outline
+    // are not contents, so they are already painted above; everything
+    // below this line is.
+    if s.contentHidden { return }
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
     paintLines(b)

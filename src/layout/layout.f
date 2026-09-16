@@ -799,6 +799,19 @@ void func computeIntrinsic(b:Box) {
 void func computeIntrinsicUncounted(b:Box) {
     int minW = 0
     int maxW = 0
+    // Size containment: the box's intrinsic widths are those of an
+    // empty box, so its content is never measured and
+    // contain-intrinsic-width stands in for it (Containment 1 §3.1).
+    // This is also where the pass is skipped rather than run and
+    // ignored, which is half of what the property is for.
+    if b.style.containSize {
+        int iw = b.style.intrinsicWidth.kind == LEN_PX
+            ? maxInt(roundPx(b.style.intrinsicWidth.v), 0) : 0
+        int extras = horizontalExtras(b, 0)
+        b.minContent = iw + extras
+        b.maxContent = iw + extras
+        return
+    }
     if b.kind == BOX_TEXT {
         arr[text] words = wordsOf(b)
         int sw = spaceWidth(b.style)
@@ -1231,6 +1244,15 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         contentH = layoutBlockChildren(b, innerX, innerY, width)
     }
     int h = contentH
+    // Size containment: the box is sized as if it had no content, so
+    // the height its children came to is discarded and
+    // contain-intrinsic-height, if there is one, stands in its place
+    // (Containment 1 §3.1). An explicit height still wins, because the
+    // intrinsic size is what an automatic size resolves to rather than
+    // an override.
+    if s.containSize {
+        h = s.intrinsicHeight.kind == LEN_PX ? maxInt(roundPx(s.intrinsicHeight.v), 0) : 0
+    }
     int vEdges = b.pt + b.pb + b.bt + b.bb
     if !lenIsAuto(s.height) && s.height.kind == LEN_PX {
         h = maxInt(roundPx(s.height.v), 0)

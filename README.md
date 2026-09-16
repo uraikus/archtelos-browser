@@ -128,6 +128,12 @@ content — and a tile that runs past that edge is cut off there. `object-fit` a
 element's own content inside its box, in all five fitting values, and
 clip it to the content box.
 
+**Containment** lets a box promise what cannot escape it. `contain:
+size` lays it out as if it were empty — its content is never measured,
+and `contain-intrinsic-size` supplies what an automatic size resolves to
+instead; `contain: paint` clips its descendants; and
+`content-visibility: hidden` paints the box and nothing inside it.
+
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and
 `rotate` in any order and composes them left to right, `transform-origin`
@@ -212,11 +218,11 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-two unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-three unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-audio, the preload scanner), ten offscreen render suites that check
+containment, audio, the preload scanner), ten offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, text decoration, transforms and box shadows — three

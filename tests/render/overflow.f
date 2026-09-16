@@ -73,4 +73,36 @@ clearCanvas()
 paintPage(p5, 0, 0, 300)
 check(getPixelColor(50, 50) == green, 'the next box follows the container, not its overflow')
 
+// ---- containment (CSS Containment 1) -------------------------------------
+// Paint containment clips a box's descendants to its padding box, the
+// same thing `overflow: hidden` does and through the same layer.
+// content-visibility: hidden goes further: the contents are not
+// rendered at all, while the box itself still paints.
+
+Page pContainPaint = pageFromHtml('<body style="margin:0">'
+    + '<div style="width:40px;height:40px;contain:paint">'
+    + '<div style="width:100px;height:100px;background:red"></div></div></body>',
+    'test.html', 400)
+clearCanvas()
+paintPage(pContainPaint, 0, 0, 300)
+check(getPixelColor(10, 10) == red, 'contain:paint leaves what is inside the box alone')
+check(getPixelColor(60, 10) == white, 'and clips what runs out of it')
+
+Page pNoContain = pageFromHtml('<body style="margin:0">'
+    + '<div style="width:40px;height:40px">'
+    + '<div style="width:100px;height:100px;background:red"></div></div></body>',
+    'test.html', 400)
+clearCanvas()
+paintPage(pNoContain, 0, 0, 300)
+check(getPixelColor(60, 10) == red, 'without it the overflow shows, so the clip is doing the work')
+
+Page pHidden = pageFromHtml('<body style="margin:0">'
+    + '<div style="width:40px;height:40px;background:green;content-visibility:hidden">'
+    + '<div style="width:20px;height:20px;background:red"></div></div></body>',
+    'test.html', 400)
+clearCanvas()
+paintPage(pHidden, 0, 0, 300)
+check(getPixelColor(5, 5) == green, 'content-visibility:hidden still paints the box itself')
+check(getPixelColor(10, 10) != red, 'and does not paint what is inside it')
+
 finish('overflow')
