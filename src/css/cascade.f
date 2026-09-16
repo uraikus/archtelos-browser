@@ -50,6 +50,9 @@ struct RuleRef {
     sel:Selector
     origin:int
     layer:int
+    // The `@container` query gating this rule, or CQ_NONE. Kept beside
+    // the rule so the hot loop below does not reach through it.
+    containerQuery:int
 }
 
 struct Bucket {
@@ -103,6 +106,18 @@ bool cascadeSawClip = false
 // below is skipped, `cssSchemeIsDark` stays false, and the nineteen
 // system colours answer from the one table they always answered from.
 bool cascadeSawColorScheme = false
+
+// What the container queries came to, keyed by element and query. It is
+// filled by layoutDocument from the box tree of the pass before, so it
+// is empty on the first pass and every container rule is dropped --
+// which is the right starting point, since nothing is known about any
+// container's size until something has been laid out.
+map[int] containerQueryAnswers = {}
+
+bool func containerQueryHolds(nid:int, q:int) {
+    int got = containerQueryAnswers[`${nid}:${q}`]
+    return got != null && got == 1
+}
 // And for `shape-outside`, which the float code asks once per document.
 bool cascadeSawShape = false
 
@@ -111,6 +126,9 @@ void func cascadeReset() {
     cascadeSawTransform = false
     cascadeSawClip = false
     cascadeSawColorScheme = false
+    map[int] emptyContainerAnswers = {}
+    containerQueryAnswers = emptyContainerAnswers
+    cssResetContainerQueries()
     // A page that never says `color-scheme` skips the resolution
     // entirely, so this has to be put back here rather than left where
     // the last page left it: otherwise a dark page followed by an
@@ -181,6 +199,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.sel = sel
             ref.origin = origin
             ref.layer = rule.layer
+            ref.containerQuery = rule.containerQuery
             if sel.pseudoElement != '' {
                 anyPseudoRules = true
                 text pk = selectorKey(sel)
@@ -704,6 +723,12 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
     int nid = n.id
     for int i = 0, i < count, i++ {
         if b.refs[i].sel.pseudoElement != collectingPseudo { continue }
+        // A rule inside `@container` applies only where that query is
+        // satisfied. The answers come from the layout pass before this
+        // one, and the test is skipped entirely on a page whose sheets
+        // never said `@container`.
+        if cssSawContainerQuery && b.refs[i].containerQuery != CQ_NONE
+            && !containerQueryHolds(nid, b.refs[i].containerQuery) { continue }
         profSelectorTests++
         if !matchSelector(nid, b.refs[i].sel) { continue }
         int decls = b.refs[i].rule.decls.length

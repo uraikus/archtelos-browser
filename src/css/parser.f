@@ -101,6 +101,11 @@ struct Rule {
     // Which cascade layer this rule is in, as an index into
     // cssLayerNames, or CASCADE_NO_LAYER for a rule in none.
     layer:int
+    // The `@container` query that gates this rule, as an index into
+    // cssContainerQueryConds, or CQ_NONE. A query cannot be answered
+    // until a box tree exists, so the rule is stored like any other and
+    // the answer is asked for at match time.
+    containerQuery:int
 }
 
 struct Stylesheet {
@@ -134,6 +139,79 @@ text cssDefaultNamespace = ''
 // the layer into a field beside the origin and the specificity and that
 // field has to end somewhere; a sheet with more competes on specificity
 // from there on.
+// ---- CSS Conditional 4: container queries ----------------------------
+//
+// A `@container` rule asks about the size of an ancestor, which layout
+// knows and the cascade does not. So the rules inside one are parsed
+// into the sheet like any others, each carrying the index of the query
+// that gates it, and nothing is evaluated here: layoutDocument answers
+// the queries once it has a box tree and runs the cascade again.
+//
+// A query nested inside another holds only if the outer one does, which
+// is what `parent` is for -- satisfaction walks the chain rather than
+// this keeping a list per rule.
+const int CQ_NONE = -1
+const int CQ_MAX = 64
+arr[text] cssContainerQueryNames = []
+arr[text] cssContainerQueryConds = []
+arr[int] cssContainerQueryParent = []
+int cssCurrentContainerQuery = CQ_NONE
+bool cssSawContainerQuery = false
+
+void func cssResetContainerQueries() {
+    arr[text] emptyNames = []
+    arr[text] emptyConds = []
+    arr[int] emptyParents = []
+    cssContainerQueryNames = emptyNames
+    cssContainerQueryConds = emptyConds
+    cssContainerQueryParent = emptyParents
+    cssCurrentContainerQuery = CQ_NONE
+    cssSawContainerQuery = false
+}
+
+// Splits a `@container` prelude into its optional name and its
+// condition. A prelude that starts with `(` or with `not (` has no
+// name; anything else begins with one.
+text cqSplitName = ''
+text func containerPreludeCondition(prelude:ascii) {
+    cqSplitName = ''
+    ascii p = asciiTrim(prelude)
+    if p.length == 0 { return '' }
+    if p.charCodeAt(0) == CH_LPAREN { return p.toText() }
+    int i = 0
+    while i < p.length && isNameCode(p.charCodeAt(i)) { i++ }
+    if i == 0 { return p.toText() }
+    ascii first = asciiLower(p.slice(0, i))
+    ascii rest = asciiTrim(p.slice(i, p.length))
+    // `not` is part of the condition, never a container's name.
+    if first == 'not' { return p.toText() }
+    cqSplitName = first.toText()
+    return rest.toText()
+}
+
+// Whether a condition asks anything about the block axis. A container
+// that contains only its inline size cannot answer one -- Chromium
+// matches no height query against `container-type: inline-size`
+// however tall the box is -- so the query fails rather than being
+// answered from a size nothing is holding still.
+bool func conditionNeedsBlockAxis(cond:text) {
+    ascii c = asciiLower(cond.toAscii())
+    if c == null { return false }
+    return asciiIndexOf(c, 'height', 0) >= 0
+        || asciiIndexOf(c, 'block-size', 0) >= 0
+        || asciiIndexOf(c, 'aspect-ratio', 0) >= 0
+        || asciiIndexOf(c, 'orientation', 0) >= 0
+}
+
+int func declareContainerQuery(name:text, cond:text) {
+    if cssContainerQueryNames.length >= CQ_MAX { return CQ_NONE }
+    cssContainerQueryNames.push(name)
+    cssContainerQueryConds.push(cond)
+    cssContainerQueryParent.push(cssCurrentContainerQuery)
+    cssSawContainerQuery = true
+    return cssContainerQueryNames.length - 1
+}
+
 const int CASCADE_MAX_LAYERS = 256
 const int CASCADE_NO_LAYER = 256
 
@@ -351,6 +429,11 @@ text func parseNamespaceUri(v:ascii) {
 // browser before parsing author sheets.
 int cssViewportWidth = 800
 int cssViewportHeight = 600
+// True only while a `@container` condition is being evaluated, which is
+// done by pointing the two above at the container's content box and
+// calling the media-condition evaluator: the grammar is the same one,
+// and the range form, `and`, `or`, `not` and grouping come free.
+bool cssAnsweringContainer = false
 // The root element's computed font-size, which `rem` multiplies. The
 // cascade assigns it when it computes the root; 16 is the initial value
 // and the right answer before then.
@@ -1456,10 +1539,17 @@ bool func mediaFeatureMatches(name:ascii, op:int, value:ascii) {
         else if unit != 'dpi' { return false }
         return compareMediaOp(op, MEDIA_DPI.toFloat(), v)
     }
-    if name == 'width' || name == 'device-width' {
+    // `inline-size` and `block-size` are the container's spellings of
+    // the same two axes, and are features only while a container query
+    // is being answered -- `@media (inline-size: 100px)` is not a
+    // thing, and answering it would be a lie of the kind @supports
+    // exists to prevent.
+    if name == 'width' || name == 'device-width'
+        || (cssAnsweringContainer && name == 'inline-size') {
         return compareMediaOp(op, cssViewportWidth.toFloat(), v)
     }
-    if name == 'height' || name == 'device-height' {
+    if name == 'height' || name == 'device-height'
+        || (cssAnsweringContainer && name == 'block-size') {
         return compareMediaOp(op, cssViewportHeight.toFloat(), v)
     }
     if name == 'color' { return compareMediaOp(op, MEDIA_COLOR_BITS.toFloat(), v) }
@@ -1687,6 +1777,7 @@ void func nestFlushDecls(sheet:Stylesheet, src:ascii, from:int, to:int,
     if r.selectors.length == 0 { return }
     r.order = cssRuleCounter
     r.layer = cssCurrentLayer
+    r.containerQuery = cssCurrentContainerQuery
     cssRuleCounter++
     sheet.rules.push(r)
 }
@@ -1764,6 +1855,21 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 if csName != '' {
                     cssCounterStyles[csName] = parseCounterStyleBody(src.slice(brace + 1, close))
                 }
+            } else if atName == 'container' {
+                // The rules inside go into the sheet like any others,
+                // each tagged with this query. Nothing is evaluated
+                // here: the container's size is layout's to know.
+                int close = blockEnd - 1
+                if close < brace + 1 { close = brace + 1 }
+                text cond = containerPreludeCondition(src.slice(nameEnd, brace))
+                int outerQuery = cssCurrentContainerQuery
+                int q = declareContainerQuery(cqSplitName, cond)
+                // Past CQ_MAX queries a sheet keeps its rules but they
+                // are gated on the innermost query that did fit, which
+                // is written down rather than silently dropped.
+                if q != CQ_NONE { cssCurrentContainerQuery = q }
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                cssCurrentContainerQuery = outerQuery
             } else if atName == 'layer' {
                 int close = blockEnd - 1
                 if close < brace + 1 { close = brace + 1 }
@@ -1860,6 +1966,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
             r.decls = parseDeclarations(body)
             r.order = cssRuleCounter
             r.layer = cssCurrentLayer
+            r.containerQuery = cssCurrentContainerQuery
             cssRuleCounter++
             if r.decls.length > 0 { sheet.rules.push(r) }
             continue

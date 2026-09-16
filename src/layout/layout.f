@@ -3779,7 +3779,132 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
 
 // Lays out a styled document in a viewport `width` px wide. Returns
 // the root box; its height is the document height.
+// ---- CSS Conditional 4: answering the container queries ---------------
+//
+// A query asks about an ancestor's size, which is layout's to know, so
+// the document is laid out, the queries are answered from that box
+// tree, and if any answer changed the cascade and the layout are run
+// again. One extra pass is enough rather than a loop because
+// `container-type` contains the container's size: what the query gates
+// cannot change what the query asked about.
+//
+// The stack is the enclosing containers, innermost last. A query with a
+// name takes the innermost container carrying it; one without takes the
+// innermost container of any name.
+arr[text] cqStackNames = []
+arr[int] cqStackWidths = []
+arr[int] cqStackHeights = []
+arr[int] cqStackTypes = []
+bool cqAnswerChanged = false
+
+void func cqEvaluateFor(nid:int) {
+    for int q = 0, q < cssContainerQueryConds.length, q++ {
+        // A nested query holds only if the one enclosing it does.
+        bool holds = true
+        int qq = q
+        while qq != CQ_NONE && holds {
+            holds = cqQueryHoldsHere(qq)
+            qq = cssContainerQueryParent[qq]
+        }
+        text key = `${nid}:${q}`
+        int was = containerQueryAnswers[key]
+        int now = holds ? 1 : 0
+        if was == null || was != now {
+            if now == 1 || was != null { cqAnswerChanged = true }
+            if now == 1 { containerQueryAnswers[key] = 1 }
+            else if was != null { containerQueryAnswers[key] = 0 }
+        }
+    }
+}
+
+bool func cqQueryHoldsHere(q:int) {
+    int at = -1
+    for int i = cqStackNames.length - 1, i >= 0, i-- {
+        if cssContainerQueryNames[q] == '' || cqStackNames[i] == cssContainerQueryNames[q] {
+            at = i
+            break
+        }
+    }
+    if at < 0 { return false }
+    if cqStackTypes[at] != CONTAINER_SIZE && conditionNeedsBlockAxis(cssContainerQueryConds[q]) {
+        return false
+    }
+    int savedW = cssViewportWidth
+    int savedH = cssViewportHeight
+    cssViewportWidth = cqStackWidths[at]
+    cssViewportHeight = cqStackHeights[at]
+    cssAnsweringContainer = true
+    bool got = evaluateMediaCondition(cssContainerQueryConds[q].toAscii())
+    cssAnsweringContainer = false
+    cssViewportWidth = savedW
+    cssViewportHeight = savedH
+    return got
+}
+
+void func cqWalk(b:Box) {
+    bool real = b.kind != BOX_TEXT && b.kind != BOX_ANON
+    // An element is asked about the containers *above* it, so its own
+    // answers are taken before it is pushed. A container is not inside
+    // itself, and a query never styles the element that established it.
+    if real && b.node != null && b.node.id > 0 { cqEvaluateFor(b.node.id) }
+    bool pushed = false
+    if real && b.style.containerType != CONTAINER_NORMAL {
+        // The content box is what a query measures: 320px of content
+        // inside 20px of padding answers 320, not 360, which is what
+        // Chromium answers and what `box-sizing: border-box` confirms.
+        cqStackNames.push(b.style.containerName)
+        cqStackWidths.push(maxInt(b.w - b.pl - b.pr - b.bl - b.br, 0))
+        cqStackHeights.push(maxInt(b.h - b.pt - b.pb - b.bt - b.bb, 0))
+        cqStackTypes.push(b.style.containerType)
+        pushed = true
+    }
+    for int i = 0, i < b.children.length, i++ { cqWalk(b.children[i]) }
+    if pushed {
+        cqStackNames.pop()
+        cqStackWidths.pop()
+        cqStackHeights.pop()
+        cqStackTypes.pop()
+    }
+}
+
+bool func answerContainerQueries(root:Box) {
+    arr[text] emptyNames = []
+    arr[int] emptyW = []
+    arr[int] emptyH = []
+    arr[int] emptyT = []
+    cqStackNames = emptyNames
+    cqStackWidths = emptyW
+    cqStackHeights = emptyH
+    cqStackTypes = emptyT
+    cqAnswerChanged = false
+    cqWalk(root)
+    return cqAnswerChanged
+}
+
+// How many times the queries may be answered again before the answer is
+// taken as final. A query on an outer container can change the size of
+// an inner one, whose own query then has to be asked again -- Chromium
+// resolves that to a fixed point and so does this. Each pass answers
+// from the sizes the last one produced, so an ordinary stylesheet
+// settles in one or two; the bound is for one written to make two
+// queries flip each other for ever.
+const int CQ_MAX_PASSES = 8
+
 Box func layoutDocument(doc:Node, width:int) {
+    Box laid = layoutDocumentOnce(doc, width)
+    // Every page that never says `@container` stops here, having done
+    // exactly what it did before this existed: one bool, once.
+    if !cssSawContainerQuery || laid == null { return laid }
+    int pass = 0
+    while pass < CQ_MAX_PASSES && answerContainerQueries(laid) {
+        pass++
+        computeStyles(doc)
+        laid = layoutDocumentOnce(doc, width)
+    }
+    return laid
+}
+
+Box func layoutDocumentOnce(doc:Node, width:int) {
     nextBoxId = 1
     boxRegistry = [null]
     // One float list for the document. Properly a float belongs to its

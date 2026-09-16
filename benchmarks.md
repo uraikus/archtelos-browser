@@ -520,7 +520,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 22,941 lines of Festina across `browser.f` and `src/` |
+| Source | 23,281 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -529,12 +529,12 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,686,792 |
-| This browser, all `.f` source | 835,447 |
+| This browser, the whole program | 2,701,152 |
+| This browser, all `.f` source | 850,614 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
-**The binary is about 172 times smaller than Chromium's executable
+**The binary is about 171 times smaller than Chromium's executable
 alone**, and 233 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
 absent from the 2.6 MB — a JavaScript engine, a compositor, a sandbox,
@@ -624,6 +624,19 @@ behind a per-document flag, and the second system-colour table is
 consulted only by a name that is already a system colour, so a page with
 none of them never asks. `generated.html` renders in 98 ms with it in,
 against a recorded 101 whose spread is 99 to 104.
+
+The float shrink-to-fit correction and per-axis size containment cost
+**88 bytes** between them (2,686,792 → 2,686,880), both being a
+predicate where there was a wider condition before.
+
+**`@container` costs 14,272 bytes** (2,686,880 → 2,701,152) and, for a
+page that uses it, a second layout — the document is laid out, the
+queries are answered from that box tree, and the cascade and layout run
+again, repeating while any answer changes. A page whose sheets never say
+`@container` pays one boolean once per document and never reaches any of
+it: `generated.html` renders in 102 ms with the feature in, against a
+recorded 101 whose spread is 99 to 104, and the run's own control
+qualified at 4.6%.
 
 CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
 `memchr` per rule on a page that does not nest. A rule body with no `{`

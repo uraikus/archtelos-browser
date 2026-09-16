@@ -5,6 +5,56 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### @container is evaluated, and CSS Conditional 4 comes off the Nothing row
+
+A container query asks about the size of an ancestor, which layout
+knows and the cascade does not. So the rules inside a `@container`
+block are parsed into the sheet like any others, each carrying the index
+of the query that gates it, and nothing is answered until there is a box
+tree to ask: the document is laid out, the queries are answered from
+that tree, and the cascade and layout run again.
+
+That repeats while any answer changes. One pass is not enough, and
+Chromium is the reason it is known not to be: an outer query that widens
+an inner container makes the inner container's own query true, and a
+single pass would have measured the inner one before the widening. Three
+checks hold it -- the narrow control, the widening, and an outer query
+that narrows a wide inner container and takes the answer back off again.
+Eight passes is the cap, for a stylesheet written to make two queries
+flip each other for ever.
+
+The condition grammar is Media Queries 4's, reused whole by pointing
+the viewport globals at the container's content box for the duration of
+the call: the range form in both orders and with both ends, `and`, `or`,
+`not` and grouping all came free. `inline-size` and `block-size` are
+names for the two axes, recognised only while a container query is being
+answered -- answering `@media (inline-size: 100px)` would be a lie of
+the kind `@supports` exists to prevent.
+
+The content box is what a query measures. 320px of content inside 20px
+of padding is a 360px border box, and Chromium answers 320: a query at
+310 matches and one at 340 does not, and with `box-sizing: border-box`
+the content is 280 and a query at 300 does not match either. All three
+are checks here.
+
+An `inline-size` container refuses a query about height, `block-size`,
+`orientation` or `aspect-ratio` rather than answering it from a size
+nothing is holding still, which is what Chromium does and is the whole
+reason `container-type` applies containment.
+
+A container is not inside itself, so a query never styles the element
+that established it. The first version of the walk pushed the container
+before taking its own answers and did style it -- the comment beside the
+code said the right thing while the code did the opposite, and the check
+for it was already written.
+
+A rule inside `@container` cascades exactly as it would outside: the
+at-rule gates it and adds nothing to its weight, so `#t` beats `.c`
+whichever side of the query each is written on.
+
+A page whose sheets never say `@container` does none of this: one
+boolean, once per document, and the second pass is never reached.
+
 ### Size containment per axis, and the container properties
 
 `contain: size` contained both axes and there was no way to contain one.
