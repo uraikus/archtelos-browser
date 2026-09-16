@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Every automatic grid row was zero
+
+`gridSizeAxis` sizes an automatic track from the item in it. In the
+inline axis it asks `computeIntrinsic`, which needs no layout; in the
+block axis it asks `a.box.h`, and nothing had laid the items out when it
+ran. So every automatic row was nothing, and a grid with no declared
+rows had no height whatever was in it:
+`<div style="display:grid;width:100px"><div style="height:90px">` was
+100 by 0 here and is 100 by 90 in Chromium 141.
+
+The comment beside the call already said what should happen -- "the rows
+are sized after the columns, because an auto row's height is the height
+of items laid out at their column widths" -- and the code did not lay
+them out. It does now, for the items an automatic row actually depends
+on: a grid whose rows are all declared lays nothing out twice, and
+neither does an item spanning more than one row, which contributes to no
+track's size either way.
+
+The suite had been given a chance to catch this and could not, because
+every grid check asked the *item* for its height and none asked the
+container. An item's own `h` was already right.
+
+Writing the check that does ask found a second trap, in the harness
+rather than the engine. `parentBox` reaches a parent through the box
+registry, and the registry belongs to the most recent layout, so a
+container read after the next document has been laid out is that
+document's container. Three checks passed against the wrong tree before
+that came out. Each layout is now asked its question before the next one
+runs, and the test says why.
+
 ### `aspect-ratio`
 
 CSS Box Sizing 4 §4, and the property instrument's count goes from 198

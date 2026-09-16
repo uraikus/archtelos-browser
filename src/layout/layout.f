@@ -3192,7 +3192,26 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     arr[int] colSizes = gridSizeAxis(b, areas, s.gridCols, s.gridAutoCols, colCount,
                                      width, colGap, true)
     // The rows are sized after the columns, because an auto row's
-    // height is the height of items laid out at their column widths.
+    // height is the height of items laid out at their column widths --
+    // and an item has no height until something lays it out, so the
+    // ones that decide such a row are measured here, at the column
+    // width pass 3 will give them. Without this every automatic row was
+    // zero and a grid with no declared rows had no height at all.
+    //
+    // Only the items an automatic row depends on are measured: a grid
+    // whose rows are all declared lays nothing out twice, and neither
+    // does an item spanning more than one row, which contributes to no
+    // track's size.
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        if a.rowSpan != 1 || a.row < 0 || a.row >= rowCount { continue }
+        if trackAt(s.gridRows, s.gridAutoRows, a.row).kind != TRACK_AUTO { continue }
+        int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan)
+        Box c = a.box
+        c.forcedWidthPx = lenIsAuto(c.style.width) ? measureW : -1
+        layoutBlock(c, 0, 0, measureW, false)
+        c.forcedWidthPx = -1
+    }
     arr[int] rowSizes = gridSizeAxis(b, areas, s.gridRows, s.gridAutoRows, rowCount,
                                      -1, rowGap, false)
 

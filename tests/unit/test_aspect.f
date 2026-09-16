@@ -140,6 +140,12 @@ checkEqInt(f3.h, 90, 'a flex item taller than the ratio makes the container tall
 Box f4 = caseBox('<div id="e" style="display:flex;aspect-ratio:2;width:100px;overflow:hidden">'
     + '<div style="height:90px;width:10px"></div></div>')
 checkEqInt(f4.h, 50, 'and does not once the container clips')
+Box f5 = caseBox('<div id="e" style="display:grid;aspect-ratio:2;width:100px">'
+    + '<div style="height:90px"></div></div>')
+checkEqInt(f5.h, 90, 'a grid row taller than the ratio does the same')
+Box f6 = caseBox('<div id="e" style="display:grid;aspect-ratio:2;width:100px;overflow:hidden">'
+    + '<div style="height:90px"></div></div>')
+checkEqInt(f6.h, 50, 'and gives way to the ratio when the container clips')
 
 // ---- `auto <ratio>` prefers a natural ratio ---------------------------
 // tile.png is 10x10, so its natural ratio is 1. `auto 2` must leave that

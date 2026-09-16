@@ -192,4 +192,39 @@ Box gHeight = gridOf('grid-template-columns:100px;grid-template-rows:20px 30px',
 Box container = findById(gHeight, 'a')
 checkEqInt(parentBox(container).h, 50, 'the container is as tall as its rows')
 
+// ---- an automatic row is as tall as what is in it -------------------------
+// The block axis is sized from the items' heights, and an item has no
+// height until it has been laid out, so this has to be asked of the
+// container rather than of the item: an item's own `h` was already 37
+// while the container around it was nothing at all.
+//
+// Chromium 141 gives all three of these the height of their contents:
+// 37 for a declared height, one line for one line of text, two for two.
+//
+// `parentBox` reaches the parent through the box registry, and the
+// registry belongs to the most recent layout -- so a container read
+// after the next document has been laid out is that document's
+// container, at whatever height it happens to have. Each layout is
+// therefore asked its question before the next one runs.
+int func gridHeightOf(containerStyle:text, items:text) {
+    return parentBox(findById(gridOf(containerStyle, items), 'a')).h
+}
+
+int oneLine = findById(layoutHtml(head + '<div id="p" style="width:100px">x</div></body>', 400), 'p').h
+check(oneLine > 0, 'a line of text has a height to compare against')
+
+checkEqInt(gridHeightOf('grid-template-columns:100px', gridCell('a', 'height:37px')), 37,
+           'an automatic row is as tall as the item in it')
+checkEqInt(gridHeightOf('grid-template-columns:100px', gridCell('a', '')), oneLine,
+           'an automatic row holding one line of text is one line tall')
+checkEqInt(gridHeightOf('grid-template-columns:100px', gridCell('a', '') + gridCell('b', '')),
+           oneLine * 2, 'and two such rows are two lines tall')
+
+// A declared row is not measured and does not grow: the item overflows
+// it, which is the case that tells a measuring pass from one that
+// simply hands the container its item's height.
+checkEqInt(gridHeightOf('grid-template-columns:100px;grid-template-rows:20px',
+                        gridCell('a', 'height:90px')), 20,
+           'a declared row keeps its height and lets the item overflow')
+
 finish('grid')
