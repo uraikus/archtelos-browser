@@ -498,6 +498,7 @@ struct Style {
     // colours need is the one bit.
     colorSchemeDark:bool
     counterReset:text
+    counterSet:text
     quotes:text
     counterIncrement:text
     display:int

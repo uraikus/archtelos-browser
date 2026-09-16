@@ -1071,6 +1071,7 @@ arr[text] supportedProperties = [
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
     'float', 'clear',
     'box-sizing', 'max-height', 'word-spacing', 'caption-side', 'aspect-ratio',
+    'counter-set',
     'flex', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-basis',
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',

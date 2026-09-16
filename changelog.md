@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `counter-set`, and the `counter-reset` scoping it could not be told apart from
+
+CSS Lists 3 §4.2, and the property count goes from 199 to 200 on
+`counter-set -> counterSet`.
+
+`counter-set` sets the counter already in scope instead of making a new
+one, so the change outlives the element that made it: a following
+sibling of the setter sees the new value. That is the whole of the
+difference from `counter-reset`, whose instance dies with its element --
+and it is the only thing that distinguishes the two, because on the
+element itself both end up reading the same.
+
+Which meant the feature could not be tested, because this engine's
+`counter-reset` was wrong in exactly the place the difference lives. An
+instance created where one of the same name was already in scope was
+staying in scope for the element's following siblings. Chromium 141,
+measured: with `counter-reset: c 11` outside and `counter-reset: c 7` on
+a child, the child reads 7 and the child's following sibling reads 11 --
+and with no outer reset at all, that same sibling reads 7. So a
+shadowing instance is scoped to its own subtree and a fresh one is not,
+which is what lets one reset number a list of siblings while a nested
+list does not renumber the outer one.
+
+Both had to land together: with the scoping wrong, `counter-set` and
+`counter-reset` agree on every case a test can ask, and the check that
+tells them apart is the only one that means anything.
+
+The values came out of Chromium by rendering `counter(c)` into a
+`::before` and comparing its width against spans whose `::before` is a
+literal one, two, three or four characters long, so each case's
+candidates were chosen to differ in length. The first run of that probe
+was wrong: the measured inline-block held the whole fixture, so its
+width came from a block child rather than from the generated text. The
+answer it gave happened to be right, which is worse than if it had been
+wrong.
+
 ### Every automatic grid row was zero
 
 `gridSizeAxis` sizes an automatic track from the item in it. In the

@@ -222,7 +222,8 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyCounters {
                 for int d = 0, d < rule.decls.length, d++ {
                     text dn = rule.decls[d].name
-                    if dn == 'counter-reset' || dn == 'counter-increment' { anyCounters = true  break }
+                    if dn == 'counter-reset' || dn == 'counter-increment'
+                        || dn == 'counter-set' { anyCounters = true  break }
                 }
             }
             if !anyQuotes {
@@ -809,7 +810,8 @@ arr[Match] func collectMatches(n:Node) {
             // values are computed, which is what makes the element that
             // raises the flag benefit from it.
             if !anyCounters && (decls[d].name == 'counter-reset'
-                || decls[d].name == 'counter-increment') { anyCounters = true }
+                || decls[d].name == 'counter-increment'
+                || decls[d].name == 'counter-set') { anyCounters = true }
             if !anyQuotes && decls[d].name == 'quotes' { anyQuotes = true }
             if !cascadeSawColorScheme && decls[d].name == 'color-scheme' {
                 cascadeSawColorScheme = true
@@ -850,6 +852,12 @@ struct CounterInstance {
     name:text
     value:int
     depth:int       // the depth at which counter-reset created it
+    // Whether an instance of the same name was already in scope when
+    // this one was created. Such an instance is in scope for its
+    // element and that element's descendants only; one created where
+    // there was none carries on to the element's following siblings,
+    // which is what lets a single reset number a list of siblings.
+    ownOnly:bool
 }
 
 arr[CounterInstance] counterStack = []
@@ -870,12 +878,41 @@ void func popCountersBelow(depth:int) {
     counterStack = kept
 }
 
+bool func counterInScope(name:text) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name == name { return true }
+    }
+    return false
+}
+
 void func counterReset(name:text, value:int, depth:int) {
     CounterInstance c
     c.name = name
     c.value = value
     c.depth = depth
+    c.ownOnly = counterInScope(name)
     counterStack.push(c)
+}
+
+// Drops the instances an element created that shadow one already in
+// scope, which is done when the element's own subtree is finished.
+// Measured against Chromium 141: with `counter-reset: c 11` outside and
+// `counter-reset: c 7` on a child, the child reads 7 and the child's
+// following sibling reads 11 -- and with no outer reset at all, that
+// same sibling reads 7.
+void func popShadowingCountersAt(depth:int) {
+    bool any = false
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].depth < depth { break }
+        if counterStack[i].depth == depth && counterStack[i].ownOnly { any = true  break }
+    }
+    if !any { return }
+    arr[CounterInstance] kept = []
+    for int i = 0, i < counterStack.length, i++ {
+        if counterStack[i].depth == depth && counterStack[i].ownOnly { continue }
+        kept.push(counterStack[i])
+    }
+    counterStack = kept
 }
 
 void func counterIncrement(name:text, by:int, depth:int) {
@@ -890,6 +927,20 @@ void func counterIncrement(name:text, by:int, depth:int) {
     c.value = by
     c.depth = 0
     counterStack.push(c)
+}
+
+// `counter-set` sets the innermost instance in scope rather than making
+// a new one, so the value outlives the element that set it: a following
+// sibling sees it, where a `counter-reset` on the same element would
+// have made an instance that died with it. With nothing in scope it
+// creates one, scoped as a reset would have scoped it (Lists 3 §4.2).
+void func counterSet(name:text, value:int, depth:int) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name != name { continue }
+        counterStack[i].value = value
+        return
+    }
+    counterReset(name, value, depth)
 }
 
 int func counterValue(name:text) {
@@ -910,7 +961,11 @@ text func counterValues(name:text, sep:text) {
 
 // `counter-reset: a 2 b` / `counter-increment: x` -- a list of names,
 // each optionally followed by an integer.
-void func applyCounterProperty(v:ascii, depth:int, isReset:bool) {
+const int COUNTER_OP_RESET = 0
+const int COUNTER_OP_INCREMENT = 1
+const int COUNTER_OP_SET = 2
+
+void func applyCounterProperty(v:ascii, depth:int, op:int) {
     if v == null { return }
     ascii t = asciiTrim(v)
     if t == null || t.length == 0 { return }
@@ -919,12 +974,15 @@ void func applyCounterProperty(v:ascii, depth:int, isReset:bool) {
     int i = 0
     while i < toks.length {
         text name = asciiLower(toks[i]).toText()
-        int value = isReset ? 0 : 1
+        // The value a name takes when it carries none of its own:
+        // `counter-increment` steps by one, the other two say zero.
+        int value = op == COUNTER_OP_INCREMENT ? 1 : 0
         if i + 1 < toks.length {
             int got = toks[i + 1].toText().toInt()
             if got != null { value = got  i++ }
         }
-        if isReset { counterReset(name, value, depth) }
+        if op == COUNTER_OP_RESET { counterReset(name, value, depth) }
+        else if op == COUNTER_OP_SET { counterSet(name, value, depth) }
         else { counterIncrement(name, value, depth) }
         i++
     }
@@ -3671,11 +3729,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // do, and is left for Backgrounds and Borders 3 (todo.md).
     s.counterReset = ''
     s.counterIncrement = ''
+    s.counterSet = ''
     if anyCounters {
         ascii cr = styleProp(props, 'counter-reset')
         ascii ci = styleProp(props, 'counter-increment')
+        ascii cst = styleProp(props, 'counter-set')
         if cr != null { s.counterReset = cr.toText() }
         if ci != null { s.counterIncrement = ci.toText() }
+        if cst != null { s.counterSet = cst.toText() }
     }
     s.backgroundImage = noGradient()
     s.backgroundUrl = ''
@@ -4523,8 +4584,12 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
     // The counters an element resets or increments are in force for its
     // own generated content, so they are applied before it is resolved.
     if anyCounters {
-        applyCounterProperty(s.counterReset.toAscii(), styleDepth, true)
-        applyCounterProperty(s.counterIncrement.toAscii(), styleDepth, false)
+        // Reset, then increment, then set: `counter-reset: c 100;
+        // counter-set: c 5` is 5 and `counter-increment: c 500;
+        // counter-set: c 1` is 1, both measured against Chromium 141.
+        applyCounterProperty(s.counterReset.toAscii(), styleDepth, COUNTER_OP_RESET)
+        applyCounterProperty(s.counterIncrement.toAscii(), styleDepth, COUNTER_OP_INCREMENT)
+        applyCounterProperty(s.counterSet.toAscii(), styleDepth, COUNTER_OP_SET)
     }
     computePseudoElements(n, s)
     styleDepth++
@@ -4534,7 +4599,10 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
     styleDepth--
     // An instance created by a child is in scope for that child's
     // following siblings, so it lives until the children are done.
-    if anyCounters { popCountersBelow(styleDepth + 1) }
+    if anyCounters {
+        popCountersBelow(styleDepth + 1)
+        popShadowingCountersAt(styleDepth)
+    }
 }
 
 void func computeStyles(doc:Node) {

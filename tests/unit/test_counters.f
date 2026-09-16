@@ -138,4 +138,86 @@ checkEq(generatedBefore(p9.root, 'v2'), generatedBefore(p8.root, 'v2'),
 checkEq(generatedBefore(p8.root, 'v1'), '1', 'the stylesheet form numbers one')
 checkEq(generatedBefore(p9.root, 'v2'), '4', 'the style-attribute form numbers four')
 
+// ---- counter-set (CSS Lists 3 §4.2) ----------------------------------
+// `counter-set` sets the counter that is already in scope; it does not
+// create a new instance the way `counter-reset` does. The pair below is
+// the check that tells them apart and does not depend on either number
+// being known in advance: the same markup with `counter-set` and with
+// `counter-reset` on the inner element must disagree on what the
+// element *after* it counts, because a reset's instance dies with the
+// element that made it and a set's change outlives it.
+//
+// Every value here was read off Chromium 141, by rendering
+// `counter(c)` into a ::before and comparing its width against spans
+// whose ::before is a literal one, two, three or four characters long
+// -- so each case's candidates were chosen to differ in length.
+
+text cHead = head + '<style>.v { display:inline-block } .v::before { content: counter(c) }'
+    + '.b::before { content: counter(b) }</style>'
+
+Page cs1 = pageFromHtml(cHead + '<div style="counter-set: c 55">'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs1.root, 'x'), '55', 'counter-set sets the value it names')
+
+Page cs2 = pageFromHtml(cHead + '<div style="counter-set: c">'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs2.root, 'x'), '0', 'and with no value it sets zero')
+
+// The discriminating pair.
+Page cs3 = pageFromHtml(cHead + '<div style="counter-reset: c 1000">'
+    + '<div style="counter-set: c 7">x</div>'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+Page cs4 = pageFromHtml(cHead + '<div style="counter-reset: c 1000">'
+    + '<div style="counter-reset: c 7">x</div>'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+check(generatedBefore(cs3.root, 'x') != generatedBefore(cs4.root, 'x'),
+      'counter-set and counter-reset do not do the same thing to what follows')
+checkEq(generatedBefore(cs3.root, 'x'), '7',
+        'a set changes the instance in scope, so the next sibling sees it')
+checkEq(generatedBefore(cs4.root, 'x'), '1000',
+        'a reset makes an instance of its own, which dies with its element')
+
+// On one element the order is reset, then increment, then set.
+Page cs5 = pageFromHtml(cHead + '<div style="counter-reset: c 100; counter-set: c 5">'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs5.root, 'x'), '5', 'a set on the same element runs after the reset')
+
+Page cs6 = pageFromHtml(cHead + '<div style="counter-reset: c 0">'
+    + '<div style="counter-increment: c 500; counter-set: c 1">'
+    + '<span class="v" id="x">a</span></div></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs6.root, 'x'), '1', 'and after the increment')
+
+// With nothing in scope it creates a counter, scoped as a reset would.
+Page cs7 = pageFromHtml(cHead + '<div><div style="counter-set: c 777">'
+    + '<span class="v" id="x">a</span></div></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs7.root, 'x'), '777',
+        'a set with nothing in scope creates the counter')
+Page cs8 = pageFromHtml(cHead + '<div><div style="counter-set: c 777">y</div>'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs8.root, 'x'), '777',
+        'and the counter it created is in scope for the following siblings')
+
+Page cs9 = pageFromHtml(cHead + '<div style="counter-set: a 77 b 888">'
+    + '<span class="b" id="x" style="display:inline-block">a</span></div></body>',
+    'about:blank', 600)
+checkEq(generatedBefore(cs9.root, 'x'), '888', 'a set takes a list of names, as the others do')
+
+Page cs10 = pageFromHtml(cHead + '<div style="counter-set: c -55">'
+    + '<span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs10.root, 'x'), '-55', 'and a negative value')
+
+// The same trap as counter-reset: `anyCounters` is what makes counters
+// free for the pages without them, and a property named only in a style
+// attribute is in no stylesheet rule to be found by walking them.
+Page cs11 = pageFromHtml(head + '<style>.v { display:inline-block }'
+    + '.v::before { content: counter(c) } #q { counter-set: c 42 }</style>'
+    + '<div id="q"><span class="v" id="x">a</span></div></body>', 'about:blank', 600)
+checkEq(generatedBefore(cs11.root, 'x'), '42', 'a set written in a stylesheet counts')
+Page cs12 = pageFromHtml(head + '<style>.v { display:inline-block }'
+    + '.v::before { content: counter(c) }</style>'
+    + '<div style="counter-set: c 42"><span class="v" id="x">a</span></div></body>',
+    'about:blank', 600)
+checkEq(generatedBefore(cs12.root, 'x'), generatedBefore(cs11.root, 'x'),
+        'and one written in a style attribute counts the same')
+
 finish('counters')
