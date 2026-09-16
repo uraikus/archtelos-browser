@@ -1275,6 +1275,26 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
 }
 
 // Stacks the block-level children of b; returns the content height.
+// justify-self aligns a block-level box in its containing block's
+// inline axis, and justify-items on the container is what a child with
+// no answer of its own takes (CSS Box Alignment 3 §6, §7). It moves the
+// box after it has been laid out and sized, and only into space the
+// box is not already using, so a box that fills its container is
+// unaffected -- which is why most boxes never notice the property.
+//
+// Auto margins have already centred or pushed the box by the time this
+// runs, and the standard gives them precedence, so a box with one is
+// left alone.
+void func justifyBlockChild(parent:Box, c:Box, cx:int, cw:int) {
+    int align = c.style.justifySelf
+    if align == BOXALIGN_AUTO { align = parent.style.justifyItems }
+    if align != BOXALIGN_CENTRE && align != BOXALIGN_END { return }
+    if lenIsAuto(c.style.marginLeft) || lenIsAuto(c.style.marginRight) { return }
+    int slack = cw - (c.w + c.ml + c.mr)
+    if slack <= 0 { return }
+    offsetBox(c, align == BOXALIGN_CENTRE ? Math.floorDiv(slack, 2) : slack, 0)
+}
+
 int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
     int y = cy
     int prevBottomMargin = 0
@@ -1315,6 +1335,7 @@ int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
         int baseY = applied ? y : startY
         layoutBlock(c, cx, baseY, cw, applied)
         if !applied { c.mt = 0 }
+        justifyBlockChild(b, c, cx, cw)
         if c.kind == BOX_IMAGE && c.blockLevel { }
         y = c.y + c.h
         int bottomM = collapsedBottomMargin(c, cw)
@@ -1492,6 +1513,46 @@ void func finishLine(forced:bool) {
     if archtelosTiming { profFinishMs = profFinishMs + (now() - t0) }
 }
 
+// Cuts the line back to the ellipsis. Characters are dropped from the
+// end until what is left plus the ellipsis fits, which is a measurement
+// per character dropped -- paid only by a line that actually overflows
+// a clipping box.
+void func ellipsiseLine() {
+    // The character itself, not `\u2026`: Festina drops an unknown
+    // escape's backslash silently, so that spelling is the five
+    // characters `u2026` (FINDINGS.md, finding 34).
+    text dots = '…'
+    int limit = ifcLineRight
+    for int i = ifcFrags.length - 1, i >= 0, i-- {
+        Fragment f = ifcFrags[i]
+        if f.kind != FRAG_TEXT { continue }
+        int dw = measureWidth(f.box.style, dots)
+        if f.x + dw > limit {
+            // this fragment has no room even for the ellipsis: drop it
+            // and try the one before
+            f.content = ''
+            f.w = 0
+            continue
+        }
+        arr[text] chars = f.content.split('')
+        for int n = chars.length, n > 0, n-- {
+            text cut = ''
+            for int k = 0, k < n, k++ { cut = cut + chars[k] }
+            int w = measureWidth(f.box.style, cut + dots)
+            if f.x + w <= limit {
+                f.content = cut + dots
+                f.w = w
+                ifcX = f.x + w
+                return
+            }
+        }
+        f.content = dots
+        f.w = dw
+        ifcX = f.x + dw
+        return
+    }
+}
+
 void func finishLineUncounted(forced:bool) {
     // drop a trailing space
     bool any = false
@@ -1557,6 +1618,13 @@ void func finishLineUncounted(forced:bool) {
     }
     int lineH = above + below
     int baseline = ifcY + above
+    // text-overflow: ellipsis replaces the end of a line that runs out
+    // of its box with an ellipsis. It needs a box that clips, because
+    // there is nothing to hide otherwise, which is why a box with no
+    // `overflow` keeps its whole line.
+    if bs.textOverflowEllipsis && bs.overflowHidden && ifcX > ifcLineRight {
+        ellipsiseLine()
+    }
     // horizontal alignment
     int used = ifcX - ifcLineStart
     int freeSpace = (ifcLineRight - ifcLineStart) - used

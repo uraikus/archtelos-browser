@@ -2941,6 +2941,21 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
     }
     s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_START)
+    // justify-items is inherited in effect rather than by the cascade:
+    // it is read off the parent box at layout time, so it is stored as
+    // the element's own value and the child asks for it there.
+    s.justifyItems = parseAlignValue(styleProp(props, 'justify-items'), BOXALIGN_START)
+    s.justifySelf = parseAlignValue(styleProp(props, 'justify-self'), BOXALIGN_AUTO)
+    ascii tov = styleProp(props, 'text-overflow')
+    s.textOverflowEllipsis = tov != null && asciiLower(asciiTrim(tov)) == 'ellipsis'
+    s.pointerEvents = PE_AUTO
+    ascii pev = styleProp(props, 'pointer-events')
+    if pev != null {
+        ascii t = asciiLower(asciiTrim(pev))
+        if t == 'none' { s.pointerEvents = PE_NONE }
+        else if t == 'visible' { s.pointerEvents = PE_VISIBLE }
+        else if t == 'all' { s.pointerEvents = PE_ALL }
+    }
     s.alignItems = parseAlignValue(styleProp(props, 'align-items'), BOXALIGN_STRETCH)
     s.alignSelf = parseAlignValue(styleProp(props, 'align-self'), BOXALIGN_AUTO)
     s.alignContent = parseAlignValue(styleProp(props, 'align-content'), BOXALIGN_STRETCH)

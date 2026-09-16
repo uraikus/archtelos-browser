@@ -608,6 +608,7 @@ arr[text] supportedProperties = [
     'flex', 'flex-direction', 'flex-grow', 'flex-shrink', 'flex-basis',
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',
+    'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
     'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
     'outline-offset', 'table-layout', 'empty-cells', 'list-style-position',

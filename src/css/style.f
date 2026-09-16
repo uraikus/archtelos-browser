@@ -110,6 +110,15 @@ const int BOXALIGN_SPACE_AROUND = 6
 const int BOXALIGN_SPACE_EVENLY = 7
 const int BOXALIGN_AUTO = 8
 
+// pointer-events. Only `none` changes what this engine does, because
+// hit testing is the only interaction it has and a `visibility: hidden`
+// box is already never hit; the rest are kept apart so the computed
+// value is the one that was asked for.
+const int PE_AUTO = 0
+const int PE_NONE = 1
+const int PE_VISIBLE = 2
+const int PE_ALL = 3
+
 // flex-wrap. A container is single-line unless it says otherwise;
 // wrap-reverse flips the cross axis, which reverses both the order of
 // the lines and the side of its own line an item aligns to.
@@ -428,6 +437,14 @@ struct Style {
     boxSizing:int
     flexDirection:int
     justifyContent:int
+    // Box Alignment 3 on a block container: justifyItems is the
+    // default its children take, justifySelf is a child's own answer.
+    // BOXALIGN_AUTO on the child means "whatever the parent says",
+    // which is its initial value and its zero value both.
+    justifyItems:int
+    justifySelf:int
+    textOverflowEllipsis:bool
+    pointerEvents:int
     alignItems:int
     alignSelf:int
     alignContent:int

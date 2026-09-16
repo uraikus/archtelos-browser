@@ -641,3 +641,25 @@ no composition of the three available calls produces, and `matrix()` is
 the matrix itself; both are dropped. A page that lays a heading out on a
 slant, or that ships a matrix straight from a design tool, renders
 upright.
+
+---
+
+## 3o Reject an unknown escape, and accept `\u`
+
+**Today.** `\t`, `\n` and `\\` are the escapes the lexer knows; every
+other backslash sequence silently loses its backslash, so `'\u2026'` is
+the five characters `u2026` (FINDINGS.md, finding 34). There is no
+diagnostic.
+
+**Proposal.** Two changes, either of which alone is worth having. Make
+an unrecognised escape an error, which is what the silent case costs
+nothing to catch. And accept `\uXXXX` and `\u{XXXXXX}`, encoding to
+UTF-8 — `text` already holds UTF-8, so this is lexer work and no
+runtime change.
+
+**What it removes here.** This browser writes the ellipsis `text-overflow`
+appends, the quote characters the user-agent stylesheet supplies, and
+every character reference in `named_refs.f` as literal bytes. Each is a
+non-ASCII constant that cannot survive a terminal that mangles it or a
+patch applied with the wrong encoding, and the language offers no way to
+spell it that does.

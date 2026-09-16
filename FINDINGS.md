@@ -967,3 +967,39 @@ error: translate()'s argument 1 expects int, found float
 matrix multiplies in floating point — but a bare `translate(0.5, 0)` is
 not expressible, and neither is the sub-pixel positioning a text layout
 wants.
+
+---
+
+## 34 An unknown escape loses its backslash silently
+
+A string literal accepts `\t` and `\n`. Any other backslash sequence is
+neither an escape nor an error: the backslash is dropped and what
+follows stands.
+
+```festina
+text a = '\u2026'
+log(`len=${a.length} last=${a[a.length - 1]}`)
+```
+
+```
+len=5 last=6
+```
+
+`\u2026` is the five characters `u2026`. Nothing warns, and the program
+runs; `'\q'` is `q` as well. `\t`, `\n` and `\\` are the escapes the lexer
+knows, which is what makes the rest silent rather than absent: the
+mechanism is there and an unrecognised sequence falls out of it.
+
+This is finding 7 — `\n` in a regex literal matching the letter `n` —
+in the other direction, and it has the same shape: a spelling every
+other language in the family reads one way is read another, and reads
+it without complaint. The text is ASCII either way, so it passes
+through `ascii`, comparisons and the tokenizer looking exactly like
+what was intended.
+
+Here it put the literal `u2026` on the end of every line
+`text-overflow: ellipsis` truncated, and only a character-by-character
+comparison in a test caught it. The workaround is to write the character
+itself rather than an escape, which works — `'…'` has a length of 1 —
+but it means a non-ASCII constant cannot be written in the form that
+survives a copy through a terminal, a patch, or a code review.

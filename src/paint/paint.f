@@ -1685,10 +1685,17 @@ Box func hitTest(b:Box, x:int, y:int) {
             Fragment f = ln.frags[j]
             if f.kind == FRAG_INLINE_BG { continue }
             if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
+                // pointer-events: none takes a box out of hit testing so
+                // that what is behind it is found instead. Its
+                // descendants are still searched, because a child may
+                // ask for pointer events back.
                 if f.kind == FRAG_ATOMIC {
                     Box inner = hitTest(f.box, x, y)
-                    return inner != null ? inner : f.box
+                    if inner != null { return inner }
+                    if f.box.style.pointerEvents != PE_NONE { return f.box }
+                    continue
                 }
+                if f.box.style.pointerEvents == PE_NONE { continue }
                 return f.box
             }
         }
@@ -1698,7 +1705,8 @@ Box func hitTest(b:Box, x:int, y:int) {
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
         if x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h {
             Box inner = hitTest(c, x, y)
-            return inner != null ? inner : c
+            if inner != null { return inner }
+            if c.style.pointerEvents != PE_NONE { return c }
         }
     }
     return null

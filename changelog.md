@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Four more, and an escape that was not one
+
+- **`justify-items` and `justify-self`** move a block-level box in the
+  inline axis of its containing block, once it has been sized and only
+  into space it is not already using — which is why most boxes never
+  notice the property. The container's `justify-items` is what a child
+  with no answer of its own takes, and an auto margin wins over both, as
+  the standard says.
+- **`text-overflow: ellipsis`** cuts a line that runs out of a clipping
+  box back to an ellipsis, dropping characters from the end until what
+  is left plus the ellipsis fits. A line that fits is untouched, and so
+  is one in a box that does not clip — there is nothing to hide there,
+  and both are checks.
+- **`pointer-events: none`** takes a box out of hit testing so that what
+  is behind it is found instead, while its descendants are still
+  searched, because a child may ask for pointer events back. It is the
+  only value that changes anything here, and css-2026.md says so.
+
+**Properties 145 → 149.**
+
+Twenty checks in the new `tests/unit/test_alignment.f`.
+
+**And an escape that was not one.** The ellipsis was written `\u2026`,
+which Festina reads as the five characters `u2026` — an unrecognised
+escape loses its backslash silently, with no diagnostic, so every
+truncated line ended in `u2026` instead. `\t`, `\n` and `\\` are the
+escapes the lexer knows and everything else falls out of the mechanism.
+This is finding 7 in the other direction and it was caught the same way:
+by comparing one character rather than eyeballing a string. FINDINGS.md
+gains finding 34 and festina.md §3o. The workaround is to write the
+character itself, which works but cannot be spelled portably.
+
 ### Containment
 
 The second untouched specification off zero. `contain` takes `size`,
