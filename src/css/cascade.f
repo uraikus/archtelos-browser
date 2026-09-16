@@ -98,6 +98,7 @@ bool cascadeSawTransform = false
 void func cascadeReset() {
     cascadeSawTransform = false
     cssResetNamespaces()
+    cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
     // could never be returned for a new page -- but it would sit in the
@@ -2902,6 +2903,9 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         }
     }
     s.listStyle = isRoot ? LIST_DISC : parent.listStyle
+    // list-style-type inherits, and so does the name it was given:
+    // an <li> takes its marker from the <ol> around it.
+    s.listStyleName = isRoot ? '' : parent.listStyleName
     ascii ls = styleProp(props, 'list-style-type')
     if ls != null {
         ascii t = asciiLower(ls)
@@ -2914,6 +2918,21 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'upper-alpha' || t == 'upper-latin' { s.listStyle = LIST_UPPER_ALPHA }
         else if t == 'lower-roman' { s.listStyle = LIST_LOWER_ROMAN }
         else if t == 'upper-roman' { s.listStyle = LIST_UPPER_ROMAN }
+        else {
+            // Any other name is a counter style -- one the page defined
+            // with `@counter-style`, or one of the predefined ones the
+            // keywords above do not cover. The marker comes from the
+            // counter-style engine rather than from a constant.
+            s.listStyle = LIST_DECIMAL
+        }
+        // The name is kept whatever it was, because a keyword like
+        // `decimal-leading-zero` is a counter style too and its marker
+        // is not the plain number the constant would give.
+        if t != 'none' && t != 'disc' && t != 'circle' && t != 'square' {
+            s.listStyleName = t.toText()
+        } else {
+            s.listStyleName = ''
+        }
     }
     s.hidden = isRoot ? false : parent.hidden
     ascii vis = styleProp(props, 'visibility')

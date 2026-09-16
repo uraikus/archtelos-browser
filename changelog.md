@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Counter styles
+
+All five of the standard's numbering systems — `cyclic`, `fixed`,
+`symbolic`, `alphabetic`, `numeric` and `additive` — with `symbols`,
+`additive-symbols`, `prefix`, `suffix`, `pad` and `negative`.
+
+**The predefined styles are built out of those same five**, so there is
+one generator and a name is nothing but the definition it looks up:
+`lower-roman` is an additive style with the roman weights,
+`decimal-leading-zero` is a numeric one with a pad of two, and a page's
+own `@counter-style` is the same structure with a different source. That
+is the whole reason the specification defines them that way, and
+following it is what makes `@counter-style` free once the predefined
+ones work.
+
+A number a system cannot write falls back to decimal, which is the
+standard's rule and why `lower-roman` of 4000 is `4000` rather than four
+thousand M's. That took a range on the roman styles: the additive system
+will happily write `mmmm`, and a check said so.
+
+Thirty-three checks in the new `tests/unit/test_counterstyles.f`, each
+naming the value the standard gives for a number — a check that a marker
+"is not decimal" would pass for any wrong answer. **Two of them ask
+whether the marker reaches the list item that draws it**, which is a
+different question from whether the generator is right, and the one that
+would catch it being correct and unwired. It was: `list-style-type`
+inherits and the name it was given did not, so an `<li>` inside a styled
+`<ol>` got nothing.
+
+A token splitter that counted parentheses inside quoted strings pulled
+`negative: "(" ")"` apart at its first symbol. It skips quoted strings
+now, which it should have done for CSS anyway.
+
+No property moves — `list-style-type` already registered — but it is the
+fifth of the snapshot's specifications to close this far.
+
 ### CSS Namespaces 3, in full
 
 `@namespace` binds a prefix, or a default namespace when it names none,

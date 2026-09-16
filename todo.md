@@ -99,12 +99,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    festina.md §3l the proposal. Until Festina grows either, the most
    this item can gain is `font-variant` and `font-stretch`, which are
    the parts that do not need a font the system lacks.
-7. **Counter Styles 3**: `@counter-style`, and the predefined styles
-   beyond the six that number as themselves — the alphabetic and roman
-   ones are done, along with the `<ol type>` attribute and
-   `list-style-position`. What is left is `list-style-image` from
-   Lists 3, which needs a fetched image for the marker, and
-   `decimal-leading-zero`, which parses as plain decimal.
+7. **Counter Styles 3, completed**: the `range`, `fallback` and
+   `speak-as` descriptors; the `symbols()` function; and the predefined
+   styles that need a table this repository would have to vendor --
+   `hebrew`, `armenian`, `georgian` and the East Asian ones beyond
+   `cjk-decimal`. What is left of Lists 3 is `list-style-image`, which
+   needs a fetched image for the marker.
 8. **Transforms 1, completed**: a transformed box should establish a
    stacking context and a containing block for its positioned
    descendants, and hit testing should use the inverse transform so a

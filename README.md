@@ -112,9 +112,9 @@ styles, `text-emphasis` marks beside every character, and
 shade their edges — with each side keeping its own, `box-shadow`
 with offset, blur, spread, `inset` and a list of shadows, images,
 broken-image placeholders,
-list markers — `disc`, `circle`, `square`, `decimal`, `lower-alpha`,
-`upper-alpha`, `lower-roman` and `upper-roman`, and the `<ol type>`
-attribute that asks for them — and opacity. `linear-gradient()` and
+list markers from a counter style — the predefined ones and any a page
+defines with `@counter-style`, out of the same five numbering systems —
+and the `<ol type>` attribute that asks for them, and opacity. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle
@@ -243,12 +243,12 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-eight unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-nine unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-containment, alignment, grid, columns, bidi, namespaces, audio, the
-preload scanner), twelve offscreen render suites that check
+containment, alignment, grid, columns, bidi, namespaces, counter
+styles, audio, the preload scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, border images, text decoration, transforms, right-to-left

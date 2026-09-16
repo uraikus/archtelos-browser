@@ -449,6 +449,10 @@ struct Style {
     tabSize:int             // a tab's advance in spaces
     tabSizePx:int           // or in px, when a length was given; -1 otherwise
     listStyle:int
+    // The name list-style-type was given, so a marker can be generated
+    // by the counter-style engine. Empty means the built-in bullet the
+    // listStyle constant names.
+    listStyleName:text
     verticalAlign:int
     floatSide:int
     clearSide:int

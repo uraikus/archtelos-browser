@@ -9,6 +9,7 @@
 // browser does with a selector it does not understand.
 
 import ../util/text.f
+import counterstyles.f
 
 const int COMB_NONE = 0
 const int COMB_DESCENDANT = 1
@@ -105,6 +106,113 @@ void func cssResetNamespaces() {
     cssDefaultNamespace = ''
 }
 
+// The body of an `@counter-style` rule.
+CounterStyle func parseCounterStyleBody(body:ascii) {
+    CounterStyle c
+    c.system = CS_SYMBOLIC
+    c.suffix = '. '
+    c.firstValue = 1
+    c.defined = true
+    arr[ascii] decls = splitOnSemicolons(body)
+    for int i = 0, i < decls.length, i++ {
+        int colon = asciiIndexOf(decls[i], ':', 0)
+        if colon < 0 { continue }
+        text name = asciiLower(asciiTrim(decls[i].slice(0, colon))).toText()
+        ascii value = asciiTrim(decls[i].slice(colon + 1, decls[i].length))
+        if name == 'system' {
+            arr[ascii] st = namespacePreludeTokens(value)
+            if st.length == 0 { continue }
+            text sys = asciiLower(st[0]).toText()
+            if sys == 'cyclic' { c.system = CS_CYCLIC }
+            else if sys == 'fixed' {
+                c.system = CS_FIXED
+                if st.length > 1 {
+                    int v = st[1].toText().toInt()
+                    if v != null { c.firstValue = v }
+                }
+            }
+            else if sys == 'symbolic' { c.system = CS_SYMBOLIC }
+            else if sys == 'alphabetic' { c.system = CS_ALPHABETIC }
+            else if sys == 'numeric' { c.system = CS_NUMERIC }
+            else if sys == 'additive' { c.system = CS_ADDITIVE }
+        } else if name == 'symbols' {
+            arr[ascii] syms = namespacePreludeTokens(value)
+            for int k = 0, k < syms.length, k++ { c.symbols.push(unquoteCssString(syms[k])) }
+        } else if name == 'additive-symbols' {
+            // `weight symbol` pairs, separated by commas
+            arr[ascii] pairs = splitOnCommas(value)
+            for int k = 0, k < pairs.length, k++ {
+                arr[ascii] parts = namespacePreludeTokens(asciiTrim(pairs[k]))
+                if parts.length < 2 { continue }
+                int w = parts[0].toText().toInt()
+                if w == null { continue }
+                c.addValues.push(w)
+                c.addSymbols.push(unquoteCssString(parts[1]))
+            }
+        } else if name == 'suffix' {
+            c.suffix = unquoteCssString(value)
+        } else if name == 'prefix' {
+            c.prefix = unquoteCssString(value)
+        } else if name == 'pad' {
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if parts.length >= 2 {
+                int w = parts[0].toText().toInt()
+                if w != null { c.padTo = w }
+                c.padSymbol = unquoteCssString(parts[1])
+            }
+        } else if name == 'negative' {
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if parts.length >= 1 { c.negPrefix = unquoteCssString(parts[0]) }
+            if parts.length >= 2 { c.negSuffix = unquoteCssString(parts[1]) }
+        }
+    }
+    return c
+}
+
+text func unquoteCssString(v:ascii) {
+    ascii t = asciiTrim(v)
+    if t.length < 2 { return t.toText() }
+    int first = t.charCodeAt(0)
+    if (first == CH_QUOTE || first == CH_APOS) && t.charCodeAt(t.length - 1) == first {
+        return t.slice(1, t.length - 1).toText()
+    }
+    return t.toText()
+}
+
+arr[ascii] func splitOnSemicolons(v:ascii) {
+    arr[ascii] out = []
+    int start = 0
+    int depth = 0
+    for int i = 0, i < v.length, i++ {
+        int c = v.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_SEMI && depth <= 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+    }
+    out.push(asciiTrim(v.slice(start, v.length)))
+    return out
+}
+
+arr[ascii] func splitOnCommas(v:ascii) {
+    arr[ascii] out = []
+    int start = 0
+    int depth = 0
+    for int i = 0, i < v.length, i++ {
+        int c = v.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_COMMA && depth <= 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+    }
+    out.push(asciiTrim(v.slice(start, v.length)))
+    return out
+}
+
 // The `@namespace` prelude, split on whitespace outside parentheses.
 // Written here for the same reason as parseNamespaceUri below: the
 // cascade's tokenizer is declared in the file that imports this one.
@@ -119,6 +227,13 @@ arr[ascii] func namespacePreludeTokens(v:ascii) {
         int depth = 0
         while i < n {
             int c = v.charCodeAt(i)
+            // A quoted string is one token however it is spelled: a
+            // `negative: "(" ")"` counts its parentheses otherwise, and
+            // the two halves never come apart.
+            if c == CH_QUOTE || c == CH_APOS {
+                i = skipQuoted(v, i)
+                continue
+            }
             if c == CH_LPAREN { depth++ }
             else if c == CH_RPAREN { depth-- }
             else if isSpaceCode(c) && depth <= 0 { break }
@@ -990,6 +1105,15 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
                     parseRulesInto(sheet, src.slice(brace + 1, close))
+                }
+            } else if atName == 'counter-style' {
+                // The name is the prelude, and the body is an ordinary
+                // declaration list.
+                text csName = asciiLower(asciiTrim(src.slice(nameEnd, brace))).toText()
+                int close = blockEnd - 1
+                if close < brace + 1 { close = brace + 1 }
+                if csName != '' {
+                    cssCounterStyles[csName] = parseCounterStyleBody(src.slice(brace + 1, close))
                 }
             } else if atName == 'layer' {
                 int close = blockEnd - 1

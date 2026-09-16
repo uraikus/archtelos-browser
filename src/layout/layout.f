@@ -326,6 +326,7 @@ Style func anonymousStyle(parent:Style) {
     s.tabSize = parent.tabSize
     s.tabSizePx = parent.tabSizePx
     s.listStyle = parent.listStyle
+    s.listStyleName = parent.listStyleName
     s.letterSpacing = parent.letterSpacing
     s.textIndent = parent.textIndent
     s.opacity = parent.opacity
@@ -1646,7 +1647,10 @@ int func listMarkerAdvance(s:Style, index:int) {
     if s.listStyle == LIST_DISC || s.listStyle == LIST_CIRCLE || s.listStyle == LIST_SQUARE {
         return roundPx(fs.toFloat() * 1.3)
     }
-    return measureWidth(s, `${listMarkerLabel(index, s.listStyle)}.`) + roundPx(fs.toFloat() * 0.5)
+    text label = s.listStyleName != ''
+        ? counterStyleLabel(s.listStyleName, index) + counterStyleSuffix(s.listStyleName)
+        : `${listMarkerLabel(index, s.listStyle)}.`
+    return measureWidth(s, label) + roundPx(fs.toFloat() * 0.5)
 }
 
 void func beginLine() {

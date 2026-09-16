@@ -1199,7 +1199,14 @@ void func paintListMarker(b:Box) {
     // content edge and takes no space at all.
     bool inside = s.listInside
     if s.listStyle != LIST_DISC && s.listStyle != LIST_CIRCLE && s.listStyle != LIST_SQUARE {
-        text label = `${listMarkerLabel(b.listIndex, s.listStyle)}.`
+        // The counter-style engine supplies both the number and the
+        // suffix that follows it, so `decimal-leading-zero` and a
+        // page's own `@counter-style` reach the marker the same way the
+        // built-in keywords do.
+        text label = s.listStyleName != ''
+            ? counterStyleLabel(s.listStyleName, b.listIndex)
+              + counterStyleSuffix(s.listStyleName)
+            : `${listMarkerLabel(b.listIndex, s.listStyle)}.`
         setFontFor(s)
         int w = measureTextWidth(label)
         pDrawText(label, inside ? edge : edge - w - roundPx(fs.toFloat() * 0.5), baseline)
