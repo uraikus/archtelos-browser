@@ -4618,6 +4618,14 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // transform-origin: two of a position's components, defaulting to
     // the box's centre. An unset Len is auto, which the painter reads
     // as 50%, so the initial value costs no write.
+    // `fill-box` and `stroke-box` are SVG's own boxes; outside SVG they
+    // are the content box and the border box, which is what Chromium
+    // 141 renders and all this engine has.
+    ascii tbox = styleProp(props, 'transform-box')
+    if tbox != null {
+        ascii tboxLow = asciiLower(asciiTrim(tbox))
+        s.transformBoxContent = tboxLow == 'content-box' || tboxLow == 'fill-box'
+    }
     ascii toProp = styleProp(props, 'transform-origin')
     if toProp != null {
         arr[ascii] tot = cssTokens(toProp)

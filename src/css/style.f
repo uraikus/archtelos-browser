@@ -719,6 +719,12 @@ struct Style {
     intrinsicWidth:Len
     intrinsicHeight:Len
     transforms:arr[Transform]
+    // transform-box: which box a transform-origin resolves against.
+    // `content-box` and `fill-box` name the content box; `border-box`,
+    // `stroke-box` and `view-box` name the border box, and `view-box`
+    // is the initial value, so the flag names the other case and a page
+    // that never says it carries a false.
+    transformBoxContent:bool
     transformOriginX:Len    // an unset Len is auto, which reads as 50%
     transformOriginY:Len
     tableLayoutFixed:bool

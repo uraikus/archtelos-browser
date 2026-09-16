@@ -1791,8 +1791,21 @@ void func paintBox(b:Box) {
     // Every function is about the transform origin, which is the box's
     // centre unless it says otherwise. Moving the origin to (0,0),
     // transforming and moving back is what makes that so.
-    int ox = b.x + resolveLen(s.transformOriginX, b.w, Math.floorDiv(b.w, 2))
-    int oy = b.y + resolveLen(s.transformOriginY, b.h, Math.floorDiv(b.h, 2))
+    // The reference box `transform-box` names: the border box unless it
+    // asked for the content one (Transforms 1 §6). An origin is a
+    // position within that box, so both its corner and its size move.
+    int rx = b.x
+    int ry = b.y
+    int rw = b.w
+    int rh = b.h
+    if s.transformBoxContent {
+        rx = contentX(b)
+        ry = contentY(b)
+        rw = contentWidth(b)
+        rh = b.h - b.pt - b.pb - b.bt - b.bb
+    }
+    int ox = rx + resolveLen(s.transformOriginX, rw, Math.floorDiv(rw, 2))
+    int oy = ry + resolveLen(s.transformOriginY, rh, Math.floorDiv(rh, 2))
     pSaveState()
     pTranslate(ox, oy)
     for int i = 0, i < s.transforms.length, i++ {

@@ -1091,7 +1091,7 @@ arr[text] supportedProperties = [
     'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
     'outline-offset', 'table-layout', 'empty-cells', 'list-style-position',
-    'transform', 'transform-origin', 'translate', 'rotate', 'scale',
+    'transform', 'transform-origin', 'transform-box', 'translate', 'rotate', 'scale',
     'contain', 'content-visibility', 'contain-intrinsic-size',
     'contain-intrinsic-width', 'contain-intrinsic-height',
     'contain-intrinsic-inline-size', 'contain-intrinsic-block-size',

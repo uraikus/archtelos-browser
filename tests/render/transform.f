@@ -171,4 +171,56 @@ shotBoxAt('transform:skewX(30deg)')
 check(getPixelColor(5, 5) == red, 'a skew, which this canvas cannot express, is dropped')
 checkEqInt(countRed(0, 0, 300, 200), plainInk, 'rather than applied as something else')
 
+// ---- transform-box (Transforms 1 §6) -------------------------------------
+// Which box a percentage `transform-origin` resolves against. On a box
+// with padding and a border the content box and the border box have
+// different top-left corners, so rotating about `0 0` puts the result
+// in two different places.
+//
+// Chromium 141, on 60 content + 10 padding + 5 border a side (a 90x50
+// border box) rotated 90 degrees about its reference box's top-left,
+// measures the rotated box's left edge from its container:
+//
+//   initial, border-box, stroke-box, view-box   -50
+//   content-box, fill-box                       -20
+//
+// The initial value computes to `view-box`, which for an element that
+// is not SVG is the border box. So the pair that must differ is
+// content-box against border-box, and the three that must agree with
+// the initial value are the other three.
+
+// A bordered, padded box at a known place, rotated about its reference
+// box's top-left, and the leftmost column its ink reaches.
+int func rotatedLeftEdge(style:text) {
+    Page p = pageFromHtml(head
+        + '<div style="margin-left:150px;width:60px;height:20px;padding:10px;'
+        + 'border:5px solid red;background:red;transform-origin:0 0;'
+        + `transform:rotate(90deg);${style}"></div></body>`,
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    for int x = 0, x < 300, x++ {
+        for int y = 0, y < 200, y++ {
+            if getPixelColor(x, y) == red { return x }
+        }
+    }
+    return -1
+}
+
+int tbInitial = rotatedLeftEdge('')
+int tbContent = rotatedLeftEdge('transform-box:content-box')
+int tbBorder = rotatedLeftEdge('transform-box:border-box')
+int tbFill = rotatedLeftEdge('transform-box:fill-box')
+int tbStroke = rotatedLeftEdge('transform-box:stroke-box')
+int tbView = rotatedLeftEdge('transform-box:view-box')
+
+check(tbInitial >= 0 && tbContent >= 0, 'both boxes paint somewhere')
+check(tbContent != tbBorder, 'the content box and the border box are different origins')
+checkEqInt(tbContent - tbBorder, 30,
+           'and they differ by the border and padding on that side, twice over')
+checkEqInt(tbBorder, tbInitial, 'the initial value resolves against the border box')
+checkEqInt(tbView, tbInitial, '`view-box` is that same box outside SVG')
+checkEqInt(tbStroke, tbInitial, 'and so is `stroke-box`')
+checkEqInt(tbFill, tbContent, '`fill-box` is the content box outside SVG')
+
 finish('transform')
