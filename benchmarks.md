@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,724,400 |
-| This browser, all `.f` source | 885,182 |
+| This browser, the whole program | 2,733,176 |
+| This browser, all `.f` source | 891,785 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -686,6 +686,16 @@ nothing to parse. It hands back one shared empty list instead, and the
 first bracketed name swaps in arrays of its own. Ten alternating samples
 give 101 to 105 ms against the revision before it at 101 to 110, the
 same best on each side, on a run whose control came in at 0.4%.
+
+`object-view-box` costs **8,776 bytes** (2,724,400 → 2,733,176) and,
+at render time, one field test per image box — and `generated.html`
+carries no `<img>` at all, so on the benchmark page it is not reached
+even once. That is worth stating rather than implying: the run put the
+page at 98 ms against a recorded 101 whose spread is 99 to 104, and ten
+alternating samples give 99 to 115 against the revision before it at
+101 to 106. The new side's best is two milliseconds under the old
+side's, which is a good run rather than a faster browser: nothing that
+changed executes here.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,
