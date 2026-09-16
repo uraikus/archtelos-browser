@@ -31,6 +31,11 @@ const int DISPLAY_GRID = 18
 const int DISPLAY_INLINE_GRID = 19
 const int DISPLAY_INLINE_TABLE = 20
 
+// CSS Conditional 4 §2: what a container query may ask about this box.
+const int CONTAINER_NORMAL = 0
+const int CONTAINER_INLINE_SIZE = 1
+const int CONTAINER_SIZE = 2
+
 // A grid track's size. `fr` is not a length: it is a share of what the
 // fixed tracks leave, so it cannot live in a Len and has a field of its
 // own. TRACK_AUTO sizes to the content.
@@ -640,10 +645,19 @@ struct Style {
     // Containment. Size containment is the one that changes geometry:
     // the box is laid out as if it had no content, and the two
     // intrinsic sizes are what an automatic size resolves to instead.
-    containSize:bool
+    // Size containment is per axis: `contain: size` contains both,
+    // `contain: inline-size` only the inline one, and CSS Conditional
+    // 4's `container-type` is the same containment under another name.
+    containInlineSize:bool
+    containBlockSize:bool
     containLayout:bool
     containPaint:bool
     containStyle:bool
+    // CSS Conditional 4. `container-type` is the containment a query
+    // needs in order to be answerable; `container-name` is what a
+    // `@container` rule names to pick this one out.
+    containerType:int
+    containerName:text
     contentHidden:bool      // content-visibility: hidden
     intrinsicWidth:Len
     intrinsicHeight:Len

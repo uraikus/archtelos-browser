@@ -89,7 +89,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${lineKey(s.gridColEnd)}`, `${lineKey(s.gridRowStart)}`, 
         `${lineKey(s.gridRowEnd)}`, `${s.justifyItems}`, `${s.justifySelf}`, 
         `${s.textOverflowEllipsis}`, `${s.pointerEvents}`, 
-        `${s.containSize}`, `${s.containLayout}`, `${s.containPaint}`, 
+        `${s.containInlineSize}`, `${s.containBlockSize}`, `${s.containLayout}`, `${s.containPaint}`, 
         `${s.containStyle}`, `${s.contentHidden}`, 
         `${lenKey(s.intrinsicWidth)}`, `${lenKey(s.intrinsicHeight)}`, 
         `${transformKey(s.transforms)}`, `${lenKey(s.transformOriginX)}`, 
@@ -108,7 +108,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`,
         `${shadowKey(s.shadows)}`,
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.quotes}`,
-        `${s.colorSchemeDark}`]
+        `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`]
 }
 
 text func styleDigest(s:Style) {
@@ -154,7 +154,7 @@ arr[text] func styleDigestFieldNames() {
         'gridCols', 'gridRows', 'gridAutoCols', 'gridAutoRows', 
         'gridAutoFlowColumn', 'gridColStart', 'gridColEnd', 
         'gridRowStart', 'gridRowEnd', 'justifyItems', 'justifySelf', 'textOverflowEllipsis', 
-        'pointerEvents', 'containSize', 'containLayout', 
+        'pointerEvents', 'containInlineSize', 'containBlockSize', 'containLayout', 
         'containPaint', 'containStyle', 'contentHidden', 
         'intrinsicWidth', 'intrinsicHeight', 'transforms', 
         'transformOriginX', 'transformOriginY', 'listInside', 'listImageUrl', 'backgroundFixed', 'flexDirection', 
@@ -165,7 +165,8 @@ arr[text] func styleDigestFieldNames() {
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows',
-        'counterReset', 'counterIncrement', 'quotes', 'colorSchemeDark']
+        'counterReset', 'counterIncrement', 'quotes', 'colorSchemeDark',
+        'containerType', 'containerName']
 }
 
 text func trackKey(list:arr[Track]) {

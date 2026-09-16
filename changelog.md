@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Size containment per axis, and the container properties
+
+`contain: size` contained both axes and there was no way to contain one.
+The two guards were already separate in the layout -- the intrinsic-width
+pass in the inline axis, the height in the block axis -- so splitting the
+one flag into `containInlineSize` and `containBlockSize` is the whole of
+it. `contain: inline-size` makes a box as wide as an empty box would be
+and as tall as its content needs once wrapped into that width.
+
+A float is the only box whose width shows this, because a block-level
+box takes its containing block's width whether its contents are measured
+or not. That is also why the float bug in the commit before this one had
+to be fixed first: with every float 600px wide, none of these checks
+could tell the difference between contained and not.
+
+CSS Conditional 4's `container-type` is that containment under another
+name, and `container-name` and the `container` shorthand go with it. A
+query can only be answered about a box whose size does not depend on
+what a rule the query controls might do to its contents, which is why
+the property applies containment rather than merely recording an
+intention. Chromium lays a float out under `container-type: inline-size`
+exactly as it does under `contain: inline-size`, so that is what the
+checks assert rather than a number of their own.
+
+198 of 405 properties, from 196. `container-name` moves `containerName`;
+`container-type` moves the containment fields and `containerType`.
+
+**`@container` itself is still not evaluated.** A `@container` block is
+skipped like any other at-rule this engine does not know, so its rules
+never apply. Answering a query needs the container's size, which is
+known only after layout, and so a second style and layout pass. The
+properties being right is what that pass will need; it is not the same
+thing as having it, and css-2026.md says so in those words.
+
 ### A float with no width took the whole column
 
 `width: auto` on a float is shrink-to-fit --

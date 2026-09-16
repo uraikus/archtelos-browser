@@ -133,4 +133,62 @@ checkEqInt(shrinkInline.w, shrinkContained.w, 'contain-intrinsic-inline-size is 
 check(shrinkInline.w != shrinkPlain.w,
       'and is not simply the uncontained width on both')
 
+// ---- one axis at a time -----------------------------------------------
+// `contain: size` contains both axes; `contain: inline-size` contains
+// only the inline one, so the box is as wide as an empty box would be
+// and as tall as its content needs once wrapped into that width.
+//
+// A float is what makes the difference visible, because a float's width
+// is shrink-to-fit -- a block-level box takes its containing block's
+// width whether its contents are measured or not, so it cannot show
+// this at all. Chromium puts an uncontained float at 145px wide and one
+// line tall, and the same float under `contain: inline-size` at 0 wide
+// and three lines tall.
+text containFloatHead = '<body style="margin:0;font:16px/20px monospace;width:600px">'
+Box func containedFloat(css:text) {
+    return findBox(layoutHtml(containFloatHead + '<div id="f" style="float:left;' + css
+        + '">some words here</div></body>', 600), 'div')
+}
+
+Box plainFloat = containedFloat('')
+Box inlineContained = containedFloat('contain: inline-size')
+Box bothContained = containedFloat('contain: size')
+
+check(plainFloat.w > 0, 'an uncontained float is as wide as its words')
+checkEqInt(inlineContained.w, 0, 'inline-size containment makes it as wide as an empty box')
+check(inlineContained.h > plainFloat.h,
+      'so the words wrap, and it is taller than the uncontained one')
+checkEqInt(bothContained.w, 0, 'size containment contains the inline axis too')
+checkEqInt(bothContained.h, 0, 'and the block axis, which inline-size leaves alone')
+check(inlineContained.h != bothContained.h,
+      'which is the whole difference between the two values')
+
+// ---- container-type is that containment, under another name -----------
+// `container-type: inline-size` applies inline-size containment, and
+// `container-type: size` applies it on both axes. Chromium lays out a
+// float under either exactly as it lays out the matching `contain`
+// value, so that is what is asserted rather than a number worked out
+// again here.
+checkEqInt(containedFloat('container-type: inline-size').w, inlineContained.w,
+           'container-type: inline-size is inline-size containment, across')
+checkEqInt(containedFloat('container-type: inline-size').h, inlineContained.h,
+           'and down')
+checkEqInt(containedFloat('container-type: size').w, bothContained.w,
+           'container-type: size is size containment, across')
+checkEqInt(containedFloat('container-type: size').h, bothContained.h,
+           'and down')
+// `normal` is the initial value and contains nothing.
+checkEqInt(containedFloat('container-type: normal').w, plainFloat.w,
+           'container-type: normal contains nothing')
+
+// A block-level box shows none of this, because its width comes from
+// its containing block either way. This is the row that would catch a
+// containment applied to the wrong axis or to the wrong box.
+Box blockContainer = findBox(layoutHtml(containFloatHead
+    + '<div id="b" style="container-type:inline-size">block text</div></body>', 600), 'div')
+Box blockPlain = findBox(layoutHtml(containFloatHead
+    + '<div id="b">block text</div></body>', 600), 'div')
+checkEqInt(blockContainer.w, blockPlain.w, 'a block container is as wide as it ever was')
+checkEqInt(blockContainer.h, blockPlain.h, 'and as tall')
+
 finish('containment')

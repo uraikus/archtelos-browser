@@ -841,7 +841,7 @@ void func computeIntrinsicUncounted(b:Box) {
     // contain-intrinsic-width stands in for it (Containment 1 §3.1).
     // This is also where the pass is skipped rather than run and
     // ignored, which is half of what the property is for.
-    if b.style.containSize {
+    if b.style.containInlineSize {
         int iw = b.style.intrinsicWidth.kind == LEN_PX
             ? maxInt(roundPx(b.style.intrinsicWidth.v), 0) : 0
         int extras = horizontalExtras(b, 0)
@@ -1320,7 +1320,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // (Containment 1 §3.1). An explicit height still wins, because the
     // intrinsic size is what an automatic size resolves to rather than
     // an override.
-    if s.containSize {
+    if s.containBlockSize {
         h = s.intrinsicHeight.kind == LEN_PX ? maxInt(roundPx(s.intrinsicHeight.v), 0) : 0
     }
     int vEdges = b.pt + b.pb + b.bt + b.bb

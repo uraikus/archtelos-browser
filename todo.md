@@ -152,6 +152,29 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     Arabic shaping, which needs contextual forms the toy font API does
     not offer (FINDINGS.md, finding 31).
 
+### Evaluate `@container`
+
+The container properties are done: `container-type` applies the
+containment a query needs, `container-name` names a container, and the
+`container` shorthand sets both. The queries themselves are not — a
+`@container` block is skipped like any other unknown at-rule.
+
+What it needs is a second pass. A query asks about the container's size,
+which is known only after layout, so the order is cascade, lay out,
+answer the queries, re-cascade what they matched, lay out again. One
+extra pass converges rather than looping, because `container-type` is
+exactly the guarantee that the container's own size does not depend on
+what the query changes — which is why the property applies containment
+rather than just recording an intention. Nested containers are the case
+that could need more than one: a query on an outer container can change
+a rule that resizes an inner one. Either iterate to a fixed point with a
+bound, or handle one level and write down the limit.
+
+The per-document flag matters here more than usual, because the cost is
+a whole second layout rather than a test in a loop: a page with no
+`@container` in any sheet must take exactly the path it takes today, and
+the benchmark page is the check for that.
+
 ### After the official definition
 
 the media features about a user's own preferences that

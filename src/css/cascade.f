@@ -2117,6 +2117,22 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         applyBackgroundPositionShorthand(props, value)
         return
     }
+    // `container: <name> [ / <type> ]` (CSS Conditional 4 §2.3). A
+    // shorthand sets both longhands, so it is expanded here for the
+    // same reason `background-position` is: cascade order has to decide
+    // between it and a longhand written either side of it.
+    if name == 'container' {
+        int slash = asciiIndexOf(value, '/', 0)
+        ascii namePart = slash < 0 ? asciiTrim(value) : asciiTrim(value.slice(0, slash))
+        props['container-name'] = namePart.length > 0 ? dup(namePart) : 'none'.toAscii()
+        if slash < 0 {
+            props['container-type'] = 'normal'.toAscii()
+        } else {
+            ascii typePart = asciiTrim(value.slice(slash + 1, value.length))
+            props['container-type'] = typePart.length > 0 ? dup(typePart) : 'normal'.toAscii()
+        }
+        return
+    }
     // `grid-column` and `grid-row` are `<start> / <end>`, and a single
     // value sets the start alone.
     // `border-image` is source, slice, width, outset and repeat, with
@@ -4071,7 +4087,8 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     // contain: a list of keywords, or one of the two shorthands.
     // `strict` is all four; `content` is all of them but size, which is
     // the whole difference between them.
-    s.containSize = false
+    s.containInlineSize = false
+    s.containBlockSize = false
     s.containLayout = false
     s.containPaint = false
     s.containStyle = false
@@ -4081,15 +4098,44 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         for int i = 0, i < ct.length, i++ {
             ascii t = asciiLower(ct[i])
             if t == 'strict' {
-                s.containSize = true  s.containLayout = true
+                s.containInlineSize = true  s.containBlockSize = true
+                s.containLayout = true
                 s.containPaint = true  s.containStyle = true
             } else if t == 'content' {
                 s.containLayout = true  s.containPaint = true  s.containStyle = true
-            } else if t == 'size' { s.containSize = true }
+            } else if t == 'size' { s.containInlineSize = true  s.containBlockSize = true }
+            else if t == 'inline-size' { s.containInlineSize = true }
             else if t == 'layout' { s.containLayout = true }
             else if t == 'paint' { s.containPaint = true }
             else if t == 'style' { s.containStyle = true }
         }
+    }
+    // CSS Conditional 4 §2. `container-type` is containment under
+    // another name: a query can only be answered about a box whose size
+    // does not depend on what a rule the query controls might do to its
+    // contents, so `inline-size` contains the inline axis and `size`
+    // contains both, and each carries layout and style containment with
+    // it. Chromium lays a float out under `container-type: inline-size`
+    // exactly as it does under `contain: inline-size`, which is what
+    // tests/unit/test_contain.f asserts rather than a number of its own.
+    s.containerType = CONTAINER_NORMAL
+    s.containerName = ''
+    ascii ctype = styleProp(props, 'container-type')
+    if ctype != null {
+        ascii ct = asciiLower(asciiTrim(ctype))
+        if ct == 'inline-size' { s.containerType = CONTAINER_INLINE_SIZE }
+        else if ct == 'size' { s.containerType = CONTAINER_SIZE }
+    }
+    if s.containerType != CONTAINER_NORMAL {
+        s.containInlineSize = true
+        s.containLayout = true
+        s.containStyle = true
+        if s.containerType == CONTAINER_SIZE { s.containBlockSize = true }
+    }
+    ascii cname = styleProp(props, 'container-name')
+    if cname != null {
+        ascii cn = asciiLower(asciiTrim(cname))
+        if cn != 'none' && cn.length > 0 { s.containerName = cn.toText() }
     }
     // content-visibility: hidden skips the contents, which carries size
     // containment with it (Containment 2 §4).
@@ -4097,7 +4143,8 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     ascii cvis = styleProp(props, 'content-visibility')
     if cvis != null && asciiLower(asciiTrim(cvis)) == 'hidden' {
         s.contentHidden = true
-        s.containSize = true
+        s.containInlineSize = true
+        s.containBlockSize = true
         s.containLayout = true
         s.containPaint = true
         s.containStyle = true
