@@ -167,4 +167,72 @@ clearCanvas()
 paintPage(pBlank, 0, 0, 300)
 check(getPixelColor(10, 10) == white, 'a cell holding only whitespace counts as empty')
 
+// ---- list-style-image ----------------------------------------------------
+// A fetched image stands in for the marker, at its own size.
+
+Page pMarkerPlain = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px"><li>x</li></ul></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerPlain, 0, 0, 300)
+int plainMarkerInk = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) != white { plainMarkerInk++ } }
+}
+check(plainMarkerInk > 0, 'a list item has a marker of some kind to begin with')
+
+Page pMarkerImage = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px;list-style-image:url(red.png)">'
+    + '<li>x</li></ul></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerImage, 0, 0, 300)
+int imageMarkerRed = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) == red { imageMarkerRed++ } }
+}
+check(imageMarkerRed > 0, 'list-style-image draws the image as the marker')
+
+// `none` puts the bullet back, which is the check that the image is
+// what changed rather than the marker disappearing.
+Page pMarkerNone = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px;list-style-image:none">'
+    + '<li>x</li></ul></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerNone, 0, 0, 300)
+int noneMarkerRed = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) == red { noneMarkerRed++ } }
+}
+checkEqInt(noneMarkerRed, 0, 'and list-style-image:none leaves the bullet')
+
+// ---- background-attachment ------------------------------------------------
+// `fixed` anchors the background *image* to the viewport instead of the
+// element, so it stays put as the page scrolls. It says nothing about a
+// background colour, which is why the fixture uses an image: a colour
+// fills its box either way and the property would look implemented
+// whatever it did.
+
+text tallDoc = '<body style="margin:0"><div style="height:600px;'
+    + 'background-image:url(red.png);background-repeat:no-repeat;ATTACH">'
+    + '</div></body>'
+
+Page pScroll = pageFromHtml(tallDoc.replace(regex('ATTACH', 'g'), ''),
+                            'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pScroll, 0, 0, 100)
+check(getPixelColor(1, 1) == red, 'a scrolling background image starts at the element')
+clearCanvas()
+paintPage(pScroll, 0, 200, 100)
+check(getPixelColor(1, 1) != red, 'and scrolls away with it')
+
+Page pFixed = pageFromHtml(tallDoc.replace(regex('ATTACH', 'g'),
+                                           'background-attachment:fixed'),
+                           'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pFixed, 0, 0, 100)
+check(getPixelColor(1, 1) == red, 'a fixed background image starts there too')
+clearCanvas()
+paintPage(pFixed, 0, 200, 100)
+check(getPixelColor(1, 1) == red, 'and stays where it is when the page scrolls')
+
 finish('render')

@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Three properties, one of them written off too early
+
+- **`hyphens`** honours a soft hyphen as a break opportunity: it shows
+  nothing where the line does not break and a hyphen where it does, and
+  `none` suppresses it. `auto` behaves as `manual`, because automatic
+  hyphenation needs a dictionary per language.
+- **`list-style-image`** draws a fetched image as the marker, at its own
+  size, falling back to the type's marker when the image could not be
+  fetched.
+- **`background-attachment: fixed`** positions the background *image*
+  against the viewport rather than the element, so it stays put while
+  the page scrolls under it.
+
+**Properties 173 → 176.** Nine checks in the new
+`tests/unit/test_hyphens.f` and seven in `tests/render/basic_pixels.f`
+(40 → 47).
+
+`hyphens` had been set aside earlier on this branch as needing a
+character the pipeline could not carry — the same wrong premise that
+had set Writing Modes aside, and wrong for the same reason. A soft
+hyphen is U+00AD, `text` holds UTF-8, and it arrives intact.
+
+The `background-attachment` check began by giving its fixture a
+background *colour*, which the property says nothing about: a colour
+fills its box whatever the attachment, so the check would have passed
+for an implementation that did nothing. It uses an image now, and says
+why in the fixture.
+
+One check earns its place by asking what the feature is *not*: a word
+holding a soft hyphen that does not break must measure exactly as wide
+as the same word without one. A soft hyphen that was quietly being drawn
+would pass every other check here.
+
 ### The last five selectors, and the documentation that claimed they worked
 
 `:is()` and `:where()`, which differ only in that `:where()` contributes

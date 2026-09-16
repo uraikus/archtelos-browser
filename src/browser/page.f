@@ -127,6 +127,9 @@ text func fetchStyleImage(page:Page, raw:text) {
 }
 
 void func gatherBackgroundImages(page:Page, n:Node) {
+    if n.kind == NODE_ELEMENT && n.style.listImageUrl != '' {
+        n.style.listImageUrl = fetchStyleImage(page, n.style.listImageUrl)
+    }
     if n.kind == NODE_ELEMENT && n.style.borderImageUrl != '' {
         n.style.borderImageUrl = fetchStyleImage(page, n.style.borderImageUrl)
     }
@@ -322,6 +325,11 @@ void func paintPage(page:Page, top:int, scrollY:int, viewHeight:int) {
     applyFillColor(bg)
     drawRect(0, top, page.width, viewHeight)
     fillAlpha(1.0)
+    // The scroll offset is what a fixed background undoes, so the
+    // painter is told about it rather than inferring it from the
+    // transform it is drawing under.
+    paintScrollY = scrollY
+    paintViewHeight = viewHeight
     saveState()
     translate(0, top - scrollY)
     paintDocument(page.root, scrollY, scrollY + viewHeight)

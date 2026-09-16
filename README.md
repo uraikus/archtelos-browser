@@ -99,7 +99,9 @@ outside it. `white-space` is kept as the two things it is a shorthand
 for, so `pre-line` keeps newlines while collapsing runs of spaces, and
 either half can be set alone as `white-space-collapse` or
 `text-wrap-mode`. A tab advances by `tab-size`, `word-break` and
-`overflow-wrap` break inside a word too long for its line, and
+`overflow-wrap` break inside a word too long for its line, a soft
+hyphen is a break opportunity that shows a hyphen only where the line
+takes it, and
 `text-align-last` aligns the last line of a block on its own. Form
 controls are drawn as boxes.
 
@@ -114,6 +116,7 @@ styles, `text-emphasis` marks beside every character, and
 shade their edges — with each side keeping its own, `box-shadow`
 with offset, blur, spread, `inset` and a list of shadows, images,
 broken-image placeholders,
+a background image can be fixed to the viewport so it does not scroll,
 list markers from a counter style — the predefined ones and any a page
 defines with `@counter-style`, out of the same five numbering systems —
 and the `<ol type>` attribute that asks for them, and opacity. `linear-gradient()` and
@@ -245,12 +248,12 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-nine unit suites (utilities, HTML, CSS parser,
+The runner covers thirty unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, audio, the preload scanner), twelve offscreen render suites that check
+styles, hyphens, audio, the preload scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, border images, text decoration, transforms, right-to-left

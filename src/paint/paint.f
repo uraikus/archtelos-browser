@@ -34,6 +34,17 @@ const float KAPPA = 0.5523
 // and leave it exact on the canvas.
 img paintLayer = null
 
+// How far the document is scrolled, and how tall the viewport is. A
+// `background-attachment: fixed` image is positioned against the
+// viewport rather than the element, which is the one thing that needs
+// to know.
+// The canvas is as wide as the viewport, and a fixed background's
+// positioning area is the viewport.
+int func canvasViewWidth() { return cssViewportWidth }
+
+int paintScrollY = 0
+int paintViewHeight = 0
+
 bool func paintingToLayer() {
     return paintLayer != null
 }
@@ -317,6 +328,16 @@ void func paintBackground(x:int, y:int, w:int, h:int,
     int origW = bgAreaW
     int origH = bgAreaH
     if origW <= 0 || origH <= 0 { origX = clipX  origY = clipY  origW = clipW  origH = clipH }
+    // `background-attachment: fixed` positions the image against the
+    // viewport rather than the element, so it stays where it is while
+    // the page scrolls under it. The clip is still the element's own
+    // area, so the image shows only where the element is.
+    if s.backgroundFixed {
+        origX = 0
+        origY = paintScrollY
+        origW = clipW > 0 ? canvasViewWidth() : origW
+        origH = paintViewHeight > 0 ? paintViewHeight : origH
+    }
     if s.backgroundImage.present {
         paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
     } else {
@@ -1188,6 +1209,21 @@ void func paintOutline(b:Box) {
 
 void func paintListMarker(b:Box) {
     Style s = b.style
+    // list-style-image replaces the marker entirely, at the image's own
+    // size, and falls back to the type's marker when the image could
+    // not be fetched (Lists 3 §3.1).
+    if s.listImageUrl != '' {
+        img marker = loadedImages[s.listImageUrl]
+        if marker != null {
+            Line ln0 = firstLineOf(b)
+            int base = ln0 != null ? ln0.baseline : contentY(b) + fontAscent(s)
+            int iw = marker.width
+            int ih = marker.height
+            int mx = s.listInside ? contentX(b) : contentX(b) - iw - roundPx(s.fontSize.toFloat() * 0.3)
+            pDrawImage(marker, mx, base - ih)
+            return
+        }
+    }
     if s.listStyle == LIST_NONE { return }
     Line ln = firstLineOf(b)
     int baseline = ln != null ? ln.baseline : contentY(b) + fontAscent(s)

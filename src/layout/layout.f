@@ -2068,7 +2068,8 @@ void func placeTextUncounted(b:Box) {
         }
         if spaceBefore { ifcX = ifcX + spaceW }
         ifcPendingSpace = false
-        if wordMustBreak(s, ww) { placeWordInPieces(b, w) }
+        if hasSoftHyphen(w) { placeSoftHyphenated(b, w) }
+        else if wordMustBreak(s, ww) { placeWordInPieces(b, w) }
         else { appendWord(b, w, ww) }
         // a space follows every word except the last
         if i < words.length - 1 {
@@ -2098,6 +2099,76 @@ void func placeWrappedWords(b:Box, words:arr[text], sw:int) {
         if w == '' { continue }
         if wordMustBreak(s, ww) { placeWordInPieces(b, w) }
         else { appendWord(b, w, ww) }
+    }
+}
+
+// A soft hyphen (U+00AD) shows nothing unless the line breaks at it,
+// and then shows a hyphen. Written as the code point because the
+// language has no way to spell a non-ASCII escape (FINDINGS.md,
+// findings 13 and 34).
+const int SOFT_HYPHEN = 173
+
+bool func hasSoftHyphen(w:text) {
+    for int i = 0, i < w.length, i++ {
+        if w.charCodeAt(i) == SOFT_HYPHEN { return true }
+    }
+    return false
+}
+
+text func stripSoftHyphens(w:text) {
+    text out = ''
+    for int i = 0, i < w.length, i++ {
+        if w.charCodeAt(i) != SOFT_HYPHEN { out = out + w[i] }
+    }
+    return out
+}
+
+// `text` has no substring of its own (FINDINGS.md, finding 6), and a
+// soft hyphen puts the word outside what `ascii` can hold, so the two
+// halves are built a character at a time.
+text func textRange(w:text, from:int, to:int) {
+    text out = ''
+    for int i = from, i < to && i < w.length, i++ { out = out + w[i] }
+    return out
+}
+
+// Places a word holding soft hyphens, breaking at the last one whose
+// prefix still fits with a hyphen after it. The parts that are not
+// broken at contribute nothing, which is what makes the hyphen soft.
+void func placeSoftHyphenated(b:Box, w:text) {
+    Style s = b.style
+    text pending = w
+    while true {
+        text plain = stripSoftHyphens(pending)
+        int plainW = measureWidth(s, plain)
+        if ifcX + plainW <= ifcLineRight || s.hyphensNone {
+            appendWord(b, plain, plainW)
+            return
+        }
+        // the last break point that fits, hyphen included
+        int best = -1
+        int bestW = 0
+        text prefix = ''
+        for int i = 0, i < pending.length, i++ {
+            if pending.charCodeAt(i) != SOFT_HYPHEN { continue }
+            text candidate = stripSoftHyphens(textRange(pending, 0, i)) + '-'
+            int cw = measureWidth(s, candidate)
+            if ifcX + cw <= ifcLineRight {
+                best = i
+                bestW = cw
+                prefix = candidate
+            }
+        }
+        if best < 0 {
+            // nothing fits on what is left of this line; a fresh line
+            // is the only thing that can change that
+            if ifcLineHasContent { breakLine()  continue }
+            appendWord(b, plain, plainW)
+            return
+        }
+        appendWord(b, prefix, bestW)
+        breakLine()
+        pending = textRange(pending, best + 1, pending.length)
     }
 }
 

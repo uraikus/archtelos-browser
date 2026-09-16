@@ -1899,7 +1899,9 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         arr[ascii] t = cssTokens(value)
         for int i = 0, i < t.length, i++ {
             ascii tok = asciiLower(t[i])
-            if tok == 'inside' || tok == 'outside' {
+            if asciiStartsWithLower(tok, 'url(', 0) {
+                setProp(props, 'list-style-image', t[i])
+            } else if tok == 'inside' || tok == 'outside' {
                 setProp(props, 'list-style-position', tok)
             } else if tok == 'none' || tok == 'disc' || tok == 'circle' || tok == 'square' || tok == 'decimal' || tok == 'lower-alpha' || tok == 'upper-alpha' || tok == 'lower-roman' || tok == 'upper-roman' {
                 setProp(props, 'list-style-type', tok)
@@ -2918,6 +2920,17 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'break-all' { s.wordBreaking = BREAK_ALL }
         else if t == 'break-word' { s.wordBreaking = BREAK_WORD }
     }
+    // hyphens. `manual` -- the initial value -- honours a soft hyphen
+    // as a break opportunity; `none` suppresses it. `auto` needs a
+    // dictionary per language and behaves as `manual`, which css-2026.md
+    // records.
+    s.hyphensNone = isRoot ? false : parent.hyphensNone
+    ascii hy = styleProp(props, 'hyphens')
+    if hy != null {
+        ascii t = asciiLower(asciiTrim(hy))
+        if t == 'none' { s.hyphensNone = true }
+        else if t == 'manual' || t == 'auto' { s.hyphensNone = false }
+    }
     // tab-size: a number of spaces, or a length saying the advance
     // outright. Both inherit; the initial value is eight spaces.
     s.tabSize = isRoot ? 8 : parent.tabSize
@@ -2940,6 +2953,17 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
                     if l.kind == LEN_PX { s.tabSizePx = maxInt(roundPx(l.v), 0) }
                 }
             }
+        }
+    }
+    // list-style-image inherits with the rest of the list properties.
+    s.listImageUrl = isRoot ? '' : parent.listImageUrl
+    ascii lsi = styleProp(props, 'list-style-image')
+    if lsi != null {
+        ascii t = asciiLower(asciiTrim(lsi))
+        if t == 'none' { s.listImageUrl = '' }
+        else {
+            text u = parseUrlValue(lsi)
+            if u != '' { s.listImageUrl = u  anyBackgroundUrl = true }
         }
     }
     s.listStyle = isRoot ? LIST_DISC : parent.listStyle
@@ -3090,6 +3114,12 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if brep != null {
         ascii t = asciiLower(asciiTrim(brep))
         if t != 'stretch' { s.borderImageRepeat = BORDERIMG_REPEAT }
+    }
+    // background-attachment: fixed paints the background against the
+    // viewport rather than the document, so it does not scroll.
+    ascii bga = styleProp(props, 'background-attachment')
+    if bga != null {
+        s.backgroundFixed = asciiLower(asciiTrim(bga)) == 'fixed'
     }
     // background-repeat: the two-value form names the axes separately,
     // and the one-value form applies to both.

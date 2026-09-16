@@ -448,11 +448,14 @@ struct Style {
     wordBreaking:int        // BREAK_NONE / BREAK_WORD / BREAK_ALL
     tabSize:int             // a tab's advance in spaces
     tabSizePx:int           // or in px, when a length was given; -1 otherwise
+    hyphensNone:bool        // `hyphens: none` suppresses the soft hyphen
     listStyle:int
     // The name list-style-type was given, so a marker can be generated
     // by the counter-style engine. Empty means the built-in bullet the
     // listStyle constant names.
     listStyleName:text
+    listImageUrl:text       // list-style-image; empty = the marker the type names
+    backgroundFixed:bool    // background-attachment: fixed
     verticalAlign:int
     floatSide:int
     clearSide:int
