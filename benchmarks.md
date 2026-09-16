@@ -520,7 +520,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 22,807 lines of Festina across `browser.f` and `src/` |
+| Source | 22,941 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,686,488 |
-| This browser, all `.f` source | 828,820 |
+| This browser, the whole program | 2,686,792 |
+| This browser, all `.f` source | 835,447 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -613,6 +613,17 @@ eleven interpolation spaces needs a conversion in both directions and
 the relative form adds an expression evaluator over the channels. Both
 are parse-time only: a colour is a packed integer by the time anything
 paints it.
+
+`background-position-x` and `background-position-y` cost **56 bytes**
+(2,686,488 → 2,686,544): the shorthand was already parsed into the two
+fields, so the change is which names reach them and when.
+
+`color-scheme` costs **248 bytes** (2,686,544 → 2,686,792) and nothing
+at render time. A page that never declares it skips the resolution
+behind a per-document flag, and the second system-colour table is
+consulted only by a name that is already a system colour, so a page with
+none of them never asks. `generated.html` renders in 98 ms with it in,
+against a recorded 101 whose spread is 99 to 104.
 
 CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
 `memchr` per rule on a page that does not nest. A rule body with no `{`

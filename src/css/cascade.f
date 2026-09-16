@@ -98,6 +98,11 @@ bool cascadeSawTransform = false
 // The same question for `clip-path` and the legacy `clip`: a page with
 // neither pays one bool, and the painter never asks a box.
 bool cascadeSawClip = false
+// Whether any declaration anywhere said `color-scheme`. A page that
+// does not is every page that renders as it always did: the resolution
+// below is skipped, `cssSchemeIsDark` stays false, and the nineteen
+// system colours answer from the one table they always answered from.
+bool cascadeSawColorScheme = false
 // And for `shape-outside`, which the float code asks once per document.
 bool cascadeSawShape = false
 
@@ -105,6 +110,12 @@ void func cascadeReset() {
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
+    cascadeSawColorScheme = false
+    // A page that never says `color-scheme` skips the resolution
+    // entirely, so this has to be put back here rather than left where
+    // the last page left it: otherwise a dark page followed by an
+    // ordinary one darkens the ordinary one's system colours.
+    cssSchemeIsDark = false
     cascadeSawShape = false
     cssResetNamespaces()
     cssResetCounterStyles()
@@ -189,6 +200,11 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyQuotes {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'quotes' { anyQuotes = true  break }
+                }
+            }
+            if !cascadeSawColorScheme {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'color-scheme' { cascadeSawColorScheme = true  break }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -735,6 +751,9 @@ arr[Match] func collectMatches(n:Node) {
             if !anyCounters && (decls[d].name == 'counter-reset'
                 || decls[d].name == 'counter-increment') { anyCounters = true }
             if !anyQuotes && decls[d].name == 'quotes' { anyQuotes = true }
+            if !cascadeSawColorScheme && decls[d].name == 'color-scheme' {
+                cascadeSawColorScheme = true
+            }
             Match m
             m.decl = decls[d]
             m.weight = matchWeight(decls[d].important, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, d)
@@ -2984,6 +3003,32 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     }
     s.fontFamily = computeFontFamily(styleProp(props, 'font-family'), isRoot ? 'sans-serif' : parent.fontFamily)
     s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+    // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
+    // has to be resolved before anything on this element parses a
+    // colour, because a system colour name answers according to it.
+    //
+    // The list is resolved against the user's own preference, which
+    // this browser reports as light (Media Queries 4), so a list that
+    // offers `light` is light whatever order it is written in and only
+    // a list offering `dark` without `light` is dark. `only` says how
+    // far a user agent may override the choice and does not change it;
+    // an ident nobody knows is carried along and ignored, which leaves
+    // a list of nothing but unknown idents resolving as `normal` does.
+    s.colorSchemeDark = isRoot ? false : parent.colorSchemeDark
+    if cascadeSawColorScheme {
+        ascii csch = styleProp(props, 'color-scheme')
+        if csch != null {
+            arr[ascii] schemes = asciiSplitSpace(asciiLower(asciiTrim(csch)))
+            bool sawLight = false
+            bool sawDark = false
+            for int i = 0, i < schemes.length, i++ {
+                if schemes[i] == 'light' { sawLight = true }
+                else if schemes[i] == 'dark' { sawDark = true }
+            }
+            s.colorSchemeDark = sawDark && !sawLight
+        }
+        cssSchemeIsDark = s.colorSchemeDark
+    }
     s.color = colorProp(props, 'color', isRoot ? COLOR_BLACK : parent.color, isRoot ? COLOR_BLACK : parent.color)
     s.lineHeight = isRoot ? 0 : parent.lineHeight
     ascii lh = styleProp(props, 'line-height')

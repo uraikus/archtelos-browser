@@ -1011,6 +1011,7 @@ arr[text] supportedProperties = [
     'contain', 'content-visibility', 'contain-intrinsic-size',
     'contain-intrinsic-width', 'contain-intrinsic-height',
     'contain-intrinsic-inline-size', 'contain-intrinsic-block-size',
+    'color-scheme',
     'background-position', 'background-position-x', 'background-position-y',
     'background-repeat', 'background-size',
     'background-origin', 'background-clip',

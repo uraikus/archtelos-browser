@@ -105,7 +105,9 @@ ways round the hue circle, and the relative syntax — `rgb(from red r g
 b)` and its form in every other colour function, with `calc()` over the
 channels. Every one of them ends
 as a packed sRGB integer, converted by the standard's own matrices; a
-component outside the sRGB gamut is clamped per channel.
+component outside the sRGB gamut is clamped per channel. `color-scheme`
+decides which of two tables the system colors answer from: eleven of the
+nineteen differ under `dark`, and the other eight do not.
 
 **Layout** is block formatting with margin collapsing, inline formatting
 with word wrapping and baseline alignment, inline-blocks with
@@ -281,7 +283,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-22,807 lines of Festina in `src/` and `browser.f`.
+22,941 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -291,14 +293,14 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-nine unit suites (utilities, HTML, CSS parser,
+The runner covers forty unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
-media queries, cascade layers, colour mixing, relative colours, style
-rule nesting, audio, the preload scanner), thirteen offscreen render suites that check
+media queries, cascade layers, colour mixing, relative colours, colour
+schemes, style rule nesting, audio, the preload scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 object fitting, borders, border images, text decoration, transforms,

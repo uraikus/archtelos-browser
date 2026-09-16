@@ -5,6 +5,46 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### color-scheme, and CSS Color Adjustment 1 off the Nothing row
+
+`color-scheme` is parsed, inherited and acted on. The list is resolved
+against the user's own preference, which this browser reports as light,
+so a list offering `light` is light whatever order it is written in and
+only a list offering `dark` without `light` is dark. `only` says how far
+a user agent may override the choice and does not change it; an ident
+nobody knows is carried along and ignored, which leaves a list of
+nothing but unknown idents resolving as `normal` does.
+
+Under `dark`, eleven of the nineteen system colours answer differently
+-- `Canvas`, `CanvasText`, `LinkText`, `VisitedText`, `ButtonFace`,
+`ButtonText`, `ButtonBorder`, `Field`, `FieldText`, `SelectedItem` and
+`SelectedItemText`. The other eight are the same under either scheme,
+and that half is asserted too: a table that simply darkened everything
+passes the first eleven checks and fails these eight.
+
+Each entry of the dark table is asserted against `packColor` of the
+channels its comment names. Festina has no hexadecimal literal, so a
+packed colour is a decimal beside a comment, and that is exactly how
+`COLOR_VISITED` came to be the wrong purple for months with nothing
+comparing the two.
+
+The resolution is guarded by a per-document flag, and the flag is
+raised from inline declarations as well as stylesheet rules -- which is
+the mistake `anyCounters` had made and this commit's predecessor found.
+`cssSchemeIsDark` is put back to false on reset, because a page that
+never says `color-scheme` skips the resolution entirely and would
+otherwise inherit the last page's answer.
+
+196 of 405 properties, from 195; `color-scheme` moves `colorSchemeDark`
+and nothing else. With the dark table stubbed out, sixteen of the
+fifty-five checks fail.
+
+`print-color-adjust` and `forced-color-adjust` are left alone. Both
+have rows that register the moment the keyword is stored, and neither
+would change a pixel: nothing here prints and there is no forced-colors
+mode. That is `outline-style` again, and todo.md says so rather than
+this taking the count.
+
 ### background-position-x and background-position-y
 
 The two axes of `background-position`, settable on their own. The

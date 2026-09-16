@@ -487,6 +487,10 @@ struct Style {
     // The declared values, not the running counts: two elements that
     // matched the same rules share this Style and still stand at
     // different counts, which live in the cascade's counter stack.
+    // CSS Color Adjustment 1. The resolved answer, not the declared
+    // list: nothing here can observe the list, and what the system
+    // colours need is the one bit.
+    colorSchemeDark:bool
     counterReset:text
     quotes:text
     counterIncrement:text

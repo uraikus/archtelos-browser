@@ -183,6 +183,15 @@ These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
 
+**`print-color-adjust` and `forced-color-adjust` are two rows this
+engine will not take.** Both have values Chromium computes differently
+from the initial one, so either would move the count by one the moment
+the keyword were stored in the computed style. Neither would change a
+pixel: nothing here prints, and there is no forced-colors mode, so both
+would be `outline-style` again — a property the instrument scores while
+the engine does nothing with it. They stay unimplemented and counted as
+such until there is something for them to adjust.
+
 **`overflow-clip-margin` needs its meaning pinned down before it is
 worth implementing.** It was written far enough to register on the
 property instrument and then removed: on a box 60px wide with a 10px
@@ -201,7 +210,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(195; Chromium answers for 406, and one of them -- `overlay` -- only the
+(196; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

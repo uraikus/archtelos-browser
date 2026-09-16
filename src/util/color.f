@@ -93,6 +93,39 @@ map[int] cssSystemColors = {
     'visitedtext': 4283767435            // rgb(85, 26, 139)
 }
 
+// CSS Color Adjustment 1: the same nineteen under `color-scheme: dark`.
+// Only the eleven that differ are here; a name absent from this map
+// answers the same under either scheme, which is what Chromium does
+// with `Mark`, `GrayText` and the rest, and is why this is a second map
+// rather than a second column.
+//
+// These are decimals because Festina has no hexadecimal literal
+// (FINDINGS.md, "no integer division, and no bitwise operators"), and a
+// decimal beside a comment naming its channels is how COLOR_VISITED
+// came to be the wrong purple: every entry is asserted against
+// packColor of the channels its comment names, in
+// tests/unit/test_colorscheme.f.
+map[int] cssDarkSystemColors = {
+    'buttonborder': 4294967295,      // rgb(255, 255, 255)
+    'buttonface': 4285229931,        // rgb(107, 107, 107)
+    'buttontext': 4294967295,        // rgb(255, 255, 255)
+    'canvas': 4279374354,            // rgb(18, 18, 18)
+    'canvastext': 4294967295,        // rgb(255, 255, 255)
+    'field': 4282071867,             // rgb(59, 59, 59)
+    'fieldtext': 4294967295,         // rgb(255, 255, 255)
+    'linktext': 4288585471,          // rgb(158, 158, 255)
+    'selecteditem': 4288268543,      // rgb(153, 200, 255)
+    'selecteditemtext': 4282071867,  // rgb(59, 59, 59)
+    'visitedtext': 4291866096        // rgb(208, 173, 240)
+}
+
+// Whether the element whose values are being computed resolved
+// `color-scheme` to dark. The cascade sets it before computing that
+// element's colours and nothing else reads it, so a page that never
+// mentions `color-scheme` leaves it false and every system colour
+// answers exactly as it did before.
+bool cssSchemeIsDark = false
+
 // Parses one CSS <color>: named colors, #rgb, #rgba, #rrggbb,
 // #rrggbbaa, rgb()/rgba() with commas or spaces and an optional
 // alpha, hsl()/hsla(), `transparent`, `currentcolor`, and CSS Color
@@ -153,6 +186,12 @@ int func parseCssColor(raw:ascii, currentColor:int) {
     if named != null { return named + 255 * 16777216 }
     int system = cssSystemColors[s.toText()]
     if system == null { return COLOR_UNSET }
+    // Reached only by a name that is already a system colour, so a page
+    // with none of them never asks this question at all.
+    if cssSchemeIsDark {
+        int dark = cssDarkSystemColors[s.toText()]
+        if dark != null { return dark }
+    }
     return system
 }
 

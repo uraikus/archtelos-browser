@@ -107,7 +107,8 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.backgroundClip}`, `${s.backgroundOrigin}`, `${s.objectFit}`, 
         `${lenKey(s.objectPosX)}`, `${lenKey(s.objectPosY)}`,
         `${shadowKey(s.shadows)}`,
-        `${s.counterReset}`, `${s.counterIncrement}`, `${s.quotes}`]
+        `${s.counterReset}`, `${s.counterIncrement}`, `${s.quotes}`,
+        `${s.colorSchemeDark}`]
 }
 
 text func styleDigest(s:Style) {
@@ -164,7 +165,7 @@ arr[text] func styleDigestFieldNames() {
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows',
-        'counterReset', 'counterIncrement', 'quotes']
+        'counterReset', 'counterIncrement', 'quotes', 'colorSchemeDark']
 }
 
 text func trackKey(list:arr[Track]) {
