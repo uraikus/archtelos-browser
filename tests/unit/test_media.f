@@ -117,4 +117,55 @@ mqIs('(nonesuch: 5)', false, 'an unknown feature matches nothing')
 mqIs('(min-width: bogus)', false, 'nor does a value that is not a length')
 mqIs('screen and (nonesuch)', false, 'and an unknown feature fails the whole term')
 
+// ---- Media Queries 4: the range syntax --------------------------------
+// `(width >= 400px)` says what `(min-width: 400px)` says, and the two
+// must answer alike -- a check that needs neither answer known.
+
+mqIs('(width >= 800px)', true, 'width >= at the viewport width')
+mqIs('(width >= 801px)', false, 'and not above it')
+mqIs('(width > 800px)', false, 'the strict form excludes equality')
+mqIs('(width > 799px)', true, 'but not the value below')
+mqIs('(width <= 800px)', true, 'width <= at it')
+mqIs('(width < 800px)', false, 'and the strict form again')
+mqIs('(width = 800px)', true, 'an exact width with =')
+mqIs('(height >= 600px)', true, 'height reads the same way')
+
+// The value may be written first, which reverses the comparison.
+mqIs('(800px <= width)', true, 'a value first reverses the operator')
+mqIs('(801px <= width)', false, 'and still means what it says')
+mqIs('(800px >= width)', true, 'in both directions')
+mqIs('(799px >= width)', false, 'without changing the answer')
+
+// Two ends at once.
+mqIs('(400px <= width <= 900px)', true, 'a range with both ends')
+mqIs('(900px <= width <= 1000px)', false, 'a range this viewport is below')
+mqIs('(100px <= width <= 400px)', false, 'and one it is above')
+mqIs('(400px < width < 900px)', true, 'the strict form of a range')
+mqIs('(800px < width < 900px)', false, 'which excludes its own end')
+
+// Ratio and resolution read the same way.
+mqIs('(aspect-ratio >= 1/1)', true, 'a ratio compared with >=')
+mqIs('(aspect-ratio < 1/1)', false, 'and with <')
+mqIs('(resolution >= 1dppx)', true, 'a resolution compared with >=')
+mqIs('(resolution > 1dppx)', false, 'and its strict form')
+mqIs('(color >= 8)', true, 'and a plain number')
+
+// The range form and the prefix form are two ways of saying one thing.
+mqIs('(width >= 640px)', evaluateMediaQuery('(min-width: 640px)'.toAscii()),
+     'width >= says what min-width says')
+mqIs('(width <= 640px)', evaluateMediaQuery('(max-width: 640px)'.toAscii()),
+     'and width <= says what max-width says')
+
+// ---- `or`, `not` and grouping ------------------------------------------
+mqIs('(width >= 100px) or (width >= 10000px)', true, 'or needs one side')
+mqIs('(width >= 10000px) or (width >= 20000px)', false, 'and matches neither here')
+mqIs('(width >= 100px) and (height >= 100px)', true, 'and needs both')
+mqIs('(width >= 100px) and (height >= 10000px)', false, 'and fails on one')
+mqIs('not (width >= 10000px)', true, 'not inverts a condition')
+mqIs('(not (width >= 10000px))', true, 'inside parentheses as well')
+mqIs('screen and (not (width >= 10000px))', true, 'and after a media type')
+mqIs('((width >= 100px) and (height >= 100px))', true, 'a group of two')
+mqIs('((width >= 10000px) or (height >= 100px))', true, 'an or inside a group')
+mqIs('((width >= 10000px) and (height >= 100px))', false, 'and an and inside one')
+
 finish('media')

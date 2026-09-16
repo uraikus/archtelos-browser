@@ -1089,27 +1089,97 @@ bool func evaluateMediaQuery(query:ascii) {
 }
 
 bool func evaluateOneMediaQuery(q:ascii) {
-    bool negate = false
     // a copy, not `ascii s = q`: rebinding an ascii parameter to a
     // local double-releases it (FINDINGS.md, "ascii parameter aliasing")
     ascii s = q.slice(0, q.length)
-    if asciiStartsWith(s, 'not ', 0) {
-        negate = true
-        s = asciiTrim(s.slice(4, s.length))
+    if asciiStartsWith(s, 'only ', 0) { return evaluateMediaCondition(asciiTrim(s.slice(5, s.length))) }
+    return evaluateMediaCondition(asciiTrim(s))
+}
+
+// A media condition: terms joined by `and` or `or`, negated by `not`,
+// and grouped by parentheses. The standard does not allow `and` and
+// `or` to be mixed without parentheses, so whichever appears first at
+// the top level decides how the rest are read.
+bool func evaluateMediaCondition(cond:ascii) {
+    ascii c = asciiTrim(cond)
+    if c.length == 0 { return true }
+    if asciiStartsWith(c, 'not ', 0) { return !evaluateMediaCondition(c.slice(4, c.length)) }
+    arr[ascii] parts = []
+    bool isOr = splitMediaCondition(c, parts)
+    if parts.length > 1 {
+        if isOr {
+            for int i = 0, i < parts.length, i++ {
+                if evaluateMediaCondition(parts[i]) { return true }
+            }
+            return false
+        }
+        for int i = 0, i < parts.length, i++ {
+            if !evaluateMediaCondition(parts[i]) { return false }
+        }
+        return true
     }
-    if asciiStartsWith(s, 'only ', 0) { s = asciiTrim(s.slice(5, s.length)) }
-    bool result = true
-    // split on ' and '
-    int n = s.length
+    if c.charCodeAt(0) != CH_LPAREN { return evaluateMediaTerm(c) }
+    // One parenthesised thing: either a condition of its own, or a
+    // feature. Only unwrap when the first parenthesis is closed by the
+    // last character, so `(a) or (b)` is not mistaken for a group.
+    int close = mediaMatchingParen(c, 0)
+    if close != c.length - 1 { return false }
+    ascii inner = asciiTrim(c.slice(1, close))
+    if inner.length == 0 { return false }
+    if inner.charCodeAt(0) == CH_LPAREN || asciiStartsWith(inner, 'not ', 0) {
+        return evaluateMediaCondition(inner)
+    }
+    return evaluateMediaFeature(inner)
+}
+
+// Splits a condition at the top level on ` and ` or ` or `, whichever
+// comes first, and answers whether it was `or`. A separator inside
+// parentheses belongs to the group and is not a split.
+bool func splitMediaCondition(c:ascii, out:arr[ascii]) {
+    int n = c.length
+    int depth = 0
     int start = 0
-    while start < n {
-        int andAt = asciiIndexOf(s, ' and ', start)
-        int end = andAt < 0 ? n : andAt
-        ascii term = asciiTrim(s.slice(start, end))
-        if !evaluateMediaTerm(term) { result = false }
-        start = andAt < 0 ? n : andAt + 5
+    int width = 0
+    bool isOr = false
+    bool decided = false
+    for int i = 0, i < n, i++ {
+        int ch = c.charCodeAt(i)
+        if ch == CH_LPAREN { depth++ }
+        else if ch == CH_RPAREN { depth-- }
+        else if depth == 0 && ch == CH_SPACE {
+            bool here = false
+            if (!decided || !isOr) && asciiStartsWith(c, ' and ', i) {
+                here = true
+                width = 5
+                isOr = false
+            } else if (!decided || isOr) && asciiStartsWith(c, ' or ', i) {
+                here = true
+                width = 4
+                isOr = true
+            }
+            if here {
+                decided = true
+                out.push(asciiTrim(c.slice(start, i)))
+                start = i + width
+                i = start - 1
+            }
+        }
     }
-    return negate ? !result : result
+    if decided { out.push(asciiTrim(c.slice(start, n))) }
+    return isOr
+}
+
+int func mediaMatchingParen(s:ascii, open:int) {
+    int depth = 0
+    for int i = open, i < s.length, i++ {
+        int c = s.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN {
+            depth--
+            if depth == 0 { return i }
+        }
+    }
+    return -1
 }
 
 // What this engine is, as a device. The canvas is eight bits a
@@ -1122,64 +1192,150 @@ const int MEDIA_COLOR_BITS = 8
 const int MEDIA_DPI = 96
 
 bool func evaluateMediaTerm(term:ascii) {
-    if term.length == 0 || term == 'all' || term == 'screen' { return true }
-    // Every other media type names a device this is not. `print` and
-    // `speech` are the two the standard still has; the rest are
-    // deprecated and match nothing.
-    if term.charCodeAt(0) != CH_LPAREN { return false }
-    if !asciiEndsWith(term, ')') { return false }
-    ascii inner = asciiTrim(term.slice(1, term.length - 1))
+    // Every media type but `all` and `screen` names a device this is
+    // not: `print` and `speech` are the two the standard still has, and
+    // the rest are deprecated and match nothing.
+    return term.length == 0 || term == 'all' || term == 'screen'
+}
+
+// The comparisons a feature may be written with. `min-` and `max-` are
+// the same question in the older spelling.
+const int MQOP_EQ = 0
+const int MQOP_LT = 1
+const int MQOP_LE = 2
+const int MQOP_GT = 3
+const int MQOP_GE = 4
+
+// The inside of one pair of parentheses: `name`, `name: value`,
+// `name op value`, `value op name`, or `value op name op value`.
+bool func evaluateMediaFeature(inner:ascii) {
     int colon = asciiIndexOf(inner, ':', 0)
-    if colon < 0 {
-        // The boolean form asks whether the feature's value is
-        // something other than zero or none.
-        ascii feat = asciiTrim(inner)
-        if feat == 'color' || feat == 'resolution' || feat == 'orientation'
-            || feat == 'aspect-ratio' || feat == 'device-aspect-ratio'
-            || feat == 'width' || feat == 'height'
-            || feat == 'device-width' || feat == 'device-height'
-            || feat == 'hover' || feat == 'any-hover'
-            || feat == 'pointer' || feat == 'any-pointer' { return true }
-        if feat == 'color-index' || feat == 'monochrome' || feat == 'grid'
-            || feat == 'scan' { return false }
+    if colon >= 0 {
+        ascii name = asciiTrim(inner.slice(0, colon))
+        ascii value = asciiTrim(inner.slice(colon + 1, inner.length))
+        int op = MQOP_EQ
+        int from = 0
+        if asciiStartsWith(name, 'min-', 0) {
+            op = MQOP_GE
+            from = 4
+        } else if asciiStartsWith(name, 'max-', 0) {
+            op = MQOP_LE
+            from = 4
+        }
+        return mediaFeatureMatches(name.slice(from, name.length), op, value)
+    }
+    // The range forms. The first operator splits the text in two; a
+    // second one means both ends are given, and the name is in the
+    // middle.
+    int first = mediaOperatorAt(inner, 0)
+    if first < 0 { return mediaFeatureBoolean(asciiTrim(inner)) }
+    int firstLen = mediaOperatorLength(inner, first)
+    int second = mediaOperatorAt(inner, first + firstLen)
+    if second < 0 {
+        ascii left = asciiTrim(inner.slice(0, first))
+        ascii right = asciiTrim(inner.slice(first + firstLen, inner.length))
+        int op = mediaOperatorKind(inner, first)
+        // `width >= 400px` and `400px <= width` say the same thing: the
+        // name may be on either side, and the operator turns round with
+        // it. A value begins with a digit, a dot or a sign, and a
+        // feature name never does.
+        if mediaLooksLikeName(left) { return mediaFeatureMatches(left, op, right) }
+        return mediaFeatureMatches(right, mediaOperatorReversed(op), left)
+    }
+    int secondLen = mediaOperatorLength(inner, second)
+    ascii lo = asciiTrim(inner.slice(0, first))
+    ascii name = asciiTrim(inner.slice(first + firstLen, second))
+    ascii hi = asciiTrim(inner.slice(second + secondLen, inner.length))
+    if !mediaFeatureMatches(name, mediaOperatorReversed(mediaOperatorKind(inner, first)), lo) {
         return false
     }
-    ascii feature = asciiTrim(inner.slice(0, colon))
-    ascii value = asciiTrim(inner.slice(colon + 1, inner.length))
-    // The features whose value is a keyword rather than a number.
-    if feature == 'orientation' {
+    return mediaFeatureMatches(name, mediaOperatorKind(inner, second), hi)
+}
+
+bool func mediaLooksLikeName(t:ascii) {
+    if t.length == 0 { return false }
+    int c = t.charCodeAt(0)
+    return !isDigitCode(c) && c != CH_DOT && c != CH_MINUS && c != CH_PLUS
+}
+
+// The index of the next `<`, `>` or `=` at or after `from`, or -1.
+int func mediaOperatorAt(s:ascii, from:int) {
+    for int i = from, i < s.length, i++ {
+        int c = s.charCodeAt(i)
+        if c == CH_LT || c == CH_GT || c == CH_EQ { return i }
+    }
+    return -1
+}
+
+int func mediaOperatorLength(s:ascii, at:int) {
+    if at + 1 < s.length && s.charCodeAt(at + 1) == CH_EQ { return 2 }
+    return 1
+}
+
+int func mediaOperatorKind(s:ascii, at:int) {
+    int c = s.charCodeAt(at)
+    bool orEqual = at + 1 < s.length && s.charCodeAt(at + 1) == CH_EQ
+    if c == CH_LT { return orEqual ? MQOP_LE : MQOP_LT }
+    if c == CH_GT { return orEqual ? MQOP_GE : MQOP_GT }
+    return MQOP_EQ
+}
+
+// `a < b` read from b's side is `b > a`.
+int func mediaOperatorReversed(op:int) {
+    if op == MQOP_LT { return MQOP_GT }
+    if op == MQOP_LE { return MQOP_GE }
+    if op == MQOP_GT { return MQOP_LT }
+    if op == MQOP_GE { return MQOP_LE }
+    return MQOP_EQ
+}
+
+// `(feature)` on its own asks whether the feature's value is something
+// other than zero or none.
+bool func mediaFeatureBoolean(feat:ascii) {
+    if feat == 'color' || feat == 'resolution' || feat == 'orientation'
+        || feat == 'aspect-ratio' || feat == 'device-aspect-ratio'
+        || feat == 'width' || feat == 'height'
+        || feat == 'device-width' || feat == 'device-height'
+        || feat == 'hover' || feat == 'any-hover'
+        || feat == 'pointer' || feat == 'any-pointer' { return true }
+    return false
+}
+
+// One feature, compared against its value with one operator.
+bool func mediaFeatureMatches(name:ascii, op:int, value:ascii) {
+    // The features whose value is a keyword rather than a number. They
+    // have no ordering, so only `=` -- which the colon form writes --
+    // means anything.
+    if name == 'orientation' {
         bool portrait = cssViewportHeight > cssViewportWidth
         if value == 'portrait' { return portrait }
         if value == 'landscape' { return !portrait }
         return false
     }
-    if feature == 'hover' || feature == 'any-hover' {
+    if name == 'hover' || name == 'any-hover' {
         // This browser opens a window with a pointer in it, so it says
         // so. A headless renderer would answer `none`, which is a fact
         // about that process rather than about the standard.
         return value == 'hover'
     }
-    if feature == 'pointer' || feature == 'any-pointer' {
-        return value == 'fine'
-    }
-    if feature == 'scan' {
+    if name == 'pointer' || name == 'any-pointer' { return value == 'fine' }
+    if name == 'scan' {
         // scan describes a television's refresh, and applies to the
         // `tv` media type only.
         return false
     }
-    // The ratio features, whose value is `a/b` or a bare number.
-    if feature == 'aspect-ratio' || feature == 'min-aspect-ratio' || feature == 'max-aspect-ratio'
-        || feature == 'device-aspect-ratio' || feature == 'min-device-aspect-ratio'
-        || feature == 'max-device-aspect-ratio' {
+    if name == 'aspect-ratio' || name == 'device-aspect-ratio' {
         float want = parseMediaRatio(value)
-        if want < 0.0 { return false }
-        if cssViewportHeight <= 0 { return false }
+        if want < 0.0 || cssViewportHeight <= 0 { return false }
+        if op == MQOP_EQ {
+            // An exact ratio compares two whole numbers, not two
+            // divisions: 800 by 600 is 4/3, and testing 800.0/600.0
+            // against 4.0/3.0 is testing two roundings against each
+            // other.
+            return mediaRatioEquals(value, cssViewportWidth, cssViewportHeight)
+        }
         float have = cssViewportWidth.toFloat() / cssViewportHeight.toFloat()
-        if asciiStartsWith(feature, 'min-', 0) { return have >= want }
-        if asciiStartsWith(feature, 'max-', 0) { return have <= want }
-        // An exact ratio compares two integers, so 800 by 600 is 4/3
-        // exactly rather than to within a rounding error.
-        return mediaRatioEquals(value, cssViewportWidth, cssViewportHeight)
+        return compareMediaOp(op, have, want)
     }
     parseNumberAt(value, 0)
     if !numOk { return false }
@@ -1190,38 +1346,29 @@ bool func evaluateMediaTerm(term:ascii) {
     if unit == 'em' || unit == 'rem' { v = v * 16.0 }
     // A resolution is compared in dots per inch whatever it was written
     // in: one CSS pixel is 1/96 inch, so 1dppx is 96dpi.
-    if feature == 'resolution' || feature == 'min-resolution' || feature == 'max-resolution' {
+    if name == 'resolution' {
         if unit == 'dppx' || unit == 'x' { v = v * 96.0 }
         else if unit == 'dpcm' { v = v * 2.54 }
         else if unit != 'dpi' { return false }
-        return compareMediaFeature(feature, MEDIA_DPI.toFloat(), v)
+        return compareMediaOp(op, MEDIA_DPI.toFloat(), v)
     }
-    if feature == 'width' || feature == 'min-width' || feature == 'max-width'
-        || feature == 'device-width' || feature == 'min-device-width' || feature == 'max-device-width' {
-        return compareMediaFeature(feature, cssViewportWidth.toFloat(), v)
+    if name == 'width' || name == 'device-width' {
+        return compareMediaOp(op, cssViewportWidth.toFloat(), v)
     }
-    if feature == 'height' || feature == 'min-height' || feature == 'max-height'
-        || feature == 'device-height' || feature == 'min-device-height' || feature == 'max-device-height' {
-        return compareMediaFeature(feature, cssViewportHeight.toFloat(), v)
+    if name == 'height' || name == 'device-height' {
+        return compareMediaOp(op, cssViewportHeight.toFloat(), v)
     }
-    if feature == 'color' || feature == 'min-color' || feature == 'max-color' {
-        return compareMediaFeature(feature, MEDIA_COLOR_BITS.toFloat(), v)
-    }
-    if feature == 'color-index' || feature == 'min-color-index' || feature == 'max-color-index' {
-        return compareMediaFeature(feature, 0.0, v)
-    }
-    if feature == 'monochrome' || feature == 'min-monochrome' || feature == 'max-monochrome' {
-        return compareMediaFeature(feature, 0.0, v)
-    }
-    if feature == 'grid' { return v == 0.0 }
+    if name == 'color' { return compareMediaOp(op, MEDIA_COLOR_BITS.toFloat(), v) }
+    if name == 'color-index' || name == 'monochrome' { return compareMediaOp(op, 0.0, v) }
+    if name == 'grid' { return compareMediaOp(op, 0.0, v) }
     return false
 }
 
-// `min-` and `max-` are prefixes on the same question, so the three
-// forms are one comparison with the prefix choosing the operator.
-bool func compareMediaFeature(feature:ascii, have:float, want:float) {
-    if asciiStartsWith(feature, 'min-', 0) { return have >= want }
-    if asciiStartsWith(feature, 'max-', 0) { return have <= want }
+bool func compareMediaOp(op:int, have:float, want:float) {
+    if op == MQOP_LT { return have < want }
+    if op == MQOP_LE { return have <= want }
+    if op == MQOP_GT { return have > want }
+    if op == MQOP_GE { return have >= want }
     return have == want
 }
 

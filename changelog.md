@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Media Queries 4's syntax
+
+- **The range form**: `(width >= 400px)`, `(400px <= width)` with the
+  value written first and the operator turned round with it, and
+  `(400px <= width <= 900px)` with both ends, in `<`, `<=`, `>`, `>=`
+  and `=`.
+- **`or`** beside `and`, **`not`** inside a condition, and parentheses
+  grouping conditions rather than only enclosing features.
+
+Media Queries 4 moves from Nothing to Partial. What it still does not
+add is features of its own — `prefers-color-scheme`, `update`,
+`overflow-block` and the rest are not answered.
+
+Two of the checks are of the shape that needs no answer known in
+advance: `(width >= 640px)` must answer what `(min-width: 640px)`
+answers, and `(width <= 640px)` what `(max-width: 640px)` answers. They
+are two spellings of one question, and the older one was already right.
+
+The query evaluator was a split on ` and ` and a loop. It is a small
+recursive-descent evaluator now, because `and` and `or` and `not` and
+parentheses cannot be read by splitting: a separator inside a group
+belongs to the group.
+
 ### Every media feature Level 3 defines
 
 `@media` understood five features and answered `(color)` and `(hover)`
