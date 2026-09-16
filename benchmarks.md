@@ -489,7 +489,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 21,304 lines of Festina across `browser.f` and `src/` |
+| Source | 21,429 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,8 +498,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,636,928 |
-| This browser, all `.f` source | 771,351 |
+| This browser, the whole program | 2,641,232 |
+| This browser, all `.f` source | 777,265 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 

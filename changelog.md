@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Every media feature Level 3 defines
+
+`@media` understood five features and answered `(color)` and `(hover)`
+with a hard-coded true. It now answers all of them:
+
+- **sizes** — `width`, `height`, `device-width`, `device-height` with
+  their `min-` and `max-` forms;
+- **`orientation`**, which a square viewport answers `landscape`;
+- **`aspect-ratio`** and **`device-aspect-ratio`**, compared as two
+  whole numbers rather than two divisions, so 800 by 600 is `4/3`
+  exactly and not to within a rounding error;
+- **`color`, `color-index` and `monochrome`** — eight bits a component,
+  no colour table, not monochrome;
+- **`resolution`** in `dpi`, `dpcm`, `dppx` and `x`, at 96 to the inch;
+- **`grid`** and **`scan`**, which describe devices this is not;
+- and the **boolean form** of each, which asks whether the feature's
+  value is something other than zero.
+
+What this engine calls the device is its own window. There are no screen
+metrics to ask for, and a page asking about the device is deciding
+whether it is on a phone, which the window size answers as well as the
+screen does.
+
+`hover` and `pointer` answer `hover` and `fine`, because this browser
+opens a window with a pointer in it. Headless Chromium answers `none`
+and neither, which is a fact about that process rather than about the
+standard, and the test says so where it departs from the reference.
+
+The expected answers are Chromium 141's, read with `window.matchMedia`
+and restated against this engine's viewport: a query about a width is a
+question about a number both engines have, so what is checked is
+Chromium's rule rather than Chromium's window.
+
+The count does not move -- a media feature is not a property. What
+grades this is `tests/unit/test_media.f`, sixty-eight checks.
+
+What is left is time rather than features: a query is evaluated when the
+sheet is parsed, so resizing the window does not re-evaluate it.
+
 ### Two of Display 3's three corrections
 
 - **`display: contents` generates no box.** The element's children

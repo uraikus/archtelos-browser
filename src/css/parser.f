@@ -1073,9 +1073,12 @@ bool func evaluateSupportsCondition(cond:ascii) {
 
 // ---- @media ---------------------------------------------------------
 
-// Evaluates a media query list against the viewport. Understands
-// `all`, `screen`, `print`, `not`, `and`, `,` and the (min|max)-width
-// / (min|max)-height features; any other feature is false.
+// Evaluates a media query list against the viewport: `all` and
+// `screen` as types, `not`, `only`, `and` and the comma list, and every
+// media feature Level 3 defines, in its boolean form as well as with a
+// value. A feature this does not know makes its term false, which makes
+// the whole query false unless another alternative in the list is
+// true.
 bool func evaluateMediaQuery(query:ascii) {
     arr[ascii] alternatives = asciiSplitChar(asciiLower(query), CH_COMMA)
     if alternatives.length == 0 { return true }
@@ -1109,31 +1112,153 @@ bool func evaluateOneMediaQuery(q:ascii) {
     return negate ? !result : result
 }
 
+// What this engine is, as a device. The canvas is eight bits a
+// component with no colour table, it is not a grid terminal, and it is
+// drawn at one device pixel to the CSS pixel. The device it runs on is
+// its own window: there are no screen metrics to ask for, and a page
+// asking about the device is deciding whether it is on a phone, which
+// the window size answers as well as the screen does.
+const int MEDIA_COLOR_BITS = 8
+const int MEDIA_DPI = 96
+
 bool func evaluateMediaTerm(term:ascii) {
     if term.length == 0 || term == 'all' || term == 'screen' { return true }
-    if term == 'print' || term == 'speech' { return false }
-    if term.charCodeAt(0) == CH_LPAREN && asciiEndsWith(term, ')') {
-        ascii inner = asciiTrim(term.slice(1, term.length - 1))
-        int colon = asciiIndexOf(inner, ':', 0)
-        if colon < 0 {
-            ascii feat = asciiTrim(inner)
-            return feat == 'color' || feat == 'hover'
-        }
-        ascii feature = asciiTrim(inner.slice(0, colon))
-        ascii value = asciiTrim(inner.slice(colon + 1, inner.length))
-        parseNumberAt(value, 0)
-        if !numOk { return false }
-        float v = numValue
-        ascii unit = asciiLower(value.slice(numEnd, value.length))
-        if unit == 'em' || unit == 'rem' { v = v * 16.0 }
-        if feature == 'min-width' { return cssViewportWidth.toFloat() >= v }
-        if feature == 'max-width' { return cssViewportWidth.toFloat() <= v }
-        if feature == 'min-height' { return cssViewportHeight.toFloat() >= v }
-        if feature == 'max-height' { return cssViewportHeight.toFloat() <= v }
-        if feature == 'width' { return cssViewportWidth.toFloat() == v }
+    // Every other media type names a device this is not. `print` and
+    // `speech` are the two the standard still has; the rest are
+    // deprecated and match nothing.
+    if term.charCodeAt(0) != CH_LPAREN { return false }
+    if !asciiEndsWith(term, ')') { return false }
+    ascii inner = asciiTrim(term.slice(1, term.length - 1))
+    int colon = asciiIndexOf(inner, ':', 0)
+    if colon < 0 {
+        // The boolean form asks whether the feature's value is
+        // something other than zero or none.
+        ascii feat = asciiTrim(inner)
+        if feat == 'color' || feat == 'resolution' || feat == 'orientation'
+            || feat == 'aspect-ratio' || feat == 'device-aspect-ratio'
+            || feat == 'width' || feat == 'height'
+            || feat == 'device-width' || feat == 'device-height'
+            || feat == 'hover' || feat == 'any-hover'
+            || feat == 'pointer' || feat == 'any-pointer' { return true }
+        if feat == 'color-index' || feat == 'monochrome' || feat == 'grid'
+            || feat == 'scan' { return false }
         return false
     }
+    ascii feature = asciiTrim(inner.slice(0, colon))
+    ascii value = asciiTrim(inner.slice(colon + 1, inner.length))
+    // The features whose value is a keyword rather than a number.
+    if feature == 'orientation' {
+        bool portrait = cssViewportHeight > cssViewportWidth
+        if value == 'portrait' { return portrait }
+        if value == 'landscape' { return !portrait }
+        return false
+    }
+    if feature == 'hover' || feature == 'any-hover' {
+        // This browser opens a window with a pointer in it, so it says
+        // so. A headless renderer would answer `none`, which is a fact
+        // about that process rather than about the standard.
+        return value == 'hover'
+    }
+    if feature == 'pointer' || feature == 'any-pointer' {
+        return value == 'fine'
+    }
+    if feature == 'scan' {
+        // scan describes a television's refresh, and applies to the
+        // `tv` media type only.
+        return false
+    }
+    // The ratio features, whose value is `a/b` or a bare number.
+    if feature == 'aspect-ratio' || feature == 'min-aspect-ratio' || feature == 'max-aspect-ratio'
+        || feature == 'device-aspect-ratio' || feature == 'min-device-aspect-ratio'
+        || feature == 'max-device-aspect-ratio' {
+        float want = parseMediaRatio(value)
+        if want < 0.0 { return false }
+        if cssViewportHeight <= 0 { return false }
+        float have = cssViewportWidth.toFloat() / cssViewportHeight.toFloat()
+        if asciiStartsWith(feature, 'min-', 0) { return have >= want }
+        if asciiStartsWith(feature, 'max-', 0) { return have <= want }
+        // An exact ratio compares two integers, so 800 by 600 is 4/3
+        // exactly rather than to within a rounding error.
+        return mediaRatioEquals(value, cssViewportWidth, cssViewportHeight)
+    }
+    parseNumberAt(value, 0)
+    if !numOk { return false }
+    float v = numValue
+    ascii unit = asciiLower(value.slice(numEnd, value.length))
+    // A length in a media query resolves against the initial font size:
+    // there is no element for `em` to be relative to.
+    if unit == 'em' || unit == 'rem' { v = v * 16.0 }
+    // A resolution is compared in dots per inch whatever it was written
+    // in: one CSS pixel is 1/96 inch, so 1dppx is 96dpi.
+    if feature == 'resolution' || feature == 'min-resolution' || feature == 'max-resolution' {
+        if unit == 'dppx' || unit == 'x' { v = v * 96.0 }
+        else if unit == 'dpcm' { v = v * 2.54 }
+        else if unit != 'dpi' { return false }
+        return compareMediaFeature(feature, MEDIA_DPI.toFloat(), v)
+    }
+    if feature == 'width' || feature == 'min-width' || feature == 'max-width'
+        || feature == 'device-width' || feature == 'min-device-width' || feature == 'max-device-width' {
+        return compareMediaFeature(feature, cssViewportWidth.toFloat(), v)
+    }
+    if feature == 'height' || feature == 'min-height' || feature == 'max-height'
+        || feature == 'device-height' || feature == 'min-device-height' || feature == 'max-device-height' {
+        return compareMediaFeature(feature, cssViewportHeight.toFloat(), v)
+    }
+    if feature == 'color' || feature == 'min-color' || feature == 'max-color' {
+        return compareMediaFeature(feature, MEDIA_COLOR_BITS.toFloat(), v)
+    }
+    if feature == 'color-index' || feature == 'min-color-index' || feature == 'max-color-index' {
+        return compareMediaFeature(feature, 0.0, v)
+    }
+    if feature == 'monochrome' || feature == 'min-monochrome' || feature == 'max-monochrome' {
+        return compareMediaFeature(feature, 0.0, v)
+    }
+    if feature == 'grid' { return v == 0.0 }
     return false
+}
+
+// `min-` and `max-` are prefixes on the same question, so the three
+// forms are one comparison with the prefix choosing the operator.
+bool func compareMediaFeature(feature:ascii, have:float, want:float) {
+    if asciiStartsWith(feature, 'min-', 0) { return have >= want }
+    if asciiStartsWith(feature, 'max-', 0) { return have <= want }
+    return have == want
+}
+
+// A <ratio> is `a/b`, or a bare number, which is that number over one.
+// Answers -1 for anything else.
+float func parseMediaRatio(value:ascii) {
+    int slash = asciiIndexOf(value, '/', 0)
+    if slash < 0 {
+        parseNumberAt(asciiTrim(value), 0)
+        if !numOk { return -1.0 }
+        return numValue
+    }
+    parseNumberAt(asciiTrim(value.slice(0, slash)), 0)
+    if !numOk { return -1.0 }
+    float a = numValue
+    parseNumberAt(asciiTrim(value.slice(slash + 1, value.length)), 0)
+    if !numOk || numValue == 0.0 { return -1.0 }
+    return a / numValue
+}
+
+// An exact ratio is a comparison of two whole numbers, not of two
+// divisions: 800 by 600 is 4/3, and testing 800.0/600.0 against
+// 4.0/3.0 is testing two roundings against each other.
+bool func mediaRatioEquals(value:ascii, w:int, h:int) {
+    int slash = asciiIndexOf(value, '/', 0)
+    if slash < 0 {
+        float want = parseMediaRatio(value)
+        if want < 0.0 || h <= 0 { return false }
+        return w.toFloat() == want * h.toFloat()
+    }
+    parseNumberAt(asciiTrim(value.slice(0, slash)), 0)
+    if !numOk { return false }
+    float a = numValue
+    parseNumberAt(asciiTrim(value.slice(slash + 1, value.length)), 0)
+    if !numOk { return false }
+    float b = numValue
+    return w.toFloat() * b == h.toFloat() * a
 }
 
 // ---- stylesheets ------------------------------------------------------

@@ -81,9 +81,12 @@ general-sibling combinators, `:first-child`, `:last-child`,
 `:only-child`, `:nth-child(odd|even|n)`, `:first-of-type`,
 `:last-of-type`, `:root`, `:link` and `:not(compound)`. The cascade
 handles specificity, source order, `!important`, inline styles and HTML
-presentational attributes. `@media` is evaluated against the viewport;
-`@supports` and `@layer` contribute their contents; other at-rules are
-skipped. Units: px, em, rem, %, pt, pc, in, cm, mm, ex, ch, vw, vh.
+presentational attributes. `@media` is evaluated against the viewport,
+over every feature Media Queries 3 defines — sizes, `orientation`,
+`aspect-ratio`, `color`, `resolution` and the rest — in the boolean form
+as well as with a value; `@supports` and `@layer` contribute their
+contents; other at-rules are skipped. Units: px, em, rem, %, pt, pc, in,
+cm, mm, ex, ch, vw, vh.
 Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
 `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`,
 `oklch()`, `color()` over the eight predefined spaces, the nineteen
@@ -264,7 +267,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-21,304 lines of Festina in `src/` and `browser.f`.
+21,429 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -274,13 +277,13 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty-four unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-five unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
-audio, the preload scanner), thirteen offscreen render suites that check
+media queries, audio, the preload scanner), thirteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 object fitting, borders, border images, text decoration, transforms,
