@@ -235,4 +235,23 @@ clearCanvas()
 paintPage(pFixed, 0, 200, 100)
 check(getPixelColor(1, 1) == red, 'and stays where it is when the page scrolls')
 
+// CSS Color 4's wider colour spaces, end to end. tests/unit/test_color4.f
+// proves the conversions; what is in question here is whether a value
+// the cascade has never seen before survives the declaration parser and
+// reaches the painter at all. Each colour below converts to one Festina
+// can name, so the check is an equality rather than a tolerance.
+color lime = 'lime'
+Page pColor4 = pageFromHtml('<body style="margin:0">'
+    + '<div style="width:50px;height:50px;background:oklch(0.628 0.2577 29.23)"></div>'
+    + '<div style="width:50px;height:50px;background:color(display-p3 0 1 0)"></div>'
+    + '<div style="width:50px;height:50px;background:lab(0 0 0);'
+    + 'border:10px solid hwb(240 0% 0%)"></div>'
+    + '</body>', 'test.html', 400)
+clearCanvas()
+paintPage(pColor4, 0, 0, 300)
+check(getPixelColor(25, 25) == red, 'oklch() paints through the cascade')
+check(getPixelColor(25, 75) == lime, 'color(display-p3) paints through the cascade')
+check(getPixelColor(25, 105) == blue, 'hwb() in the border shorthand')
+check(getPixelColor(35, 125) == black, 'lab() paints inside that border')
+
 finish('render')

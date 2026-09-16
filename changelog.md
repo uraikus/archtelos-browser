@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Color 4's wider color spaces, and a visited-link color that was wrong
+
+- **`hwb()`**, **`lab()`**, **`lch()`**, **`oklab()`**, **`oklch()`**
+  and **`color()`** over the eight predefined spaces (`srgb`,
+  `srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`,
+  `xyz`/`xyz-d65` and `xyz-d50`), each with `none` components, a hue in
+  `deg`, `rad`, `grad` or `turn`, percentages on the standard's own
+  scales — 125 for a Lab `a`, 150 for an LCH chroma, 0.4 for an Oklab
+  one — and a slash alpha. They convert through the standard's own
+  matrices to the packed sRGB integer everything else here paints, a
+  channel outside the gamut clamped rather than gamut-mapped.
+- **The nineteen system colors**, `Canvas` and `CanvasText` through
+  `Highlight` (which carries alpha) to `VisitedText`.
+
+**`COLOR_VISITED` was `rgb(85, 4, 121)`, not the `#551a8b` its own
+comment claimed.** A hex-to-decimal conversion off by 5,650, of exactly
+the kind FINDINGS.md's "no hexadecimal literal" finding predicts, and
+nothing had ever compared the constant against anything. Visited links
+have been painted the wrong purple since the user-agent stylesheet was
+written. The check that catches it is the one that asks two things to
+agree: the constant the stylesheet uses and the `VisitedText` the
+standard names must be the same integer.
+
+**Properties 176 → 176.** This moves no count, and could not: the
+instrument sets `color: #123456` and asks whether the computed style
+changed, so `color` has read as implemented since the first commit
+whatever syntax reaches it. The deliverable is instead
+`tests/unit/test_color4.f`, 79 checks whose expected pixels were derived
+twice and independently — once by implementing the standard's §17
+pseudocode in a separate script, once by asking headless Chromium for
+the pixel it paints — and which agreed to the byte on all of them before
+a line of Festina was written. Four more in `tests/render/basic_pixels.f`
+(47 → 51) ask the question the unit suite cannot: whether a colour
+syntax the cascade has never seen survives the declaration parser and
+reaches the painter. Each of the four converts to a colour Festina can
+name, so they are equalities rather than tolerances.
+
 ### Three properties, one of them written off too early
 
 - **`hyphens`** honours a soft hyphen as a break opportunity: it shows

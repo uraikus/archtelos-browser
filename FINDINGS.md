@@ -293,6 +293,14 @@ that is safe today becomes a compile error when an unrelated file gains
 a helper, and there is no way to see the collision coming from either
 end.
 
+**It is the most frequent obstacle in this codebase.** `lineCount`,
+`cell`, `matches` and `doc` each collided while the CSS work below was
+being written, and the vocabulary a renderer wants — `cell`, `matches`,
+`doc`, `style`, `line`, `row` — is exactly the vocabulary its helper
+functions want. Every new helper narrows the set of names the rest of
+the program may use for a local, and nothing reports which names are
+spent.
+
 ---
 
 ## 4 An empty `text` is `null`
@@ -408,7 +416,13 @@ represented in order to run them.
 - **No `&`, `|`, `<<` or hexadecimal literals.** Colors are packed as
   `a * 16777216 + r * 65536 + g * 256 + b` and unpacked with
   `Math.floorDiv` and `%`; the 148 CSS color names are generated as
-  decimal integers.
+  decimal integers. The missing literal is not only inconvenient: a
+  colour written by hand as a decimal is a colour no reader can check.
+  `COLOR_VISITED` stood at `4283761785` under a comment reading
+  `#551a8b` for the whole life of the user-agent stylesheet. The two
+  disagree — `#551a8b` is `4283767435` — so every visited link was
+  painted `rgb(85, 4, 121)`. A hexadecimal literal would have made the
+  constant and the comment the same text, and the bug unwritable.
 
 ---
 

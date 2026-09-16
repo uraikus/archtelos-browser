@@ -7,7 +7,7 @@ The project has two purposes, equally weighted: render real pages
 correctly, and keep finding the places where Festina is insufficient.
 The renderer is real — its own HTML tokenizer and tree builder, a CSS
 parser and cascade, block, inline and table layout, painting on
-Festina's canvas, and an HTTP(S) client — all in one 2.4 MB native
+Festina's canvas, and an HTTP(S) client — all in one 2.6 MB native
 binary that links nothing Festina does not already link. What building
 it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
 Festina should gain as a result is in [festina.md](festina.md).
@@ -85,7 +85,11 @@ presentational attributes. `@media` is evaluated against the viewport;
 `@supports` and `@layer` contribute their contents; other at-rules are
 skipped. Units: px, em, rem, %, pt, pc, in, cm, mm, ex, ch, vw, vh.
 Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
-`rgba()`, `hsl()`, `hsla()`, `transparent` and `currentcolor`.
+`rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`,
+`oklch()`, `color()` over the eight predefined spaces, the nineteen
+system colors, `transparent` and `currentcolor`. Every one of them ends
+as a packed sRGB integer, converted by the standard's own matrices; a
+component outside the sRGB gamut is clamped per channel.
 
 **Layout** is block formatting with margin collapsing, inline formatting
 with word wrapping and baseline alignment, inline-blocks with
@@ -238,7 +242,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-14,659 lines of Festina in `src/` and `browser.f`.
+20,294 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -248,12 +252,12 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers thirty unit suites (utilities, HTML, CSS parser,
+The runner covers thirty-one unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
-styles, hyphens, audio, the preload scanner), twelve offscreen render suites that check
+styles, hyphens, color spaces, audio, the preload scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, border images, text decoration, transforms, right-to-left
@@ -292,20 +296,20 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Parse, style and lay out 51 KB | 93 ms | 25.3 ms |
-| Parse 51 KB of HTML | 8 ms | 2.1–3.9 ms |
-| Peak memory, 51 KB page | 17.9 MB | 194.8 MB |
-| Binary | 2.4 MB | 463 MB |
-| Screenshot a one-line page | 38 ms | 453 ms |
+| Parse, style and lay out 51 KB | 98 ms | 24.9 ms |
+| Parse 51 KB of HTML | 8 ms | 2.0–3.9 ms |
+| Peak memory, 51 KB page | 18.0 MB | 194.5 MB |
+| Binary | 2.6 MB | 463 MB |
+| Screenshot a one-line page | 38 ms | 471 ms |
 
-**Chromium renders about three and three quarter times faster.** The first row is
+**Chromium renders about four times faster.** The first row is
 the one that describes the engines: both sides are timed from inside,
 with process start-up and PNG encoding outside the timer, because
-Chromium spends about 450 ms starting up, and subtracting a baseline
+Chromium spends about 470 ms starting up, and subtracting a baseline
 that varies by 106 ms run to run measures the variance rather than the
 work.
-The cascade and layout are 88% of our time and all of the gap, and
-layout is now the larger half of the two; parsing is 9%.
+The cascade and layout are 93% of our time and all of the gap, and
+layout is the larger half of the two; parsing is 9%.
 
 The last row is a different question with a different answer: a native
 binary is finished before Chromium has started, which matters if what

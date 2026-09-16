@@ -151,15 +151,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 ### After the official definition
 
 `@layer` ordering, which is discarded today (Cascade 5); the
-Media Queries 4 range syntax; Selectors 4's `:is()`, `:where()`,
-`:has()` and a selector list inside `:not()`; `color-mix()` and the
-wider colour spaces; `box-sizing`, since every box is content-box; the
-`display` corrections in Display 3; what is left of Text 3 — `hyphens`,
-which needs the soft hyphen to break a word; `line-break`, which is
-about CJK; `text-wrap-style: balance`, which needs the line breaker run
-more than once; `text-overflow`, which needs a scrollable area rather
-than only a clip; and a tab that advances to a tab stop rather than
-expanding to whole spaces — and what is left of Text Decoration 3:
+Media Queries 4 range syntax; Color 5 entirely — `color-mix()` and the
+relative colour syntax; the gamut mapping Color 4 asks for, since a
+colour outside sRGB is clamped per channel here; the `display`
+corrections in Display 3 — `contents` generating a box, `inline-table`
+not being inline, and an unknown value falling back to `inline` rather
+than `block`; what is left of Text 3 — `line-break`, which is about
+CJK, and `text-wrap-style: balance`, which needs the line breaker run
+more than once — and what is left of Text Decoration 3:
 `text-decoration-skip-ink`, which needs the glyph outlines Festina does
 not expose; an emphasis mark that reserves space in the line rather than
 falling outside it; and a `wavy` underline drawn as a curve rather than
@@ -178,9 +177,11 @@ that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
 `tests/conformance/selectors.f` how many of 61 selectors match the same
-elements as Chromium (56). Each entry in the work above should move the
-first number, and the runner names every property that still does
-nothing.
+elements as Chromium (61). Most entries in the work above should move
+the first number, and the runner names every property that still does
+nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
+and the instrument asks only whether `color` changes the computed
+style, so `tests/unit/test_color4.f` is what grades them.
 
 **Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
 against the standard's own tests, level with Chromium, and the only
@@ -314,14 +315,14 @@ local server.
 
 ## Performance
 
-Chromium parses, styles and lays out the 51 KB page about **3.7 times
-faster** — 25.3 ms against 93 — with both sides measured from inside and
+Chromium parses, styles and lays out the 51 KB page about **four times
+faster** — 24.9 ms against 98 — with both sides measured from inside and
 start-up outside the timer (benchmarks.md). The cascade and layout are
-88% of our time and all of the gap, and **layout is now the larger half
+93% of our time and all of the gap, and **layout is the larger half
 of the two**. In order:
 
 - **Collecting and applying declarations, now that computing them is
-  cheap.** Matching is 7 ms and applying 13 ms of a 31 ms cascade, and
+  cheap.** Matching is 12 ms and applying 14 ms of a 35 ms cascade, and
   both are still paid per element: 8,578 selector tests and 11,614
   declarations applied into a fresh map. The same insight that made
   computing cheap applies again — an element whose matched rule set is
