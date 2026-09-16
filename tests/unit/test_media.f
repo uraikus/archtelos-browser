@@ -168,4 +168,60 @@ mqIs('((width >= 100px) and (height >= 100px))', true, 'a group of two')
 mqIs('((width >= 10000px) or (height >= 100px))', true, 'an or inside a group')
 mqIs('((width >= 10000px) and (height >= 100px))', false, 'and an and inside one')
 
+// ---- Media Queries 4: the features it adds -----------------------------
+// Each of these is a statement about this browser rather than a
+// computation, and two of them are where it differs from the reference:
+// there is no JavaScript engine, so `scripting` is `none` where
+// Chromium says `enabled`, and the shell scrolls only down the page, so
+// `overflow-inline` is `none` where Chromium says `scroll`.
+
+mqIs('(scripting: none)', true, 'there is no scripting')
+mqIs('(scripting: enabled)', false, 'so it is not enabled')
+mqIs('(scripting)', false, 'and the boolean form is false')
+
+mqIs('(overflow-block: scroll)', true, 'the page scrolls down')
+mqIs('(overflow-block: none)', false, 'so not none')
+mqIs('(overflow-block: paged)', false, 'and not paged')
+mqIs('(overflow-inline: none)', true, 'and it does not scroll across')
+mqIs('(overflow-inline: scroll)', false, 'so not scroll')
+mqIs('(overflow-block)', true, 'the boolean form follows the value')
+mqIs('(overflow-inline)', false, 'in both directions')
+
+mqIs('(update: fast)', true, 'the window repaints as fast as it is asked to')
+mqIs('(update: slow)', false, 'not slowly')
+mqIs('(update: none)', false, 'and not never')
+mqIs('(update)', true, 'so the boolean form is true')
+
+mqIs('(prefers-color-scheme: light)', true, 'the user-agent stylesheet is a light one')
+mqIs('(prefers-color-scheme: dark)', false, 'and not dark')
+mqIs('(prefers-color-scheme)', true, 'which is a preference either way')
+mqIs('(prefers-reduced-motion: no-preference)', true, 'nothing moves, so nothing is preferred')
+mqIs('(prefers-reduced-motion: reduce)', false, 'and reduce is not the answer')
+mqIs('(prefers-reduced-motion)', false, 'so the boolean form is false')
+mqIs('(prefers-contrast: no-preference)', true, 'no contrast preference')
+mqIs('(prefers-contrast: more)', false, 'neither more')
+mqIs('(prefers-contrast: less)', false, 'nor less')
+mqIs('(prefers-reduced-transparency: no-preference)', true, 'no transparency preference')
+
+mqIs('(forced-colors: none)', true, 'no forced colour mode')
+mqIs('(forced-colors: active)', false, 'so not active')
+mqIs('(forced-colors)', false, 'and the boolean form is false')
+mqIs('(inverted-colors: none)', true, 'colours are not inverted')
+mqIs('(inverted-colors)', false, 'which is false in the boolean form')
+
+mqIs('(color-gamut: srgb)', true, 'every colour is packed sRGB')
+mqIs('(color-gamut: p3)', false, 'and nothing wider is displayed')
+mqIs('(color-gamut)', true, 'there is a gamut')
+mqIs('(dynamic-range: standard)', true, 'the range is the standard one')
+mqIs('(dynamic-range: high)', false, 'and not high')
+mqIs('(dynamic-range)', false, 'which the boolean form calls false')
+
+// The range form is about ordered values, so a keyword feature answers
+// nothing to an ordering. Equality it does take, because that is what
+// the colon form writes.
+mqIs('(scripting >= none)', false, 'a keyword feature has no ordering')
+mqIs('(orientation >= portrait)', false, 'nor does orientation')
+mqIs('(orientation = landscape)', true, 'but equality is the colon form said differently')
+mqIs('(orientation = portrait)', false, 'and answers what the colon form answers')
+
 finish('media')

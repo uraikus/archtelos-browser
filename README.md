@@ -83,9 +83,12 @@ general-sibling combinators, `:first-child`, `:last-child`,
 handles specificity, source order, `!important`, inline styles and HTML
 presentational attributes. `@media` is evaluated against the viewport,
 over every feature Media Queries 3 defines — sizes, `orientation`,
-`aspect-ratio`, `color`, `resolution` and the rest — in the boolean form,
-with a value, and in Level 4's range form, with `and`, `or`, `not` and
-parentheses; `@supports` and `@layer` contribute their
+`aspect-ratio`, `color`, `resolution` and the rest — and Level 4's own,
+which say what this browser is: `scripting: none`, because there is no
+JavaScript engine, and `overflow-inline: none`, because it scrolls a
+document down and clips what runs across. Each answers in the boolean
+form, with a value, and in Level 4's range form, with `and`, `or`, `not`
+and parentheses; `@supports` and `@layer` contribute their
 contents; other at-rules are skipped. Units: px, em, rem, %, pt, pc, in,
 cm, mm, ex, ch, vw, vh.
 Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
@@ -268,7 +271,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-21,576 lines of Festina in `src/` and `browser.f`.
+21,626 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 

@@ -1290,22 +1290,28 @@ int func mediaOperatorReversed(op:int) {
 }
 
 // `(feature)` on its own asks whether the feature's value is something
-// other than zero or none.
+// other than zero, `none` or `no-preference`.
 bool func mediaFeatureBoolean(feat:ascii) {
     if feat == 'color' || feat == 'resolution' || feat == 'orientation'
         || feat == 'aspect-ratio' || feat == 'device-aspect-ratio'
         || feat == 'width' || feat == 'height'
         || feat == 'device-width' || feat == 'device-height'
         || feat == 'hover' || feat == 'any-hover'
-        || feat == 'pointer' || feat == 'any-pointer' { return true }
+        || feat == 'pointer' || feat == 'any-pointer'
+        || feat == 'update' || feat == 'overflow-block'
+        || feat == 'prefers-color-scheme' || feat == 'color-gamut' { return true }
+    // `scripting`, `overflow-inline`, `forced-colors`, `inverted-colors`,
+    // the `prefers-` family and `dynamic-range` all answer with the
+    // value this engine has, and every one of those is a falsy one.
     return false
 }
 
 // One feature, compared against its value with one operator.
 bool func mediaFeatureMatches(name:ascii, op:int, value:ascii) {
-    // The features whose value is a keyword rather than a number. They
-    // have no ordering, so only `=` -- which the colon form writes --
-    // means anything.
+    // A discrete feature's values are keywords, which have no order, so
+    // the only comparison it takes is equality -- which is what the
+    // colon form writes. `(scripting >= none)` is not a query.
+    if mediaFeatureIsDiscrete(name) && op != MQOP_EQ { return false }
     if name == 'orientation' {
         bool portrait = cssViewportHeight > cssViewportWidth
         if value == 'portrait' { return portrait }
@@ -1319,6 +1325,38 @@ bool func mediaFeatureMatches(name:ascii, op:int, value:ascii) {
         return value == 'hover'
     }
     if name == 'pointer' || name == 'any-pointer' { return value == 'fine' }
+    // Media Queries 4's own features. Each of these is a statement
+    // about this browser rather than a computation.
+    if name == 'scripting' {
+        // There is no JavaScript engine, which is the whole of the
+        // answer.
+        return value == 'none'
+    }
+    if name == 'overflow-block' {
+        // The shell scrolls down a document and paints what is in view.
+        return value == 'scroll'
+    }
+    if name == 'overflow-inline' {
+        // It does not scroll across: a line that overflows is clipped.
+        return value == 'none'
+    }
+    if name == 'update' {
+        // The window repaints as often as it is asked to.
+        return value == 'fast'
+    }
+    if name == 'prefers-color-scheme' { return value == 'light' }
+    if name == 'prefers-reduced-motion' || name == 'prefers-contrast'
+        || name == 'prefers-reduced-data' || name == 'prefers-reduced-transparency' {
+        // Nothing here moves, and there is no user to have asked.
+        return value == 'no-preference'
+    }
+    if name == 'forced-colors' || name == 'inverted-colors' { return value == 'none' }
+    if name == 'color-gamut' {
+        // Every colour is a packed sRGB integer by the time it is
+        // painted, whatever space it was written in.
+        return value == 'srgb'
+    }
+    if name == 'dynamic-range' { return value == 'standard' }
     if name == 'scan' {
         // scan describes a television's refresh, and applies to the
         // `tv` media type only.
@@ -1362,6 +1400,18 @@ bool func mediaFeatureMatches(name:ascii, op:int, value:ascii) {
     if name == 'color-index' || name == 'monochrome' { return compareMediaOp(op, 0.0, v) }
     if name == 'grid' { return compareMediaOp(op, 0.0, v) }
     return false
+}
+
+// Which features answer with a keyword rather than a number.
+bool func mediaFeatureIsDiscrete(name:ascii) {
+    return name == 'orientation' || name == 'hover' || name == 'any-hover'
+        || name == 'pointer' || name == 'any-pointer' || name == 'scan'
+        || name == 'scripting' || name == 'overflow-block' || name == 'overflow-inline'
+        || name == 'update' || name == 'prefers-color-scheme'
+        || name == 'prefers-reduced-motion' || name == 'prefers-contrast'
+        || name == 'prefers-reduced-data' || name == 'prefers-reduced-transparency'
+        || name == 'forced-colors' || name == 'inverted-colors'
+        || name == 'color-gamut' || name == 'dynamic-range'
 }
 
 bool func compareMediaOp(op:int, have:float, want:float) {

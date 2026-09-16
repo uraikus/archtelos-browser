@@ -5,6 +5,32 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The media features Level 4 adds
+
+Each is a statement about this browser rather than a computation, and
+two of them are where it differs from the reference:
+
+- **`scripting: none`**, because there is no JavaScript engine. Chromium
+  says `enabled`.
+- **`overflow-block: scroll`** and **`overflow-inline: none`**, because
+  the shell scrolls a document down and clips what runs across.
+  Chromium says `scroll` to both.
+- `update: fast`; `color-gamut: srgb`, because every colour is a packed
+  sRGB integer by the time it is painted; `prefers-color-scheme: light`;
+  and `prefers-reduced-motion`, `prefers-contrast`,
+  `prefers-reduced-data`, `prefers-reduced-transparency`,
+  `forced-colors`, `inverted-colors` and `dynamic-range` answering
+  `no-preference`, `none` or `standard` — there being no user to have
+  asked and nothing that moves.
+
+A discrete feature takes only equality from the range form, because
+keywords have no order: `(scripting >= none)` is not a query, and
+`(orientation = landscape)` is the colon form said differently.
+
+The boolean form of each follows its value, which is not always the
+obvious answer: `(dynamic-range)` is false, because `standard` is the
+falsy one of its two values.
+
 ### Media Queries 4's syntax
 
 - **The range form**: `(width >= 400px)`, `(400px <= width)` with the

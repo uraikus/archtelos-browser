@@ -155,8 +155,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 ### After the official definition
 
 `@layer` ordering, which is discarded today (Cascade 5); the
-Media Queries 4's own features, beginning with `prefers-color-scheme`,
-`update` and `overflow-block`, now that its syntax is understood; Color 5 entirely — `color-mix()` and the
+the media features about a user's own preferences that
+this browser has no way to learn (Media Queries 4), and the three about
+a folding screen; Color 5 entirely — `color-mix()` and the
 relative colour syntax; the gamut mapping Color 4 asks for, since a
 colour outside sRGB is clamped per channel here; `inline-table`, which lays out
 as a block-level table rather than an inline one (Display 3), and that
