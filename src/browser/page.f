@@ -126,7 +126,23 @@ text func fetchStyleImage(page:Page, raw:text) {
     return target
 }
 
+// The images a ::before or ::after names in its `content`, resolved and
+// loaded in place so the generated box can find them under the same key
+// as any other image.
+void func gatherContentImages(page:Page, nid:int, which:text) {
+    ContentRun run = pseudoContentRunOf(nid, which)
+    if run == null { return }
+    for int i = 0, i < run.urls.length, i++ {
+        if run.urls[i] == null { continue }
+        run.urls[i] = fetchStyleImage(page, run.urls[i])
+    }
+}
+
 void func gatherBackgroundImages(page:Page, n:Node) {
+    if anyContentUrl && n.kind == NODE_ELEMENT && n.id > 0 {
+        gatherContentImages(page, n.id, 'before')
+        gatherContentImages(page, n.id, 'after')
+    }
     if n.kind == NODE_ELEMENT && n.style.listImageUrl != '' {
         n.style.listImageUrl = fetchStyleImage(page, n.style.listImageUrl)
     }
@@ -294,7 +310,7 @@ void func preparePage(page:Page, width:int) {
     timing('cascade', t2)
     // Background images come from computed styles, so they cannot be
     // collected with the <img> elements before the cascade has run.
-    if anyBackgroundUrl {
+    if anyBackgroundUrl || anyContentUrl {
         int tb = now()
         gatherBackgroundImages(page, page.doc)
         timing('background images', tb)

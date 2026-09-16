@@ -39,12 +39,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    min-content floor that keeps an item from shrinking below its own
    content, and nested flex containers as flex items. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
-3. **`::first-line`**, and the `url()` in `content` that would let
-   generated content carry an image. `::first-letter` is done, and
-   `::before` and `::after` generate boxes from strings, `attr()`,
-   `counter()`, `counters()` and the four quote keywords. `::first-line`
-   is the harder half: the line it names does not exist until line
-   breaking has run, so restyling it means breaking the line twice or
+3. **`::first-line`**. `::first-letter` is done, and `::before` and
+   `::after` generate boxes from strings, `attr()`, `counter()`,
+   `counters()`, the four quote keywords and `url()`. `::first-line` is
+   the harder one: the line it names does not exist until line breaking
+   has run, so restyling it means breaking the line twice or
    re-breaking after the style changes the metrics.
 
    None of this is gradeable by the selector instrument -- a
@@ -52,8 +51,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `querySelectorAll` has no answer to compare against -- nor by the
    property instrument, which cannot see `counter-reset`,
    `counter-increment` or `quotes` because Chromium does not enumerate
-   them on a computed style. It is measured by geometry and by the
-   generated text, as tests/unit/test_counters.f and tests/unit/test_quotes.f do.
+   them on a computed style, and grades `content` on an ordinary
+   element, where it does nothing whatever it holds. It is measured by
+   geometry and by the generated text and pixels, as
+   tests/unit/test_counters.f, tests/unit/test_quotes.f and
+   tests/render/content.f do.
 4. **CSS Images 3, completed**: `conic-gradient()`, gradient
    interpolation hints, and the one degenerate case left — an ellipse
    with zero height and non-zero width, which the standard renders as a

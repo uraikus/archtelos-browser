@@ -5,6 +5,49 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `content: url()` generates an image, and `width` stops applying to inline boxes
+
+CSS2 §12.2 lets `content` name a url, and generated content could not
+carry an image: the value parser rejected `url()` outright, so
+`#a::before { content: url(tile.png) }` generated no box at all. It now
+generates a replaced box at the image's intrinsic size, in the order it
+was written among the strings beside it -- `content: url(x) "ab"` and
+`content: "ab" url(x)` come to the same width and differ in where the
+image lands, which is the check that does not depend on either number
+being known in advance.
+
+Three things were measured against Chromium 141 rather than guessed. A
+`width` or `height` on such a pseudo-element does not resize the image.
+Its margin, border and padding surround the whole run and are applied
+once. A url that does not load generates nothing, where an `<img>` with
+the same url draws a frame and its alt text.
+
+A `content` that is nothing but a url resolves to no text at all, and
+that was indistinguishable from no pseudo-element: an empty `text`
+reads back as null (FINDINGS.md 4), and the text was what recorded the
+pseudo-element's existence. The style records it now, which a
+struct-typed map value can hold without that ambiguity.
+
+The measurement found a bug of its own. `width`, `min-width` and
+`max-width` do not apply to a non-replaced inline box (CSS2 §10.3.1),
+and inline layout already worked that way -- it lays an inline's
+children out and takes whatever they come to. The intrinsic pass did
+not, so the two disagreed: an inline-block wrapping
+`<span style="width:120px">b</span>` reserved 120 pixels and then drew
+ten. Chromium gives that wrapper the width of its content.
+
+That in turn needed the blockification the same specification requires
+(Display 3 §2.7): a flex or grid item's `display` computes to a block
+one, so `<span style="width:30px">` is an item thirty pixels wide and
+not a run of inline content. It had been getting its width from the
+intrinsic pass letting `width` through, which is the bug above -- two
+mistakes cancelling, and the flex suite was measuring both.
+
+Nothing is walked or fetched for this on a document whose generated
+content names no image, which is every document but the few that do,
+and a `content` with no url in it does not even build the arrays a run
+would need.
+
 ### Filter Effects 1 cannot be implemented, and now it is written down why
 
 A filter is a function over the pixels an element and its descendants

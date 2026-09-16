@@ -943,19 +943,42 @@ void func applyCounterProperty(v:ascii, depth:int, isReset:bool) {
 map[Style] pseudoStyles = {}
 map[text] pseudoContents = {}
 
+// `content` may interleave strings with url()s, and the boxes they
+// generate have to come out in the order they were written, so what a
+// pseudo-element carries is a run of pieces rather than one string: for
+// piece i, `urls[i]` is the image it names, or null when `parts[i]` is
+// the text it contributes.
+struct ContentRun {
+    parts:arr[text]
+    urls:arr[text]
+}
+map[ContentRun] pseudoContentRuns = {}
+
+// Raised when any resolved `content` named a url. Nothing walks the
+// tree for content images, and no generated box asks for one, unless
+// some declaration on the page actually has one.
+bool anyContentUrl = false
+
 void func resetPseudoElements() {
     map[Style] emptyStyles = {}
     map[text] emptyContents = {}
+    map[ContentRun] emptyRuns = {}
     pseudoStyles = emptyStyles
     pseudoContents = emptyContents
+    pseudoContentRuns = emptyRuns
+    anyContentUrl = false
 }
 
 text func pseudoKey(nid:int, which:text) {
     return `${nid}:${which}`
 }
 
+// The style rather than the content: an empty `text` reads back as null
+// (FINDINGS.md, "an empty text is null"), so a `content` that is
+// nothing but a url -- whose text is empty and whose boxes are in its
+// run -- would otherwise say the pseudo-element is not there.
 bool func hasPseudo(nid:int, which:text) {
-    return pseudoContents[pseudoKey(nid, which)] != null
+    return pseudoStyles[pseudoKey(nid, which)] != null
 }
 
 Style func pseudoStyleOf(nid:int, which:text) {
@@ -964,6 +987,10 @@ Style func pseudoStyleOf(nid:int, which:text) {
 
 text func pseudoContentOf(nid:int, which:text) {
     return pseudoContents[pseudoKey(nid, which)]
+}
+
+ContentRun func pseudoContentRunOf(nid:int, which:text) {
+    return pseudoContentRuns[pseudoKey(nid, which)]
 }
 
 arr[Match] func collectPseudoMatches(n:Node, which:text) {
@@ -992,6 +1019,17 @@ arr[Match] func collectPseudoMatches(n:Node, which:text) {
 // -- see FINDINGS.md, "one global namespace, and globals are not
 // hoisted".
 arr[text] contentQuotePairs = []
+
+// resolveContent answers the text a `content` value produces, and a
+// value may also name images, so the pieces it saw come back in these
+// rather than in the return value -- Festina returns one value from a
+// function (see FINDINGS.md, "one value out of a function"). They are
+// reset by resolveContent itself, so a caller that ignores them is not
+// left holding the previous element's.
+arr[text] contentRunParts = []
+arr[text] contentRunUrls = []
+bool contentRunHasUrl = false
+bool contentRunStarted = false
 
 // Splits a `quotes` value into its strings: pairs of open and close,
 // outermost first. Anything that is not a quoted string invalidates the
@@ -1041,12 +1079,23 @@ text func quoteStringAt(pairs:arr[text], depth:int, open:bool) {
 }
 
 text func resolveContent(v:ascii, n:Node) {
+    // Before the first return, not after it: an element with no
+    // `content` at all leaves through the next line, and a run left
+    // standing from the element before would be read as this one's.
+    // The arrays are not built here: a `content` with no url in it --
+    // every one on a page that does not use the feature -- would then
+    // allocate two of them per pseudo-element and use neither.
+    contentRunHasUrl = false
+    contentRunStarted = false
     if v == null { return null }
     ascii t = asciiTrim(v)
     if t == null || t.length == 0 { return null }
     ascii low = asciiLower(t)
     if low == 'none' || low == 'normal' { return null }
     text out = ''
+    // What the pieces already closed off contribute, so the value
+    // returned is still the whole text however many images split it.
+    text closed = ''
     int i = 0
     int len = t.length
     while i < len {
@@ -1126,10 +1175,48 @@ text func resolveContent(v:ascii, n:Node) {
             i = close + 1
             continue
         }
-        // url(), open-quote and the rest are not implemented; an
-        // unrecognized component makes the whole value invalid rather
-        // than silently dropping part of it
+        if asciiStartsWithLower(t, 'url(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            ascii raw = asciiTrim(t.slice(i + 4, close))
+            if raw.length >= 2 {
+                int q = raw.charCodeAt(0)
+                if q == CH_QUOTE || q == CH_APOS {
+                    if raw.charCodeAt(raw.length - 1) != q { return null }
+                    raw = raw.slice(1, raw.length - 1)
+                }
+            }
+            if raw.length == 0 { return null }
+            if !contentRunStarted {
+                arr[text] runParts = []
+                arr[text] runUrls = []
+                contentRunParts = runParts
+                contentRunUrls = runUrls
+                contentRunStarted = true
+            }
+            // The text written so far closes its own piece, so that the
+            // image lands between the strings either side of it.
+            contentRunParts.push(out)
+            contentRunUrls.push(null)
+            contentRunParts.push('')
+            contentRunUrls.push(raw.toText())
+            closed = closed + out
+            out = ''
+            i = close + 1
+            continue
+        }
+        // an unrecognized component makes the whole value invalid
+        // rather than silently dropping part of it
         return null
+    }
+    // Only a value that parsed all the way through has a run: an
+    // invalid component returns null above, and the flag stays down so
+    // the pieces already pushed are never used.
+    if contentRunStarted {
+        contentRunParts.push(out)
+        contentRunUrls.push(null)
+        contentRunHasUrl = true
+        return closed + out
     }
     return out
 }
@@ -1149,11 +1236,20 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     contentQuotePairs = noQuotes
     if anyQuotes { contentQuotePairs = parseQuotePairs(own.quotes.toAscii()) }
     text content = resolveContent(styleProp(props, 'content'), n)
-    if content == null { return }
+    // An empty `text` is null (FINDINGS.md, finding 4), so a content
+    // made only of images has to be recognized by its run.
+    if content == null && !contentRunHasUrl { return }
     // a generated box inherits from the element it is generated in
     Style s = computeStyleValues(n, own, false, props)
     pseudoStyles[pseudoKey(n.id, which)] = s
     pseudoContents[pseudoKey(n.id, which)] = content
+    if contentRunHasUrl {
+        ContentRun run
+        run.parts = contentRunParts
+        run.urls = contentRunUrls
+        pseudoContentRuns[pseudoKey(n.id, which)] = run
+        anyContentUrl = true
+    }
 }
 
 // ::first-letter carries no `content`: it restyles characters that are

@@ -481,12 +481,14 @@ Box func buildBox(n:Node, parentStyle:Style) {
         Box b = newBox(BOX_FLEX, n, s)
         b.blockLevel = d == DISPLAY_FLEX
         buildChildren(b, n, s)
+        blockifyItems(b)
         return b
     }
     if d == DISPLAY_GRID || d == DISPLAY_INLINE_GRID {
         Box b = newBox(BOX_GRID, n, s)
         b.blockLevel = d == DISPLAY_GRID
         buildChildren(b, n, s)
+        blockifyItems(b)
         return b
     }
     if d == DISPLAY_TABLE || d == DISPLAY_INLINE_TABLE {
@@ -541,6 +543,21 @@ Box func buildBox(n:Node, parentStyle:Style) {
     buildChildren(b, n, s)
     wrapInlineRuns(b)
     return b
+}
+
+// A flex or grid item's `display` is blockified (Display 3 §2.7): an
+// inline child of a flex container is an item, not a run of inline
+// content on a line, so `width` applies to it as it does to a block.
+// This is the same conversion an inline that turns out to contain
+// block-level content goes through in buildBox.
+void func blockifyItems(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind != BOX_INLINE { continue }
+        c.kind = BOX_BLOCK
+        c.blockLevel = true
+        wrapInlineRuns(c)
+    }
 }
 
 void func buildChildren(b:Box, n:Node, s:Style) {
@@ -640,10 +657,51 @@ void func applyFirstLetter(b:Box, n:Node) {
     splitFirstLetter(b, pseudoStyleOf(n.id, 'first-letter'))
 }
 
-// A ::before or ::after box: the generated content as a text box inside
-// a box of the pseudo-element's own style, so `display`, `color` and the
-// rest apply to it rather than to the element (CSS2 §12.1). Nothing is
-// generated unless the cascade resolved a `content` for it.
+// The pieces of a `content` that named a url, in the order written: a
+// text box for each string and a replaced image box for each image. An
+// image that did not load generates no box, which is what Chromium
+// does; the alternative is the broken-image frame an <img> draws, in
+// the middle of generated text that is otherwise correct.
+//
+// Answers whether this pseudo-element had such a run at all, so the
+// caller can fall back to the single text box every other one is.
+bool func addGeneratedRun(box:Box, n:Node, which:text, ps:Style) {
+    ContentRun run = pseudoContentRunOf(n.id, which)
+    if run == null { return false }
+    for int i = 0, i < run.parts.length, i++ {
+        if run.urls[i] == null {
+            if run.parts[i] != '' {
+                Node fake = newTextNode(run.parts[i])
+                fake.style = ps
+                addChildBox(box, buildTextBox(fake, ps))
+            }
+            continue
+        }
+        img loaded = loadedImages[run.urls[i]]
+        if loaded == null { continue }
+        // The image is a box of its own inside the generated box, so
+        // the pseudo-element's margin, padding and border surround the
+        // whole run and are applied once. Its own style is the
+        // inherited half of the pseudo-element's with an automatic
+        // width and height: a `width` on a pseudo-element whose content
+        // is an image does not resize the image, measured against
+        // Chromium 141.
+        Style gs = anonymousStyle(ps)
+        gs.display = DISPLAY_INLINE
+        gs.verticalAlign = ps.verticalAlign
+        Box gb = newBox(BOX_IMAGE, n, gs)
+        gb.image = loaded
+        gb.imgW = loaded.width
+        gb.imgH = loaded.height
+        addChildBox(box, gb)
+    }
+    return true
+}
+
+// A ::before or ::after box: the generated content inside a box of the
+// pseudo-element's own style, so `display`, `color` and the rest apply
+// to it rather than to the element (CSS2 §12.1). Nothing is generated
+// unless the cascade resolved a `content` for it.
 void func addGeneratedBox(b:Box, n:Node, which:text) {
     if n == null || n.id <= 0 { return }
     if !hasPseudo(n.id, which) { return }
@@ -653,6 +711,12 @@ void func addGeneratedBox(b:Box, n:Node, which:text) {
 
     Box box = newBox(displayIsBlockLevel(ps.display) ? BOX_BLOCK : BOX_INLINE, n, ps)
     box.blockLevel = displayIsBlockLevel(ps.display)
+    // A document whose generated content names no image never asks for
+    // a run, which is every document but the few that do.
+    if anyContentUrl && addGeneratedRun(box, n, which, ps) {
+        addChildBox(b, box)
+        return
+    }
     if content != null && content != '' {
         Node fake = newTextNode(content)
         fake.style = ps
@@ -996,17 +1060,25 @@ void func computeIntrinsicUncounted(b:Box) {
             maxW = maxInt(maxW, c.maxContent)
         }
     }
-    if s.width.kind == LEN_PX {
+    // `width`, `min-width` and `max-width` do not apply to a
+    // non-replaced inline box (CSS2 §10.3.1), and placeInline does not
+    // apply them: it lays the inline's children out and takes whatever
+    // width they come to. Letting them through here made the two passes
+    // disagree -- an inline-block wrapping `<span style="width:30px">b</span>`
+    // reserved 30 pixels for a box that then drew ten. The kind is
+    // asked second, so a box with no declared width pays nothing for
+    // the question.
+    if s.width.kind == LEN_PX && b.kind != BOX_INLINE {
         int fixed = roundPx(s.width.v)
         minW = fixed
         maxW = fixed
     }
-    if s.maxWidth.kind == LEN_PX {
+    if s.maxWidth.kind == LEN_PX && b.kind != BOX_INLINE {
         int mx = roundPx(s.maxWidth.v)
         maxW = minInt(maxW, mx)
         minW = minInt(minW, mx)
     }
-    if s.minWidth.kind == LEN_PX {
+    if s.minWidth.kind == LEN_PX && b.kind != BOX_INLINE {
         int mn = roundPx(s.minWidth.v)
         maxW = maxInt(maxW, mn)
         minW = maxInt(minW, mn)

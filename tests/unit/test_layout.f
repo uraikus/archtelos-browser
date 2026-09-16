@@ -207,4 +207,30 @@ check(liBox.lines[0].frags[0].x > loBox.lines[0].frags[0].x,
       'an inside marker pushes the first line along; an outside one does not')
 checkEqInt(loBox.w, liBox.w, 'and neither changes the item box itself')
 
+// ---- width does not apply to a non-replaced inline box -------------------
+// CSS2 §10.3.1: an inline box that is not replaced takes the width of
+// its content whatever `width` says. Inline layout already worked that
+// way; the intrinsic pass did not, so a shrink-to-fit box around such an
+// inline reserved the declared width and then drew the content width.
+// Chromium 141 gives the inline-block the same width either way.
+
+Box inlineW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span style="width:120px">b</span></div>'
+    + '</body>', 600)
+Box inlinePlain = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span>b</span></div>'
+    + '</body>', 600)
+Box wDiv = findBox(inlineW, 'div')
+Box pDiv = findBox(inlinePlain, 'div')
+check(wDiv != null && pDiv != null, 'both inline-blocks are in the box tree')
+checkEqInt(wDiv.w, pDiv.w, 'width on an inline span does not widen what contains it')
+
+// An inline-block in the same place does take the width, which is what
+// tells the check above from one that passes because nothing is applied.
+Box inlineBlockW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span style="display:inline-block;width:120px">b</span></div>'
+    + '</body>', 600)
+check(findBox(inlineBlockW, 'div').w > pDiv.w + 100,
+      'the same width on an inline-block does widen it')
+
 finish('layout')
