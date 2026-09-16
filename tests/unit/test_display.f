@@ -97,4 +97,44 @@ checkEqInt(displayFind(unknownDisplay, 'a').w, 300, 'an unknown display leaves a
 checkEqInt(displayFind(unknownDisplay, 'b').y, 30, 'stacking as a block does')
 checkEqInt(displayFind(unknownDisplay, 'c').h, 70, 'and the container is both of them')
 
+// ---- display: inline-table --------------------------------------------
+// A table is a table inside and an inline outside, so it sits on the
+// line with the text beside it and takes the width its cells ask for
+// rather than its containing block's. Chromium puts the box at x=58
+// after six monospace characters, 80px wide for two 40px cells, and
+// gives the wrapper a single 25px line -- against 60px of wrapper and
+// x=0 for the block-level `table` the same markup makes.
+const text TABLE_CELLS = '<tr><td style="padding:0;width:40px;height:20px">x</td>'
+    + '<td style="padding:0;width:40px;height:20px">y</td></tr></table>after</div></body>'
+const text TABLE_HEAD = displayHead
+    + '<style>table { border-spacing:0 } td { padding:0 }</style>'
+
+Box blockTable = displayLayout(TABLE_HEAD
+    + '<div id="w">before<table id="t" style="display:table">' + TABLE_CELLS, 400)
+Box inlineTable = displayLayout(TABLE_HEAD
+    + '<div id="w">before<table id="t" style="display:inline-table">' + TABLE_CELLS, 400)
+Box inlineBlock = displayLayout(TABLE_HEAD
+    + '<div id="w">before<span id="t" style="display:inline-block;width:80px;height:20px">'
+    + '</span>after</div></body>', 400)
+
+// The block-level table is the control: it is what `inline-table` did
+// before, so a change that did nothing would make the two agree.
+checkEqInt(displayFind(blockTable, 't').x, 0, 'a block-level table starts a line of its own')
+checkEqInt(displayFind(inlineTable, 't').x, displayFind(inlineBlock, 't').x,
+           'an inline-table sits where an inline-block of its width would')
+check(displayFind(inlineTable, 't').x != displayFind(blockTable, 't').x,
+      'which is not where the block-level table sits')
+
+// Width comes from the cells either way: a table is shrink-to-fit
+// whichever way round its outside is.
+checkEqInt(displayFind(inlineTable, 't').w, 80, 'two 40px cells make it 80 wide')
+checkEqInt(displayFind(inlineTable, 't').w, displayFind(blockTable, 't').w,
+           'and the outer display does not change that')
+
+// One line, not three: the text before and after share it.
+checkEqInt(displayFind(inlineTable, 'w').h, displayFind(inlineBlock, 'w').h,
+           'the wrapper is one line high, as it is for an inline-block')
+check(displayFind(inlineTable, 'w').h < displayFind(blockTable, 'w').h,
+      'and shorter than the three the block-level table needs')
+
 finish('display')

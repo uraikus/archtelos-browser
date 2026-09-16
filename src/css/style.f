@@ -29,6 +29,7 @@ const int DISPLAY_CONTENTS = 16
 const int DISPLAY_INLINE_FLEX = 17
 const int DISPLAY_GRID = 18
 const int DISPLAY_INLINE_GRID = 19
+const int DISPLAY_INLINE_TABLE = 20
 
 // A grid track's size. `fr` is not a length: it is a share of what the
 // fixed tracks leave, so it cannot live in a Len and has a field of its
@@ -761,6 +762,7 @@ bool func displayIsBlockLevel(d:int) {
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
         || d == DISPLAY_RUBY || d == DISPLAY_INLINE_FLEX
+        || d == DISPLAY_INLINE_TABLE
 }
 
 // A positioned box is one that `position` takes out of the ordinary

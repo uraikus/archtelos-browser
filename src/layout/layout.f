@@ -364,7 +364,7 @@ bool func boxIsPositioned(b:Box) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_GRID || b.kind == BOX_AUDIO
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_GRID || b.kind == BOX_TABLE || b.kind == BOX_AUDIO
 }
 
 // Whether a text box holds nothing but white space, which is the test
@@ -489,8 +489,11 @@ Box func buildBox(n:Node, parentStyle:Style) {
         buildChildren(b, n, s)
         return b
     }
-    if d == DISPLAY_TABLE {
+    if d == DISPLAY_TABLE || d == DISPLAY_INLINE_TABLE {
         Box b = newBox(BOX_TABLE, n, s)
+        // The inner layout is a table either way; `blockLevel` is the
+        // whole of the difference, as it is for flex and grid.
+        b.blockLevel = d == DISPLAY_TABLE
         buildTableChildren(b, n, s)
         return b
     }

@@ -5,6 +5,31 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### display: inline-table, and Display 3's three corrections done
+
+`inline-table` mapped to `DISPLAY_TABLE`, so it laid out as a
+block-level table: on a line of its own, with the text before and after
+it on lines of their own. It is a table inside and an inline outside,
+so it sits on the line beside that text and takes the width its cells
+ask for -- which a block-level table does too, so `blockLevel` is the
+whole of the difference, exactly as it already was for `inline-flex`
+and `inline-grid`.
+
+The checks compare the engine against itself rather than against
+Chromium's pixels, because they must: this engine's monospace advance
+is 10px where Chromium's is 9.6, so the same six characters put the box
+at 60 here and 58 there. What has to be true either way is that an
+`inline-table` sits where an `inline-block` of its width would, that a
+block-level `table` does not sit there, that both tables are the same
+width, and that the wrapper is one line high rather than three. The
+block-level table is the control, so a change that did nothing would
+make the two agree and fail the check that says they must differ.
+
+No blockification either way: a floated or absolutely positioned
+inline-level box keeps the display it was given, where the standard
+would make it the block-level equivalent. css-2026.md says so now
+rather than leaving it to be discovered.
+
 ### color-scheme, and CSS Color Adjustment 1 off the Nothing row
 
 `color-scheme` is parsed, inherited and acted on. The list is resolved

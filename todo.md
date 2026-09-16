@@ -157,9 +157,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 the media features about a user's own preferences that
 this browser has no way to learn (Media Queries 4), and the three about
 a folding screen; the gamut mapping Color 4 asks for, since a
-colour outside sRGB is clamped per channel here; `inline-table`, which lays out
-as a block-level table rather than an inline one (Display 3), and that
-level's two-value syntax; what is left of Text 3 — `line-break`, which is about
+colour outside sRGB is clamped per channel here; Display 3's two-value
+syntax, and the blockification it asks for, which would make a floated
+or absolutely positioned inline-level box the block-level equivalent
+instead of leaving its computed display alone; what is left of Text 3 — `line-break`, which is about
 CJK, and `text-wrap-style: balance`, which needs the line breaker run
 more than once — and what is left of Text Decoration 3:
 `text-decoration-skip-ink`, which needs the glyph outlines Festina does

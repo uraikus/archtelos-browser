@@ -2784,7 +2784,11 @@ int func parseDisplay(v:ascii, dflt:int) {
     if t == 'contents' { return DISPLAY_CONTENTS }
     if t == 'inline-block' { return DISPLAY_INLINE_BLOCK }
     if t == 'list-item' { return DISPLAY_LIST_ITEM }
-    if t == 'table' || t == 'inline-table' { return DISPLAY_TABLE }
+    if t == 'table' { return DISPLAY_TABLE }
+    // A table inside, an inline outside: it sits on the line beside the
+    // text rather than starting one, and takes the width its cells ask
+    // for, which a block-level table does too.
+    if t == 'inline-table' { return DISPLAY_INLINE_TABLE }
     if t == 'table-row' { return DISPLAY_TABLE_ROW }
     if t == 'table-cell' { return DISPLAY_TABLE_CELL }
     if t == 'table-row-group' { return DISPLAY_TABLE_ROW_GROUP }
