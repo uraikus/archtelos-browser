@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,733,176 |
-| This browser, all `.f` source | 891,785 |
+| This browser, the whole program | 2,733,240 |
+| This browser, all `.f` source | 893,796 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -696,6 +696,15 @@ alternating samples give 99 to 115 against the revision before it at
 101 to 106. The new side's best is two milliseconds under the old
 side's, which is a good run rather than a faster browser: nothing that
 changed executes here.
+
+`column-fill` and `hyphenate-character` cost **64 bytes** between them
+(2,733,176 → 2,733,240), which is a boolean and a text field plus two
+predicates inside conditions that already existed. The benchmark page
+has neither a multi-column container nor a soft hyphen, so neither is
+reached; the run put it at 99 ms and eight alternating samples give 98
+to 121 against the revision before it at 100 to 117 — two series with
+an outlier apiece and overlapping bests, which is the machine rather
+than the change.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,
