@@ -864,8 +864,8 @@ void func paintListMarker(b:Box) {
     int fs = s.fontSize
     paintFill(s.color, s.effectiveOpacity)
     int edge = contentX(b)
-    if s.listStyle == LIST_DECIMAL {
-        text label = `${b.listIndex}.`
+    if s.listStyle != LIST_DISC && s.listStyle != LIST_CIRCLE && s.listStyle != LIST_SQUARE {
+        text label = `${listMarkerLabel(b.listIndex, s.listStyle)}.`
         setFontFor(s)
         int w = measureTextWidth(label)
         pDrawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)

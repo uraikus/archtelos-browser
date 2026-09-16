@@ -50,6 +50,10 @@ const int LIST_DISC = 1
 const int LIST_CIRCLE = 2
 const int LIST_SQUARE = 3
 const int LIST_DECIMAL = 4
+const int LIST_LOWER_ALPHA = 5
+const int LIST_UPPER_ALPHA = 6
+const int LIST_LOWER_ROMAN = 7
+const int LIST_UPPER_ROMAN = 8
 
 // vertical-align (inline-level boxes only)
 const int VALIGN_BASELINE = 0
@@ -232,6 +236,51 @@ struct Gradient {
     radialRy:Len
     radialPosX:Len       // the centre, as a fraction of the box, not of any leftover
     radialPosY:Len
+}
+
+// The label a list marker shows for its position (CSS2 §12.6).
+//
+// The alphabetic system is bijective base 26: there is no zero digit, so
+// 26 is `z` and 27 is `aa`. Taking the remainder before the decrement
+// gives `a0` instead, which is the usual way to get this wrong.
+//
+// The roman system is the subtractive one -- 4 is `iv`, not `iiii` --
+// and it can write neither zero nor a negative nor anything above 3999.
+// A counter style that cannot represent its value falls back to decimal,
+// which the standard asks for and which is also the only answer that
+// leaves the list readable.
+text func listMarkerLabel(n:int, style:int) {
+    if style == LIST_LOWER_ALPHA || style == LIST_UPPER_ALPHA {
+        if n < 1 { return `${n}` }
+        text out = ''
+        int v = n
+        while v > 0 {
+            v--
+            int digit = v % 26
+            text letter = style == LIST_LOWER_ALPHA
+                ? 'abcdefghijklmnopqrstuvwxyz'[digit]
+                : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[digit]
+            out = letter + out
+            v = Math.floorDiv(v, 26)
+        }
+        return out
+    }
+    if style == LIST_LOWER_ROMAN || style == LIST_UPPER_ROMAN {
+        if n < 1 || n > 3999 { return `${n}` }
+        arr[int] values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+        arr[text] lower = ['m', 'cm', 'd', 'cd', 'c', 'xc', 'l', 'xl', 'x', 'ix', 'v', 'iv', 'i']
+        arr[text] upper = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I']
+        text out = ''
+        int v = n
+        for int i = 0, i < values.length, i++ {
+            while v >= values[i] {
+                out = out + (style == LIST_LOWER_ROMAN ? lower[i] : upper[i])
+                v = v - values[i]
+            }
+        }
+        return out
+    }
+    return `${n}`
 }
 
 Gradient func noGradient() {

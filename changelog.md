@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Ordered lists count in the system they were asked for
+
+`lower-alpha`, `upper-alpha`, `lower-roman` and `upper-roman` were all
+parsed as `decimal`, so a list asking for letters or roman numerals
+counted 1, 2, 3. They number as themselves now, and `<ol type>` — the
+oldest way to ask, which the standard maps to `list-style-type` — is
+honoured as a presentational hint, along with the `lower-latin` and
+`upper-latin` aliases.
+
+**The alphabetic system is bijective base 26**, which is where this
+invites an off-by-one: there is no zero digit, so 26 is `z` and 27 is
+`aa`. Taking the remainder before the decrement gives `a0`, and the
+checks pin 26, 27, 52, 53, 702 and 703 for exactly that reason.
+
+**Roman is the subtractive form** — 4 is `iv`, not `iiii` — and it can
+write neither zero, nor a negative, nor anything above 3999. Those fall
+back to decimal, which the standard asks of a counter style that cannot
+represent its value and which is also the only answer that leaves the
+list readable.
+
+Thirty-four checks in the new `tests/unit/test_markers.f`, which can
+compare the labels as strings, and five in the render suite that the
+label reaches the marker — two systems agreeing on every pixel would
+mean the style never arrived, which is precisely what used to happen.
+Regressing roman back to decimal fails three of them.
+
+**This moves no instrument count**, for the same reason the border
+styles did not: `--fields` says `list-style-type -> listStyle`, so the
+property registers for its own field and always did. The instrument
+asks whether a property is *read*, not whether it is *honoured*, and
+reading `lower-roman` and then counting in arabic satisfies the first
+question completely. That is the second feature this session where the
+count was right and the rendering wrong.
+
 ### box-shadow
 
 An outer shadow with offset, blur, spread and colour, a comma-separated

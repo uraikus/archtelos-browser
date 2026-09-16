@@ -538,6 +538,19 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
     if tag == 'hr' {
         if hasAttr(n, 'noshade') { addMatch(matches, 'border-color', '#808080', w) }
     }
+    // `<ol type>` is the oldest way to ask for letters or roman numerals,
+    // and the standard maps it to `list-style-type` as a presentational
+    // hint (HTML, "the `ol` element").
+    if tag == 'ol' {
+        text ty = getAttr(n, 'type')
+        if ty != null {
+            if ty == 'a' { addMatch(matches, 'list-style-type', 'lower-alpha', w) }
+            else if ty == 'A' { addMatch(matches, 'list-style-type', 'upper-alpha', w) }
+            else if ty == 'i' { addMatch(matches, 'list-style-type', 'lower-roman', w) }
+            else if ty == 'I' { addMatch(matches, 'list-style-type', 'upper-roman', w) }
+            else if ty == '1' { addMatch(matches, 'list-style-type', 'decimal', w) }
+        }
+    }
     if tag == 'input' {
         text ty = getAttr(n, 'type')
         if ty != null && (textLower(ty) == 'checkbox' || textLower(ty) == 'radio') {
@@ -2199,7 +2212,11 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'disc' { s.listStyle = LIST_DISC }
         else if t == 'circle' { s.listStyle = LIST_CIRCLE }
         else if t == 'square' { s.listStyle = LIST_SQUARE }
-        else if t == 'decimal' || t == 'lower-alpha' || t == 'upper-alpha' || t == 'lower-roman' || t == 'upper-roman' { s.listStyle = LIST_DECIMAL }
+        else if t == 'decimal' || t == 'decimal-leading-zero' { s.listStyle = LIST_DECIMAL }
+        else if t == 'lower-alpha' || t == 'lower-latin' { s.listStyle = LIST_LOWER_ALPHA }
+        else if t == 'upper-alpha' || t == 'upper-latin' { s.listStyle = LIST_UPPER_ALPHA }
+        else if t == 'lower-roman' { s.listStyle = LIST_LOWER_ROMAN }
+        else if t == 'upper-roman' { s.listStyle = LIST_UPPER_ROMAN }
     }
     s.hidden = isRoot ? false : parent.hidden
     ascii vis = styleProp(props, 'visibility')

@@ -89,9 +89,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    surface with a smaller API").
 6. **Fonts 3**: a real numeric `font-weight` instead of a boolean, and
    `@font-face`.
-7. **Counter Styles 3**, which also fixes the list markers: today
-   `lower-alpha`, `upper-alpha`, `lower-roman` and `upper-roman` all
-   render as arabic numerals.
+7. **Counter Styles 3**: `@counter-style`, and the predefined styles
+   beyond the six that number as themselves — the alphabetic and roman
+   ones are done, along with the `<ol type>` attribute. What is left is
+   `list-style-position` and `list-style-image` from Lists 3, and
+   `decimal-leading-zero`, which parses as plain decimal.
 8. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
    User Interface 3, Multi-column 1, Transforms 1, Compositing and

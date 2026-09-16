@@ -97,7 +97,9 @@ text with underline and line-through, borders in `solid`, `dashed`,
 `dotted` and `double` with each side keeping its own style, `box-shadow`
 with offset, blur, spread and a list of shadows, images,
 broken-image placeholders,
-list markers and opacity. `linear-gradient()` and
+list markers — `disc`, `circle`, `square`, `decimal`, `lower-alpha`,
+`upper-alpha`, `lower-roman` and `upper-roman`, and the `<ol type>`
+attribute that asks for them — and opacity. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle

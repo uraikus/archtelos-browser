@@ -92,4 +92,46 @@ clearCanvas()
 paintPage(p8, 0, 0, 300)
 check(getPixelColor(150, 27) == white, 'an audio without controls paints nothing')
 
+// ---- list markers count in the system they were asked for ---------------
+// The exact labels are checked in tests/unit/test_markers.f, which can
+// compare strings; what these check is that the label reaches the
+// marker, by painting the same list item under different systems and
+// requiring the ink to differ. Two systems that agreed on every pixel
+// would mean the style never reached the painter, which is what used to
+// happen: every ordered list counted in arabic numerals.
+text listHead = '<!doctype html><body style="margin:0;font:16px/20px monospace">'
+
+arr[int] func markerInk(html:text, rowFrom:int, rowTo:int) {
+    Page p = pageFromHtml(listHead + html + '</body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    arr[int] out = []
+    for int y = rowFrom, y < rowTo, y++ {
+        int n = 0
+        for int x = 0, x < 40, x++ { if getPixelColor(x, y) != white { n++ } }
+        out.push(n)
+    }
+    return out
+}
+
+bool func sameInk(a:arr[int], b:arr[int]) {
+    if a.length != b.length { return false }
+    for int i = 0, i < a.length, i++ { if a[i] != b[i] { return false } }
+    return true
+}
+
+text fourItems = '<li>x</li><li>x</li><li>x</li><li>x</li>'
+arr[int] dec4 = markerInk('<ol style="list-style-type:decimal">' + fourItems + '</ol>', 60, 80)
+arr[int] rom4 = markerInk('<ol style="list-style-type:lower-roman">' + fourItems + '</ol>', 60, 80)
+arr[int] ROM4 = markerInk('<ol style="list-style-type:upper-roman">' + fourItems + '</ol>', 60, 80)
+check(!sameInk(dec4, rom4), 'the fourth marker differs between decimal and lower-roman')
+check(!sameInk(rom4, ROM4), 'and between lower-roman and upper-roman')
+
+arr[int] one1 = markerInk('<ol type="1"><li>x</li></ol>', 0, 20)
+arr[int] oneA = markerInk('<ol type="a"><li>x</li></ol>', 0, 20)
+arr[int] oneI = markerInk('<ol type="I"><li>x</li></ol>', 0, 20)
+check(!sameInk(one1, oneA), 'an ol type=a marker differs from type=1')
+check(!sameInk(one1, oneI), 'and type=I differs from both')
+check(!sameInk(oneA, oneI), 'as the attribute is meant to')
+
 finish('render')
