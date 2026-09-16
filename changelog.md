@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Namespaces 3, in full
+
+`@namespace` binds a prefix, or a default namespace when it names none,
+and a selector's namespace part is honoured: `ns|E` for a declared
+prefix, `*|E` for any namespace, `|E` for no namespace, and a bare `E`
+for any namespace until a default is declared and then only that one. A
+prefix nobody declared makes the selector invalid, so it matches nothing
+rather than being read as a type selector with that name.
+
+Every element in an HTML document is in the XHTML namespace, so the
+whole specification comes down to one string comparison — which is why
+this one can be honoured rather than approximated, and why the checks
+ask the four spellings against each other: each alone would pass for a
+parser that ignored the syntax and read `h|p` as a tag called `h`.
+
+Twelve checks in the new `tests/unit/test_namespaces.f`. The selector
+instrument is unmoved at 56 of 61, which is the check that adding `|` to
+the selector grammar did not disturb the selectors already there.
+
+No property moves, because the specification has none. It is the fourth
+of the snapshot's untouched specifications to close, and the first to
+close completely.
+
 ### Right-to-left text is drawn right to left
 
 Hebrew and Arabic rendered before this — the decoder, the DOM, layout

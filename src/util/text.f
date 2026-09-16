@@ -38,6 +38,7 @@ const int CH_COLON = 58
 const int CH_SEMI = 59
 const int CH_LT = 60
 const int CH_EQ = 61
+const int CH_PIPE = 124
 const int CH_GT = 62
 const int CH_QUESTION = 63
 const int CH_AT = 64

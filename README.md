@@ -243,12 +243,12 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-seven unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-eight unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-containment, alignment, grid, columns, bidi, audio, the preload
-scanner), twelve offscreen render suites that check
+containment, alignment, grid, columns, bidi, namespaces, audio, the
+preload scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
 borders, border images, text decoration, transforms, right-to-left

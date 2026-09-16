@@ -135,8 +135,8 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     machinery paged media and the `break-*` properties want, so it is
     one piece of work for three items.
 13. The remainder of the official definition, lower value for this
-   renderer but still part of the definition: Basic User Interface 3,
-   Easing 1, Namespaces 3.
+   renderer but still part of the definition: Basic User Interface 3
+   and Easing 1.
 14. **Writing Modes 3, completed**: `writing-mode` and
     `text-orientation`, which need a second layout axis rather than a
     property; the explicit embedding and isolate codes (the X rules of

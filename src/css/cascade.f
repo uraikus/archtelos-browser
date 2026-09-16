@@ -97,6 +97,7 @@ bool cascadeSawTransform = false
 
 void func cascadeReset() {
     cascadeSawTransform = false
+    cssResetNamespaces()
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
     // could never be returned for a new page -- but it would sit in the
@@ -374,6 +375,12 @@ bool func nthMatches(pos:int, stepA:int, offB:int) {
 bool func matchCompound(nid:int, c:Compound) {
     if nodeRegistry[nid].kind != NODE_ELEMENT { return false }
     if c.unsupported { return false }
+    // Every element this engine builds comes from an HTML document, so
+    // it is in the XHTML namespace; a namespace part is a question
+    // about that one string (CSS Namespaces 3).
+    if c.nsKind != NS_DEFAULT || cssDefaultNamespace != '' {
+        if !namespaceAccepts(c, XHTML_NS) { return false }
+    }
     if c.tag != '' && c.tag != nodeRegistry[nid].tag { return false }
     if c.id != '' {
         text id = attrOf(nid, 'id')

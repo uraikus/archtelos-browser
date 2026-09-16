@@ -32,6 +32,13 @@ struct AttrSel {
 
 struct Compound {
     tag:text                // '' = any
+    // The namespace part, which is whatever stood before a `|`.
+    // NS_ANY is `*|`, NS_NONE is a bare `|`, NS_PREFIX names one that
+    // was declared, and NS_DEFAULT is a selector with no `|` at all --
+    // which matches any namespace until an `@namespace` with no prefix
+    // says otherwise.
+    nsKind:int
+    nsUri:text
     id:text                 // '' = none
     classes:arr[text]
     attrs:arr[AttrSel]
@@ -78,6 +85,70 @@ struct Stylesheet {
 }
 
 int cssRuleCounter = 0
+// CSS Namespaces 3. Every element in an HTML document is in the XHTML
+// namespace, so a namespace part is a question about one string.
+const int NS_DEFAULT = 0    // no `|` in the selector at all
+const int NS_ANY = 1        // `*|`
+const int NS_NONE = 2       // a bare `|`
+const int NS_PREFIX = 3     // a declared prefix, its URI in nsUri
+const int NS_UNKNOWN = 4    // a prefix nobody declared: the selector is invalid
+
+const text XHTML_NS = 'http://www.w3.org/1999/xhtml'
+
+// The prefixes an `@namespace` rule declared, and the default one.
+map[text] cssNamespacePrefixes = {}
+text cssDefaultNamespace = ''
+
+void func cssResetNamespaces() {
+    map[text] empty = {}
+    cssNamespacePrefixes = empty
+    cssDefaultNamespace = ''
+}
+
+// The `@namespace` prelude, split on whitespace outside parentheses.
+// Written here for the same reason as parseNamespaceUri below: the
+// cascade's tokenizer is declared in the file that imports this one.
+arr[ascii] func namespacePreludeTokens(v:ascii) {
+    arr[ascii] out = []
+    int n = v.length
+    int i = 0
+    while i < n {
+        while i < n && isSpaceCode(v.charCodeAt(i)) { i++ }
+        if i >= n { break }
+        int start = i
+        int depth = 0
+        while i < n {
+            int c = v.charCodeAt(i)
+            if c == CH_LPAREN { depth++ }
+            else if c == CH_RPAREN { depth-- }
+            else if isSpaceCode(c) && depth <= 0 { break }
+            i++
+        }
+        out.push(v.slice(start, i))
+    }
+    return out
+}
+
+// The URI of an `@namespace` prelude: `url(...)` or a quoted string.
+// The unwrapping is written here rather than shared with the cascade's
+// because the cascade imports this file and not the other way round,
+// and a global is only visible below its own declaration (FINDINGS.md,
+// finding 9).
+text func parseNamespaceUri(v:ascii) {
+    ascii t = asciiTrim(v)
+    if t.length == 0 { return '' }
+    if asciiStartsWithLower(t, 'url(', 0) && t.charCodeAt(t.length - 1) == CH_RPAREN {
+        t = asciiTrim(t.slice(4, t.length - 1))
+        if t.length == 0 { return '' }
+    }
+    int first = t.charCodeAt(0)
+    if t.length >= 2 && (first == CH_QUOTE || first == CH_APOS)
+        && t.charCodeAt(t.length - 1) == first {
+        return t.slice(1, t.length - 1).toText()
+    }
+    return t.toText()
+}
+
 // The viewport width @media queries are evaluated against; set by the
 // browser before parsing author sheets.
 int cssViewportWidth = 800
@@ -295,6 +366,33 @@ int func scanIdent(from:int) {
 
 // Parses one compound selector starting at selPos (which must not be
 // at whitespace); leaves selPos after it.
+// The type selector after a namespace part: a name, or `*` for any.
+void func readTypeAfterNamespace(comp:Compound) {
+    int n = selSrc.length
+    if selPos >= n { return }
+    if selSrc.charCodeAt(selPos) == CH_STAR { selPos++  return }
+    int end = scanIdent(selPos)
+    if end > selPos {
+        comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
+        selPos = end
+    }
+}
+
+// Whether a compound's namespace part accepts an element in `uri`.
+// Every element in an HTML document is in the XHTML namespace, so this
+// is one string comparison and the four spellings differ only in which
+// string they compare against.
+bool func namespaceAccepts(comp:Compound, uri:text) {
+    if comp.nsKind == NS_ANY { return true }
+    if comp.nsKind == NS_NONE { return uri == '' }
+    if comp.nsKind == NS_UNKNOWN { return false }
+    if comp.nsKind == NS_PREFIX { return comp.nsUri == uri }
+    // no `|` at all: a default namespace applies if one was declared,
+    // and otherwise the selector matches in any namespace
+    if cssDefaultNamespace == '' { return true }
+    return cssDefaultNamespace == uri
+}
+
 Compound func parseCompound() {
     Compound comp = newCompound()
     int n = selSrc.length
@@ -303,6 +401,20 @@ Compound func parseCompound() {
         int c = selSrc.charCodeAt(selPos)
         if c == CH_STAR {
             selPos++
+            // `*|` is a namespace wildcard rather than a universal
+            // selector, so the `*` belongs to the namespace part.
+            if selPos < n && selSrc.charCodeAt(selPos) == CH_PIPE
+                && selPos + 1 < n && selSrc.charCodeAt(selPos + 1) != CH_EQ {
+                selPos++
+                comp.nsKind = NS_ANY
+                readTypeAfterNamespace(comp)
+            }
+            any = true
+        } else if c == CH_PIPE && (selPos + 1 >= n || selSrc.charCodeAt(selPos + 1) != CH_EQ) {
+            // a bare `|` is the no-namespace selector
+            selPos++
+            comp.nsKind = NS_NONE
+            readTypeAfterNamespace(comp)
             any = true
         } else if c == CH_HASH {
             int end = scanIdent(selPos + 1)
@@ -393,6 +505,19 @@ Compound func parseCompound() {
             any = true
         } else if isNameCode(c) && !any {
             int end = scanIdent(selPos)
+            // `prefix|E` -- but not `[attr|=value]`, which is handled
+            // in the attribute branch and never reaches here.
+            if end < n && selSrc.charCodeAt(end) == CH_PIPE
+                && end + 1 < n && selSrc.charCodeAt(end + 1) != CH_EQ {
+                text prefix = selSrc.slice(selPos, end).toText()
+                text uri = cssNamespacePrefixes[prefix]
+                comp.nsKind = uri == null ? NS_UNKNOWN : NS_PREFIX
+                comp.nsUri = uri == null ? '' : uri
+                selPos = end + 1
+                readTypeAfterNamespace(comp)
+                any = true
+                continue
+            }
             comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
             selPos = end
             any = true
@@ -839,6 +964,16 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
             int semi = asciiIndexOf(src, ';', nameEnd)
             int brace = asciiIndexOf(src, '{', nameEnd)
             if brace < 0 || (semi >= 0 && semi < brace) {
+                // a statement at-rule, ending at the semicolon
+                if atName == 'namespace' {
+                    int stop = semi < 0 ? n : semi
+                    arr[ascii] parts = namespacePreludeTokens(asciiTrim(src.slice(nameEnd, stop)))
+                    if parts.length == 1 {
+                        cssDefaultNamespace = parseNamespaceUri(parts[0])
+                    } else if parts.length >= 2 {
+                        cssNamespacePrefixes[parts[0].toText()] = parseNamespaceUri(parts[1])
+                    }
+                }
                 i = semi < 0 ? n : semi + 1
                 continue
             }
