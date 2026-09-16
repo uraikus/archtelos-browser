@@ -1858,9 +1858,8 @@ int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     return c
 }
 
-// One side's border-style. Everything that is not a broken or doubled
-// line paints solid, which is what `groove`, `ridge`, `inset` and
-// `outset` get: the right width and colour, without the relief.
+// One side's border-style. Anything the painter does not know paints
+// solid.
 int func borderStyleProp(props:map[text], side:text) {
     ascii v = styleProp(props, `border-${side}-style`)
     // The initial value is `none`, and saying so matters beyond tidiness:
@@ -1874,6 +1873,10 @@ int func borderStyleProp(props:map[text], side:text) {
     if t == 'dashed' { return BORDER_DASHED }
     if t == 'dotted' { return BORDER_DOTTED }
     if t == 'double' { return BORDER_DOUBLE }
+    if t == 'groove' { return BORDER_GROOVE }
+    if t == 'ridge' { return BORDER_RIDGE }
+    if t == 'inset' { return BORDER_INSET }
+    if t == 'outset' { return BORDER_OUTSET }
     return BORDER_SOLID
 }
 

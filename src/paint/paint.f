@@ -789,10 +789,67 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
 // a dash three times the border's thickness, a dot square, each
 // separated by a gap of its own length, and the run is stretched so a
 // whole number of them spans the edge rather than leaving a stub.
-void func paintBorderSide(x:int, y:int, w:int, h:int, horizontal:bool, style:int) {
+// The darker of the two shades the relief styles use. CSS2 §8.5.3 fixes
+// only that the colours are "based on" the border colour and leaves the
+// rest to the user agent; half brightness is the usual choice and is
+// what makes a `groove` read as carved rather than as two arbitrary
+// colours.
+int func borderShadeDark(c:int) {
+    return packColor(Math.floorDiv(colorRed(c), 2), Math.floorDiv(colorGreen(c), 2),
+                     Math.floorDiv(colorBlue(c), 2), colorAlpha(c))
+}
+
+// `inset`, `outset`, `groove` and `ridge` shade an edge to suggest
+// relief. `inset` darkens the top and left so the box reads as sunken
+// and `outset` does the reverse; `groove` and `ridge` split each edge in
+// half and shade the halves oppositely, which is what carves a line into
+// the surface rather than tilting the whole box.
+//
+// `leading` says which end of the box this edge is: the top and the left
+// take one shade, the bottom and the right the other.
+void func paintBorderRelief(x:int, y:int, w:int, h:int, horizontal:bool,
+                            leading:bool, style:int, base:int, opacity:float) {
+    int thick = horizontal ? h : w
+    bool outerDark = false
+    bool innerDark = false
+    if style == BORDER_INSET { outerDark = leading  innerDark = leading }
+    else if style == BORDER_OUTSET { outerDark = !leading  innerDark = !leading }
+    else if style == BORDER_GROOVE { outerDark = leading  innerDark = !leading }
+    else { outerDark = !leading  innerDark = leading }
+
+    int half = Math.floorDiv(thick, 2)
+    if half < 1 || outerDark == innerDark {
+        // one shade for the whole edge: inset and outset, and any edge
+        // too thin to split
+        paintFill(outerDark ? borderShadeDark(base) : base, opacity)
+        pDrawRect(x, y, w, h)
+        return
+    }
+    // The outer half is the one against the outside of the box, which is
+    // the near side for a top or left edge and the far side for the
+    // others.
+    int outerOffset = leading ? 0 : thick - half
+    int innerOffset = leading ? half : 0
+    int innerThick = thick - half
+    paintFill(outerDark ? borderShadeDark(base) : base, opacity)
+    if horizontal { pDrawRect(x, y + outerOffset, w, half) }
+    else { pDrawRect(x + outerOffset, y, half, h) }
+    paintFill(innerDark ? borderShadeDark(base) : base, opacity)
+    if horizontal { pDrawRect(x, y + innerOffset, w, innerThick) }
+    else { pDrawRect(x + innerOffset, y, innerThick, h) }
+}
+
+void func paintBorderSide(x:int, y:int, w:int, h:int, horizontal:bool, leading:bool,
+                          style:int, base:int, opacity:float) {
     if w <= 0 || h <= 0 { return }
     int thick = horizontal ? h : w
     int along = horizontal ? w : h
+    if style == BORDER_GROOVE || style == BORDER_RIDGE
+        || style == BORDER_INSET || style == BORDER_OUTSET {
+        paintBorderRelief(x, y, w, h, horizontal, leading, style, base, opacity)
+        return
+    }
+    paintFill(base, opacity)
     if style == BORDER_SOLID || style == BORDER_NONE {
         pDrawRect(x, y, w, h)
         return
@@ -865,20 +922,20 @@ void func paintBorders(b:Box) {
         return
     }
     if b.bt > 0 && colorIsPaintable(s.borderTopColor) && !skipTop {
-        paintFill(s.borderTopColor, s.effectiveOpacity)
-        paintBorderSide(x, y, w, b.bt, true, s.borderTopStyle)
+        paintBorderSide(x, y, w, b.bt, true, true, s.borderTopStyle,
+                        s.borderTopColor, s.effectiveOpacity)
     }
     if b.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-        paintFill(s.borderBottomColor, s.effectiveOpacity)
-        paintBorderSide(x, y + h - b.bb, w, b.bb, true, s.borderBottomStyle)
+        paintBorderSide(x, y + h - b.bb, w, b.bb, true, false, s.borderBottomStyle,
+                        s.borderBottomColor, s.effectiveOpacity)
     }
     if b.bl > 0 && colorIsPaintable(s.borderLeftColor) && !skipLeft {
-        paintFill(s.borderLeftColor, s.effectiveOpacity)
-        paintBorderSide(x, y, b.bl, h, false, s.borderLeftStyle)
+        paintBorderSide(x, y, b.bl, h, false, true, s.borderLeftStyle,
+                        s.borderLeftColor, s.effectiveOpacity)
     }
     if b.br > 0 && colorIsPaintable(s.borderRightColor) {
-        paintFill(s.borderRightColor, s.effectiveOpacity)
-        paintBorderSide(x + w - b.br, y, b.br, h, false, s.borderRightStyle)
+        paintBorderSide(x + w - b.br, y, b.br, h, false, false, s.borderRightStyle,
+                        s.borderRightColor, s.effectiveOpacity)
     }
     fillAlpha(1.0)
 }

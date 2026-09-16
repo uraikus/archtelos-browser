@@ -147,12 +147,13 @@ const int POS_STICKY = 4
 // border-style
 const int BORDER_NONE = 0
 const int BORDER_SOLID = 1
-// `groove`, `ridge`, `inset` and `outset` shade a border with a lighter
-// and a darker edge; they are accepted and painted solid, which is the
-// right width and colour and the wrong relief.
 const int BORDER_DASHED = 2
 const int BORDER_DOTTED = 3
 const int BORDER_DOUBLE = 4
+const int BORDER_GROOVE = 5
+const int BORDER_RIDGE = 6
+const int BORDER_INSET = 7
+const int BORDER_OUTSET = 8
 
 // text-transform
 const int TT_NONE = 0

@@ -123,4 +123,52 @@ scanRow(1, 0, 60)
 check(runRed > 0, 'a style with no width takes the medium width and paints')
 check(runGap > 0, 'dashed, not solid')
 
+// ---- groove, ridge, inset and outset ------------------------------------
+// These four shade an edge to suggest relief, and the standard leaves
+// the two shades to the user agent: CSS2 §8.5.3 says only that the
+// colours are "based on" the border colour. So these checks assert the
+// relationships the standard does fix -- which edges differ from which,
+// and which pair is the reverse of which -- rather than naming a shade
+// and testing this engine's arithmetic against itself.
+//
+// The box is 60x20 of content inside an 8px border, so the top edge is
+// rows 0-7, the bottom rows 28-35, and each edge's outer and inner
+// halves are four rows each.
+
+shotBox('border:8px solid red')
+color solidTop = getPixelColor(38, 3)
+color solidBottom = getPixelColor(38, 31)
+check(solidTop == solidBottom, 'a solid border is the same colour on opposite edges')
+
+shotBox('border:8px inset red')
+color insetTop = getPixelColor(38, 3)
+color insetBottom = getPixelColor(38, 31)
+check(insetTop != insetBottom, 'inset shades the top and bottom differently')
+check(insetTop != solidTop || insetBottom != solidBottom, 'and neither like a solid border')
+
+shotBox('border:8px outset red')
+color outsetTop = getPixelColor(38, 3)
+color outsetBottom = getPixelColor(38, 31)
+check(outsetTop != outsetBottom, 'outset shades them differently too')
+check(outsetTop == insetBottom, 'and is inset turned over: its top is inset bottom')
+check(outsetBottom == insetTop, 'and its bottom is inset top')
+
+shotBox('border:8px groove red')
+color grooveOuter = getPixelColor(38, 1)
+color grooveInner = getPixelColor(38, 6)
+check(grooveOuter != grooveInner, 'groove splits one edge into two shades')
+
+shotBox('border:8px ridge red')
+color ridgeOuter = getPixelColor(38, 1)
+color ridgeInner = getPixelColor(38, 6)
+check(ridgeOuter != ridgeInner, 'ridge splits it too')
+check(ridgeOuter == grooveInner, 'and is groove turned over: its outer half is groove inner')
+check(ridgeInner == grooveOuter, 'and its inner half is groove outer')
+
+// The left and right edges take the same treatment as the top and
+// bottom, which is what makes the whole box read as raised or sunken
+// rather than only its horizontal edges.
+shotBox('border:8px inset red')
+check(getPixelColor(3, 18) != getPixelColor(72, 18), 'inset shades the left and right edges apart as well')
+
 finish('borders')

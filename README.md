@@ -93,8 +93,9 @@ percentage columns, `colspan`, row heights and vertical alignment. Form
 controls are drawn as boxes.
 
 **Painting** covers backgrounds, borders with rounded corners,
-text with underline and line-through, borders in `solid`, `dashed`,
-`dotted` and `double` with each side keeping its own style, `box-shadow`
+text with underline and line-through, borders in every CSS style —
+`solid`, `dashed`, `dotted`, `double`, and the four relief styles that
+shade their edges — with each side keeping its own, `box-shadow`
 with offset, blur, spread, `inset` and a list of shadows, images,
 broken-image placeholders,
 list markers — `disc`, `circle`, `square`, `decimal`, `lower-alpha`,

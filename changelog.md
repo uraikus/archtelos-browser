@@ -5,6 +5,31 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### groove, ridge, inset and outset
+
+The last four border styles painted solid. They shade an edge against
+its opposite now, which is what makes a box read as raised or sunken and
+a line as carved into the surface.
+
+- **`inset`** darkens the top and left; **`outset`** darkens the bottom
+  and right instead.
+- **`groove`** splits each edge in half and shades the halves
+  oppositely; **`ridge`** reverses it.
+
+The standard fixes only that the two colours are "based on" the border
+colour (CSS2 §8.5.3), so the shades are the colour itself and half its
+brightness — and the checks assert the relationships the standard *does*
+fix rather than naming a shade: that `inset` makes opposite edges
+differ, that `outset` is `inset` turned over, that `groove` splits one
+edge into two, and that `ridge` is `groove` turned over. Naming a shade
+would have tested this engine's arithmetic against itself.
+
+Six more pixel checks, valgrind clean; dropping two of the four keywords
+from the parser fails six of them.
+
+With this, **every border style CSS defines paints as itself**, per
+side.
+
 ### inset shadows
 
 `box-shadow`'s `inset` keyword was parsed and thrown away. It paints
