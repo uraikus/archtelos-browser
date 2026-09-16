@@ -1580,6 +1580,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'min-block-size' { name = 'min-height' }
     if name == 'max-block-size' { name = 'max-height' }
     if name == 'overflow-block' || name == 'overflow-inline' { name = 'overflow' }
+    if name == 'border-start-start-radius' { name = 'border-top-left-radius' }
+    if name == 'border-start-end-radius' { name = 'border-top-right-radius' }
+    if name == 'border-end-start-radius' { name = 'border-bottom-left-radius' }
+    if name == 'border-end-end-radius' { name = 'border-bottom-right-radius' }
     if name == 'border-block-start-width' { name = 'border-top-width' }
     if name == 'border-block-end-width' { name = 'border-bottom-width' }
     if name == 'border-inline-start-width' { name = 'border-left-width' }
@@ -1926,6 +1930,17 @@ int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     int c = parseCssColor(v, currentColor)
     if c == COLOR_UNSET { return dflt }
     return c
+}
+
+// One corner's radius, or the value the shorthand already gave it.
+int func cornerRadiusProp(props:map[text], name:text, fontSize:int, dflt:int) {
+    ascii v = styleProp(props, name)
+    if v == null { return dflt }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return dflt }
+    Len l = parseLength(t[0], fontSize)
+    if l.kind != LEN_PX { return dflt }
+    return maxInt(roundPx(l.v), 0)
 }
 
 // One side's border-style. Anything the painter does not know paints
@@ -2507,15 +2522,37 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.borderRightStyle = borderStyleProp(props, 'right')
     s.borderBottomStyle = borderStyleProp(props, 'bottom')
     s.borderLeftStyle = borderStyleProp(props, 'left')
-    s.borderRadius = 0
+    // border-radius: the shorthand's one-to-four values run top-left,
+    // top-right, bottom-right, bottom-left, each missing one taking the
+    // value of the corner opposite it. The elliptical `/` form is cut at
+    // the slash and only its horizontal radii are read, which css-2026.md
+    // records.
+    s.radiusTopLeft = 0
+    s.radiusTopRight = 0
+    s.radiusBottomRight = 0
+    s.radiusBottomLeft = 0
     ascii br = styleProp(props, 'border-radius')
     if br != null {
         arr[ascii] t = cssTokens(br)
-        if t.length > 0 {
-            Len l = parseLength(t[0], s.fontSize)
-            if l.kind == LEN_PX { s.borderRadius = maxInt(roundPx(l.v), 0) }
+        arr[int] corner = []
+        for int i = 0, i < t.length, i++ {
+            if t[i] == '/' { break }
+            Len l = parseLength(t[i], s.fontSize)
+            corner.push(l.kind == LEN_PX ? maxInt(roundPx(l.v), 0) : 0)
+        }
+        if corner.length > 0 {
+            s.radiusTopLeft = corner[0]
+            s.radiusTopRight = corner.length > 1 ? corner[1] : corner[0]
+            s.radiusBottomRight = corner.length > 2 ? corner[2] : corner[0]
+            s.radiusBottomLeft = corner.length > 3 ? corner[3] : s.radiusTopRight
         }
     }
+    s.radiusTopLeft = cornerRadiusProp(props, 'border-top-left-radius', s.fontSize, s.radiusTopLeft)
+    s.radiusTopRight = cornerRadiusProp(props, 'border-top-right-radius', s.fontSize, s.radiusTopRight)
+    s.radiusBottomRight = cornerRadiusProp(props, 'border-bottom-right-radius', s.fontSize, s.radiusBottomRight)
+    s.radiusBottomLeft = cornerRadiusProp(props, 'border-bottom-left-radius', s.fontSize, s.radiusBottomLeft)
+    s.borderRadius = maxInt(maxInt(s.radiusTopLeft, s.radiusTopRight),
+                            maxInt(s.radiusBottomRight, s.radiusBottomLeft))
     s.borderSpacing = 0
     ascii bs = styleProp(props, 'border-spacing')
     if bs != null {

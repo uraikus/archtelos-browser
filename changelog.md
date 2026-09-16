@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Every corner its own radius
+
+`border-radius` read the first token and gave all four corners that one
+number, so the shorthand's one-to-four-value form was three quarters
+ignored and the eight per-corner properties did nothing at all.
+
+Each corner now carries its own radius: the shorthand's values run
+top-left, top-right, bottom-right, bottom-left with each missing one
+taking the value of the corner opposite it, the four physical longhands
+override it, and the four logical names — `border-start-start-radius`
+and its family — map onto the physical corners. Every radius is capped
+at half the shorter side of the box, which is the standard's rule for
+overlapping curves. The elliptical `/` form is cut at the slash and only
+its horizontal radii are read; css-2026.md says so.
+
+**Properties 113 → 121**, and `--fields` shows each of the eight landing
+on the corner it names — `border-end-start-radius -> radiusBottomLeft`
+— rather than only on the aggregate `borderRadius`, which is what it
+showed first and which would have scored all eight for one field.
+`borderRadius` survives as the maximum of the four, because it is the
+gate that asks once per box whether any corner is rounded at all.
+
+Nineteen checks in `tests/render/borders.f` (33 → 52): each rounds one
+corner and asserts the other three stay square, which is the shape of
+check that the old code passed only by accident — one radius for all
+four corners rounds the asked-for corner too. Two spellings are put
+against each other where there are two: the longhand against the
+shorthand slot it fills, and the two-value form against the diagonals it
+means. Eight more in `tests/unit/test_logical.f` (48 → 56) put each
+logical corner name against its physical twin.
+
 ### The logical box
 
 Twenty-four logical properties did nothing: `border-block-start-width`,

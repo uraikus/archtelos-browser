@@ -50,6 +50,10 @@ void func checkSameLen(logical:text, physical:text, read:text, label:text) {
     else if read == 'paddingTop' { va = resolveLen(a.paddingTop, 0, -1)  vb = resolveLen(b.paddingTop, 0, -1) }
     else if read == 'paddingBottom' { va = resolveLen(a.paddingBottom, 0, -1)  vb = resolveLen(b.paddingBottom, 0, -1) }
     else if read == 'overflowHidden' { va = a.overflowHidden ? 1 : 0  vb = b.overflowHidden ? 1 : 0 }
+    else if read == 'radiusTopLeft' { va = a.radiusTopLeft  vb = b.radiusTopLeft }
+    else if read == 'radiusTopRight' { va = a.radiusTopRight  vb = b.radiusTopRight }
+    else if read == 'radiusBottomLeft' { va = a.radiusBottomLeft  vb = b.radiusBottomLeft }
+    else if read == 'radiusBottomRight' { va = a.radiusBottomRight  vb = b.radiusBottomRight }
     checkEqInt(va, vb, label)
     check(va != 0, label + ' (and is not simply the initial value on both)')
 }
@@ -115,5 +119,17 @@ checkSameLen('border-block:3px solid red', 'border-top:3px solid red;border-bott
              'borderBottom', 'the border-block shorthand sets both block edges')
 checkSameLen('border-inline:3px solid red', 'border-left:3px solid red;border-right:3px solid red',
              'borderLeft', 'the border-inline shorthand sets both inline edges')
+
+// ---- the logical corners ---------------------------------------------
+// `start-start` is the corner where the block and inline starts meet,
+// which in this writing mode is the top left.
+checkSameLen('border-start-start-radius:9px', 'border-top-left-radius:9px',
+             'radiusTopLeft', 'border-start-start-radius is the top-left corner')
+checkSameLen('border-start-end-radius:9px', 'border-top-right-radius:9px',
+             'radiusTopRight', 'border-start-end-radius is the top-right corner')
+checkSameLen('border-end-start-radius:9px', 'border-bottom-left-radius:9px',
+             'radiusBottomLeft', 'border-end-start-radius is the bottom-left corner')
+checkSameLen('border-end-end-radius:9px', 'border-bottom-right-radius:9px',
+             'radiusBottomRight', 'border-end-end-radius is the bottom-right corner')
 
 finish('logical properties')

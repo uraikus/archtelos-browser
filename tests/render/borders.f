@@ -171,4 +171,53 @@ check(ridgeInner == grooveOuter, 'and its inner half is groove outer')
 shotBox('border:8px inset red')
 check(getPixelColor(3, 18) != getPixelColor(72, 18), 'inset shades the left and right edges apart as well')
 
+// ---- border-radius, per corner -------------------------------------------
+// A radius rounds one corner away, so the pixel just inside that corner
+// of the box stops being the box's own colour. Rounding one corner and
+// leaving the other three square is the check that the four are kept
+// apart rather than collapsed into one number, which is what used to
+// happen: the shorthand's first token was taken and the rest dropped.
+void func shotFill(style:text) {
+    Page p = pageFromHtml(head + '<div style="width:40px;height:40px;'
+        + 'background-color:red;' + style + '"></div></body>',
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+shotFill('')
+check(getPixelColor(1, 1) == red, 'a square box fills its top-left corner')
+check(getPixelColor(38, 1) == red, 'and its top-right')
+check(getPixelColor(1, 38) == red, 'and its bottom-left')
+check(getPixelColor(38, 38) == red, 'and its bottom-right')
+
+shotFill('border-radius:20px 0 0 0')
+check(getPixelColor(1, 1) != red, 'one radius rounds the top-left corner away')
+check(getPixelColor(38, 1) == red, 'and leaves the top-right square')
+check(getPixelColor(1, 38) == red, 'and the bottom-left')
+check(getPixelColor(38, 38) == red, 'and the bottom-right')
+
+shotFill('border-radius:0 20px 0 0')
+check(getPixelColor(38, 1) != red, 'the second value is the top-right corner')
+check(getPixelColor(1, 1) == red, 'not the top-left')
+
+shotFill('border-radius:0 0 20px 0')
+check(getPixelColor(38, 38) != red, 'the third is the bottom-right')
+check(getPixelColor(1, 1) == red, 'still not the top-left')
+
+shotFill('border-radius:0 0 0 20px')
+check(getPixelColor(1, 38) != red, 'and the fourth is the bottom-left')
+check(getPixelColor(38, 1) == red, 'leaving the top-right square')
+
+// The longhands say the same thing as the shorthand's four slots.
+shotFill('border-top-right-radius:20px')
+check(getPixelColor(38, 1) != red, 'border-top-right-radius rounds that corner')
+check(getPixelColor(1, 1) == red, 'and only that one')
+
+// Two values are the two diagonals, as the shorthand's grammar says.
+shotFill('border-radius:20px 0')
+check(getPixelColor(1, 1) != red, 'two values round the first diagonal, top-left')
+check(getPixelColor(38, 38) != red, 'and bottom-right')
+check(getPixelColor(38, 1) == red, 'leaving the other diagonal square')
+
 finish('borders')

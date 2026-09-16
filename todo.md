@@ -78,7 +78,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces. A
    single background image from `url()` with `repeat`,
-   `position`, `size`, `origin` and `clip` is done, and so is every border style, per side. A background clipped to the padding or
+   `position`, `size`, `origin` and `clip` is done, and so is every border
+   style, per side, and a radius on each corner separately. A
+   `border-radius` in a percentage, and the elliptical `/` form that
+   gives a corner two radii, are still to do: both need the painter's
+   corner arc to take a pair of radii rather than one. A background
+   clipped to the padding or
    content edge still uses the border box's `border-radius` rather than
    the smaller inner curve, which needs the rounded-rectangle path that
    an image layer does not have (FINDINGS.md, "an image is a drawable
@@ -117,7 +122,7 @@ than their prominence suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(113; Chromium reports 373, and four of them cannot be graded by a probe
+(121; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

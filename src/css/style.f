@@ -401,7 +401,14 @@ struct Style {
     borderRightStyle:int
     borderBottomStyle:int
     borderLeftStyle:int
+    // The largest of the four corner radii, kept as the one test the
+    // painter makes before deciding whether a box needs a curved path at
+    // all; the corners themselves are below.
     borderRadius:int
+    radiusTopLeft:int
+    radiusTopRight:int
+    radiusBottomRight:int
+    radiusBottomLeft:int
     borderSpacing:int
     borderCollapse:bool
     textIndent:int

@@ -68,13 +68,21 @@ void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
 // layer there is no path API, so the corners are square. The shape is
 // wrong by a few pixels at each corner and the box is still there,
 // which is the better of the two failures available.
-void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
+void func pFillRoundedCorners(x:int, y:int, w:int, h:int,
+                              tl:int, tr:int, brc:int, bl:int) {
     if paintLayer == null {
-        roundedRectPath(x, y, w, h, r)
+        roundedRectPathCorners(x, y, w, h, tl, tr, brc, bl)
         fillPath()
     } else {
+        // no path API on a layer, so the corners come out square
+        // (FINDINGS.md, "an image is a drawable surface with a smaller
+        // API")
         paintLayer.drawRect(x, y, w, h)
     }
+}
+
+void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
+    pFillRoundedCorners(x, y, w, h, r, r, r, r)
 }
 
 void func paintFill(c:int, opacity:float) {
@@ -82,20 +90,35 @@ void func paintFill(c:int, opacity:float) {
 }
 
 // A rounded-rectangle path; the caller fills or strokes it.
-void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
-    int r = minInt(rIn, Math.floorDiv(minInt(w, h), 2))
-    int k = roundPx(r.toFloat() * KAPPA)
+// A rounded rectangle whose four corners may differ. Each radius is
+// capped at half the shorter side, as §5.5 requires, so two large radii
+// on one edge cannot overlap into each other.
+void func roundedRectPathCorners(x:int, y:int, w:int, h:int,
+                                 tl:int, tr:int, brc:int, bl:int) {
+    int cap = Math.floorDiv(minInt(w, h), 2)
+    int a = minInt(tl, cap)
+    int b = minInt(tr, cap)
+    int c = minInt(brc, cap)
+    int d = minInt(bl, cap)
+    int ka = roundPx(a.toFloat() * KAPPA)
+    int kb = roundPx(b.toFloat() * KAPPA)
+    int kc = roundPx(c.toFloat() * KAPPA)
+    int kd = roundPx(d.toFloat() * KAPPA)
     beginPath()
-    moveTo(x + r, y)
-    lineTo(x + w - r, y)
-    curveTo(x + w - r + k, y, x + w, y + r - k, x + w, y + r)
-    lineTo(x + w, y + h - r)
-    curveTo(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h)
-    lineTo(x + r, y + h)
-    curveTo(x + r - k, y + h, x, y + h - r + k, x, y + h - r)
-    lineTo(x, y + r)
-    curveTo(x, y + r - k, x + r - k, y, x + r, y)
+    moveTo(x + a, y)
+    lineTo(x + w - b, y)
+    curveTo(x + w - b + kb, y, x + w, y + b - kb, x + w, y + b)
+    lineTo(x + w, y + h - c)
+    curveTo(x + w, y + h - c + kc, x + w - c + kc, y + h, x + w - c, y + h)
+    lineTo(x + d, y + h)
+    curveTo(x + d - kd, y + h, x, y + h - d + kd, x, y + h - d)
+    lineTo(x, y + a)
+    curveTo(x, y + a - ka, x + a - ka, y, x + a, y)
     closePath()
+}
+
+void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
+    roundedRectPathCorners(x, y, w, h, rIn, rIn, rIn, rIn)
 }
 
 // The rectangle `background-clip` paints within and the one
@@ -257,7 +280,8 @@ void func paintBackground(x:int, y:int, w:int, h:int,
         if s.borderRadius > 0 {
             // The radius is the border box's; a clipped background keeps
             // it rather than deriving the smaller inner curve.
-            pFillRounded(clipX, clipY, clipW, clipH, s.borderRadius)
+            pFillRoundedCorners(clipX, clipY, clipW, clipH, s.radiusTopLeft,
+                                s.radiusTopRight, s.radiusBottomRight, s.radiusBottomLeft)
         } else {
             pDrawRect(clipX, clipY, clipW, clipH)
         }
@@ -909,7 +933,9 @@ void func paintBorders(b:Box) {
         lineWidth(b.bt)
         int half = Math.floorDiv(b.bt, 2)
         if paintLayer == null {
-            roundedRectPath(x + half, y + half, w - b.bt, h - b.bt, maxInt(s.borderRadius - half, 1))
+            roundedRectPathCorners(x + half, y + half, w - b.bt, h - b.bt,
+                                   maxInt(s.radiusTopLeft - half, 1), maxInt(s.radiusTopRight - half, 1),
+                                   maxInt(s.radiusBottomRight - half, 1), maxInt(s.radiusBottomLeft - half, 1))
             strokePath()
         } else {
             // no path API on a layer: the border is drawn as four sides
