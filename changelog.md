@@ -5,6 +5,49 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Nesting 1
+
+A style rule may be written inside a style rule. `&` stands for the
+rule it is in and may appear anywhere in the nested selector; a nested
+selector that does not contain one gets one in front, as a descendant,
+which is also how a leading `>`, `+` or `~` is read. `@media`,
+`@supports` and `@layer` nest in both directions: a style rule inside a
+nested at-rule reaches what its selector says, and declarations written
+directly inside one belong to the rule the at-rule is in.
+
+A nested rule expands to the cross product of its own selector list
+with its parent's, capped at 256 selectors, which is exact for matching
+and not for weight. The standard gives `&` the specificity of the *most
+specific* selector in the parent list whichever branch a match came
+through, and reading the text of one branch computes that branch's own,
+so the difference is added back once per substituted `&`. The check
+that holds it is a pair: `.a, #ia { .b { } }` against a later
+`.w .b { }`, where Chromium styles the `.b` that matched only through
+`.a`, and the same shape with the id taken out, where it does not.
+With the correction disabled exactly that one check fails.
+
+Where a declaration sits among the nested rules decides when it
+cascades, so a rule's body is emitted as the runs of declarations it is
+written in rather than gathered into one: `.a { & { red } blue }` is
+blue and `.a { blue; & { red } }` is red.
+
+A rule body with no `{` and no `@` in it cannot hold a nested rule, and
+takes the path it always took. That is every rule on a page that does
+not nest, so the feature costs those pages one scan for a byte that is
+not there.
+
+An `&` inside `:is()`, `:where()`, `:not()` or `:has()` is left in
+place rather than substituted, which makes the selector unparseable and
+drops the rule. Those take a compound selector in this engine and a
+parent may be a complex one, so substituting would quietly change what
+the selector means.
+
+The selector expansion arrived with FINDINGS.md's shape (c) -- a local
+bound to an element of an `arr[ascii]` -- for the fourth time. Here it
+segfaulted rather than leaking quietly, because the user-agent
+stylesheet is parsed at the start of every page and the double free
+reached a live buffer.
+
 ### The relative colour syntax, which completes Color 5
 
 `rgb(from red r g b)` and its form in every other colour function: the

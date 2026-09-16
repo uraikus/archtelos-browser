@@ -51,9 +51,9 @@ size, so that difference was being charged to layout:
 
 | Canvas | This browser | Pixels |
 |---|---|---|
-| 800x600 | 134 ms | 480,000 |
-| 800x2000 | 170 ms | 1,600,000 |
-| 800x8000 | 349 ms | 6,400,000 |
+| 800x600 | 136 ms | 480,000 |
+| 800x2000 | 173 ms | 1,600,000 |
+| 800x8000 | 369 ms | 6,400,000 |
 
 Same page, same layout, same paint — 215 ms of the difference is
 encoding. `tests/bench.sh` gives both engines 800x600.
@@ -91,9 +91,15 @@ What a shell script waiting for a PNG actually experiences:
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 38 ms | 471 ms |
-| css.html | 3 KB | 37 ms | 485 ms |
-| generated.html | 51 KB | 130 ms | 493 ms |
+| hello.html | 4 KB | 39 ms | 517 ms |
+| css.html | 3 KB | 39 ms | 485 ms |
+| generated.html | 51 KB | 138 ms | 533 ms |
+
+Chromium's column here moved by 40 ms between two runs an hour apart on
+an idle machine, and ours by 8, while the rendering table below held to
+within a millisecond. That is what start-up costs a measurement: this
+table is a statement about the command, and the ratios in it are not
+worth taking.
 
 This browser is done before Chromium has finished starting. That is a
 true statement about the command and a false one about the engine, which
@@ -111,8 +117,8 @@ page, both measured from inside.
 | Page | Size | This browser | Chromium | Ratio |
 |---|---|---|---|---|
 | hello.html | 4 KB | 11 ms | 1.1 ms | 10x |
-| css.html | 3 KB | 11 ms | 1.0 ms | 11x |
-| generated.html | 51 KB | 98 ms | 24.9 ms | **3.9x** |
+| css.html | 3 KB | 11 ms | 0.9 ms | 12x |
+| generated.html | 51 KB | 98 ms | 25.6 ms | **3.8x** |
 
 **Chromium renders the 51 KB page about four times faster**, and the gap
 is wider on small pages because a fixed cost of about 10 ms has nothing
@@ -125,7 +131,7 @@ allocation in the process, on a page that prefetches nothing — see
 this file carried before is the machine, not the code: the previous
 revision, rebuilt and run alternately with this one in the same
 minutes, gives 97 to 104 ms against this one's 96 to 104. Chromium's
-own row is the control — 24.9 ms today against 25.3 ms then — and it
+own row is the control — 25.6 ms today against 25.3 ms then — and it
 did not move, which is what makes the run worth recording at all.
 
 ## HTML parsing alone
@@ -139,7 +145,7 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 |---|---|---|---|
 | hello.html | 4 KB | <1 ms | 0.1 ms |
 | css.html | 3 KB | <1 ms | 0.1 ms |
-| generated.html | 51 KB | 8 ms | 2.0 ms |
+| generated.html | 51 KB | 8 ms | 2.2 ms |
 
 **Between two and four times slower** on the large page. Ours is 8 ms
 run after run; Chromium's has been measured between 2.1 and 3.9 ms
@@ -161,12 +167,12 @@ not where the time goes.
 | stylesheets | 1 ms |
 | images | 1 ms |
 | cascade | 35 ms |
-| layout | 56 ms |
-| paint | 7 ms |
+| layout | 54 ms |
+| paint | 11 ms |
 
 The cascade and layout are **93%** of it. Parsing is 9%, and paint —
 once it is not also encoding six megapixels — is 7 ms. Chromium does the
-first four of those phases in 24.9 ms against our 98; the whole gap is
+first four of those phases in 25.6 ms against our 98; the whole gap is
 here, and **layout is the larger half of it**.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
@@ -489,7 +495,7 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 22,579 lines of Festina across `browser.f` and `src/` |
+| Source | 22,807 lines of Festina across `browser.f` and `src/` |
 | Compile | 11.6 s, whole program, no incremental build |
 | Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
@@ -498,13 +504,13 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,678,008 |
-| This browser, all `.f` source | 819,101 |
+| This browser, the whole program | 2,686,488 |
+| This browser, all `.f` source | 828,820 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
-**The binary is about 176 times smaller than Chromium's executable
-alone**, and 237 times smaller than the tree it ships in. The comparison
+**The binary is about 172 times smaller than Chromium's executable
+alone**, and 233 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
 absent from the 2.6 MB — a JavaScript engine, a compositor, a sandbox,
 a network stack, an extension system, ICU — is most of what is in the
@@ -556,4 +562,38 @@ one does.
 nothing at render time. A container with no spanner takes one run
 through the same code that laid out every child before, and a document
 with no multi-column container never reaches it at all.
+
+Display 3's two corrections cost **80 bytes** (2,636,848 → 2,636,928):
+`display: contents` is a branch in the one place a box tree is built
+from children, and refusing an invalid `display` keyword is a test
+where declarations are applied.
+
+**Media Queries 3 and 4 cost 9,080 bytes** (2,636,928 → 2,646,008)
+across the three changes that make up the pair: the Level 3 feature set
+4,304, Level 4's range syntax and conditions 4,736, and Level 4's own
+features 40 — the last being that small because answering `scripting:
+none` is a string in a table beside the others. None of it is reached
+unless a sheet has an `@media`, and it runs once per such rule at parse
+time rather than per element.
+
+`@layer` costs **4,808 bytes** (2,646,008 → 2,650,816) and nothing per
+element: a layer index rides in the field the cascade weight already
+packed an origin into, so a page with no `@layer` compares the same
+integer it compared before.
+
+`color-mix()` costs **9,680 bytes** (2,650,816 → 2,660,496) and the
+relative colour syntax **17,512** (2,660,496 → 2,678,008) — between
+them the largest single addition on this list, because each of the
+eleven interpolation spaces needs a conversion in both directions and
+the relative form adds an expression evaluator over the channels. Both
+are parse-time only: a colour is a packed integer by the time anything
+paints it.
+
+CSS Nesting costs **8,480 bytes** (2,678,008 → 2,686,488) and one
+`memchr` per rule on a page that does not nest. A rule body with no `{`
+and no `@` in it cannot contain a nested rule, so it takes the path it
+always took; `generated.html` renders in 98 ms with the feature in, the
+same as without it, and Chromium's control row moved from 24.9 to 25.6
+ms between the two runs, which is the size of the difference the
+measurement could see.
 

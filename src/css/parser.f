@@ -1524,9 +1524,183 @@ bool func mediaRatioEquals(value:ascii, w:int, h:int) {
 
 // ---- stylesheets ------------------------------------------------------
 
-void func parseRulesInto(sheet:Stylesheet, src:ascii) {
+// ---- CSS Nesting 1 ----------------------------------------------------
+
+// A nested rule is the cross product of its own selector list with its
+// parent's, so the count multiplies with depth. It stops here rather
+// than wherever the machine runs out.
+const int NEST_MAX_SELECTORS = 256
+
+// How many `&`s the last nestSubstitute replaced. One value comes out
+// of a function (FINDINGS.md, "one value out of a function") and this
+// one is read by the only caller, immediately.
+int nestLastAmps = 0
+
+// Replaces every `&` outside parentheses and strings in `sel` with
+// `parent`. A selector with no `&` at all gets one in front, as a
+// descendant: that is the relation CSS Nesting 1 implies for a nested
+// selector that does not say where the parent goes (§2). An `&` inside
+// a functional pseudo-class is left alone, so the selector parser
+// refuses it rather than this quietly substituting a complex selector
+// where only a compound may stand.
+text func nestSubstitute(sel:ascii, parent:text) {
+    nestLastAmps = 0
+    text out = ''
+    int n = sel.length
+    int i = 0
+    int start = 0
+    int depth = 0
+    while i < n {
+        int c = sel.charCodeAt(i)
+        if c == CH_QUOTE || c == CH_APOS {
+            i = skipQuoted(sel, i)
+            continue
+        }
+        if c == CH_LPAREN { depth++  i++  continue }
+        if c == CH_RPAREN { depth--  i++  continue }
+        if c == CH_AMP && depth <= 0 {
+            out = out + sel.slice(start, i).toText() + parent
+            nestLastAmps++
+            i++
+            start = i
+            continue
+        }
+        i++
+    }
+    out = out + sel.slice(start, n).toText()
+    if nestLastAmps == 0 {
+        nestLastAmps = 1
+        return parent + ' ' + out
+    }
+    return out
+}
+
+// The selector texts one rule's prelude expands to, given the selectors
+// of the rule it is written inside. `outAmps` and `outParentSpec` carry
+// what the specificity correction below needs: how many `&`s each text
+// replaced, and the weight of the parent branch each replaced them
+// with.
+//
+// Outside any rule there is no parent list, and `&` is `:scope`, which
+// for a stylesheet is the root element. A branch with no `&` there is
+// itself, with nothing put in front of it.
+void func nestExpand(prelude:ascii, parents:arr[text], parentSpecs:arr[int],
+                     outTexts:arr[text], outAmps:arr[int], outParentSpec:arr[int]) {
+    arr[ascii] branches = splitOnCommas(prelude)
+    // A branch is used where it sits rather than bound to a local:
+    // `ascii one = branches[b]` aliases a buffer the compiler never
+    // retained and releases it twice (see FINDINGS.md, "ascii aliases
+    // are not retained").
+    if parents.length == 0 {
+        for int b = 0, b < branches.length, b++ {
+            if branches[b].length == 0 { continue }
+            // A top-level branch with no `&` keeps its own text: the
+            // descendant `:root ` nestSubstitute would put in front
+            // says nothing, every element being under the root, but it
+            // would add the weight of a pseudo-class that is not there.
+            if asciiIndexOf(branches[b], '&', 0) < 0 {
+                outTexts.push(branches[b].toText())
+            } else {
+                outTexts.push(nestSubstitute(branches[b], ':root'))
+            }
+            outAmps.push(0)
+            outParentSpec.push(0)
+        }
+        return
+    }
+    for int p = 0, p < parents.length, p++ {
+        for int b = 0, b < branches.length, b++ {
+            if outTexts.length >= NEST_MAX_SELECTORS { return }
+            if branches[b].length == 0 { continue }
+            outTexts.push(nestSubstitute(branches[b], parents[p]))
+            outAmps.push(nestLastAmps)
+            outParentSpec.push(parentSpecs[p])
+        }
+    }
+}
+
+// The greatest of a parent list's weights, which is what `&` counts as
+// however many branches there are and whichever one a match came
+// through (CSS Nesting 1 §3). A packed triple compares as an integer,
+// so this is the ordinary maximum.
+int func nestMaxSpec(specs:arr[int]) {
+    int best = 0
+    for int i = 0, i < specs.length, i++ {
+        if specs[i] > best { best = specs[i] }
+    }
+    return best
+}
+
+// Parses the expanded texts and corrects each one's weight. Reading the
+// text of one branch computes that branch's own specificity, and the
+// standard wants the whole list's maximum, so the difference is added
+// back once per `&` that was substituted. Returns false if any of them
+// is unparseable, which invalidates the rule as any bad selector in a
+// list does (Selectors 3 §4).
+bool func nestBuildSelectors(texts:arr[text], amps:arr[int], parentSpecs:arr[int],
+                             parentMax:int, out:arr[Selector], outSpecs:arr[int]) {
+    for int i = 0, i < texts.length, i++ {
+        arr[Selector] parsed = parseSelectorList(texts[i].toAscii())
+        if parsed.length != 1 || parsed[0].unsupported { return false }
+        Selector sel = parsed[0]
+        if amps[i] > 0 && parentMax != parentSpecs[i] {
+            int dIds = specIds(parentMax) - specIds(parentSpecs[i])
+            int dCls = specClasses(parentMax) - specClasses(parentSpecs[i])
+            int dTyp = specTypes(parentMax) - specTypes(parentSpecs[i])
+            int ids = specIds(sel.specificity) + amps[i] * dIds
+            int cls = specClasses(sel.specificity) + amps[i] * dCls
+            int typ = specTypes(sel.specificity) + amps[i] * dTyp
+            sel.specificity = packSpecificity(ids < 0 ? 0 : ids,
+                                              cls < 0 ? 0 : cls,
+                                              typ < 0 ? 0 : typ)
+        }
+        out.push(sel)
+        outSpecs.push(sel.specificity)
+    }
+    return out.length > 0
+}
+
+// A run of declarations written directly in a rule's body becomes a
+// rule of its own, with that rule's selectors and its own place in
+// source order. CSS Nesting 1 makes a declaration that follows a nested
+// rule cascade after it, so the runs on either side of one cannot be
+// gathered together.
+void func nestFlushDecls(sheet:Stylesheet, src:ascii, from:int, to:int,
+                         parents:arr[text], parentSpecs:arr[int]) {
+    if to <= from || parents.length == 0 { return }
+    ascii run = asciiTrim(src.slice(from, to))
+    if run.length == 0 { return }
+    Rule r
+    r.decls = parseDeclarations(run)
+    if r.decls.length == 0 { return }
+    for int k = 0, k < parents.length, k++ {
+        arr[Selector] parsed = parseSelectorList(parents[k].toAscii())
+        if parsed.length != 1 || parsed[0].unsupported { return }
+        Selector sel = parsed[0]
+        // The parent's weight is the corrected one, not what reading
+        // its text again computes.
+        sel.specificity = parentSpecs[k]
+        r.selectors.push(sel)
+    }
+    if r.selectors.length == 0 { return }
+    r.order = cssRuleCounter
+    r.layer = cssCurrentLayer
+    cssRuleCounter++
+    sheet.rules.push(r)
+}
+
+// Walks a stylesheet, or the body of one style rule when `parents`
+// holds that rule's selectors. The two productions differ in one thing:
+// inside a rule body a run of declarations belongs to the rule, and at
+// the top of a stylesheet there is nothing for one to belong to.
+void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentSpecs:arr[int]) {
     int n = src.length
     int i = 0
+    // Where the run of declarations being gathered began. Each run ends
+    // at the nested rule or at-rule that interrupts it, or at the end
+    // of the body.
+    int declStart = 0
+    int parentMax = nestMaxSpec(parentSpecs)
     while i < n {
         int c = src.charCodeAt(i)
         if isSpaceCode(c) {
@@ -1534,6 +1708,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
             continue
         }
         if c == CH_AT {
+            nestFlushDecls(sheet, src, declStart, i, parents, parentSpecs)
             int nameEnd = scanIdentAt(src, i + 1)
             ascii atName = asciiLower(src.slice(i + 1, nameEnd))
             // find whichever comes first: ';' or '{'
@@ -1561,6 +1736,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                     }
                 }
                 i = semi < 0 ? n : semi + 1
+                declStart = i
                 continue
             }
             int blockEnd = skipBlock(src, brace)
@@ -1569,13 +1745,13 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                 if evaluateMediaQuery(query) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close))
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
                 }
             } else if atName == 'supports' {
                 if evaluateSupportsCondition(asciiTrim(src.slice(nameEnd, brace))) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close))
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
                 }
             } else if atName == 'counter-style' {
                 // The name is the prelude, and the body is an ordinary
@@ -1603,42 +1779,92 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii) {
                 }
                 cssCurrentLayer = declareLayer(full)
                 cssCurrentLayerName = full
-                parseRulesInto(sheet, src.slice(brace + 1, close))
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
                 cssCurrentLayer = outerLayer
                 cssCurrentLayerName = outerName
             }
             // @font-face, @keyframes, @page, @import ...: skipped
             i = blockEnd
+            declStart = i
             continue
         }
         if c == CH_RBRACE {
+            nestFlushDecls(sheet, src, declStart, i, parents, parentSpecs)
             i++
+            declStart = i
             continue
         }
-        int brace = asciiIndexOf(src, '{', i)
-        if brace < 0 { break }
-        ascii prelude = src.slice(i, brace)
+        // From here to the next `;` or `{` is either a declaration or a
+        // rule's prelude, and which one is not known until the
+        // terminator is. Strings and parentheses are stepped over, so a
+        // brace in `url("x{y")` starts nothing.
+        int segStart = i
+        int j = i
+        int stop = 0
+        while j < n {
+            int d = src.charCodeAt(j)
+            if d == CH_QUOTE || d == CH_APOS {
+                j = skipQuoted(src, j)
+                continue
+            }
+            if d == CH_LPAREN {
+                j = matchParen(src, j) + 1
+                continue
+            }
+            if d == CH_SEMI || d == CH_LBRACE || d == CH_RBRACE {
+                stop = d
+                break
+            }
+            j++
+        }
+        if stop != CH_LBRACE {
+            // A declaration, which joins the run already being
+            // gathered rather than ending it.
+            i = stop == CH_SEMI ? j + 1 : j
+            if i <= segStart { i = segStart + 1 }
+            continue
+        }
+        nestFlushDecls(sheet, src, declStart, segStart, parents, parentSpecs)
+        int brace = j
+        ascii prelude = src.slice(segStart, brace)
         int blockEnd = skipBlock(src, brace)
         int close = blockEnd - 1
         if close < brace + 1 { close = brace + 1 }
         ascii body = src.slice(brace + 1, close)
-        Rule r
-        r.selectors = parseSelectorList(prelude)
-        r.decls = parseDeclarations(body)
-        r.order = cssRuleCounter
-        r.layer = cssCurrentLayer
-        cssRuleCounter++
+        i = blockEnd
+        declStart = i
+
+        arr[text] selTexts = []
+        arr[int] selAmps = []
+        arr[int] selParentSpec = []
+        nestExpand(prelude, parents, parentSpecs, selTexts, selAmps, selParentSpec)
+        arr[Selector] sels = []
+        arr[int] selSpecs = []
         // "If any selector in the list cannot be parsed, the group of
         // selectors is invalid" -- the whole rule goes, not just that
         // selector, so an unknown pseudo-element cannot leave a rule
-        // half-applied (Selectors 3 §4).
-        bool anyBad = false
-        for int si = 0, si < r.selectors.length, si++ {
-            if r.selectors[si].unsupported { anyBad = true  break }
+        // half-applied (Selectors 3 §4). A rule nested inside it goes
+        // with it, having nothing left to hang from.
+        if !nestBuildSelectors(selTexts, selAmps, selParentSpec, parentMax, sels, selSpecs) {
+            continue
         }
-        if !anyBad && r.selectors.length > 0 && r.decls.length > 0 { sheet.rules.push(r) }
-        i = blockEnd
+        // A body with no brace and no at-rule in it cannot hold a
+        // nested rule, which is every rule on a page that does not use
+        // nesting: those take the path they always took, and pay one
+        // scan for a byte that is not there.
+        if asciiIndexOf(body, '{', 0) < 0 && asciiIndexOf(body, '@', 0) < 0 {
+            Rule r
+            r.selectors = sels
+            r.decls = parseDeclarations(body)
+            r.order = cssRuleCounter
+            r.layer = cssCurrentLayer
+            cssRuleCounter++
+            if r.decls.length > 0 { sheet.rules.push(r) }
+            continue
+        }
+        parseRulesInto(sheet, body, selTexts, selSpecs)
     }
+    nestFlushDecls(sheet, src, declStart, n, parents, parentSpecs)
 }
 
 int func scanIdentAt(s:ascii, from:int) {
@@ -1650,7 +1876,9 @@ int func scanIdentAt(s:ascii, from:int) {
 Stylesheet func parseStylesheet(src:ascii) {
     Stylesheet sheet
     if src == null { return sheet }
-    parseRulesInto(sheet, stripCssComments(src))
+    arr[text] noParents = []
+    arr[int] noSpecs = []
+    parseRulesInto(sheet, stripCssComments(src), noParents, noSpecs)
     return sheet
 }
 

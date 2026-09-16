@@ -231,7 +231,11 @@ keeps its property map as `map[text]` and converts on read, so that no
 `arr[ascii]` — is the natural way to write a loop over the words of a
 value, so every new property that splits one reintroduces it:
 `background-repeat`, `background-position` and the `flex-flow`
-shorthand each arrived with it, and each passed its tests. Nothing in
+shorthand each arrived with it, and each passed its tests. CSS
+Nesting's selector expansion arrived with it too, and there the symptom
+was not a quiet leak: the user-agent stylesheet is parsed at the start
+of every page, so the double free reached a live buffer and the program
+segfaulted before rendering anything. Nothing in
 the language, the compiler or the test suite distinguishes the broken
 form from the correct one; only valgrind does. The defence is to index
 the array at every use — `parts[0] == 'no-repeat'` rather than

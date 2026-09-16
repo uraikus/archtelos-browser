@@ -174,6 +174,11 @@ longhands, `mask-type` and `clip-rule` — and `inset()`'s `round`
 radius, both of which want the path API too; and a `clip-path` inside
 another clipped subtree, which does not clip again, the same limit
 `overflow: hidden` has here.
+What is left of Nesting 1: an `&` inside `:is()`, `:where()`, `:not()`
+or `:has()`, which needs those to take a complex selector rather than a
+compound, and the `:scope` that `&` outside any rule stands for, which
+is the root element here and would be the enclosing scope once
+`@scope` exists.
 These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
@@ -340,7 +345,7 @@ local server.
 ## Performance
 
 Chromium parses, styles and lays out the 51 KB page about **four times
-faster** — 24.9 ms against 98 — with both sides measured from inside and
+faster** — 25.6 ms against 98 — with both sides measured from inside and
 start-up outside the timer (benchmarks.md). The cascade and layout are
 93% of our time and all of the gap, and **layout is the larger half
 of the two**. In order:
