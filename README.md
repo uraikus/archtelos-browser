@@ -194,7 +194,8 @@ general rendering, linear gradients, radial gradients, overflow
 clipping, background images and object fitting — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
-a selector matches — the HTML conformance suite, and a headless render
+a selector matches — a check that every row of the property instrument
+could register at all, the HTML conformance suite, and a headless render
 of every example. There is no test framework: `tests/assert.f` is
 a dozen lines and every suite is an ordinary Festina program.
 
