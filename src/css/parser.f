@@ -611,6 +611,7 @@ arr[text] supportedProperties = [
     'gap', 'row-gap', 'column-gap', 'order',
     'outline', 'outline-width', 'outline-style', 'outline-color',
     'outline-offset', 'table-layout', 'empty-cells', 'list-style-position',
+    'transform', 'transform-origin', 'translate', 'rotate', 'scale',
     'background-position', 'background-repeat', 'background-size',
     'background-origin', 'background-clip',
     'border-top-left-radius', 'border-top-right-radius',

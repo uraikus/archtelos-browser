@@ -69,6 +69,8 @@ arr[text] func styleDigestFields(s:Style) {
         `${lenKey(s.maxHeight)}`, `${s.boxSizing}`, `${s.captionSide}`, 
         `${s.wordSpacing}`, `${s.outlineWidth}`, `${s.outlineStyle}`, `${s.outlineColor}`, 
         `${s.outlineOffset}`, `${s.tableLayoutFixed}`, `${s.emptyCellsHide}`, 
+        `${transformKey(s.transforms)}`, `${lenKey(s.transformOriginX)}`, 
+        `${lenKey(s.transformOriginY)}`, 
         `${s.listInside}`, 
         `${s.flexDirection}`, `${s.justifyContent}`, `${s.alignItems}`, 
         `${s.alignSelf}`, `${s.flexWrap}`, `${s.alignContent}`, 
@@ -115,7 +117,8 @@ arr[text] func styleDigestFieldNames() {
         'fontKey', 'position', 'top', 'right', 'bottom', 'left', 'zIndex', 
         'floatSide', 'clearSide', 'maxHeight', 'boxSizing', 'captionSide', 
         'wordSpacing', 'outlineWidth', 'outlineStyle', 'outlineColor', 'outlineOffset', 
-        'tableLayoutFixed', 'emptyCellsHide', 'listInside', 'flexDirection', 
+        'tableLayoutFixed', 'emptyCellsHide', 'transforms', 
+        'transformOriginX', 'transformOriginY', 'listInside', 'flexDirection', 
         'justifyContent', 'alignItems', 'alignSelf', 'flexWrap', 
         'alignContent', 'flexGrow', 'flexShrink', 'flexBasis', 'rowGap', 
         'columnGap', 'order', 'backgroundImage', 'overflowHidden', 
@@ -123,6 +126,15 @@ arr[text] func styleDigestFieldNames() {
         'backgroundPosX', 'backgroundPosY', 'backgroundSizeKind', 
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'shadows']
+}
+
+text func transformKey(list:arr[Transform]) {
+    text out = ''
+    for int i = 0, i < list.length, i++ {
+        Transform t = list[i]
+        out = out + `${t.kind}:${lenKey(t.x)}/${lenKey(t.y)}/${t.angle}/${t.sx}/${t.sy};`
+    }
+    return out
 }
 
 text func shadowKey(list:arr[Shadow]) {

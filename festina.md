@@ -619,3 +619,25 @@ had never found. The failure it printed named a number in the trillions,
 which is the only reason anybody looked. Every list of coordinates in
 the layout and paint code is an `arr[int]`, and every one of them is one
 unguarded index away from the same thing.
+
+---
+
+## 3n Give the canvas a matrix
+
+**Today.** The canvas composes its transform from `translate`, `rotate`
+and `scale`, and nothing takes a matrix (FINDINGS.md, finding 33). The
+runtime already holds a `cairo_matrix_t`; Cairo already has
+`cairo_transform` and `cairo_set_matrix`. `translate` also takes
+integers, so a fractional offset cannot be expressed on its own.
+
+**Proposal.** `transform(a, b, c, d, e, f)` to multiply the current
+matrix by another and `setTransform(a, b, c, d, e, f)` to replace it,
+both taking floats, and a float-taking `translate`. Six doubles straight
+into `cairo_matrix_init` and one call each.
+
+**What it removes here.** CSS has six two-dimensional transform
+functions and this browser can render four. `skew()` is a shear, which
+no composition of the three available calls produces, and `matrix()` is
+the matrix itself; both are dropped. A page that lays a heading out on a
+slant, or that ships a matrix straight from a design tool, renders
+upright.

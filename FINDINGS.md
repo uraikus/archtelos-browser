@@ -920,3 +920,50 @@ an ordinary list is enough.
 The workaround is discipline — every index guarded by a `.length` test —
 which is what a bounds check exists to make unnecessary, and which
 nothing in the language or the tooling enforces.
+
+---
+
+## 33 The canvas matrix has no general form
+
+The canvas composes a transform from three calls — `translate(x, y)`,
+`rotate(degrees)` and `scale(sx, sy)` — with `saveState`/`restoreState`
+around them and `resetTransform` to clear it. There is no call that
+takes a matrix, and no shear.
+
+```festina
+saveState()
+translate(30, 0)
+rotate(45.0)
+scale(2.0, 2.0)
+drawRect(0, 0, 10, 10)     // all fine
+restoreState()
+setTransform(1.0, 0.0, 0.5, 1.0, 0.0, 0.0)
+```
+
+```
+error: unknown function 'setTransform'
+```
+
+Cairo has `cairo_transform` and `cairo_set_matrix`, and the runtime
+already keeps a `cairo_matrix_t` for the three calls it does expose;
+what is missing is the entry point, not the capability.
+
+Two CSS transform functions are the general form and cannot be written
+without it. `skew(ax, ay)` is a shear, which no composition of
+translate, rotate and scale produces. `matrix(a, b, c, d, e, f)` is the
+matrix itself. Both are dropped by this browser rather than
+approximated, which is the standard's own answer for a transform that
+cannot be applied, but it means two of the specification's functions are
+closed to it by the binding.
+
+`translate` also takes integers, so a transform cannot move a box by a
+fractional pixel:
+
+```
+error: translate()'s argument 1 expects int, found float
+```
+
+ Composing a scale with a translate hides this — the
+matrix multiplies in floating point — but a bare `translate(0.5, 0)` is
+not expressible, and neither is the sub-pixel positioning a text layout
+wants.

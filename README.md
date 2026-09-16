@@ -128,6 +128,14 @@ content — and a tile that runs past that edge is cut off there. `object-fit` a
 element's own content inside its box, in all five fitting values, and
 clip it to the content box.
 
+**Transforms** move, turn and scale a box and everything inside it
+without touching the layout: `transform` takes `translate`, `scale` and
+`rotate` in any order and composes them left to right, `transform-origin`
+says what they are about, and the individual `translate`, `rotate` and
+`scale` properties say the same things separately. `skew()` and
+`matrix()` are dropped, because the canvas composes its matrix from
+translate, rotate and scale and has no call that takes one.
+
 **`::before` and `::after`** generate boxes from `content`, which takes
 quoted strings, `attr()`, `counter()`, `counters()` and the four quote
 keywords. `counter-reset` and `counter-increment` maintain counters with
@@ -208,10 +216,11 @@ The runner covers twenty-two unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-audio, the preload scanner), nine offscreen render suites that check
+audio, the preload scanner), ten offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
-borders, text decoration and box shadows — three conformance
+borders, text decoration, transforms and box shadows — three
+conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

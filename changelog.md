@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Transforms
+
+The first of the snapshot's eight untouched specifications to move off
+zero. `transform` takes `translate`, `translateX`, `translateY`,
+`scale`, `scaleX`, `scaleY` and `rotate`, composed left to right;
+`transform-origin` says what they turn about, defaulting to the box's
+centre; and the individual `translate`, `rotate` and `scale` properties
+say the same things separately, applied in that order before the
+`transform` list. A percentage in a translate is of the box's own size.
+
+A transform changes where a box and its descendants are painted and
+nothing about the layout, which the standard is explicit about and which
+is what makes it checkable: the same document is laid out once and
+painted twice, and only the pixels differ. Three of the forty checks
+assert the layout did not move.
+
+The order the functions apply in is checked by asking that
+`translateX(100px) scale(2)` and `scale(2) translateX(100px)` differ —
+a list applied in the wrong order, or only in its last member, fails
+that — and two translates are checked against the single translate that
+says the same thing.
+
+**`skew()` and `matrix()` are dropped**, which is the standard's own
+answer for a function that cannot be applied. Festina's canvas composes
+its matrix from `translate`, `rotate` and `scale` and has no call that
+takes a matrix, so a shear cannot be expressed at all; the runtime
+already holds a `cairo_matrix_t` and Cairo already has
+`cairo_transform`, so what is missing is the entry point rather than the
+capability. FINDINGS.md gains finding 33 and festina.md §3n.
+
+The painter asks once per document whether any style carries a
+transform, so a page without one pays a single bool rather than a test
+on every box.
+
+**Properties 135 → 140**: `transform`,
+`transform-origin`, `translate`, `rotate` and `scale`.
+
+Forty checks in the new `tests/render/transform.f`.
+
+Not done, and in todo.md: a transformed box should establish a stacking
+context and a containing block for its positioned descendants, and hit
+testing should use the inverse transform, so today a click lands where
+the box was laid out rather than where it is drawn.
+
 ### Four properties the machinery was already there for
 
 - **`outline-offset`** moves the outline away from the border box and

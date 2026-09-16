@@ -238,6 +238,25 @@ const int RADEXT_EXPLICIT = 4
 // One `box-shadow` (Backgrounds and Borders 3 §6). A style with no
 // shadow has an empty list, which is the zero value, so nothing is
 // written per element.
+// One transform function. Festina's canvas composes a matrix from
+// translate, rotate and scale and has no call that takes a matrix, so
+// `skew()` and `matrix()` cannot be expressed and are dropped rather
+// than approximated (FINDINGS.md, "the canvas matrix has no general
+// form"). A dropped function is the standard's own fallback for one
+// that cannot be applied.
+const int TX_TRANSLATE = 0
+const int TX_ROTATE = 1
+const int TX_SCALE = 2
+
+struct Transform {
+    kind:int
+    x:Len       // translate: the two offsets, a percentage being of the box
+    y:Len
+    angle:float // rotate: degrees
+    sx:float    // scale: the two factors
+    sy:float
+}
+
 struct Shadow {
     dx:int
     dy:int
@@ -424,6 +443,9 @@ struct Style {
     outlineWidth:int
     outlineStyle:int
     outlineOffset:int
+    transforms:arr[Transform]
+    transformOriginX:Len    // an unset Len is auto, which reads as 50%
+    transformOriginY:Len
     tableLayoutFixed:bool
     emptyCellsHide:bool
     listInside:bool

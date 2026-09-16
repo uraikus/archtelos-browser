@@ -103,10 +103,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `list-style-position`. What is left is `list-style-image` from
    Lists 3, which needs a fetched image for the marker, and
    `decimal-leading-zero`, which parses as plain decimal.
-8. The remainder of the official definition, lower value for this
+8. **Transforms 1, completed**: a transformed box should establish a
+   stacking context and a containing block for its positioned
+   descendants, and hit testing should use the inverse transform so a
+   click lands where the box is drawn rather than where it was laid
+   out. `skew()` and `matrix()` are blocked on Festina rather than on
+   effort: the canvas has no call that takes a matrix (FINDINGS.md,
+   finding 33, festina.md §3n).
+9. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Writing Modes 3, Basic
-   User Interface 3, Multi-column 1, Transforms 1, Compositing and
-   Blending 1, Containment 1, Easing 1, Namespaces 3.
+   User Interface 3, Multi-column 1, Compositing and Blending 1,
+   Containment 1, Easing 1, Namespaces 3.
 
 ### After the official definition
 
@@ -132,7 +139,7 @@ suggests.
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 369 CSS
 properties the instrument can grade change what this engine renders
-(135; Chromium reports 373, and four of them cannot be graded by a probe
+(140; Chromium reports 373, and four of them cannot be graded by a probe
 that is an ordinary element),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

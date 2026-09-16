@@ -89,7 +89,14 @@ bool anyQuotes = false
 int quoteDepth = 0
 int styleDepth = 0
 
+// Set when any element's computed style carries a transform, so the
+// painter can ask once per document instead of testing every box: a
+// page with no transform pays one bool for the feature (CLAUDE.md, "a
+// feature must not cost anything to the pages that do not use it").
+bool cascadeSawTransform = false
+
 void func cascadeReset() {
+    cascadeSawTransform = false
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
     // could never be returned for a new page -- but it would sit in the
@@ -1403,6 +1410,116 @@ bool func parseRadialPrelude(t:ascii, fontSize:int) {
 // One shadow of a `box-shadow` list. The lengths come in order --
 // offset-x, offset-y, then blur and spread if they are there -- and the
 // colour and `inset` may sit anywhere among them.
+// The `)` closing the `(` at `open`, counting nested parentheses, or -1.
+// A transform function's argument can itself hold parentheses -- a
+// calc() length -- so scanning for the next `)` is not enough.
+int func asciiMatchingParen(t:ascii, open:int) {
+    int depth = 0
+    for int i = open, i < t.length, i++ {
+        int c = t.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN {
+            depth--
+            if depth == 0 { return i }
+        }
+    }
+    return -1
+}
+
+// An angle in degrees. CSS angles come in four units and Festina's
+// rotate takes degrees, so the rest are converted here rather than at
+// the call.
+float func parseAngleDegrees(tok:ascii, ok:arr[bool]) {
+    ok[0] = false
+    ascii t = asciiLower(asciiTrim(tok))
+    parseNumberAt(t, 0)
+    if !numOk { return 0.0 }
+    float v = numValue
+    ascii unit = t.slice(numEnd, t.length)
+    ok[0] = true
+    if unit == 'deg' || unit == '' { return v }
+    if unit == 'grad' { return v * 0.9 }
+    if unit == 'rad' { return v * 180.0 / 3.14159265358979 }
+    if unit == 'turn' { return v * 360.0 }
+    ok[0] = false
+    return 0.0
+}
+
+// One `transform` function, or a kind of -1 for one this canvas cannot
+// express. The standard's own answer for a transform it cannot apply is
+// to drop it, which is what a -1 means to the caller.
+Transform func parseTransformFunction(name:text, args:arr[ascii], fontSize:int) {
+    Transform tr
+    tr.kind = -1
+    tr.sx = 1.0
+    tr.sy = 1.0
+    if name == 'translate' || name == 'translatex' || name == 'translatey' {
+        if args.length == 0 { return tr }
+        Len a = parseLength(args[0], fontSize)
+        if a.kind != LEN_PX && a.kind != LEN_PERCENT { return tr }
+        tr.kind = TX_TRANSLATE
+        if name == 'translatey' {
+            tr.y = a
+        } else {
+            tr.x = a
+            if name == 'translate' && args.length > 1 {
+                Len b = parseLength(args[1], fontSize)
+                if b.kind == LEN_PX || b.kind == LEN_PERCENT { tr.y = b }
+            }
+        }
+        return tr
+    }
+    if name == 'scale' || name == 'scalex' || name == 'scaley' {
+        if args.length == 0 { return tr }
+        parseNumberAt(asciiTrim(args[0]), 0)
+        if !numOk { return tr }
+        float a = numValue
+        tr.kind = TX_SCALE
+        if name == 'scalex' { tr.sx = a }
+        else if name == 'scaley' { tr.sy = a }
+        else {
+            tr.sx = a
+            tr.sy = a
+            if args.length > 1 {
+                parseNumberAt(asciiTrim(args[1]), 0)
+                if numOk { tr.sy = numValue }
+            }
+        }
+        return tr
+    }
+    if name == 'rotate' || name == 'rotatez' {
+        if args.length == 0 { return tr }
+        arr[bool] ok = [false]
+        float deg = parseAngleDegrees(args[0], ok)
+        if !ok[0] { return tr }
+        tr.kind = TX_ROTATE
+        tr.angle = deg
+        return tr
+    }
+    return tr
+}
+
+// The `transform` property: a list of functions, applied left to right.
+arr[Transform] func parseTransformList(v:ascii, fontSize:int) {
+    arr[Transform] out = []
+    if v == null { return out }
+    ascii t = asciiTrim(v)
+    if asciiLower(t) == 'none' || t == '' { return out }
+    int i = 0
+    while i < t.length {
+        int open = asciiIndexOf(t, '('.toAscii(), i)
+        if open < 0 { break }
+        int close = asciiMatchingParen(t, open)
+        if close < 0 { break }
+        text name = asciiLower(asciiTrim(t.slice(i, open))).toText()
+        arr[ascii] args = splitTopLevelCommas(t.slice(open + 1, close))
+        Transform tr = parseTransformFunction(name, args, fontSize)
+        if tr.kind >= 0 { out.push(tr) }
+        i = close + 1
+    }
+    return out
+}
+
 Shadow func parseShadow(v:ascii, currentColor:int, fontSize:int) {
     arr[ascii] t = cssTokens(v)
     if t.length == 0 { return null }
@@ -2925,6 +3042,89 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if oc != null {
         int c = parseCssColor(oc, s.color)
         if c != COLOR_UNSET { s.outlineColor = c }
+    }
+    // transform, and the three individual properties that say the same
+    // things separately. The standard applies translate, then rotate,
+    // then scale, and then the `transform` list, so they are pushed in
+    // that order onto one list the painter walks.
+    arr[Transform] txs = []
+    ascii trProp = styleProp(props, 'translate')
+    if trProp != null {
+        arr[ascii] tp = cssTokens(trProp)
+        if tp.length > 0 && asciiLower(asciiTrim(tp[0])) != 'none' {
+            Transform tr
+            tr.kind = TX_TRANSLATE
+            tr.sx = 1.0
+            tr.sy = 1.0
+            Len a = parseLength(tp[0], s.fontSize)
+            if a.kind == LEN_PX || a.kind == LEN_PERCENT { tr.x = a }
+            if tp.length > 1 {
+                Len b = parseLength(tp[1], s.fontSize)
+                if b.kind == LEN_PX || b.kind == LEN_PERCENT { tr.y = b }
+            }
+            txs.push(tr)
+        }
+    }
+    ascii rotProp = styleProp(props, 'rotate')
+    if rotProp != null {
+        arr[ascii] rp = cssTokens(rotProp)
+        if rp.length > 0 && asciiLower(asciiTrim(rp[0])) != 'none' {
+            arr[bool] ok = [false]
+            // `rotate: x 45deg` names an axis first; only a z rotation
+            // is in the plane this paints on, and the angle is the last
+            // token either way
+            float deg = parseAngleDegrees(rp[rp.length - 1], ok)
+            if ok[0] {
+                Transform tr
+                tr.kind = TX_ROTATE
+                tr.angle = deg
+                tr.sx = 1.0
+                tr.sy = 1.0
+                txs.push(tr)
+            }
+        }
+    }
+    ascii scProp = styleProp(props, 'scale')
+    if scProp != null {
+        arr[ascii] sp = cssTokens(scProp)
+        if sp.length > 0 && asciiLower(asciiTrim(sp[0])) != 'none' {
+            parseNumberAt(asciiTrim(sp[0]), 0)
+            if numOk {
+                Transform tr
+                tr.kind = TX_SCALE
+                tr.sx = numValue
+                tr.sy = numValue
+                if sp.length > 1 {
+                    parseNumberAt(asciiTrim(sp[1]), 0)
+                    if numOk { tr.sy = numValue }
+                }
+                txs.push(tr)
+            }
+        }
+    }
+    ascii txProp = styleProp(props, 'transform')
+    if txProp != null {
+        arr[Transform] list = parseTransformList(txProp, s.fontSize)
+        for int i = 0, i < list.length, i++ { txs.push(list[i]) }
+    }
+    if txs.length > 0 {
+        s.transforms = txs
+        cascadeSawTransform = true
+    }
+    // transform-origin: two of a position's components, defaulting to
+    // the box's centre. An unset Len is auto, which the painter reads
+    // as 50%, so the initial value costs no write.
+    ascii toProp = styleProp(props, 'transform-origin')
+    if toProp != null {
+        arr[ascii] tot = cssTokens(toProp)
+        if tot.length > 0 {
+            Len ox = parsePositionAxis(asciiLower(tot[0]), true, s.fontSize)
+            if ox.kind == LEN_PX || ox.kind == LEN_PERCENT { s.transformOriginX = ox }
+        }
+        if tot.length > 1 {
+            Len oy = parsePositionAxis(asciiLower(tot[1]), false, s.fontSize)
+            if oy.kind == LEN_PX || oy.kind == LEN_PERCENT { s.transformOriginY = oy }
+        }
     }
     s.outlineOffset = 0
     ascii ooff = styleProp(props, 'outline-offset')

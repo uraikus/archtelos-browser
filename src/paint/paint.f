@@ -58,6 +58,26 @@ void func pDrawImage(i:img, x:int, y:int) {
     else { paintLayer.drawImage(i, x, y) }
 }
 
+void func pSaveState() {
+    if paintLayer == null { saveState() } else { paintLayer.saveState() }
+}
+
+void func pRestoreState() {
+    if paintLayer == null { restoreState() } else { paintLayer.restoreState() }
+}
+
+void func pTranslate(x:int, y:int) {
+    if paintLayer == null { translate(x, y) } else { paintLayer.translate(x, y) }
+}
+
+void func pRotate(deg:float) {
+    if paintLayer == null { rotate(deg) } else { paintLayer.rotate(deg) }
+}
+
+void func pScale(sx:float, sy:float) {
+    if paintLayer == null { scale(sx, sy) } else { paintLayer.scale(sx, sy) }
+}
+
 void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
     if paintLayer == null { drawImage(i, x, y, w, h) }
     else { paintLayer.drawImage(i, x, y, w, h) }
@@ -1464,7 +1484,43 @@ void func paintClipped(b:Box) {
     pDrawImage(layer, px, py)
 }
 
+// A transform changes where a box and its descendants are painted and
+// nothing about where they were laid out (CSS Transforms 1 §3), so it
+// is a matrix around the painting of the subtree and touches no
+// geometry. The question is asked once per document -- cascadeSawTransform
+// -- rather than of every box.
 void func paintBox(b:Box) {
+    if !cascadeSawTransform || b.style.transforms.length == 0 {
+        paintBoxUntransformed(b)
+        return
+    }
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
+    if !boxVisible(b) { return }
+    Style s = b.style
+    // Every function is about the transform origin, which is the box's
+    // centre unless it says otherwise. Moving the origin to (0,0),
+    // transforming and moving back is what makes that so.
+    int ox = b.x + resolveLen(s.transformOriginX, b.w, Math.floorDiv(b.w, 2))
+    int oy = b.y + resolveLen(s.transformOriginY, b.h, Math.floorDiv(b.h, 2))
+    pSaveState()
+    pTranslate(ox, oy)
+    for int i = 0, i < s.transforms.length, i++ {
+        Transform t = s.transforms[i]
+        if t.kind == TX_TRANSLATE {
+            // a percentage translate is of the box's own size
+            pTranslate(resolveLen(t.x, b.w, 0), resolveLen(t.y, b.h, 0))
+        } else if t.kind == TX_ROTATE {
+            pRotate(t.angle)
+        } else if t.kind == TX_SCALE {
+            pScale(t.sx, t.sy)
+        }
+    }
+    pTranslate(-ox, -oy)
+    paintBoxUntransformed(b)
+    pRestoreState()
+}
+
+void func paintBoxUntransformed(b:Box) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
     // `overflow: hidden` clips this box's descendants to its padding box
