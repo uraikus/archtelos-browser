@@ -1176,6 +1176,19 @@ int func collapsedBottomMargin(b:Box, cw:int) {
 // starts at (cx, cy) with width cw. `y` is the flow position: the box's
 // top border edge lands at y + (its top margin, unless already
 // collapsed into the parent). Returns nothing; geometry lives on b.
+// Whether an automatic width is shrink-to-fit rather than the
+// containing block's: min(max(min-content, available), max-content).
+//
+// A float is in this set (CSS2 §10.3.5) and was not, so a float with no
+// declared width was laid out as an ordinary block and took the whole
+// column. The text meant to wrap beside it then had nothing to wrap in
+// and went underneath, which is the visible half of the bug.
+bool func widthIsShrinkToFit(b:Box) {
+    if b.style.floatSide != FLOAT_NONE { return true }
+    return (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX || b.kind == BOX_GRID)
+        && !b.blockLevel
+}
+
 void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     resolveEdges(b, cw)
     Style s = b.style
@@ -1217,7 +1230,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int width = 0
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
     if autoWidth {
-        if (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX || b.kind == BOX_GRID) && !b.blockLevel {
+        if widthIsShrinkToFit(b) {
             computeIntrinsic(b)
             int avail = cw - b.ml - b.mr
             int pref = b.maxContent - horizontalExtras(b, 0) + edges

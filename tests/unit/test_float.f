@@ -97,4 +97,81 @@ for int j = 0, j < qp[0].lines[1].frags.length, j++ {
 check(firstRight <= 500, 'the line beside the float stops at its edge')
 check(secondRight > 500, 'the line below it runs past that edge')
 
+// ---- a float with no width hugs its content (CSS2 §10.3.5) -----------
+// `width: auto` on a float is shrink-to-fit, not the containing
+// block's width: min(max(min-content, available), max-content). The
+// engine laid the float out as an ordinary block instead, so every
+// float without a declared width spanned its column and the text meant
+// to wrap beside it went underneath.
+//
+// An inline-block is sized by that same formula and has been right all
+// along, so the checks that matter are agreements with one rather than
+// widths worked out again here -- which also makes them independent of
+// this engine's monospace advance being 10px where Chromium's is 9.6.
+//
+// Each case gets a page of its own. Put together on one, the floats
+// from the earlier cases were still in the float list for the later
+// ones -- nothing here establishes a block formatting context yet --
+// and a 200px-wide float left the next line no room, so the
+// inline-block being used as the reference fell back to its min-content
+// width. The reference has to be measured where nothing else is in the
+// way, or it is not one.
+const text FLOAT_STF_HEAD = '<!doctype html><html><head><style>'
+    + 'body{margin:0;font:16px/20px monospace;width:200px}'
+    + '</style></head><body>'
+
+int func stfWidth(markup:text) {
+    Page pp = pageFromHtml(FLOAT_STF_HEAD + markup + '</body></html>', 'about:blank', 200)
+    Box b = boxById(pp.root, 't')
+    return b == null ? -1 : b.w
+}
+
+text manyWords = ''
+for int mw = 0, mw < 40, mw++ { manyWords = manyWords + 'word ' }
+
+int floatShort = stfWidth('<div id="t" style="float:left">hi</div>')
+int blockShort = stfWidth('<div id="t" style="display:inline-block">hi</div>')
+int floatLong = stfWidth('<div id="t" style="float:left">some words here</div>')
+int blockLong = stfWidth('<div id="t" style="display:inline-block">some words here</div>')
+int floatPad = stfWidth('<div id="t" style="float:left;padding:5px">some words here</div>')
+int blockPad = stfWidth('<div id="t" style="display:inline-block;padding:5px">some words here</div>')
+
+checkEqInt(floatShort, blockShort,
+           'a short float is as wide as the inline-block of the same words')
+checkEqInt(floatLong, blockLong, 'and a longer one')
+checkEqInt(floatPad, blockPad,
+           'and one with padding, which the formula adds outside the content')
+
+// The absolute facts, so that both sides being wrong together could not
+// pass the agreements above.
+check(floatShort < floatLong, 'two characters are narrower than fifteen')
+check(floatLong < 200, 'and fifteen do not fill a 200px container')
+checkEqInt(stfWidth('<div id="t" style="float:left;width:100px">some words here</div>'), 100,
+           'a declared width is still the width')
+checkEqInt(floatPad, floatLong + 10, 'padding adds its two edges to the content width')
+
+// The two ends of the formula. A float whose longest unbreakable word
+// is wider than the space available overflows rather than breaking it,
+// because min-content is the floor; one whose content would run on for
+// ever stops at the available width, because max-content is the cap.
+check(stfWidth('<div id="t" style="float:left">antidisestablishmentarianism</div>') > 200,
+      'one word wider than the container makes the float wider than the container')
+checkEqInt(stfWidth('<div id="t" style="float:left">' + manyWords + '</div>'), 200,
+           'and forty words stop at the container rather than running past it')
+
+// A block inside the float carries its own content width outward.
+checkEqInt(stfWidth('<div id="t" style="float:left"><div>some words here</div></div>'), floatLong,
+           'a block inside a float measures through it')
+
+// Text beside a shrink-to-fit float wraps in what is left, which is the
+// whole point: a float that filled the column left nothing to wrap in.
+Page besidePage = pageFromHtml('<!doctype html><html><head><style>'
+    + 'body{margin:0;font:16px/20px monospace;width:400px}'
+    + '</style></head><body><div id="c"><div id="fb" style="float:left">tag</div>'
+    + '<p id="tb" style="margin:0">aaaa bbbb cccc</p></div></body></html>',
+    'about:blank', 400)
+check(boxById(besidePage.root, 'fb').w < 100, 'the float hugs its three characters')
+checkEqInt(boxById(besidePage.root, 'tb').y, boxById(besidePage.root, 'fb').y,
+           'so the paragraph beside it starts on the same line, not below')
+
 finish('float')

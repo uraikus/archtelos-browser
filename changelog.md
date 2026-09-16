@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A float with no width took the whole column
+
+`width: auto` on a float is shrink-to-fit --
+`min(max(min-content, available), max-content)`, CSS2 §10.3.5 -- and
+`placeFloat` laid the float out as an ordinary block with the full
+available width instead. Every float without a declared width spanned
+its column, and the text meant to wrap beside it went underneath, which
+is the visible half of it: a floated badge, pull-quote or image caption
+pushed the paragraph down rather than sitting in it.
+
+An inline-block is sized by that same formula and had been right all
+along, so the fix is one predicate: a floated box joins the set whose
+automatic width is shrink-to-fit. The checks are agreements with an
+inline-block of the same content rather than widths worked out again,
+which also makes them independent of this engine's monospace advance
+being 10px where Chromium's is 9.6.
+
+Both ends of the formula are checked, because the middle term alone
+would pass on a naive "use max-content": a float whose longest
+unbreakable word is wider than the space available comes out wider than
+its container, since min-content is the floor, and one with forty words
+stops at the container, since max-content is the cap. Chromium agrees on
+both, at 270px in a 200px container and at 200px.
+
+The twenty-one float checks that already existed all passed throughout,
+because every one of them declared a width. That is how a float bug this
+size survived a float suite.
+
+The first version of this test put all its cases on one page, and the
+inline-block it compares against read 50px rather than 150. The floats
+from the earlier cases were still in the float list -- nothing here
+establishes a block formatting context yet -- and a 200px-wide float
+left the next line no room, so the reference fell back to its
+min-content width. A reference measured with something in the way is not
+one, so each case gets a page of its own.
+
 ### display: inline-table, and Display 3's three corrections done
 
 `inline-table` mapped to `DISPLAY_TABLE`, so it laid out as a

@@ -110,7 +110,7 @@ decides which of two tables the system colors answer from: eleven of the
 nineteen differ under `dark`, and the other eight do not.
 
 **Layout** is block formatting with margin collapsing, inline formatting
-with word wrapping and baseline alignment, inline-blocks with
+with word wrapping and baseline alignment, inline-blocks and floats with
 shrink-to-fit widths, replaced images with intrinsic sizes and aspect
 ratio, preserved whitespace, list markers, and automatic table layout
 with fixed and percentage columns, `colspan`, row heights and vertical
