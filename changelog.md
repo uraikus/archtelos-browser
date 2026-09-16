@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Filter Effects 1 cannot be implemented, and now it is written down why
+
+A filter is a function over the pixels an element and its descendants
+painted. This browser already paints a subtree into an image -- that is
+how `clip-path` and `overflow: hidden` work -- and `img.drawPixel`
+writes one back. What it cannot do is read one. `img.getPixelColor`
+returns a `color`, and a `color` supports equality and nothing else: no
+`.r`, no `.toInt()`, no packed form. Equality is also the only relation,
+so nothing can be recovered by searching either -- with no ordering
+there is no binary search, and trying candidates is 256³ comparisons for
+one pixel.
+
+The comparison is exact: a pixel painted `rgb(200, 100, 50)` compares
+equal to another painted the same and unequal to one painted
+`rgb(201, 100, 50)`. The bytes are there and the runtime can tell them
+apart. The program cannot see them. That is FINDINGS.md 35, with the
+proposal in festina.md 3p -- channel accessors on `color`, or
+`img.getPackedPixel`, or both.
+
+The work that could be done ahead of the language was done. The
+matrices are Filter Effects 1 §8, derived in a separate script from the
+specification text, and they agree with Chromium 141 on all
+twenty-seven cases -- seven functions against three colours -- read from
+a canvas with `ctx.filter` and `getImageData`, which needs no
+screenshot. The specification does not say how a real number becomes an
+eight-bit channel and Chromium is not uniform about it: the matrix
+filters round to nearest and the component-transfer ones truncate, which
+is what a matrix in fixed point and a component lookup table each do.
+That rule reproduces all twenty-seven exactly; either rule alone misses
+eight or eleven by one. todo.md keeps the table.
+
+The parsing and painting written against this were removed rather than
+left in. A `filter` property that computes and changes no pixel is
+`outline-style` again -- a property the instrument would score while the
+engine does nothing with it -- and this branch has declined that twice
+already for `print-color-adjust` and `forced-color-adjust`.
+
 ### The logical inline properties follow `direction`, and `dir` works
 
 `margin-inline-start` was `margin-left` whichever way the text ran.

@@ -663,3 +663,44 @@ every character reference in `named_refs.f` as literal bytes. Each is a
 non-ASCII constant that cannot survive a terminal that mangles it or a
 patch applied with the wrong encoding, and the language offers no way to
 spell it that does.
+
+---
+
+## 3p Let a program read a pixel's channels
+
+**Today.** `img.getPixelColor(x, y)` returns a `color`, and a `color`
+supports equality and nothing else — no `.r`, no `.toInt()`, no packed
+form (FINDINGS.md, finding 35). A program can ask whether a pixel is a
+particular colour and can never ask what colour it is. Equality is also
+the only relation, so no search recovers it: with no ordering there is
+no binary search, and trying candidates is 256³ comparisons per pixel.
+
+**Proposal.** Either of these, and ideally both:
+
+```festina
+color c = layer.getPixelColor(x, y)
+int r = c.r          // 0..255
+int g = c.g
+int b = c.b
+int a = c.a
+
+int packed = layer.getPackedPixel(x, y)   // 0xAARRGGBB
+```
+
+The second is the one this browser would use directly, its own colour
+model already being a packed integer (`src/util/color.f`). Neither asks
+the runtime for anything it does not have: the bytes are in the surface,
+and `getPixelColor` already reaches them accurately enough to
+distinguish `rgb(200, 100, 50)` from `rgb(201, 100, 50)`.
+
+**What it unlocks here.** CSS Filter Effects 1, entirely. `grayscale()`,
+`sepia()`, `saturate()`, `hue-rotate()`, `invert()`, `brightness()` and
+`contrast()` are each a function from a pixel's channels to new ones,
+and every other piece is already in place: the subtree is painted into
+an image by the same device `clip-path` and `overflow: hidden` use, the
+specification's matrices have been derived and checked against Chromium
+on twenty-seven cases (todo.md keeps the table), and `img.drawPixel`
+writes the result back. The pass over the pixels is a dozen lines. It is
+one accessor away, and it is the only specification in the CSS snapshot
+that this browser is prevented from implementing by the language rather
+than by the work.

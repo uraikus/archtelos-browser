@@ -152,6 +152,49 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     Arabic shaping, which needs contextual forms the toy font API does
     not offer (FINDINGS.md, finding 31).
 
+### Filter Effects 1, when the language allows it
+
+**Blocked, and not on the work.** A filter is a function over the pixels
+an element and its descendants painted, and this browser already paints
+a subtree into an image — that is how `clip-path` and `overflow: hidden`
+work. What it cannot do is read a pixel back: `img.getPixelColor`
+returns a `color`, and a `color` supports equality and nothing else
+(FINDINGS.md, finding 35; the proposal is festina.md, 3p). The pass over
+the pixels is a dozen lines and cannot be written.
+
+The part that could be done in advance has been. The matrices below are
+Filter Effects 1 §8, derived in a separate script from the specification
+text, and they agree with Chromium 141 on every one of twenty-seven
+cases — seven functions against three colours — taken from a canvas
+with `ctx.filter` and `getImageData`, which needs no screenshot.
+
+The one thing the specification leaves open is how a real number becomes
+an eight-bit channel, and Chromium is not uniform: the matrix filters
+(`grayscale`, `sepia`, `saturate`, `hue-rotate`) round to nearest and
+the component-transfer ones (`invert`, `brightness`, `contrast`)
+truncate — what a matrix applied in fixed point and a component lookup
+table each do. Following that rule reproduces all twenty-seven exactly;
+either rule alone misses eight or eleven of them by one.
+
+| filter | on rgb(200,100,50) | on rgb(255,0,0) | on rgb(0,128,255) |
+|---|---|---|---|
+| `grayscale(1)` | 118,118,118 | 54,54,54 | 110,110,110 |
+| `grayscale(0.5)` | 159,109,84 | 155,27,27 | 55,119,182 |
+| `sepia(1)` | 165,147,114 | 100,89,69 | 147,131,102 |
+| `saturate(0)` | 118,118,118 | — | — |
+| `saturate(2)` | 255,82,0 | — | 0,146,255 |
+| `hue-rotate(90deg)` | 50,146,35 | 0,91,0 | 255,56,220 |
+| `invert(1)` | 55,155,205 | — | — |
+| `invert(0.25)` | 163,113,88 | 191,63,63 | 63,127,191 |
+| `brightness(0.5)` | 100,50,25 | 127,0,0 | — |
+| `brightness(1.5)` | 255,150,75 | — | 0,192,255 |
+| `contrast(2)` | 255,72,0 | — | — |
+| `contrast(0.5)` | 163,113,88 | 191,63,63 | 63,127,191 |
+
+`blur()` and `drop-shadow()` are a second question and stay out
+regardless: one is a convolution and the other wants the path API an
+image does not have.
+
 ### After the official definition
 
 the media features about a user's own preferences that

@@ -1039,3 +1039,54 @@ comparison in a test caught it. The workaround is to write the character
 itself rather than an escape, which works — `'…'` has a length of 1 —
 but it means a non-ASCII constant cannot be written in the form that
 survives a copy through a terminal, a patch, or a code review.
+
+---
+
+## 35 A painted pixel can be compared but never read
+
+`img.getPixelColor(x, y)` hands back a `color`, and a `color` supports
+equality and nothing else. There is no channel accessor, no conversion
+to an integer, no way at all to ask what colour a pixel is:
+
+```festina
+img layer = blankImage(4, 4)
+fillStyle(200, 100, 50)
+layer.drawRect(0, 0, 4, 4)
+color c = layer.getPixelColor(1, 1)
+int v = c.r          // error: cannot access field 'r' on color
+int v = c.toInt()    // error: cannot access field 'toInt' on color
+```
+
+`.red`, `.value`, `.packed` and `.rgba` fail the same way. What does
+work is comparing two colours, and the comparison is exact — a pixel
+painted `rgb(200, 100, 50)` compares equal to another painted the same
+and unequal to one painted `rgb(201, 100, 50)`. The bytes are there and
+the runtime can tell them apart. The program cannot see them.
+
+Equality is also the only relation, so nothing can be recovered by
+searching either: with no ordering there is no binary search, and
+finding a pixel's colour by trying candidates means 256³ comparisons for
+one pixel.
+
+**What this closes.** Every operation that transforms what has already
+been painted. CSS Filter Effects 1 is the whole of it — `grayscale()`,
+`sepia()`, `saturate()`, `hue-rotate()`, `invert()`, `brightness()` and
+`contrast()` are each a function from a pixel's channels to new ones,
+and the subtree is already painted into an image by the same device
+`clip-path` and `overflow: hidden` use. The image is there, the pass
+over it is three lines, and the channels cannot be got at. The
+specification's matrices were derived here and agree with Chromium on
+twenty-seven cases across seven functions and three colours (todo.md
+keeps the table); the implementation is one accessor away.
+
+**Workaround.** None. `tests/render/gradients.f` works around the other
+half of this — a `color` cannot be built from runtime numbers either, so
+an expected pixel is checked by painting a candidate into a scratch
+pixel and comparing the two. That trick answers "is this pixel that
+colour", which is enough for a test and useless for a filter.
+
+**Proposal.** See festina.md: either channel accessors on `color`
+(`.r`, `.g`, `.b`, `.a`, as ints from 0 to 255), or a packed-integer
+accessor on the image (`img.getPackedPixel(x, y)`), or both. The
+browser already carries its own packed-integer colour model in
+`src/util/color.f` and would use the second directly.
