@@ -529,8 +529,8 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,715,032 |
-| This browser, all `.f` source | 873,821 |
+| This browser, the whole program | 2,724,400 |
+| This browser, all `.f` source | 885,182 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
@@ -675,6 +675,17 @@ element now does is reached. Ten alternating samples each give 101 to
 109 ms on both sides, with the same best — which is what "nothing at
 all" should look like, and is the reason the page was checked for
 counters before the numbers were read.
+
+`grid-template-areas` and named lines cost **9,368 bytes**
+(2,715,032 → 2,724,400) and nothing to a page without a grid. The empty
+answer is shared rather than built afresh, which is the part worth
+saying: `parseTrackList` runs for four properties on every distinct
+style, almost always for a property the page never declared, and it was
+allocating two arrays each time before the check that finds there is
+nothing to parse. It hands back one shared empty list instead, and the
+first bracketed name swaps in arrays of its own. Ten alternating samples
+give 101 to 105 ms against the revision before it at 101 to 110, the
+same best on each side, on a run whose control came in at 0.4%.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,

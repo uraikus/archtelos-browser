@@ -2171,12 +2171,19 @@ Track func parseTrack(tok:ascii, fontSize:int) {
 // reset here so a caller that ignores them never reads the last list's.
 arr[text] trackLineNames = []
 arr[int] trackLineAt = []
+// The empty answer, shared rather than built afresh. Almost every call
+// here is for a property the page never declared, and two allocations
+// apiece across four track properties per distinct style is a cost the
+// pages without a grid should not pay. Nothing writes to these: the
+// first bracketed name swaps in arrays of its own.
+arr[text] trackNoNames = []
+arr[int] trackNoLines = []
+bool trackLinesOwned = false
 
 arr[Track] func parseTrackList(v:ascii, fontSize:int) {
-    arr[text] freshNames = []
-    arr[int] freshAt = []
-    trackLineNames = freshNames
-    trackLineAt = freshAt
+    trackLineNames = trackNoNames
+    trackLineAt = trackNoLines
+    trackLinesOwned = false
     arr[Track] out = []
     if v == null { return out }
     ascii t = asciiTrim(v)
@@ -2187,6 +2194,13 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
         // on whitespace and knows nothing of brackets, so a bracketed
         // run arrives as several tokens and is gathered back here.
         if toks[i].charCodeAt(0) == CH_LBRACKET {
+            if !trackLinesOwned {
+                arr[text] freshNames = []
+                arr[int] freshAt = []
+                trackLineNames = freshNames
+                trackLineAt = freshAt
+                trackLinesOwned = true
+            }
             int j = i
             while j < toks.length {
                 ascii piece = asciiTrim(toks[j])
@@ -2283,10 +2297,12 @@ GridLine func parseGridLine(v:ascii) {
 // back in `areaTemplateCols` and is 0 when there is no template.
 arr[text] areaTemplateNames = []
 int areaTemplateCols = 0
+// Shared for the same reason as the empty line-name lists above: a page
+// with no `grid-template-areas` anywhere allocates nothing for it.
+arr[text] areaNoNames = []
 
 void func parseGridAreas(v:ascii) {
-    arr[text] fresh = []
-    areaTemplateNames = fresh
+    areaTemplateNames = areaNoNames
     areaTemplateCols = 0
     if v == null { return }
     ascii t = asciiTrim(v)
