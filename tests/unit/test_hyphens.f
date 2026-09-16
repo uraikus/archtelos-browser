@@ -78,4 +78,35 @@ checkEqInt(findById(withShy, 't').lines[0].frags[0].w,
            findById(without, 't').lines[0].frags[0].w,
            'a soft hyphen that does not break takes no width')
 
+// ---- hyphenate-character (CSS Text 4) ------------------------------------
+// The string a hyphenation break shows. `auto` -- the initial value --
+// leaves it to the browser, which is a hyphen here. It is inherited,
+// and it counts towards the width of the prefix that has to fit, so a
+// longer one can move the break.
+
+Box hcDefault = layoutHtml(hyphenDoc(''), 400)
+checkEq(findById(hcDefault, 't').lines[0].frags[0].content, 'aaaaaaaa-',
+        'a break with no hyphenate-character shows a hyphen')
+
+Box hcEquals = layoutHtml(hyphenDoc("hyphenate-character:'='"), 400)
+checkEq(findById(hcEquals, 't').lines[0].frags[0].content, 'aaaaaaaa=',
+        'and shows what hyphenate-character names instead')
+
+Box hcAuto = layoutHtml(hyphenDoc('hyphenate-character:auto'), 400)
+checkEq(findById(hcAuto, 't').lines[0].frags[0].content,
+        findById(hcDefault, 't').lines[0].frags[0].content,
+        '`auto` is what the initial value already was')
+
+// Inherited: declared on an ancestor, used at the break.
+Box hcInherited = layoutHtml(head + '<div style="hyphenate-character:\'=\'">'
+    + '<div id="t" style="width:90px">aaaaaaaa' + SHY + 'bbbbbbbb</div></div></body>', 400)
+checkEq(findById(hcInherited, 't').lines[0].frags[0].content, 'aaaaaaaa=',
+        'hyphenate-character is inherited')
+
+// The second line is unaffected either way -- only the break carries
+// the character, which is what tells this from appending it to the word.
+checkEq(findById(hcEquals, 't').lines[1].frags[0].content,
+        findById(hcDefault, 't').lines[1].frags[0].content,
+        'and the rest of the word is the same however the break is drawn')
+
 finish('hyphens')

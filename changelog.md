@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `column-fill` and `hyphenate-character`
+
+Two properties off the measured work list, taking the count from 202 to
+204 on `column-fill -> columnFillAuto` and
+`hyphenate-character -> hyphenChar`.
+
+`column-fill: auto` (Multi-column 1 §3.3) fills each column to the
+container's height before starting the next -- so with no height to fill
+to there is nothing to break at, the content stays in the first column
+and the container grows instead. Chromium 141 gives twelve 20px blocks
+one 240px column that way, against three columns of 80 when balancing,
+and the two agree exactly once a height is declared. That agreement is
+the second half of the check: it is what tells a `column-fill` that
+works from one that has simply switched balancing off.
+
+`hyphenate-character` (CSS Text 4) names the string a hyphenation break
+draws instead of a hyphen. It is inherited, and it counts towards the
+width of the prefix that has to fit, so a longer one can move the break.
+It is stored empty for the initial `auto` rather than as `"-"`, so a
+page that never declares it inherits a zero value and allocates nothing.
+
 ### `object-view-box`
 
 CSS Images 4, and the property count goes from 201 to 202 on

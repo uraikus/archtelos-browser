@@ -544,6 +544,11 @@ struct Style {
     tabSize:int             // a tab's advance in spaces
     tabSizePx:int           // or in px, when a length was given; -1 otherwise
     hyphensNone:bool        // `hyphens: none` suppresses the soft hyphen
+    // hyphenate-character: the string a break shows. Empty means the
+    // initial `auto`, which is a hyphen here; it is stored empty rather
+    // than as "-" so that a page which never declares it allocates
+    // nothing and inherits a zero value.
+    hyphenChar:text
     listStyle:int
     // The name list-style-type was given, so a marker can be generated
     // by the counter-style engine. Empty means the built-in bullet the
@@ -629,6 +634,9 @@ struct Style {
     // column-span: all, which takes a child out of the columns and lays
     // it across every one of them, splitting the container in two.
     columnSpanAll:bool
+    // column-fill: `balance` is the initial value, so the flag names
+    // the other one and a page that never says it carries a false.
+    columnFillAuto:bool
     // CSS Fragmentation 3 and CSS2 orphans/widows, which decide where a
     // column may break. `breakBefore` and `breakAfter` are BRK_*;
     // `breakInsideAvoid` is the only value of break-inside that changes

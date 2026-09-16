@@ -135,9 +135,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     auto-placement does. An `auto`
     track is sized by the largest item that sits in it alone, so an
     item spanning two auto tracks does not grow either of them.
-12. **Multi-column 1, completed**: `column-fill: auto`; a spanner that
-    sits below the container's own children, which needs its ancestors
-    broken around it; and real fragment boxes, so that a subtree nested
+12. **Multi-column 1, completed**: a spanner that sits below the
+    container's own children, which needs its ancestors broken around
+    it; and real fragment boxes, so that a subtree nested
     below those children can be broken and a split child's background
     paints in each column rather than only the first. Fragment boxes are what
     Fragmentation 3 still wants too: `break-before` and `break-after`

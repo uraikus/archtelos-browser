@@ -207,4 +207,44 @@ Box spanNoColumns = layoutHtml(head + '<div id="c" style="width:300px">'
 checkEqInt(findById(spanNoColumns, 'b1').y, 30, 'outside a column container a spanner is a block')
 checkEqInt(findById(spanNoColumns, 'b0').w, 300, 'at the width it would have had anyway')
 
+// ---- column-fill (Multi-column 1 §3.3) --------------------------------
+// `balance` is the initial value and makes the columns as equal as it
+// can. `auto` fills each column to the container's height before
+// starting the next -- so with no height to fill to, everything stays
+// in the first column and the container grows instead.
+//
+// Chromium 141 on twelve 20px blocks in a 300px, three-column container
+// with no declared height: balance puts four in each column and the
+// container is 80 tall; `auto` puts all twelve in the first column and
+// the container is 240. With `height: 80px` the two agree exactly,
+// which is the check that this does not simply turn balancing off.
+
+text cfItems = ''
+for int i = 0, i < 12, i++ {
+    cfItems = cfItems + `<div id="f${i}" style="height:20px"></div>`
+}
+
+Box cfBalance = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0">`
+    + cfItems + '</div></body>', 400)
+checkEqInt(findById(cfBalance, 'c').h, 80, 'balancing makes three columns of four')
+checkEqInt(findById(cfBalance, 'f4').x, 100, 'the fifth block starts the second column')
+checkEqInt(findById(cfBalance, 'f4').y, 0, 'at the top of it')
+
+Box cfAuto = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0;column-fill:auto">`
+    + cfItems + '</div></body>', 400)
+checkEqInt(findById(cfAuto, 'c').h, 240, 'with nothing to fill to, `auto` uses one column')
+checkEqInt(findById(cfAuto, 'f4').x, 0, 'so the fifth block is still in the first column')
+checkEqInt(findById(cfAuto, 'f4').y, 80, 'below the four before it')
+check(findById(cfAuto, 'c').h != findById(cfBalance, 'c').h,
+      'which is not what balancing does')
+
+// Given a height to fill, the two agree.
+Box cfAutoH = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0;column-fill:auto;height:80px">`
+    + cfItems + '</div></body>', 400)
+Box cfBalanceH = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0;height:80px">`
+    + cfItems + '</div></body>', 400)
+checkEqInt(findById(cfAutoH, 'f4').x, findById(cfBalanceH, 'f4').x,
+           'with a height to fill, `auto` and `balance` put the fifth block in one place')
+checkEqInt(findById(cfAutoH, 'f4').y, findById(cfBalanceH, 'f4').y, 'at one height')
+
 finish('multicol')

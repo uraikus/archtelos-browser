@@ -3839,6 +3839,18 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         if t == 'none' { s.hyphensNone = true }
         else if t == 'manual' || t == 'auto' { s.hyphensNone = false }
     }
+    s.hyphenChar = isRoot ? '' : parent.hyphenChar
+    ascii hc = styleProp(props, 'hyphenate-character')
+    if hc != null {
+        ascii hct = asciiTrim(hc)
+        if asciiLower(hct) == 'auto' { s.hyphenChar = '' }
+        else if hct.length >= 2 {
+            int q = hct.charCodeAt(0)
+            if (q == CH_QUOTE || q == CH_APOS) && hct.charCodeAt(hct.length - 1) == q {
+                s.hyphenChar = hct.slice(1, hct.length - 1).toText()
+            }
+        }
+    }
     // tab-size: a number of spaces, or a length saying the advance
     // outright. Both inherit; the initial value is eight spaces.
     s.tabSize = isRoot ? 8 : parent.tabSize
@@ -4354,6 +4366,8 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
     ascii cspan = styleProp(props, 'column-span')
     if cspan != null { s.columnSpanAll = asciiLower(asciiTrim(cspan)) == 'all' }
+    ascii cfill = styleProp(props, 'column-fill')
+    if cfill != null { s.columnFillAuto = asciiLower(asciiTrim(cfill)) == 'auto' }
     ascii crs = styleProp(props, 'column-rule-style')
     if crs != null { s.columnRuleStyle = lineStyleKeyword(asciiLower(asciiTrim(crs))) }
     ascii crw = styleProp(props, 'column-rule-width')

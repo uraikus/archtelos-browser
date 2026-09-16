@@ -1680,6 +1680,15 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     collectColumnUnits(b, units, from, to)
     if units.length == 0 { return flowH }
 
+    // `column-fill: auto` fills each column to the container's height
+    // before starting the next, so with no height to fill to there is
+    // nothing to break at: the content stays in the first column and
+    // the container grows to hold it (Multi-column 1 §3.3). Chromium
+    // 141 puts twelve 20px blocks in one 240px column that way, against
+    // three columns of 80 when balancing. Given a definite height the
+    // two agree, and the balancing below is what produces it.
+    if s.columnFillAuto && s.height.kind != LEN_PX { return flowH }
+
     // Balance: aim for an equal share and grow the target until every
     // unit fits in the columns there are. A unit taller than the target
     // sets its own column's height, which is why this is a loop rather
@@ -2529,6 +2538,14 @@ text func textRange(w:text, from:int, to:int) {
 // Places a word holding soft hyphens, breaking at the last one whose
 // prefix still fits with a hyphen after it. The parts that are not
 // broken at contribute nothing, which is what makes the hyphen soft.
+// What a hyphenation break draws. `hyphenate-character` names it and
+// the initial `auto` leaves it to the browser, which is a hyphen here
+// (CSS Text 4). The string counts towards the width of the prefix that
+// has to fit, so a longer one can move the break.
+text func hyphenStringOf(s:Style) {
+    return s.hyphenChar == '' ? '-' : s.hyphenChar
+}
+
 void func placeSoftHyphenated(b:Box, w:text) {
     Style s = b.style
     text pending = w
@@ -2545,7 +2562,7 @@ void func placeSoftHyphenated(b:Box, w:text) {
         text prefix = ''
         for int i = 0, i < pending.length, i++ {
             if pending.charCodeAt(i) != SOFT_HYPHEN { continue }
-            text candidate = stripSoftHyphens(textRange(pending, 0, i)) + '-'
+            text candidate = stripSoftHyphens(textRange(pending, 0, i)) + hyphenStringOf(s)
             int cw = measureWidth(s, candidate)
             if ifcX + cw <= ifcLineRight {
                 best = i
