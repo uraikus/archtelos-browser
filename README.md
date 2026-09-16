@@ -132,6 +132,13 @@ content — and a tile that runs past that edge is cut off there. `object-fit` a
 element's own content inside its box, in all five fitting values, and
 clip it to the content box.
 
+**Right-to-left text is drawn right to left.** `direction` sets a
+paragraph's base level, `text-align`'s `start` and `end` follow it, and
+the bidirectional algorithm puts each finished line into the order it is
+read on the screen rather than the order it is stored — so a Hebrew or
+Arabic run comes out reversed while Latin or digits inside it keep their
+own order.
+
 **Columns** break one flow into several. `column-count` and
 `column-width` say how many and how wide, the content is laid out once
 at the column width and then broken into columns of equal height, and
@@ -236,15 +243,16 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers twenty-six unit suites (utilities, HTML, CSS parser,
+The runner covers twenty-seven unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
-containment, alignment, grid, columns, audio, the preload scanner), eleven offscreen render suites that check
+containment, alignment, grid, columns, bidi, audio, the preload
+scanner), twelve offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, background images, object fitting,
-borders, border images, text decoration, transforms and box shadows
-— three conformance
+borders, border images, text decoration, transforms, right-to-left
+text and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

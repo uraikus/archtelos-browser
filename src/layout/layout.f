@@ -11,6 +11,7 @@
 // (font, word).
 
 import ../css/cascade.f
+import ../util/bidi.f
 
 const int BOX_BLOCK = 1
 const int BOX_INLINE = 2
@@ -257,6 +258,11 @@ int func lineHeightOf(s:Style) {
 // wherever a pass can be skipped whole.
 bool docHasPositioned = false
 bool docHasFloats = false
+// Set while the box tree is built when any text holds a right-to-left
+// character. A page with none never runs the bidirectional algorithm
+// at all (CLAUDE.md, "a feature must not cost anything to the pages
+// that do not use it").
+bool anyRtlText = false
 
 Box func newBox(kind:int, node:Node, style:Style) {
     Box b
@@ -401,6 +407,7 @@ text func formControlText(n:Node) {
 Box func buildTextBox(n:Node, parentStyle:Style) {
     Box b = newBox(BOX_TEXT, n, parentStyle)
     b.content = n.data
+    if !anyRtlText && bidiNeedsReorder(b.content) { anyRtlText = true }
     return b
 }
 
@@ -1798,6 +1805,23 @@ void func finishLineUncounted(forced:bool) {
     }
     int lineH = above + below
     int baseline = ifcY + above
+    // The bidirectional algorithm runs on the finished line, because it
+    // is a line's characters that are put into visual order and the
+    // line is not known until it is broken. A fragment holds all of one
+    // text box's characters on this line, so reordering it is the whole
+    // line for the ordinary case of a paragraph of one script; a line
+    // that mixes two inline boxes is reordered within each of them and
+    // not across the two, which css-2026.md records.
+    if bs.directionRtl || bs.bidiOverride || anyRtlText {
+        for int i = 0, i < ifcFrags.length, i++ {
+            Fragment f = ifcFrags[i]
+            if f.kind != FRAG_TEXT { continue }
+            if !bidiNeedsReorder(f.content) && !bs.directionRtl && !bs.bidiOverride { continue }
+            int baseLevel = bs.directionRtl ? 1 : 0
+            f.content = bs.bidiOverride ? bidiVisualOverride(f.content, baseLevel)
+                                        : bidiVisual(f.content, baseLevel)
+        }
+    }
     // text-overflow: ellipsis replaces the end of a line that runs out
     // of its box with an ellipsis. It needs a box that clips, because
     // there is nothing to hide otherwise, which is why a box with no
@@ -3444,6 +3468,7 @@ Box func layoutDocument(doc:Node, width:int) {
     // second layout does not inherit the first one's floats.
     resetFloats()
     docHasPositioned = false
+    anyRtlText = false
     docHasFloats = false
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')

@@ -483,6 +483,16 @@ struct Style {
     emphasisColor:int       // COLOR_UNSET = the text's own colour
     emphasisUnder:bool
     underlinePosUnder:bool
+    // direction. `rtl` is the paragraph's base level for the
+    // bidirectional algorithm, and it is what `start` and `end` mean
+    // for text-align. It inherits.
+    directionRtl:bool
+    // Whether text-align was given a side rather than an end. `start`
+    // and `end` -- and the initial value, which is `start` -- follow
+    // each element's own direction, so they cannot be resolved once and
+    // inherited; `left` and `right` can.
+    textAlignExplicit:bool
+    bidiOverride:bool       // unicode-bidi: bidi-override
     width:Len
     height:Len
     minWidth:Len

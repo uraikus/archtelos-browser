@@ -5,6 +5,59 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Right-to-left text is drawn right to left
+
+Hebrew and Arabic rendered before this — the decoder, the DOM, layout
+and the painter all carried them — **in logical order, which for a
+right-to-left script is backwards on the screen**. The bidirectional
+algorithm (UAX #9) now puts each finished line into the order it is
+read: the W, N and I rules and the L2 reordering.
+
+`direction` sets a paragraph's base level, and it is what `text-align`'s
+`start` and `end` resolve against — including the initial value, which
+*is* `start`, so an element with no side of its own follows its own
+direction rather than inheriting a resolved side. That distinction is
+what `textAlignExplicit` exists for: `left` and `right` are sides and
+inherit as they are, `start` and `end` are ends and cannot be resolved
+once.
+
+The character classes come from script ranges rather than the Unicode
+database, which this repository would have to vendor; the ranges cover
+the scripts the algorithm exists for. The explicit embedding and isolate
+codes — the X rules — are not implemented, so a document that overrides
+the implicit result with them gets the implicit result.
+`unicode-bidi: bidi-override` is honoured, and is the one case where
+reversing a line outright is the right answer.
+
+**Thirty-six checks in the new `tests/unit/test_bidi.f`, each a rule of
+the standard asked directly**, because the rules are what the algorithm
+is: a check that a Hebrew word comes out reversed would pass for an
+implementation that reverses everything. The check that would not is a
+Latin run inside a right-to-left paragraph, where the line reverses at
+one level and the Latin reverses back at another. Seven more in the new
+`tests/render/bidi.f` ask whether the reordering reaches the pixels.
+
+A page with no right-to-left character in it never runs the algorithm:
+the flag is set once while the box tree is built.
+
+**Properties 172 → 173.**
+
+**The premise for skipping this was wrong, and measuring it is what
+found that out.** Writing Modes had been set aside on the grounds that
+`ascii` cannot hold non-ASCII and the decoder converts to an ASCII-safe
+form, so the scripts that need bidi could not survive the pipeline. They
+survive it perfectly: a Hebrew string renders, and the DOM reports its
+four characters. `ascii` is the *parser's* type; the content is `text`,
+which holds UTF-8 and indexes by code point. The whole of the reasoning
+rested on a claim nobody had run.
+
+`unicode-bidi` is deliberately absent from the `@supports` list. Its row
+carries `embed`, which is not implemented, and changing the row to the
+value that is would be choosing the goalpost rather than fixing a
+defective one — unlike the grid rows, whose `none` was not valid for
+those properties at all. `@supports` answers per property rather than
+per value, so the only answer it can give without overclaiming is no.
+
 ### text-emphasis, and an underline that clears the descenders
 
 `text-emphasis` draws a mark beside every character — over the text by

@@ -2630,15 +2630,41 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             }
         }
     }
+    // direction inherits, and text-align's `start` and `end` resolve
+    // against it, so it is read before text-align rather than after.
+    s.directionRtl = isRoot ? false : parent.directionRtl
+    ascii dirv = styleProp(props, 'direction')
+    if dirv != null {
+        ascii t = asciiLower(asciiTrim(dirv))
+        if t == 'rtl' { s.directionRtl = true }
+        else if t == 'ltr' { s.directionRtl = false }
+    }
+    s.bidiOverride = false
+    ascii ubidi = styleProp(props, 'unicode-bidi')
+    if ubidi != null {
+        s.bidiOverride = asciiIndexOf(asciiLower(ubidi), 'bidi-override'.toAscii(), 0) >= 0
+    }
+    s.textAlignExplicit = isRoot ? false : parent.textAlignExplicit
     s.textAlign = isRoot ? ALIGN_LEFT : parent.textAlign
     ascii ta = styleProp(props, 'text-align')
     if ta != null {
         ascii t = asciiLower(ta)
-        if t == 'left' || t == 'start' { s.textAlign = ALIGN_LEFT }
-        else if t == 'center' { s.textAlign = ALIGN_CENTER }
-        else if t == 'right' || t == 'end' { s.textAlign = ALIGN_RIGHT }
-        else if t == 'justify' { s.textAlign = ALIGN_LEFT }
+        // `start` and `end` are the two ends of the inline axis, which
+        // swap with the direction; `left` and `right` never do.
+        if t == 'left' { s.textAlign = ALIGN_LEFT  s.textAlignExplicit = true }
+        else if t == 'right' { s.textAlign = ALIGN_RIGHT  s.textAlignExplicit = true }
+        else if t == 'center' { s.textAlign = ALIGN_CENTER  s.textAlignExplicit = true }
+        else if t == 'start' { s.textAlignExplicit = false }
+        else if t == 'end' {
+            // the far end, which is the side the direction is not
+            s.textAlign = s.directionRtl ? ALIGN_LEFT : ALIGN_RIGHT
+            s.textAlignExplicit = true
+        }
+        else if t == 'justify' { s.textAlignExplicit = false }
     }
+    // The initial value is `start`, and so is anything that resolves to
+    // it, so an element with no side of its own follows its direction.
+    if !s.textAlignExplicit { s.textAlign = s.directionRtl ? ALIGN_RIGHT : ALIGN_LEFT }
     // text-align-last aligns the last line of a block, and the line
     // before a forced break. `auto` -- the initial value -- is not an
     // alignment but an absence of one, so it is kept as -1 rather than
@@ -2649,10 +2675,12 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     if tal != null {
         ascii t = asciiLower(tal)
         if t == 'auto' { s.textAlignLast = -1 }
-        else if t == 'left' || t == 'start' { s.textAlignLast = ALIGN_LEFT }
+        else if t == 'left' { s.textAlignLast = ALIGN_LEFT }
+        else if t == 'right' { s.textAlignLast = ALIGN_RIGHT }
+        else if t == 'start' { s.textAlignLast = s.directionRtl ? ALIGN_RIGHT : ALIGN_LEFT }
+        else if t == 'end' { s.textAlignLast = s.directionRtl ? ALIGN_LEFT : ALIGN_RIGHT }
         else if t == 'center' { s.textAlignLast = ALIGN_CENTER }
-        else if t == 'right' || t == 'end' { s.textAlignLast = ALIGN_RIGHT }
-        else if t == 'justify' { s.textAlignLast = ALIGN_LEFT }
+        else if t == 'justify' { s.textAlignLast = s.directionRtl ? ALIGN_RIGHT : ALIGN_LEFT }
     }
     // text-decoration is NOT an inherited property: the element's own
     // computed value starts at none. What the standard does instead is
