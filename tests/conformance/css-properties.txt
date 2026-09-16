@@ -1,0 +1,430 @@
+# Every CSS property Chromium 141 reports on a computed style, with
+# a value that a working implementation must visibly change the
+# computed style for.
+#
+# A value here earns its place by being one Chromium itself computes
+# differently from the property's initial value, checked by setting it
+# on a probe and reading getComputedStyle back. A row that fails that
+# check measures nothing: the property could be implemented perfectly
+# and the row would still read as missing. A row may carry two
+# declarations where one is not enough -- a border width needs a border
+# style beside it or it computes to zero.
+#
+# Only the first declaration in a row is the property under test; any
+# that follow are context, and the row is graded against an element that
+# already has them. Without that, `border-top-width: 10px; border-style:
+# solid` registered on the strength of the `solid` alone, and would have
+# gone on registering if width parsing were deleted outright.
+#
+# A value must differ from the initial value on every Chromium build,
+# not just the one it was chosen against. A width of 3px does not:
+# `medium` is 3px, so a build reporting the computed rather than the
+# used width sees no difference, and `outline-width: 3px` passed here
+# and failed in CI. The widths are 10px, which is neither 0 nor medium.
+#
+# A third tab-separated column marks a row this instrument cannot grade
+# whatever value it carries, and says why. Those are excluded from the
+# denominator and named by --verbose, rather than counted as properties
+# this engine has not implemented.
+#
+# Chromium enumerates 406; the 33 not here are all `-webkit-` prefixed,
+# which the CSS Snapshot does not define and this engine deliberately
+# drops. The denominator is therefore standard properties, on purpose.
+#
+# Some properties cannot appear here at all, because Chromium does not
+# enumerate them on a computed style: `counter-reset`,
+# `counter-increment` and `quotes` are implemented or not without this
+# count moving. They are measured by tests/unit/test_counters.f.
+#
+#     property <TAB> value
+#
+# A value may be several declarations where one alone cannot show the
+# effect: border-*-width computes to zero while the border style is
+# none, which is correct, so those rows set a style too.
+#
+# tests/conformance/properties.f sets each one on an element and
+# compares that element's computed Style with the same element
+# without it. A property that changes nothing is not implemented.
+# The count is what css-2026.md's per-specification table is made of,
+# and it may not go down (CLAUDE.md §2).
+#
+# 226 rows still read `initial`, which is a placeholder rather than a
+# probe: `initial` computes to the initial value, so such a row can
+# never register as implemented no matter what the engine gains. Those
+# rows are all properties nothing here implements, so the count is
+# correct today -- but before implementing a property, give its row a
+# real value, or the number will not move when the work lands. The
+# three flex rows that read `1` were exactly this trap.
+accent-color	#123456
+align-content	center
+align-items	center
+align-self	flex-end
+alignment-baseline	baseline
+anchor-name	--a
+anchor-scope	all
+animation-composition	add
+animation-delay	1s
+animation-direction	reverse
+animation-duration	1s
+animation-fill-mode	both
+animation-iteration-count	infinite
+animation-name	slidein
+animation-play-state	paused
+animation-range-end	contain
+animation-range-start	contain
+animation-timeline	none
+animation-timing-function	linear
+app-region	none
+appearance	auto
+backdrop-filter	blur(2px)
+backface-visibility	hidden
+background-attachment	fixed
+background-blend-mode	multiply
+background-clip	content-box
+background-color	#123456
+background-image	linear-gradient(to right, red, blue)
+background-origin	content-box
+background-position	right bottom
+background-repeat	no-repeat
+background-size	10px
+baseline-shift	10px
+baseline-source	first
+block-size	45px
+border-block-end-color	#123456
+border-block-end-style	solid
+border-block-end-width	10px; border-block-end-style: solid
+border-block-start-color	#123456
+border-block-start-style	solid
+border-block-start-width	10px; border-block-start-style: solid
+border-bottom-color	#123456
+border-bottom-left-radius	10px
+border-bottom-right-radius	10px
+border-bottom-style	solid
+border-bottom-width	10px; border-style: solid
+border-collapse	collapse
+border-end-end-radius	10px
+border-end-start-radius	10px
+border-image-outset	10px
+border-image-repeat	round
+border-image-slice	50%
+border-image-source	url(a.png)
+border-image-width	10px
+border-inline-end-color	#123456
+border-inline-end-style	solid
+border-inline-end-width	10px; border-inline-end-style: solid
+border-inline-start-color	#123456
+border-inline-start-style	solid
+border-inline-start-width	10px; border-inline-start-style: solid
+border-left-color	#123456
+border-left-style	solid
+border-left-width	10px; border-style: solid
+border-right-color	#123456
+border-right-style	solid
+border-right-width	10px; border-style: solid
+border-start-end-radius	10px
+border-start-start-radius	10px
+border-top-color	#123456
+border-top-left-radius	10px
+border-top-right-radius	10px
+border-top-style	solid
+border-top-width	10px; border-style: solid
+bottom	11px
+box-decoration-break	clone
+box-shadow	0 0 2px red
+box-sizing	border-box
+break-after	avoid
+break-before	avoid
+break-inside	avoid
+buffered-rendering	static
+caption-side	bottom
+caret-animation	manual
+caret-color	#123456
+clear	both
+clip	rect(1px,2px,3px,4px)
+clip-path	border-box
+clip-rule	evenodd
+color	#123456
+color-interpolation	auto
+color-interpolation-filters	auto
+color-rendering	optimizeSpeed
+column-count	2
+column-gap	10px
+column-rule-color	#123456
+column-rule-style	solid
+column-rule-width	10px; column-rule-style: solid
+column-span	all
+column-width	10px
+contain-intrinsic-block-size	10px
+contain-intrinsic-height	10px
+contain-intrinsic-inline-size	10px
+contain-intrinsic-size	10px
+contain-intrinsic-width	10px
+container-name	sidebar
+container-type	size
+content	url(a.png)
+corner-bottom-left-shape	square
+corner-bottom-right-shape	square
+corner-end-end-shape	square
+corner-end-start-shape	square
+corner-start-end-shape	square
+corner-start-start-shape	square
+corner-top-left-shape	square
+corner-top-right-shape	square
+cursor	none
+cx	10px
+cy	10px
+d	path("M 0 0 L 1 1")	applies only to an SVG path element; the probe is a <p>
+direction	rtl
+display	inline-block
+dominant-baseline	hanging
+dynamic-range-limit	standard
+empty-cells	hide
+field-sizing	content
+fill	none
+fill-opacity	50%
+fill-rule	evenodd
+filter	blur(2px)
+flex-basis	10px
+flex-direction	column
+flex-grow	2
+flex-shrink	0
+flex-wrap	wrap
+float	left
+flood-color	#123456
+flood-opacity	50%
+font-family	monospace
+font-kerning	none
+font-optical-sizing	none
+font-palette	dark
+font-size	21px
+font-size-adjust	2
+font-stretch	50%
+font-style	italic
+font-synthesis-small-caps	none
+font-synthesis-style	none
+font-synthesis-weight	none
+font-variant	none
+font-variant-alternates	historical-forms
+font-variant-caps	small-caps
+font-variant-east-asian	jis78
+font-variant-emoji	text
+font-variant-ligatures	none
+font-variant-numeric	oldstyle-nums
+font-variant-position	sub
+font-weight	bold
+grid-auto-columns	100px
+grid-auto-flow	column
+grid-auto-rows	100px
+grid-column-end	none
+grid-column-start	none
+grid-row-end	none
+grid-row-start	none
+grid-template-areas	"head" "body"	Chromium computes none for it on a probe that is not a grid container
+grid-template-columns	100px 200px
+grid-template-rows	100px 200px
+height	45px
+hyphenate-character	"x"	Chromium computes auto unless hyphenation is actually applied
+hyphenate-limit-chars	2
+hyphens	none
+image-orientation	none
+image-rendering	pixelated
+initial-letter	2
+inline-size	123px
+inset-block-end	10px
+inset-block-start	10px
+inset-inline-end	10px
+inset-inline-start	10px
+interactivity	inert
+interpolate-size	allow-keywords
+isolation	isolate
+justify-content	center
+justify-items	center
+justify-self	center
+left	11px
+letter-spacing	2px
+lighting-color	#123456
+line-break	anywhere
+line-height	29px
+list-style-image	url(a.png)
+list-style-position	inside
+list-style-type	square
+margin-block-end	7px
+margin-block-start	7px
+margin-bottom	7px
+margin-inline-end	7px
+margin-inline-start	7px
+margin-left	7px
+margin-right	7px
+margin-top	7px
+marker-end	url(a.png)
+marker-mid	url(a.png)
+marker-start	url(a.png)
+mask-clip	content-box
+mask-composite	subtract
+mask-image	url(a.png)
+mask-mode	luminance
+mask-origin	content-box
+mask-position	center
+mask-repeat	no-repeat
+mask-size	10px
+mask-type	alpha
+math-depth	2
+math-shift	compact
+math-style	compact
+max-block-size	10px
+max-height	40px
+max-inline-size	10px
+max-width	222px
+min-block-size	10px
+min-height	12px
+min-inline-size	10px
+min-width	11px
+mix-blend-mode	multiply
+object-fit	cover
+object-position	left top
+object-view-box	inset(1px)
+offset-anchor	center
+offset-distance	10px
+offset-path	border-box
+offset-position	center
+offset-rotate	reverse
+opacity	0.5
+order	2
+orphans	700
+outline-color	#123456
+outline-offset	3px
+outline-style	solid; outline-width: 10px
+outline-width	10px; outline-style: solid
+overflow-anchor	visible
+overflow-block	hidden
+overflow-clip-margin	border-box
+overflow-inline	hidden
+overflow-wrap	break-word
+overflow-x	hidden
+overflow-y	hidden
+overlay	initial	only the user agent can set it; no author declaration changes it
+overscroll-behavior-block	none
+overscroll-behavior-inline	none
+padding-block-end	10px
+padding-block-start	10px
+padding-bottom	7px
+padding-inline-end	7px
+padding-inline-start	7px
+padding-left	7px
+padding-right	7px
+padding-top	7px
+paint-order	stroke
+perspective	10px
+perspective-origin	left
+pointer-events	visible
+position	relative
+position-anchor	--a
+position-area	center
+position-try-fallbacks	center
+position-try-order	most-width
+position-visibility	no-overflow
+print-color-adjust	exact
+r	10px
+reading-flow	source-order
+reading-order	2
+resize	both
+right	11px
+rotate	3deg
+row-gap	10px
+ruby-align	center
+ruby-position	under
+rx	10px
+ry	10px
+scale	50%
+scroll-behavior	smooth
+scroll-initial-target	nearest
+scroll-margin-block-end	10px
+scroll-margin-block-start	10px
+scroll-margin-inline-end	10px
+scroll-margin-inline-start	10px
+scroll-marker-group	before
+scroll-padding-block-end	10px
+scroll-padding-block-start	10px
+scroll-padding-inline-end	10px
+scroll-padding-inline-start	10px
+scroll-target-group	auto
+scroll-timeline-axis	x
+scroll-timeline-name	--t
+scrollbar-color	red blue
+scrollbar-gutter	stable
+scrollbar-width	thin
+shape-image-threshold	50%
+shape-margin	10px
+shape-outside	border-box
+shape-rendering	optimizeSpeed
+speak	none
+stop-color	#123456
+stop-opacity	50%
+stroke	red
+stroke-dasharray	10px
+stroke-dashoffset	10px
+stroke-linecap	square
+stroke-linejoin	bevel
+stroke-miterlimit	2
+stroke-opacity	50%
+stroke-width	10px
+tab-size	10px
+table-layout	fixed
+text-align	right
+text-align-last	center
+text-anchor	end
+text-autospace	normal
+text-box-edge	text
+text-box-trim	trim-both
+text-decoration	underline
+text-decoration-color	#123456
+text-decoration-line	underline
+text-decoration-skip-ink	none
+text-decoration-style	wavy
+text-emphasis-color	#123456
+text-emphasis-position	under
+text-emphasis-style	dot
+text-indent	9px
+text-overflow	ellipsis
+text-rendering	optimizeSpeed
+text-shadow	0 0 2px red
+text-size-adjust	none
+text-spacing-trim	space-all
+text-transform	uppercase
+text-underline-position	left
+text-wrap-mode	nowrap
+text-wrap-style	balance
+timeline-scope	--t
+top	11px
+touch-action	none
+transform	translateX(10px)
+transform-origin	left
+transform-style	preserve-3d
+transition-behavior	allow-discrete
+transition-delay	1s
+transition-duration	1s
+transition-property	opacity
+transition-timing-function	linear
+translate	10px
+unicode-bidi	embed
+user-select	none
+vector-effect	non-scaling-stroke
+vertical-align	top
+view-timeline-axis	x
+view-timeline-inset	10px
+view-timeline-name	--t
+view-transition-class	hidden
+view-transition-group	hidden
+view-transition-name	hero
+visibility	hidden
+white-space-collapse	preserve
+widows	700
+width	123px
+will-change	transform
+word-break	break-word
+word-spacing	10px
+writing-mode	vertical-rl
+x	10px
+y	10px
+z-index	3
+zoom	50%

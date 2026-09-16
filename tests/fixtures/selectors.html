@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- The document the selector instrument runs against. Every element
+     carries a unique id, because the measurement is "which ids does
+     this selector match", compared against the same question asked of
+     Chromium. Content is chosen so that each selector in
+     css-selectors.txt has both matches and non-matches here: a
+     selector that matches everything or nothing proves little. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>Selector fixture</title></head>
+<body id="body">
+  <div id="d1" class="box first" data-kind="alpha" title="one">
+    <p id="p1" class="lead">first</p>
+    <p id="p2">second</p>
+    <p id="p3" class="lead tail">third</p>
+    <span id="s1">span one</span>
+    <p id="p4">fourth</p>
+  </div>
+  <div id="d2" class="box" data-kind="alpha-beta">
+    <h2 id="h1">A heading</h2>
+    <p id="p5">only paragraph</p>
+    <ul id="u1">
+      <li id="l1">one</li>
+      <li id="l2">two</li>
+      <li id="l3">three</li>
+      <li id="l4">four</li>
+      <li id="l5">five</li>
+      <li id="l6">six</li>
+    </ul>
+  </div>
+  <div id="d3" class="box last" data-kind="gamma" lang="fr">
+    <p id="p6" lang="fr">en francais</p>
+    <p id="p7"></p>
+    <div id="d4"></div>
+    <a id="a1" href="/somewhere">a link</a>
+    <a id="a2">not a link</a>
+    <form id="f1">
+      <input id="i1" type="text" value="x">
+      <input id="i2" type="text" disabled>
+      <input id="i3" type="checkbox" checked>
+      <input id="i4" type="checkbox">
+      <select id="sel1"><option id="o1" selected>a</option><option id="o2">b</option></select>
+      <textarea id="t1">text</textarea>
+      <button id="b1" type="button">press</button>
+    </form>
+  </div>
+  <div id="d5"><span id="s2">an only child</span></div>
+  <section id="sec1">
+    <p id="p8">in a section</p>
+    <p id="p9" class="tail">also in a section</p>
+  </section>
+</body>
+</html>

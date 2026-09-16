@@ -254,3 +254,4 @@ if minimum >= 0 && casesPassed < minimum {
     log(`conformance: REGRESSION -- ${casesPassed} passed, at least ${minimum} required`)
     close(1)
 }
+close(0)

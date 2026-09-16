@@ -125,4 +125,26 @@ checkEqInt(findBox(r11, 'p').lines.length, 2, 'br breaks; trailing br adds no li
 // width auto margins center
 Box r12 = layoutHtml('<body style="margin:0"><div style="width:100px;margin:0 auto;height:1px"></div></body>', 400)
 checkEqInt(findBox(r12, 'div').x, 150, 'auto margins center a fixed-width block')
+
+// A space between text and a following inline element is a space.
+// Shrink-to-fit width is what shows it: an inline-block sizes itself to
+// its content, so a lost space makes the box narrower. Chromium 141
+// measures all four of these at 29px -- three characters of 16px
+// monospace -- and this engine's own character is 10px, so all four
+// must come to the same width whatever that width is.
+Box ws1 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A B</span></body>', 600)
+Box ws2 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A <em>B</em></span></body>', 600)
+Box ws3 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block"><em>A</em> B</span></body>', 600)
+Box ws4 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block"><em>A</em> <em>B</em></span></body>', 600)
+int wsPlain = findBox(ws1, 'span').w
+check(wsPlain > 0, `the plain case has a width, got ${wsPlain}`)
+checkEqInt(findBox(ws2, 'span').w, wsPlain, 'a space before an inline element is kept')
+checkEqInt(findBox(ws3, 'span').w, wsPlain, 'a space after an inline element is kept')
+checkEqInt(findBox(ws4, 'span').w, wsPlain, 'a space between two inline elements is kept')
+
+// And it is one space, not two: a text box ending in a space followed
+// by one starting with a space still separates them by a single space.
+Box ws5 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A <em> B</em></span></body>', 600)
+checkEqInt(findBox(ws5, 'span').w, wsPlain, 'two collapsing spaces are still one space')
+
 finish('layout')

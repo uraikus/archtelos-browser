@@ -22,9 +22,14 @@ int profElements = 0
 int profMatchesTotal = 0
 int profHintsMs = 0
 int profSelectorTests = 0
+map[Style] styleCache = {}
+int profShareTotal = 0
+int profShareDistinct = 0
+int styleSerialNext = 1
+int profPropReads = 0
 
 text func cascadeProfile() {
-    return `[timing] cascade detail: ${profElements} elements, ${profMatchesTotal} matched decls; collect ${profCollectMs} ms (hints ${profHintsMs} ms, ${profSelectorTests} selector tests), sort ${profSortMs} ms, apply ${profApplyMs} ms, compute ${profComputeMs} ms`
+    return `[timing] cascade detail: ${profElements} elements, ${profMatchesTotal} matched decls; collect ${profCollectMs} ms (hints ${profHintsMs} ms, ${profSelectorTests} selector tests), sort ${profSortMs} ms, apply ${profApplyMs} ms, compute ${profComputeMs} ms; property reads ${profPropReads}; ${profShareDistinct} distinct styles for ${profShareTotal} elements`
 }
 
 
@@ -53,7 +58,55 @@ struct Bucket {
 map[Bucket] ruleIndex = {}
 map[int] bucketSizes = {}       // key -> number of refs, so existence is a scalar lookup
 
+// Whether any rule anywhere names a pseudo-element. Almost no document
+// has one, and computing ::before and ::after for every element would
+// be two extra rule walks per element on every page (CLAUDE.md §3, "a
+// feature must not cost anything to the pages that do not use it").
+bool anyPseudoRules = false
+// Which tags have a ::before or ::after rule, and whether any such rule
+// is keyed on something other than a tag. The user-agent sheet styles
+// q::before, so without this every document would run the pseudo-
+// element pass over every element for a rule almost no page can match:
+// measured at 8 ms on the 51 KB benchmark page, which has no <q>.
+map[bool] pseudoTagSet = {}
+bool pseudoNonTag = false
+// Which elements have a ::first-letter style, and whether any rule
+// anywhere asks for one at all.
+map[bool] pseudoHasFirstLetter = {}
+bool anyFirstLetter = false
+// Whether any computed style anywhere asked for a background image by
+// url(). A page with none never walks the document looking for them.
+bool anyBackgroundUrl = false
+
+// Whether any rule anywhere sets a counter, and how deep the style walk
+// is. Almost no document uses counters, and maintaining the stack for
+// every element would cost every page (CLAUDE.md §3).
+bool anyCounters = false
+// The quote depth is a running count over the whole document, not a
+// measure of nesting: an element three containers deep is still at
+// depth zero until something has emitted an open-quote.
+bool anyQuotes = false
+int quoteDepth = 0
+int styleDepth = 0
+
 void func cascadeReset() {
+    // The computed-style cache is keyed partly on declaration serials,
+    // which are unique for the life of the process, so a stale entry
+    // could never be returned for a new page -- but it would sit in the
+    // map forever. A page load starts with an empty one.
+    map[Style] emptyStyleCache = {}
+    styleCache = emptyStyleCache
+    anyPseudoRules = false
+    pseudoTagSet = {}
+    pseudoNonTag = false
+    pseudoHasFirstLetter = {}
+    anyFirstLetter = false
+    anyBackgroundUrl = false
+    anyCounters = false
+    anyQuotes = false
+    quoteDepth = 0
+    resetPseudoElements()
+    resetCounters()
     cascadeSheets = []
     cascadeOrigins = []
     ruleIndex = {}
@@ -98,6 +151,27 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             ref.rule = rule
             ref.sel = sel
             ref.origin = origin
+            if sel.pseudoElement != '' {
+                anyPseudoRules = true
+                text pk = selectorKey(sel)
+                if sel.pseudoElement == 'first-letter' { anyFirstLetter = true }
+                if pk == '*' || pk.charCodeAt(0) == CH_HASH || pk.charCodeAt(0) == CH_DOT {
+                    pseudoNonTag = true
+                } else {
+                    pseudoTagSet[pk] = true
+                }
+            }
+            if !anyCounters {
+                for int d = 0, d < rule.decls.length, d++ {
+                    text dn = rule.decls[d].name
+                    if dn == 'counter-reset' || dn == 'counter-increment' { anyCounters = true  break }
+                }
+            }
+            if !anyQuotes {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'quotes' { anyQuotes = true  break }
+                }
+            }
             addToBucket(selectorKey(sel), ref)
         }
     }
@@ -120,11 +194,25 @@ void func cascadeAddDocumentStyles(doc:Node) {
     }
 }
 
+// The cascade sorts on origin and importance first, then specificity,
+// then source order (CSS Cascade 4 §6.1). Importance *inverts* the
+// origin order: a normal author declaration beats a normal user-agent
+// one, and an important user-agent declaration beats an important
+// author one. Inline style is author origin, ranked above author rules.
+//
+//   normal UA < normal author < normal inline
+//             < important author < important inline < important UA
+int func originRank(important:bool, origin:int) {
+    if !important { return origin }
+    if origin == ORIGIN_UA { return 5 }
+    if origin == ORIGIN_INLINE { return 4 }
+    return 3
+}
+
 int func matchWeight(important:bool, origin:int, specificity:int, order:int) {
-    int w = specificity * 10000000 + order
-    w = w + origin * 10000000000000
-    if important { w = w + 1000000000000000 }
-    return w
+    return originRank(important, origin) * 100000000000000000
+         + specificity * 10000000
+         + order
 }
 
 // ---- selector matching ------------------------------------------------
@@ -176,20 +264,104 @@ bool func pseudoMatches(nid:int, name:text) {
         }
         return true
     }
-    ascii a = name.toAscii()
-    if asciiStartsWith(a, 'nth-child:', 0) {
-        ascii arg = a.slice(10, a.length)
-        int pos = 1
-        int sib = prevElementSiblingOf(nid)
-        while sib > 0 {
-            pos++
-            sib = prevElementSiblingOf(sib)
+    if name == 'only-of-type' {
+        return pseudoMatches(nid, 'first-of-type') && pseudoMatches(nid, 'last-of-type')
+    }
+    if name == 'empty' {
+        // Selectors 3 SS6.6.5.7: no children at all, not even text.
+        // A comment is not a child for this purpose; whitespace is.
+        Node e = nodeRegistry[nid]
+        for int i = 0, i < e.children.length, i++ {
+            Node c = e.children[i]
+            if c.kind == NODE_ELEMENT { return false }
+            if c.kind == NODE_TEXT && c.data != null && c.data.length > 0 { return false }
         }
-        if arg == 'odd' { return pos % 2 == 1 }
-        if arg == 'even' { return pos % 2 == 0 }
-        return pos == arg.toText().toInt()
+        return true
+    }
+    if name == 'enabled' || name == 'disabled' {
+        if !isEnableableTag(nodeRegistry[nid].tag) { return false }
+        bool off = hasAttrOf(nid, 'disabled')
+        return name == 'disabled' ? off : !off
+    }
+    if name == 'checked' {
+        text tag = nodeRegistry[nid].tag
+        if tag == 'option' { return hasAttrOf(nid, 'selected') }
+        if tag != 'input' { return false }
+        text t = attrOf(nid, 'type')
+        text lower = t == null ? '' : asciiLower(t.toAscii()).toText()
+        if lower != 'checkbox' && lower != 'radio' { return false }
+        return hasAttrOf(nid, 'checked')
+    }
+    if name == 'target' {
+        // No fragment is ever navigated to, so nothing is the target.
+        // Matching nothing is what the standard says for that state.
+        return false
+    }
+
+    ascii a = name.toAscii()
+    if asciiStartsWith(a, 'lang:', 0) {
+        ascii want = a.slice(5, a.length)
+        // the nearest ancestor with a lang attribute decides
+        int cur = nid
+        while cur > 0 {
+            text got = attrOf(cur, 'lang')
+            if got != null && got != '' {
+                ascii have = asciiLower(got.toAscii())
+                if have == want { return true }
+                // `:lang(fr)` also matches `fr-CA`
+                if have.length > want.length && asciiStartsWith(have, want, 0)
+                    && have.charCodeAt(want.length) == CH_MINUS { return true }
+                return false
+            }
+            cur = nodeRegistry[cur].parentId
+        }
+        return false
+    }
+
+    // the nth family: `<name>:<A>:<B>`, matching when the element's
+    // index is A*n + B for some integer n >= 0 (Selectors 3 SS6.6.5).
+    bool fromEnd = asciiStartsWith(a, 'nth-last-child:', 0) || asciiStartsWith(a, 'nth-last-of-type:', 0)
+    bool ofType = asciiStartsWith(a, 'nth-of-type:', 0) || asciiStartsWith(a, 'nth-last-of-type:', 0)
+    bool isNth = ofType || asciiStartsWith(a, 'nth-child:', 0) || asciiStartsWith(a, 'nth-last-child:', 0)
+    if isNth {
+        int colon = asciiIndexOf(a, ':'.toAscii(), 0)
+        int colon2 = asciiIndexOf(a, ':'.toAscii(), colon + 1)
+        if colon < 0 || colon2 < 0 { return false }
+        int stepA = a.slice(colon + 1, colon2).toText().toInt()
+        int offB = a.slice(colon2 + 1, a.length).toText().toInt()
+        int pos = nthIndexOf(nid, fromEnd, ofType)
+        return nthMatches(pos, stepA, offB)
     }
     return false
+}
+
+// Whether `disabled` means anything on this element (HTML's own list of
+// form controls). `:enabled` matches only elements that could be
+// disabled, so a <div> is neither enabled nor disabled.
+bool func isEnableableTag(tag:text) {
+    return tag == 'input' || tag == 'button' || tag == 'select' || tag == 'textarea'
+        || tag == 'option' || tag == 'optgroup' || tag == 'fieldset'
+}
+
+// The element's 1-based index among its siblings, counted from the end
+// when `fromEnd`, and among siblings of the same tag when `ofType`.
+int func nthIndexOf(nid:int, fromEnd:bool, ofType:bool) {
+    text tag = nodeRegistry[nid].tag
+    int pos = 1
+    int sib = fromEnd ? nextElementSiblingOf(nid) : prevElementSiblingOf(nid)
+    while sib > 0 {
+        if !ofType || nodeRegistry[sib].tag == tag { pos++ }
+        sib = fromEnd ? nextElementSiblingOf(sib) : prevElementSiblingOf(sib)
+    }
+    return pos
+}
+
+// Is there an integer n >= 0 with pos == stepA * n + offB?
+bool func nthMatches(pos:int, stepA:int, offB:int) {
+    if stepA == 0 { return pos == offB }
+    int diff = pos - offB
+    if diff % stepA != 0 { return false }
+    return Math.floorDiv(diff, stepA) >= 0
 }
 
 bool func matchCompound(nid:int, c:Compound) {
@@ -284,8 +456,16 @@ void func addMatch(matches:arr[Match], name:text, value:ascii, weight:int) {
 // HTML's presentational attributes, expressed as author declarations
 // of zero specificity.
 void func presentationalHints(n:Node, matches:arr[Match]) {
-    int w = matchWeight(false, ORIGIN_AUTHOR, 0, 0)
+    // Almost no element carries one of these, and this used to be a
+    // dozen map lookups on every element in the document -- 8 ms of the
+    // cascade's 15 ms collection phase on the benchmark page. A cell is
+    // the exception: `border` and `cellpadding` on the table it sits in
+    // style the cell, so a cell has to look even when it carries
+    // nothing itself.
     text tag = n.tag
+    bool isCell = tag == 'td' || tag == 'th'
+    if !n.hasPresHint && !isCell { return }
+    int w = matchWeight(false, ORIGIN_AUTHOR, 0, 0)
     text align = getAttr(n, 'align')
     if align != null {
         ascii a = asciiLower(align.toAscii())
@@ -343,9 +523,9 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
         text cs = getAttr(n, 'cellspacing')
         if cs != null && cs.toInt() != null { addMatch(matches, 'border-spacing', `${cs.toInt()}px`.toAscii(), w) }
     }
-    if tag == 'td' || tag == 'th' {
+    if isCell {
         int tbl = closestElementId(n, 'table')
-        if tbl > 0 {
+        if tbl > 0 && nodeRegistry[tbl].hasPresHint {
             text border = getAttr(nodeRegistry[tbl], 'border')
             if border != null && border.toInt() != null && border.toInt() > 0 {
                 addMatch(matches, 'border', '1px solid #808080', w)
@@ -357,6 +537,19 @@ void func presentationalHints(n:Node, matches:arr[Match]) {
     }
     if tag == 'hr' {
         if hasAttr(n, 'noshade') { addMatch(matches, 'border-color', '#808080', w) }
+    }
+    // `<ol type>` is the oldest way to ask for letters or roman numerals,
+    // and the standard maps it to `list-style-type` as a presentational
+    // hint (HTML, "the `ol` element").
+    if tag == 'ol' {
+        text ty = getAttr(n, 'type')
+        if ty != null {
+            if ty == 'a' { addMatch(matches, 'list-style-type', 'lower-alpha', w) }
+            else if ty == 'A' { addMatch(matches, 'list-style-type', 'upper-alpha', w) }
+            else if ty == 'i' { addMatch(matches, 'list-style-type', 'lower-roman', w) }
+            else if ty == 'I' { addMatch(matches, 'list-style-type', 'upper-roman', w) }
+            else if ty == '1' { addMatch(matches, 'list-style-type', 'decimal', w) }
+        }
     }
     if tag == 'input' {
         text ty = getAttr(n, 'type')
@@ -384,6 +577,13 @@ void func addDimensionHint(matches:arr[Match], prop:text, value:text, w:int) {
 // locals: the rule graph is cycle-capable (a Compound holds a
 // Compound), and releasing a local alias of any part of it costs a
 // collector walk of everything reachable from it (FINDINGS.md).
+// Which generated box the current collection is for: '' for the element
+// itself, 'before' or 'after' for one of its pseudo-elements. A rule
+// with a pseudo-element does not style the element it matches, and a
+// rule without one does not style the generated box, so the two passes
+// are the same walk with opposite filters.
+text collectingPseudo = ''
+
 void func collectFromBucket(n:Node, key:text, matches:arr[Match]) {
     if bucketSizes[key] == null { return }
     // the bucket travels as a borrowed parameter: a struct read out of
@@ -396,6 +596,7 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
     int count = b.refs.length
     int nid = n.id
     for int i = 0, i < count, i++ {
+        if b.refs[i].sel.pseudoElement != collectingPseudo { continue }
         profSelectorTests++
         if !matchSelector(nid, b.refs[i].sel) { continue }
         int decls = b.refs[i].rule.decls.length
@@ -440,6 +641,356 @@ arr[Match] func collectMatches(n:Node) {
     matches.sort(compareMatches)
     if archtelosTiming { profSortMs = profSortMs + (now() - t0) }
     return matches
+}
+
+// ---- counters (CSS2 §12.4) -------------------------------------------
+//
+// A counter is a stack of instances. `counter-reset` on an element
+// creates a new instance, in scope for that element, its descendants
+// and its following siblings; `counter-increment` adds to the innermost
+// instance, creating one on the root if none exists (§12.4.3).
+// `counter()` reads the innermost instance and `counters()` joins them
+// all, outermost first.
+//
+// The stack is walked in document order alongside the style computation,
+// which already visits elements in that order. It is deliberately not
+// part of the computed-style cache: two elements can match exactly the
+// same declarations and still stand at different counts, and the cache
+// shares a Style between them. What differs is the generated *content*,
+// which is resolved per element and stored per node, so the two do not
+// collide.
+
+struct CounterInstance {
+    name:text
+    value:int
+    depth:int       // the depth at which counter-reset created it
+}
+
+arr[CounterInstance] counterStack = []
+
+void func resetCounters() {
+    arr[CounterInstance] empty = []
+    counterStack = empty
+}
+
+// Drops every instance created at or below `depth`, which happens once
+// the parent whose children created them has been left.
+void func popCountersBelow(depth:int) {
+    int n = counterStack.length
+    while n > 0 && counterStack[n - 1].depth >= depth { n-- }
+    if n == counterStack.length { return }
+    arr[CounterInstance] kept = []
+    for int i = 0, i < n, i++ { kept.push(counterStack[i]) }
+    counterStack = kept
+}
+
+void func counterReset(name:text, value:int, depth:int) {
+    CounterInstance c
+    c.name = name
+    c.value = value
+    c.depth = depth
+    counterStack.push(c)
+}
+
+void func counterIncrement(name:text, by:int, depth:int) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name != name { continue }
+        counterStack[i].value = counterStack[i].value + by
+        return
+    }
+    // no instance in scope: the standard creates one on the root
+    CounterInstance c
+    c.name = name
+    c.value = by
+    c.depth = 0
+    counterStack.push(c)
+}
+
+int func counterValue(name:text) {
+    for int i = counterStack.length - 1, i >= 0, i-- {
+        if counterStack[i].name == name { return counterStack[i].value }
+    }
+    return 0
+}
+
+text func counterValues(name:text, sep:text) {
+    arr[text] parts = []
+    for int i = 0, i < counterStack.length, i++ {
+        if counterStack[i].name == name { parts.push(`${counterStack[i].value}`) }
+    }
+    if parts.length == 0 { return '0' }
+    return parts.join(sep)
+}
+
+// `counter-reset: a 2 b` / `counter-increment: x` -- a list of names,
+// each optionally followed by an integer.
+void func applyCounterProperty(v:ascii, depth:int, isReset:bool) {
+    if v == null { return }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return }
+    if asciiLower(t) == 'none' { return }
+    arr[ascii] toks = cssTokens(t)
+    int i = 0
+    while i < toks.length {
+        text name = asciiLower(toks[i]).toText()
+        int value = isReset ? 0 : 1
+        if i + 1 < toks.length {
+            int got = toks[i + 1].toText().toInt()
+            if got != null { value = got  i++ }
+        }
+        if isReset { counterReset(name, value, depth) }
+        else { counterIncrement(name, value, depth) }
+        i++
+    }
+}
+
+// ---- generated boxes (CSS2 §12.1) ------------------------------------
+//
+// `::before` and `::after` describe a box generated inside the element,
+// before or after its content. The box exists only when `content`
+// computes to something other than `none`, and it inherits from the
+// element rather than from the element's parent.
+//
+// The results live in two maps keyed by `<node id>:b` / `<node id>:a`
+// rather than in fields on Node: almost no element has one, and a Style
+// field on every node would cost every document for the few that do.
+map[Style] pseudoStyles = {}
+map[text] pseudoContents = {}
+
+void func resetPseudoElements() {
+    map[Style] emptyStyles = {}
+    map[text] emptyContents = {}
+    pseudoStyles = emptyStyles
+    pseudoContents = emptyContents
+}
+
+text func pseudoKey(nid:int, which:text) {
+    return `${nid}:${which}`
+}
+
+bool func hasPseudo(nid:int, which:text) {
+    return pseudoContents[pseudoKey(nid, which)] != null
+}
+
+Style func pseudoStyleOf(nid:int, which:text) {
+    return pseudoStyles[pseudoKey(nid, which)]
+}
+
+text func pseudoContentOf(nid:int, which:text) {
+    return pseudoContents[pseudoKey(nid, which)]
+}
+
+arr[Match] func collectPseudoMatches(n:Node, which:text) {
+    arr[Match] matches = []
+    collectingPseudo = which
+    collectFromBucket(n, '*', matches)
+    collectFromBucket(n, n.tag, matches)
+    text id = getAttr(n, 'id')
+    if id != null { collectFromBucket(n, `#${id}`, matches) }
+    arr[text] classes = nodeClasses(n)
+    for int i = 0, i < classes.length, i++ {
+        collectFromBucket(n, `.${classes[i]}`, matches)
+    }
+    collectingPseudo = ''
+    // an inline style attribute cannot name a pseudo-element, so it is
+    // deliberately not consulted here
+    matches.sort(compareMatches)
+    return matches
+}
+
+// `content`: a sequence of strings and attr() references, or `none`.
+// Answers null when nothing should be generated.
+// The `quotes` list of the element whose generated content is being
+// resolved. Festina has no closures and globals are not hoisted, so
+// this is set just before resolveContent is called rather than passed
+// -- see FINDINGS.md, "one global namespace, and globals are not
+// hoisted".
+arr[text] contentQuotePairs = []
+
+// Splits a `quotes` value into its strings: pairs of open and close,
+// outermost first. Anything that is not a quoted string invalidates the
+// whole list, which is what makes `quotes: none` produce nothing.
+arr[text] func parseQuotePairs(v:ascii) {
+    arr[text] out = []
+    if v == null { return out }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return out }
+    int i = 0
+    int len = t.length
+    while i < len {
+        int c = t.charCodeAt(i)
+        if isSpaceCode(c) { i++  continue }
+        if c != CH_QUOTE && c != CH_APOS {
+            arr[text] empty = []
+            return empty
+        }
+        int close = i + 1
+        while close < len && t.charCodeAt(close) != c { close++ }
+        if close >= len {
+            arr[text] empty = []
+            return empty
+        }
+        text one = t.slice(i + 1, close).toText()
+        out.push(one == null ? '' : one)
+        i = close + 1
+    }
+    // An odd number of strings is not a list of pairs.
+    if out.length % 2 != 0 {
+        arr[text] empty = []
+        return empty
+    }
+    return out
+}
+
+// The string for one end of the quote at `depth`. Past the end of the
+// list every deeper level repeats the last pair, which is what Chromium
+// does and what keeps a runaway nesting from printing nothing.
+text func quoteStringAt(pairs:arr[text], depth:int, open:bool) {
+    if pairs.length < 2 { return '' }
+    int levels = Math.floorDiv(pairs.length, 2)
+    int lv = depth
+    if lv < 0 { lv = 0 }
+    if lv >= levels { lv = levels - 1 }
+    return pairs[lv + lv + (open ? 0 : 1)]
+}
+
+text func resolveContent(v:ascii, n:Node) {
+    if v == null { return null }
+    ascii t = asciiTrim(v)
+    if t == null || t.length == 0 { return null }
+    ascii low = asciiLower(t)
+    if low == 'none' || low == 'normal' { return null }
+    text out = ''
+    int i = 0
+    int len = t.length
+    while i < len {
+        int c = t.charCodeAt(i)
+        if isSpaceCode(c) { i++  continue }
+        if c == CH_QUOTE || c == CH_APOS {
+            int close = i + 1
+            while close < len && t.charCodeAt(close) != c { close++ }
+            if close >= len { return null }          // unterminated
+            out = out + t.slice(i + 1, close).toText()
+            i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'no-open-quote', i) {
+            quoteDepth++
+            i = i + 13
+            continue
+        }
+        if asciiStartsWithLower(t, 'no-close-quote', i) {
+            if quoteDepth > 0 { quoteDepth-- }
+            i = i + 14
+            continue
+        }
+        if asciiStartsWithLower(t, 'open-quote', i) {
+            out = out + quoteStringAt(contentQuotePairs, quoteDepth, true)
+            quoteDepth++
+            i = i + 10
+            continue
+        }
+        if asciiStartsWithLower(t, 'close-quote', i) {
+            // The level comes back up first, so an open and a close at
+            // the same level print the two halves of one pair. Closing
+            // what was never opened prints nothing at all and leaves
+            // the level where it was -- measured against Chromium 141,
+            // which renders no characters for it.
+            if quoteDepth > 0 {
+                quoteDepth--
+                out = out + quoteStringAt(contentQuotePairs, quoteDepth, false)
+            }
+            i = i + 11
+            continue
+        }
+        if asciiStartsWithLower(t, 'attr(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            text name = asciiLower(asciiTrim(t.slice(i + 5, close))).toText()
+            text got = getAttr(n, name)
+            out = out + (got == null ? '' : got)
+            i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'counters(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            arr[ascii] args = splitTopLevelCommas(t.slice(i + 9, close))
+            if args.length < 2 { return null }
+            text name = asciiLower(asciiTrim(args[0])).toText()
+            ascii sepRaw = asciiTrim(args[1])
+            if sepRaw.length < 2 { return null }
+            int q = sepRaw.charCodeAt(0)
+            if q != CH_QUOTE && q != CH_APOS { return null }
+            text sep = sepRaw.slice(1, sepRaw.length - 1).toText()
+            if sep == null { sep = '' }
+            out = out + counterValues(name, sep)
+            i = close + 1
+            continue
+        }
+        if asciiStartsWithLower(t, 'counter(', i) {
+            int close = asciiIndexOf(t, ')'.toAscii(), i)
+            if close < 0 { return null }
+            arr[ascii] args = splitTopLevelCommas(t.slice(i + 8, close))
+            if args.length < 1 { return null }
+            text name = asciiLower(asciiTrim(args[0])).toText()
+            // a list style as the second argument is not implemented;
+            // only decimal is produced (todo.md, Counter Styles 3)
+            out = out + `${counterValue(name)}`
+            i = close + 1
+            continue
+        }
+        // url(), open-quote and the rest are not implemented; an
+        // unrecognized component makes the whole value invalid rather
+        // than silently dropping part of it
+        return null
+    }
+    return out
+}
+
+void func computePseudoFor(n:Node, own:Style, which:text) {
+    arr[Match] matches = collectPseudoMatches(n, which)
+    if matches.length == 0 { return }
+    map[text] props = {}
+    for int i = 0, i < matches.length, i++ {
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    // open-quote and close-quote read the element's own `quotes` list,
+    // and move a document-wide depth as a side effect, so the list has
+    // to be in place before the value is resolved.
+    arr[text] noQuotes = []
+    contentQuotePairs = noQuotes
+    if anyQuotes { contentQuotePairs = parseQuotePairs(own.quotes.toAscii()) }
+    text content = resolveContent(styleProp(props, 'content'), n)
+    if content == null { return }
+    // a generated box inherits from the element it is generated in
+    Style s = computeStyleValues(n, own, false, props)
+    pseudoStyles[pseudoKey(n.id, which)] = s
+    pseudoContents[pseudoKey(n.id, which)] = content
+}
+
+// ::first-letter carries no `content`: it restyles characters that are
+// already there, so the style is kept on its own without one.
+void func computeFirstLetterFor(n:Node, own:Style) {
+    arr[Match] matches = collectPseudoMatches(n, 'first-letter')
+    if matches.length == 0 { return }
+    map[text] props = {}
+    for int i = 0, i < matches.length, i++ {
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    pseudoStyles[pseudoKey(n.id, 'first-letter')] = computeStyleValues(n, own, false, props)
+    pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
+}
+
+void func computePseudoElements(n:Node, own:Style) {
+    if !anyPseudoRules { return }
+    // One map lookup rules out every element no pseudo rule names,
+    // which is all of them on a page whose only such rule is the user
+    // agent's own q::before.
+    if !pseudoNonTag && pseudoTagSet[n.tag] == null { return }
+    computePseudoFor(n, own, 'before')
+    computePseudoFor(n, own, 'after')
+    if anyFirstLetter { computeFirstLetterFor(n, own) }
 }
 
 // A style attribute holding non-ASCII (a font name, say): rewrite the
@@ -495,10 +1046,87 @@ void func setProp(props:map[text], name:text, value:ascii) {
 // Reads a property back as a fresh ascii (null when absent). The map
 // holds text because a text local made from a map entry is a private
 // copy, where an ascii one would alias the entry (FINDINGS.md).
+// The custom properties in scope while one element's style is computed.
+// A global for the same reason cascadeParentStyle is one.
+map[text] cascadeCustom = {}
+
+// Replaces every var(--name[, fallback]) in a value. A custom property
+// may itself use var(), so this runs until nothing changes, with a
+// small bound: the standard makes a cycle invalid and this is how that
+// shows up here.
+const int VAR_MAX_PASSES = 8
+
+// The needle every property read scans for, built once. `'var('.toAscii()`
+// inside styleProp allocated a fresh four-byte ascii on every read of
+// every property of every element.
+ascii varNeedle = 'var('.toAscii()
+
+ascii func substituteVars(v:ascii) {
+    // Work on a copy this function owns. `out` is reassigned every time
+    // a var() is replaced, and reassigning an alias of the caller's
+    // value releases the caller's buffer -- valgrind caught exactly
+    // that as an invalid read in festina_ascii_release
+    // (FINDINGS.md, "ascii aliasing").
+    text own = v.length > 0 ? v.toText() : ''
+    if own == null || own == '' { return null }
+    ascii out = own.toAscii()
+    if out == null { return null }
+    for int pass = 0, pass < VAR_MAX_PASSES, pass++ {
+        int at = asciiIndexOfLower(out, varNeedle, 0)
+        if at < 0 { return out }
+        // find the matching close paren
+        int depth = 0
+        int end = -1
+        for int i = at + 3, i < out.length, i++ {
+            int c = out.charCodeAt(i)
+            if c == CH_LPAREN { depth++ }
+            else if c == CH_RPAREN {
+                depth--
+                if depth == 0 { end = i  break }
+            }
+        }
+        if end < 0 { return null }
+        // Indices into `out`, never into a slice of it: an ascii that
+        // came out of slice()/asciiTrim() is an alias, and taking a
+        // second slice from one is the aliasing hazard in FINDINGS.md.
+        // Doing it here cost an out-of-memory in asciiTrim.
+        int argStart = at + 4
+        int comma = -1
+        for int i = argStart, i < end, i++ {
+            if out.charCodeAt(i) == CH_COMMA { comma = i  break }
+        }
+        ascii name = asciiTrim(out.slice(argStart, comma >= 0 ? comma : end))
+        ascii fallback = comma >= 0 ? asciiTrim(out.slice(comma + 1, end)) : null
+        text got = cascadeCustom[name.toText()]
+        ascii rep = got != null ? got.toAscii() : fallback
+        // An unresolvable var() with no fallback makes the declaration
+        // invalid at computed-value time, not merely empty.
+        if rep == null { return null }
+        // An empty ascii and null are one value, so a slice that came
+        // out empty cannot go through toText() (FINDINGS.md, "empty
+        // text"); the guards keep the pieces as text throughout.
+        text head = at > 0 ? out.slice(0, at).toText() : ''
+        text mid = rep.length > 0 ? rep.toText() : ''
+        text tail = end + 1 < out.length ? out.slice(end + 1, out.length).toText() : ''
+        if head == null { head = '' }
+        if mid == null { mid = '' }
+        if tail == null { tail = '' }
+        text joined = `${head}${mid}${tail}`
+        if joined == null || joined == '' { return null }
+        out = joined.toAscii()
+        if out == null { return null }
+    }
+    return null
+}
+
 ascii func styleProp(props:map[text], name:text) {
+    profPropReads++
     text v = props[name]
     if v == null { return null }
-    return v.toAscii()
+    ascii a = v.toAscii()
+    if a == null { return null }
+    if asciiIndexOfLower(a, varNeedle, 0) < 0 { return a }
+    return substituteVars(a)
 }
 
 void func applyFourSides(props:map[text], prefix:text, suffix:text, value:ascii) {
@@ -526,6 +1154,21 @@ bool func isBorderWidthToken(t:ascii) {
 }
 
 // border / border-top / ...: any order of width, style, color.
+// `inset` is the shorthand for the four inset properties, taking the
+// same one-to-four-value form the margin shorthand does.
+void func applyFourSidesInset(props:map[text], value:ascii) {
+    arr[ascii] t = cssTokens(value)
+    if t.length == 0 { return }
+    ascii top = dup(t[0])
+    ascii right = dup(t.length > 1 ? t[1] : t[0])
+    ascii bottom = dup(t.length > 2 ? t[2] : t[0])
+    ascii left = dup(t.length > 3 ? t[3] : (t.length > 1 ? t[1] : t[0]))
+    setProp(props, 'top', top)
+    setProp(props, 'right', right)
+    setProp(props, 'bottom', bottom)
+    setProp(props, 'left', left)
+}
+
 void func applyBorderShorthand(props:map[text], sides:arr[text], value:ascii) {
     arr[ascii] t = cssTokens(value)
     ascii width = 'medium'
@@ -579,20 +1222,301 @@ void func applyFontShorthand(props:map[text], value:ascii) {
     }
 }
 
+// ---- gradients (CSS Images 3) ----------------------------------------
+//
+// `linear-gradient([<angle> | to <side-or-corner>,]? <stop>#)`. The
+// angle is degrees clockwise from pointing up, which is what the
+// standard says and what makes `to bottom` 180 and `to right` 90.
+
+// Splits on top-level commas, so a comma inside rgb(...) stays put.
+arr[ascii] func splitTopLevelCommas(v:ascii) {
+    arr[ascii] out = []
+    int n = v.length
+    int depth = 0
+    int start = 0
+    int i = 0
+    while i < n {
+        int c = v.charCodeAt(i)
+        if c == CH_QUOTE || c == CH_APOS { i = skipQuoted(v, i)  continue }
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == CH_COMMA && depth <= 0 {
+            out.push(asciiTrim(v.slice(start, i)))
+            start = i + 1
+        }
+        i++
+    }
+    if start < n { out.push(asciiTrim(v.slice(start, n))) }
+    return out
+}
+
+// `to right`, `to bottom left`, `45deg`, `0.5turn`. Returns -1 when the
+// text is not a direction at all, which is how the caller knows the
+// first component was a colour stop instead.
+float func parseGradientDirection(t:ascii) {
+    ascii low = asciiLower(asciiTrim(t))
+    if low == null || low.length == 0 { return -1.0 }
+    if asciiStartsWithLower(low, 'to ', 0) {
+        bool top = asciiIndexOf(low, 'top'.toAscii(), 0) >= 0
+        bool bottom = asciiIndexOf(low, 'bottom'.toAscii(), 0) >= 0
+        bool left = asciiIndexOf(low, 'left'.toAscii(), 0) >= 0
+        bool right = asciiIndexOf(low, 'right'.toAscii(), 0) >= 0
+        if top && left { return 315.0 }
+        if top && right { return 45.0 }
+        if bottom && left { return 225.0 }
+        if bottom && right { return 135.0 }
+        if top { return 0.0 }
+        if right { return 90.0 }
+        if bottom { return 180.0 }
+        if left { return 270.0 }
+        return -1.0
+    }
+    parseNumberAt(low, 0)
+    if !numOk { return -1.0 }
+    ascii unit = asciiLower(asciiTrim(low.slice(numEnd, low.length)))
+    if unit == 'deg' { return numValue }
+    if unit == 'turn' { return numValue * 360.0 }
+    if unit == 'rad' { return numValue * 180.0 / 3.14159265358979 }
+    if unit == 'grad' { return numValue * 0.9 }
+    return -1.0
+}
+
+// One `<color> <position>?` stop. The position comes back as -1 when it
+// was not given, so the caller can space those evenly as the standard
+// requires.
+int gradStopColor = COLOR_UNSET
+int gradStopKind = GSTOP_AUTO
+float gradStopVal = 0.0
+
+void func parseGradientStop(t:ascii, currentColor:int, fontSize:int) {
+    gradStopColor = COLOR_UNSET
+    gradStopKind = GSTOP_AUTO
+    gradStopVal = 0.0
+    arr[ascii] parts = cssTokens(t)
+    if parts.length == 0 { return }
+    gradStopColor = parseCssColor(parts[0], currentColor)
+    if parts.length > 1 {
+        ascii p = asciiTrim(parts[1])
+        parseNumberAt(p, 0)
+        if numOk {
+            ascii unit = asciiLower(asciiTrim(p.slice(numEnd, p.length)))
+            if unit == '%' {
+                gradStopKind = GSTOP_PERCENT
+                gradStopVal = numValue / 100.0
+            } else {
+                // a length: resolve it the way every other length is
+                // resolved, then keep the pixels for the painter
+                Len l = parseLength(p, fontSize)
+                if l.kind == LEN_PX {
+                    gradStopKind = GSTOP_PX
+                    gradStopVal = l.v
+                }
+            }
+        }
+    }
+}
+
+// Parses a whole `linear-gradient(...)` / `repeating-linear-gradient(...)`
+// value. An unparseable one comes back with present = false, which makes
+// the declaration do nothing, as an invalid value should.
+// The `[ <shape> || <size> ]? [ at <position> ]?` that may precede a
+// radial gradient's stops. Everything in it is optional, and what is
+// absent keeps the initial value -- an ellipse reaching the farthest
+// corner, centred. Returns false when the component is not a prelude at
+// all, which is how the caller learns the first component was a stop.
+bool radPreludeCircle = false
+int radPreludeExtent = RADEXT_FARTHEST_CORNER
+Len radPreludeRx = lenAuto()
+Len radPreludeRy = lenAuto()
+Len radPreludePosX = lenPercent(50.0)
+Len radPreludePosY = lenPercent(50.0)
+
+bool func parseRadialPrelude(t:ascii, fontSize:int) {
+    radPreludeCircle = false
+    radPreludeExtent = RADEXT_FARTHEST_CORNER
+    radPreludeRx = lenAuto()
+    radPreludeRy = lenAuto()
+    radPreludePosX = lenPercent(50.0)
+    radPreludePosY = lenPercent(50.0)
+    if t == null { return false }
+    // The lowered string is held in a local, because the words the
+    // split returns alias it and a temporary would be released out from
+    // under them (FINDINGS.md, "ascii aliases are not retained").
+    ascii low = asciiLower(asciiTrim(t))
+    if low.length == 0 { return false }
+    arr[ascii] w = asciiSplitSpace(low)
+    if w.length == 0 { return false }
+
+    bool any = false
+    arr[Len] radii = []
+    int i = 0
+    // The words are indexed rather than bound to a local, for the same
+    // reason (FINDINGS.md, "ascii aliases are not retained").
+    while i < w.length {
+        if w[i] == 'at' {
+            i++
+            arr[ascii] pos = []
+            while i < w.length { pos.push(w[i])  i++ }
+            if pos.length >= 2 {
+                radPreludePosX = parsePositionAxis(pos[0], true, fontSize)
+                radPreludePosY = parsePositionAxis(pos[1], false, fontSize)
+            } else if pos.length == 1 {
+                if pos[0] == 'top' { radPreludePosY = lenPercent(0.0) }
+                else if pos[0] == 'bottom' { radPreludePosY = lenPercent(100.0) }
+                else { radPreludePosX = parsePositionAxis(pos[0], true, fontSize) }
+            } else {
+                return false
+            }
+            any = true
+            break
+        }
+        if w[i] == 'circle' { radPreludeCircle = true  any = true  i++  continue }
+        if w[i] == 'ellipse' { radPreludeCircle = false  any = true  i++  continue }
+        if w[i] == 'closest-side' { radPreludeExtent = RADEXT_CLOSEST_SIDE  any = true  i++  continue }
+        if w[i] == 'closest-corner' { radPreludeExtent = RADEXT_CLOSEST_CORNER  any = true  i++  continue }
+        if w[i] == 'farthest-side' { radPreludeExtent = RADEXT_FARTHEST_SIDE  any = true  i++  continue }
+        if w[i] == 'farthest-corner' { radPreludeExtent = RADEXT_FARTHEST_CORNER  any = true  i++  continue }
+        Len got = parseLength(w[i], fontSize)
+        // Anything that is not a length ends the prelude and is a
+        // colour stop instead. `parseLength` says so with LEN_INVALID,
+        // not LEN_AUTO -- reading only for LEN_AUTO here swallowed the
+        // first stop of every gradient that named no size.
+        if got.kind != LEN_PX && got.kind != LEN_PERCENT { return false }
+        radii.push(got)
+        any = true
+        i++
+    }
+    if radii.length > 0 {
+        radPreludeExtent = RADEXT_EXPLICIT
+        radPreludeRx = radii[0]
+        radPreludeRy = radii.length > 1 ? radii[1] : radii[0]
+        // One length is a circle's radius; two are an ellipse's.
+        if radii.length == 1 { radPreludeCircle = true }
+    }
+    return any
+}
+
+// `linear-gradient()`, `radial-gradient()` and their repeating forms.
+// The stop list is parsed the same way for all four: a stop's position
+// is a fraction of the gradient line for a linear gradient and of the
+// gradient ray for a radial one, which is the same number either way.
+// One shadow of a `box-shadow` list. The lengths come in order --
+// offset-x, offset-y, then blur and spread if they are there -- and the
+// colour and `inset` may sit anywhere among them.
+Shadow func parseShadow(v:ascii, currentColor:int, fontSize:int) {
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return null }
+    Shadow sh
+    sh.color = currentColor
+    arr[int] lengths = []
+    for int i = 0, i < t.length, i++ {
+        // The token is indexed rather than bound, because a bound slice
+        // releases an alias that was never retained (FINDINGS.md,
+        // "ascii aliases are not retained").
+        if asciiLower(t[i]) == 'inset' { sh.inset = true  continue }
+        Len l = parseLength(t[i], fontSize)
+        if l.kind == LEN_PX { lengths.push(roundPx(l.v))  continue }
+        int c = parseCssColor(t[i], COLOR_UNSET)
+        if c != COLOR_UNSET { sh.color = c }
+    }
+    if lengths.length < 2 { return null }
+    sh.dx = lengths[0]
+    sh.dy = lengths[1]
+    if lengths.length > 2 { sh.blur = maxInt(lengths[2], 0) }
+    if lengths.length > 3 { sh.spread = lengths[3] }
+    return sh
+}
+
+Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
+    Gradient g = noGradient()
+    if v == null { return g }
+    ascii low = asciiLower(asciiTrim(v))
+    bool repLinear = asciiStartsWithLower(low, 'repeating-linear-gradient(', 0)
+    bool plainLinear = asciiStartsWithLower(low, 'linear-gradient(', 0)
+    bool repRadial = asciiStartsWithLower(low, 'repeating-radial-gradient(', 0)
+    bool plainRadial = asciiStartsWithLower(low, 'radial-gradient(', 0)
+    if !repLinear && !plainLinear && !repRadial && !plainRadial { return g }
+    bool radial = repRadial || plainRadial
+    bool repeating = repLinear || repRadial
+    int open = asciiIndexOf(v, '('.toAscii(), 0)
+    if open < 0 || v.charCodeAt(v.length - 1) != CH_RPAREN { return g }
+    ascii inside = asciiTrim(v.slice(open + 1, v.length - 1))
+    arr[ascii] parts = splitTopLevelCommas(inside)
+    if parts.length == 0 { return g }
+
+    int first = 0
+    float angle = 180.0                 // `to bottom` when none is given
+    if radial {
+        if parseRadialPrelude(parts[0], fontSize) { first = 1 }
+        g.radialCircle = radPreludeCircle
+        g.radialExtent = radPreludeExtent
+        g.radialRx = radPreludeRx
+        g.radialRy = radPreludeRy
+        g.radialPosX = radPreludePosX
+        g.radialPosY = radPreludePosY
+    } else {
+        float dir = parseGradientDirection(parts[0])
+        if dir >= 0.0 { angle = dir  first = 1 }
+    }
+
+    arr[int] colors = []
+    arr[int] kinds = []
+    arr[float] vals = []
+    for int i = first, i < parts.length, i++ {
+        parseGradientStop(parts[i], currentColor, fontSize)
+        if gradStopColor == COLOR_UNSET { return noGradient() }
+        colors.push(gradStopColor)
+        kinds.push(gradStopKind)
+        vals.push(gradStopVal)
+    }
+    if colors.length < 2 { return noGradient() }
+
+    g.present = true
+    g.repeating = repeating
+    g.radial = radial
+    g.angle = angle
+    g.stops = colors
+    g.posKind = kinds
+    g.posVal = vals
+    return g
+}
+
 void func applyBackgroundShorthand(props:map[text], value:ascii) {
     arr[ascii] t = cssTokens(value)
     ascii found = 'transparent'
+    ascii image = null
     for int i = 0, i < t.length, i++ {
         ascii tok = dup(t[i])
-        if asciiStartsWithLower(tok, 'url(', 0) || asciiIndexOf(tok, 'gradient(', 0) >= 0 { continue }
+        if asciiStartsWithLower(tok, 'url(', 0) { continue }
+        if asciiIndexOf(asciiLower(tok), 'gradient('.toAscii(), 0) >= 0 { image = tok  continue }
         int c = parseCssColor(tok, COLOR_BLACK)
         if c != COLOR_UNSET { found = tok }
     }
     setProp(props, 'background-color', found)
+    // The shorthand resets the image, whether or not it names one.
+    if image == null {
+        setProp(props, 'background-image', 'none')
+    } else {
+        setProp(props, 'background-image', image)
+    }
 }
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // The logical border shorthands are renamed before anything else,
+    // because the shorthand dispatch below reads the name: renaming
+    // afterwards left `border-block-start` as a longhand nobody handles.
+    if name == 'border-block-start' { name = 'border-top' }
+    else if name == 'border-block-end' { name = 'border-bottom' }
+    else if name == 'border-inline-start' { name = 'border-left' }
+    else if name == 'border-inline-end' { name = 'border-right' }
+    else if name == 'border-block' {
+        applyBorderShorthand(props, ['top', 'bottom'], value)
+        return
+    } else if name == 'border-inline' {
+        applyBorderShorthand(props, ['left', 'right'], value)
+        return
+    }
     if name == 'margin' || name == 'padding' {
         applyFourSides(props, name, '', value)
         return
@@ -640,6 +1564,47 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'padding-inline-end' { name = 'padding-right' }
     if name == 'margin-block-start' { name = 'margin-top' }
     if name == 'margin-block-end' { name = 'margin-bottom' }
+    // The rest of the logical box, which in a left-to-right horizontal
+    // writing mode is a renaming and nothing more: `inline-start` is the
+    // left edge and `block-start` the top. css-2026.md records that this
+    // engine assumes that mode throughout, which is what makes these
+    // aliases rather than a feature of their own.
+    if name == 'padding-block-start' { name = 'padding-top' }
+    if name == 'padding-block-end' { name = 'padding-bottom' }
+    if name == 'inset-block-start' { name = 'top' }
+    if name == 'inset-block-end' { name = 'bottom' }
+    if name == 'inset-inline-start' { name = 'left' }
+    if name == 'inset-inline-end' { name = 'right' }
+    if name == 'min-inline-size' { name = 'min-width' }
+    if name == 'max-inline-size' { name = 'max-width' }
+    if name == 'min-block-size' { name = 'min-height' }
+    if name == 'max-block-size' { name = 'max-height' }
+    if name == 'overflow-block' || name == 'overflow-inline' { name = 'overflow' }
+    if name == 'border-block-start-width' { name = 'border-top-width' }
+    if name == 'border-block-end-width' { name = 'border-bottom-width' }
+    if name == 'border-inline-start-width' { name = 'border-left-width' }
+    if name == 'border-inline-end-width' { name = 'border-right-width' }
+    if name == 'border-block-start-style' { name = 'border-top-style' }
+    if name == 'border-block-end-style' { name = 'border-bottom-style' }
+    if name == 'border-inline-start-style' { name = 'border-left-style' }
+    if name == 'border-inline-end-style' { name = 'border-right-style' }
+    if name == 'border-block-start-color' { name = 'border-top-color' }
+    if name == 'border-block-end-color' { name = 'border-bottom-color' }
+    if name == 'border-inline-start-color' { name = 'border-left-color' }
+    if name == 'border-inline-end-color' { name = 'border-right-color' }
+    if name == 'inset' {
+        applyFourSidesInset(props, value)
+        return
+    }
+    if name == 'inset-block' || name == 'inset-inline' {
+        arr[ascii] t = cssTokens(value)
+        if t.length == 0 { return }
+        ascii a = dup(t[0])
+        ascii b = dup(t.length > 1 ? t[1] : t[0])
+        if name == 'inset-block' { setProp(props, 'top', a)  setProp(props, 'bottom', b) }
+        else { setProp(props, 'left', a)  setProp(props, 'right', b) }
+        return
+    }
     if name == 'margin-inline' || name == 'padding-inline' || name == 'margin-block' || name == 'padding-block' {
         arr[ascii] t = cssTokens(value)
         if t.length == 0 { return }
@@ -656,12 +1621,174 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
 
 // ---- computing --------------------------------------------------------
 
+// ---- calc() -----------------------------------------------------------
+//
+// A calc() expression resolves to a length that may mix pixels and a
+// percentage -- `calc(100% - 2em)` is the ordinary case -- so the result
+// carries both parts and the percentage waits for the containing block.
+//
+// The grammar is the standard's: a sum of products, where a product
+// multiplies or divides by a plain number, and a term is a number with
+// a unit, a percentage, a bare number or a parenthesised sum. Anything
+// else -- another function, a comparison, a unit this engine has no
+// answer for -- makes the whole expression invalid, which is what the
+// standard asks for and leaves the declaration to be dropped.
+
+// The running value of a sub-expression: pixels plus a percentage.
+struct CalcVal {
+    px:float
+    pct:float
+    num:float       // a plain number, when this is not a length at all
+    isNum:bool
+    ok:bool
+}
+
+CalcVal calcBad
+
+CalcVal func calcNumber(v:float) {
+    CalcVal c
+    c.num = v
+    c.isNum = true
+    c.ok = true
+    return c
+}
+
+CalcVal func calcLength(px:float, pct:float) {
+    CalcVal c
+    c.px = px
+    c.pct = pct
+    c.ok = true
+    return c
+}
+
+// The cursor the expression parser walks, as a pair of globals: Festina
+// has no tuples and no out-parameters, so a recursive-descent parser
+// either threads a struct or shares a position (FINDINGS.md, "no
+// tuples").
+ascii calcSrc
+int calcPos = 0
+
+void func calcSkipSpace() {
+    while calcPos < calcSrc.length && isSpaceCode(calcSrc.charCodeAt(calcPos)) { calcPos++ }
+}
+
+CalcVal func calcParseTerm(fontSize:int) {
+    calcSkipSpace()
+    if calcPos >= calcSrc.length { return calcBad }
+    int c = calcSrc.charCodeAt(calcPos)
+    if c == CH_LPAREN {
+        calcPos++
+        CalcVal inner = calcParseSum(fontSize)
+        calcSkipSpace()
+        if calcPos >= calcSrc.length || calcSrc.charCodeAt(calcPos) != CH_RPAREN { return calcBad }
+        calcPos++
+        return inner
+    }
+    // a nested calc() is just a parenthesised sum
+    if calcPos + 5 <= calcSrc.length && asciiLower(calcSrc.slice(calcPos, calcPos + 5)) == 'calc(' {
+        calcPos = calcPos + 5
+        CalcVal inner = calcParseSum(fontSize)
+        calcSkipSpace()
+        if calcPos >= calcSrc.length || calcSrc.charCodeAt(calcPos) != CH_RPAREN { return calcBad }
+        calcPos++
+        return inner
+    }
+    parseNumberAt(calcSrc, calcPos)
+    if !numOk { return calcBad }
+    float v = numValue
+    int after = numEnd
+    int unitEnd = after
+    while unitEnd < calcSrc.length && (isAlphaCode(calcSrc.charCodeAt(unitEnd))
+        || calcSrc.charCodeAt(unitEnd) == CH_PERCENT) { unitEnd++ }
+    ascii unit = asciiLower(calcSrc.slice(after, unitEnd))
+    calcPos = unitEnd
+    if unit == '' { return calcNumber(v) }
+    if unit == '%' { return calcLength(0.0, v) }
+    // Reuse the ordinary unit table: a term is exactly one length.
+    Len l = parseLength(`${v}${unit.toText()}`.toAscii(), fontSize)
+    if l.kind == LEN_PX { return calcLength(l.v, 0.0) }
+    return calcBad
+}
+
+CalcVal func calcParseProduct(fontSize:int) {
+    CalcVal left = calcParseTerm(fontSize)
+    if !left.ok { return calcBad }
+    while true {
+        calcSkipSpace()
+        if calcPos >= calcSrc.length { return left }
+        int c = calcSrc.charCodeAt(calcPos)
+        if c != CH_STAR && c != CH_SLASH { return left }
+        calcPos++
+        CalcVal right = calcParseTerm(fontSize)
+        if !right.ok { return calcBad }
+        if c == CH_STAR {
+            // exactly one side must be a plain number
+            if left.isNum && !right.isNum {
+                left = calcLength(right.px * left.num, right.pct * left.num)
+            } else if right.isNum && !left.isNum {
+                left = calcLength(left.px * right.num, left.pct * right.num)
+            } else if left.isNum && right.isNum {
+                left = calcNumber(left.num * right.num)
+            } else { return calcBad }
+        } else {
+            if !right.isNum || right.num == 0.0 { return calcBad }
+            if left.isNum { left = calcNumber(left.num / right.num) }
+            else { left = calcLength(left.px / right.num, left.pct / right.num) }
+        }
+    }
+    return left
+}
+
+CalcVal func calcParseSum(fontSize:int) {
+    CalcVal left = calcParseProduct(fontSize)
+    if !left.ok { return calcBad }
+    while true {
+        calcSkipSpace()
+        if calcPos >= calcSrc.length { return left }
+        int c = calcSrc.charCodeAt(calcPos)
+        if c != CH_PLUS && c != CH_MINUS { return left }
+        // `+` and `-` must be surrounded by whitespace, which is what
+        // keeps `10px -5px` from reading as a subtraction.
+        if calcPos == 0 || !isSpaceCode(calcSrc.charCodeAt(calcPos - 1)) { return calcBad }
+        if calcPos + 1 >= calcSrc.length || !isSpaceCode(calcSrc.charCodeAt(calcPos + 1)) { return calcBad }
+        calcPos++
+        CalcVal right = calcParseProduct(fontSize)
+        if !right.ok { return calcBad }
+        if left.isNum != right.isNum { return calcBad }
+        if left.isNum {
+            left = calcNumber(c == CH_PLUS ? left.num + right.num : left.num - right.num)
+        } else if c == CH_PLUS {
+            left = calcLength(left.px + right.px, left.pct + right.pct)
+        } else {
+            left = calcLength(left.px - right.px, left.pct - right.pct)
+        }
+    }
+    return left
+}
+
+// Evaluates `calc( ... )`, given the text between the parentheses.
+Len func evaluateCalc(body:ascii, fontSize:int) {
+    Len bad
+    bad.kind = LEN_INVALID
+    calcSrc = body
+    calcPos = 0
+    CalcVal r = calcParseSum(fontSize)
+    calcSkipSpace()
+    if !r.ok || r.isNum || calcPos < calcSrc.length { return bad }
+    if r.pct == 0.0 { return lenPx(r.px) }
+    if r.px == 0.0 { return lenPercent(r.pct) }
+    return lenCalc(r.px, r.pct)
+}
+
 Len func parseLength(tok:ascii, fontSize:int) {
     Len l
     l.kind = LEN_INVALID
     if tok == null { return l }
     ascii t = asciiLower(asciiTrim(tok))
     if t == 'auto' || t == 'none' || t == 'initial' || t == 'unset' { return lenAuto() }
+    if t.length > 5 && asciiLower(t.slice(0, 5)) == 'calc(' && t.charCodeAt(t.length - 1) == CH_RPAREN {
+        return evaluateCalc(t.slice(5, t.length - 1), fontSize)
+    }
     parseNumberAt(t, 0)
     if !numOk { return l }
     float v = numValue
@@ -670,7 +1797,7 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if unit == 'px' { return lenPx(v) }
     if unit == '%' { return lenPercent(v) }
     if unit == 'em' { return lenPx(v * fontSize.toFloat()) }
-    if unit == 'rem' { return lenPx(v * ROOT_FONT_SIZE.toFloat()) }
+    if unit == 'rem' { return lenPx(v * cssRootFontSize.toFloat()) }
     if unit == 'pt' { return lenPx(v * 4.0 / 3.0) }
     if unit == 'pc' { return lenPx(v * 16.0) }
     if unit == 'in' { return lenPx(v * 96.0) }
@@ -684,10 +1811,76 @@ Len func parseLength(tok:ascii, fontSize:int) {
     return l
 }
 
+// ---- the CSS-wide keywords --------------------------------------------
+//
+// `inherit` takes the parent's computed value; `initial` takes the
+// property's initial value; `unset` is inherit for an inherited property
+// and initial for the rest. `revert` should roll back to the value the
+// previous cascade origin gave, which needs the origins kept apart after
+// the cascade -- they are not, so it behaves as `unset` here
+// (css-2026.md, "CSS Cascade 4").
+const int CSSWIDE_NONE = 0
+const int CSSWIDE_INHERIT = 1
+const int CSSWIDE_INITIAL = 2
+const int CSSWIDE_UNSET = 3
+
+int func cssWideKeyword(v:ascii) {
+    if v == null { return CSSWIDE_NONE }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'inherit' { return CSSWIDE_INHERIT }
+    if t == 'initial' { return CSSWIDE_INITIAL }
+    if t == 'unset' { return CSSWIDE_UNSET }
+    if t == 'revert' || t == 'revert-layer' { return CSSWIDE_UNSET }
+    return CSSWIDE_NONE
+}
+
+// The parent's computed style, for the properties that resolve `inherit`
+// by name. A global rather than a parameter because threading it through
+// every resolver would change a dozen signatures for one keyword, and a
+// forwarded struct parameter costs a collector walk (FINDINGS.md,
+// "cycle trials").
+Style cascadeParentStyle
+bool cascadeParentIsRoot = true
+
+Len func parentLenFor(name:text, dflt:Len) {
+    if cascadeParentIsRoot { return dflt }
+    Style p = cascadeParentStyle
+    if name == 'width' { return p.width }
+    if name == 'height' { return p.height }
+    if name == 'min-width' { return p.minWidth }
+    if name == 'max-width' { return p.maxWidth }
+    if name == 'min-height' { return p.minHeight }
+    if name == 'margin-top' { return p.marginTop }
+    if name == 'margin-right' { return p.marginRight }
+    if name == 'margin-bottom' { return p.marginBottom }
+    if name == 'margin-left' { return p.marginLeft }
+    if name == 'padding-top' { return p.paddingTop }
+    if name == 'padding-right' { return p.paddingRight }
+    if name == 'padding-bottom' { return p.paddingBottom }
+    if name == 'padding-left' { return p.paddingLeft }
+    return dflt
+}
+
+int func parentColorFor(name:text, dflt:int) {
+    if cascadeParentIsRoot { return dflt }
+    Style p = cascadeParentStyle
+    if name == 'color' { return p.color }
+    if name == 'background-color' { return p.background }
+    if name == 'border-top-color' { return p.borderTopColor }
+    if name == 'border-right-color' { return p.borderRightColor }
+    if name == 'border-bottom-color' { return p.borderBottomColor }
+    if name == 'border-left-color' { return p.borderLeftColor }
+    return dflt
+}
+
 Len func lenProp(props:map[text], name:text, fontSize:int, dflt:Len) {
     ascii v = styleProp(props, name)
     if v == null { return dflt }
-    if asciiLower(v) == 'inherit' { return dflt }
+    int kw = cssWideKeyword(v)
+    if kw == CSSWIDE_INHERIT { return parentLenFor(name, dflt) }
+    // Every length property here is non-inherited, so `initial` and
+    // `unset` both mean the initial value.
+    if kw != CSSWIDE_NONE { return dflt }
     Len l = parseLength(v, fontSize)
     if l.kind == LEN_INVALID { return dflt }
     return l
@@ -722,10 +1915,39 @@ int func computeFontSize(v:ascii, parentSize:int) {
 int func colorProp(props:map[text], name:text, currentColor:int, dflt:int) {
     ascii v = styleProp(props, name)
     if v == null { return dflt }
-    if asciiLower(v) == 'inherit' { return dflt }
+    int kw = cssWideKeyword(v)
+    if kw == CSSWIDE_INHERIT { return parentColorFor(name, dflt) }
+    // `color` is the one inherited colour property, so its default when
+    // absent is the parent's value but its *initial* value is black;
+    // `unset` on it inherits, and on the rest is the initial value.
+    if kw == CSSWIDE_INITIAL { return name == 'color' ? COLOR_BLACK : dflt }
+    if kw == CSSWIDE_UNSET && name == 'color' { return parentColorFor(name, dflt) }
+    if kw != CSSWIDE_NONE { return dflt }
     int c = parseCssColor(v, currentColor)
     if c == COLOR_UNSET { return dflt }
     return c
+}
+
+// One side's border-style. Anything the painter does not know paints
+// solid.
+int func borderStyleProp(props:map[text], side:text) {
+    ascii v = styleProp(props, `border-${side}-style`)
+    // The initial value is `none`, and saying so matters beyond tidiness:
+    // while this answered `solid` for an undeclared border, declaring
+    // `border-top-style: solid` changed no style field at all, and the
+    // property registered as implemented only through the width that a
+    // declared style gives its side.
+    if v == null { return BORDER_NONE }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'none' || t == 'hidden' { return BORDER_NONE }
+    if t == 'dashed' { return BORDER_DASHED }
+    if t == 'dotted' { return BORDER_DOTTED }
+    if t == 'double' { return BORDER_DOUBLE }
+    if t == 'groove' { return BORDER_GROOVE }
+    if t == 'ridge' { return BORDER_RIDGE }
+    if t == 'inset' { return BORDER_INSET }
+    if t == 'outset' { return BORDER_OUTSET }
+    return BORDER_SOLID
 }
 
 int func borderWidthProp(props:map[text], side:text, fontSize:int) {
@@ -742,20 +1964,44 @@ int func borderWidthProp(props:map[text], side:text, fontSize:int) {
     return maxInt(roundPx(l.v), 0)
 }
 
+// `justify-content`, `align-items` and `align-self` share a vocabulary.
+int func parseAlignValue(v:ascii, dflt:int) {
+    if v == null { return dflt }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'flex-start' || t == 'start' || t == 'left' { return BOXALIGN_START }
+    if t == 'flex-end' || t == 'end' || t == 'right' { return BOXALIGN_END }
+    if t == 'center' { return BOXALIGN_CENTRE }
+    if t == 'stretch' || t == 'normal' { return BOXALIGN_STRETCH }
+    if t == 'baseline' { return BOXALIGN_BASELINE }
+    if t == 'space-between' { return BOXALIGN_SPACE_BETWEEN }
+    if t == 'space-around' { return BOXALIGN_SPACE_AROUND }
+    if t == 'space-evenly' { return BOXALIGN_SPACE_EVENLY }
+    if t == 'auto' { return BOXALIGN_AUTO }
+    return dflt
+}
+
 int func parseDisplay(v:ascii, dflt:int) {
     if v == null { return dflt }
     ascii t = asciiLower(v)
     if t == 'none' { return DISPLAY_NONE }
     if t == 'block' || t == 'flow-root' || t == 'grid' { return DISPLAY_BLOCK }
-    if t == 'flex' || t == 'inline-flex' || t == 'inline-grid' { return DISPLAY_BLOCK }
-    if t == 'inline' || t == 'contents' { return DISPLAY_INLINE }
+    if t == 'flex' { return DISPLAY_FLEX }
+    if t == 'inline-flex' { return DISPLAY_INLINE_FLEX }
+    if t == 'inline-grid' { return DISPLAY_BLOCK }
+    if t == 'inline' { return DISPLAY_INLINE }
+    if t == 'contents' { return DISPLAY_CONTENTS }
     if t == 'inline-block' { return DISPLAY_INLINE_BLOCK }
     if t == 'list-item' { return DISPLAY_LIST_ITEM }
     if t == 'table' || t == 'inline-table' { return DISPLAY_TABLE }
     if t == 'table-row' { return DISPLAY_TABLE_ROW }
     if t == 'table-cell' { return DISPLAY_TABLE_CELL }
-    if t == 'table-row-group' || t == 'table-header-group' || t == 'table-footer-group' { return DISPLAY_TABLE_ROW_GROUP }
-    if t == 'table-caption' { return DISPLAY_BLOCK }
+    if t == 'table-row-group' { return DISPLAY_TABLE_ROW_GROUP }
+    if t == 'table-header-group' { return DISPLAY_TABLE_HEADER_GROUP }
+    if t == 'table-footer-group' { return DISPLAY_TABLE_FOOTER_GROUP }
+    if t == 'table-caption' { return DISPLAY_TABLE_CAPTION }
+    if t == 'table-column' { return DISPLAY_TABLE_COLUMN }
+    if t == 'table-column-group' { return DISPLAY_TABLE_COLUMN_GROUP }
+    if t == 'ruby' { return DISPLAY_RUBY }
     return dflt
 }
 
@@ -798,16 +2044,153 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
         profMatchesTotal = profMatchesTotal + matches.length
     }
     int t2 = archtelosTiming ? now() : 0
+    // Two elements that matched the same declarations in the same order,
+    // under the same parent, compute the same style -- and on a real
+    // document most elements do: this page's 1,560 table cells all match
+    // the same four rules. Parsing those values once and handing out the
+    // same Style is what keeps this phase from being paid per element.
+    // The Style is never written to after this point, which is what
+    // makes sharing one safe (see Box.forcedWidthPx for the one place
+    // that used to).
+    text key = styleCacheKey(n, parent, isRoot, matches)
+    Style cached = styleCache[key]
+    if cached != null {
+        profShareTotal++
+        if archtelosTiming { profComputeMs = profComputeMs + (now() - t2) }
+        return cached
+    }
     Style s = computeStyleValues(n, parent, isRoot, props)
+    styleCache[key] = s
+    profShareTotal++
+    profShareDistinct++
     if archtelosTiming { profComputeMs = profComputeMs + (now() - t2) }
     return s
 }
 
+// The identity of a computed style: what it was computed from. The
+// parent is named by its serial rather than by its contents, which is
+// sound because an identical parent is itself shared and so carries the
+// same serial.
+text func styleCacheKey(n:Node, parent:Style, isRoot:bool, matches:arr[Match]) {
+    arr[text] parts = []
+    parts.push(`${parentSerialOf(parent)}`)
+    parts.push(isRoot ? 'r' : 'e')
+    parts.push(n.tag)
+    for int i = 0, i < matches.length, i++ {
+        Decl d = matches[i].decl
+        if d.serial > 0 {
+            parts.push(`${d.serial}:${matches[i].weight}`)
+        } else {
+            // synthesized for this element: key on what it says
+            parts.push(`${d.name}=${d.value == null ? '' : d.value.toText()}:${matches[i].weight}`)
+        }
+    }
+    return parts.join('|')
+}
+
+int func parentSerialOf(parent:Style) {
+    if parent == null { return 0 }
+    return parent.serial
+}
+
+// The URL inside a `url(...)`, unquoted. Returns '' for anything else,
+// which is how a gradient value falls through to the gradient parser.
+text func parseUrlValue(v:ascii) {
+    if v == null { return '' }
+    // Worked out with indices and taken as ONE slice of the argument.
+    // Slicing a value that is itself a slice, and reassigning a local
+    // to a slice of itself, are both ways to read freed memory here --
+    // see FINDINGS.md, "slicing an ascii that came from a slice" and
+    // "ascii aliases are not retained". Valgrind caught this version's
+    // predecessor; the tests did not.
+    int n = v.length
+    int a = 0
+    while a < n && isSpaceCode(v.charCodeAt(a)) { a++ }
+    if !asciiStartsWithLower(v, 'url(', a) { return '' }
+    int close = asciiIndexOf(v, ')'.toAscii(), a)
+    if close < 0 { return '' }
+    int from = a + 4
+    int to = close
+    while from < to && isSpaceCode(v.charCodeAt(from)) { from++ }
+    while to > from && isSpaceCode(v.charCodeAt(to - 1)) { to-- }
+    if to - from >= 2 {
+        int q = v.charCodeAt(from)
+        if (q == CH_QUOTE || q == CH_APOS) && v.charCodeAt(to - 1) == q {
+            from++
+            to--
+        }
+    }
+    if to <= from { return '' }
+    return v.slice(from, to).toText()
+}
+
+// One axis of a position value, shared by `background-position` and
+// `object-position`. A keyword is a percentage of the space the image
+// leaves over, which is what makes `right` mean the right edge rather
+// than an offset of the box's width.
+//
+// A percentage `Len` holds the number out of a hundred, as `resolveLen`
+// reads it everywhere else, so the keywords are written that way too. A
+// keyword that stored a fraction instead read as a hundredth of itself
+// the moment a real percentage appeared beside it.
+Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
+    if t == 'left' { return lenPercent(0.0) }
+    if t == 'right' { return lenPercent(100.0) }
+    if t == 'top' { return lenPercent(0.0) }
+    if t == 'bottom' { return lenPercent(100.0) }
+    if t == 'center' || t == 'centre' { return lenPercent(50.0) }
+    Len got = parseLength(t, fontSize)
+    if got.kind == LEN_AUTO || got.kind == LEN_INVALID { return lenPercent(0.0) }
+    return got
+}
+
 Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]) {
     Style s
+    s.serial = styleSerialNext
+    styleSerialNext++
+    cascadeParentStyle = parent
+    cascadeParentIsRoot = isRoot
+
+    // Custom properties inherit. An element that declares none shares
+    // its parent's map rather than copying it, which matters: on a real
+    // page almost nothing declares one.
+    map[text] emptyCustom = {}
+    map[text] inheritedCustom = isRoot ? emptyCustom : parent.customProps
+    if inheritedCustom == null { inheritedCustom = emptyCustom }
+    arr[text] declared = props.keys()
+    bool addsCustom = false
+    for int i = 0, i < declared.length, i++ {
+        text k = declared[i]
+        // `text` indexes without allocating; `k.toAscii()` here built a
+        // fresh ascii per key per element, which on this page was tens
+        // of thousands of allocations to read two characters.
+        if k.length > 1 && k.charCodeAt(0) == CH_MINUS && k.charCodeAt(1) == CH_MINUS {
+            addsCustom = true
+            break
+        }
+    }
+    if addsCustom {
+        map[text] merged = {}
+        arr[text] ik = inheritedCustom.keys()
+        for int i = 0, i < ik.length, i++ { merged[ik[i]] = inheritedCustom[ik[i]] }
+        for int i = 0, i < declared.length, i++ {
+            text k = declared[i]
+            ascii ka = k.toAscii()
+            if ka != null && ka.length > 1 && ka.charCodeAt(0) == CH_MINUS && ka.charCodeAt(1) == CH_MINUS {
+                merged[k] = props[k]
+            }
+        }
+        s.customProps = merged
+    } else {
+        s.customProps = inheritedCustom
+    }
+    cascadeCustom = s.customProps
     // inherited
     int parentFont = isRoot ? ROOT_FONT_SIZE : parent.fontSize
     s.fontSize = computeFontSize(styleProp(props, 'font-size'), parentFont)
+    // `rem` multiplies this, and the root is computed before anything
+    // that can refer to it.
+    if isRoot { cssRootFontSize = s.fontSize }
     s.fontBold = isRoot ? false : parent.fontBold
     ascii fw = styleProp(props, 'font-weight')
     if fw != null {
@@ -856,7 +2239,12 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'right' || t == 'end' { s.textAlign = ALIGN_RIGHT }
         else if t == 'justify' { s.textAlign = ALIGN_LEFT }
     }
-    s.textDecoration = isRoot ? DECO_NONE : parent.textDecoration
+    // text-decoration is NOT an inherited property: the element's own
+    // computed value starts at none. What the standard does instead is
+    // propagate the decoration of an ancestor to the boxes inside it,
+    // which is what inheritedDecoration carries for the painter.
+    s.inheritedDecoration = isRoot ? DECO_NONE : decoUnion(parent.inheritedDecoration, parent.textDecoration)
+    s.textDecoration = DECO_NONE
     ascii td = styleProp(props, 'text-decoration')
     if td != null {
         ascii t = asciiLower(td)
@@ -877,6 +2265,9 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'capitalize' { s.textTransform = TT_CAPITALIZE }
         else if t == 'none' { s.textTransform = TT_NONE }
     }
+    s.quotes = isRoot ? '' : parent.quotes
+    ascii qv = styleProp(props, 'quotes')
+    if qv != null { s.quotes = qv.toText() }
     s.whiteSpace = isRoot ? WS_NORMAL : parent.whiteSpace
     ascii ws = styleProp(props, 'white-space')
     if ws != null {
@@ -894,7 +2285,11 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'disc' { s.listStyle = LIST_DISC }
         else if t == 'circle' { s.listStyle = LIST_CIRCLE }
         else if t == 'square' { s.listStyle = LIST_SQUARE }
-        else if t == 'decimal' || t == 'lower-alpha' || t == 'upper-alpha' || t == 'lower-roman' || t == 'upper-roman' { s.listStyle = LIST_DECIMAL }
+        else if t == 'decimal' || t == 'decimal-leading-zero' { s.listStyle = LIST_DECIMAL }
+        else if t == 'lower-alpha' || t == 'lower-latin' { s.listStyle = LIST_LOWER_ALPHA }
+        else if t == 'upper-alpha' || t == 'upper-latin' { s.listStyle = LIST_UPPER_ALPHA }
+        else if t == 'lower-roman' { s.listStyle = LIST_LOWER_ROMAN }
+        else if t == 'upper-roman' { s.listStyle = LIST_UPPER_ROMAN }
     }
     s.hidden = isRoot ? false : parent.hidden
     ascii vis = styleProp(props, 'visibility')
@@ -905,7 +2300,11 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     }
     s.letterSpacing = isRoot ? 0 : parent.letterSpacing
     s.letterSpacing = pxProp(props, 'letter-spacing', s.fontSize, s.letterSpacing)
-    s.opacity = isRoot ? 1.0 : parent.opacity
+    // opacity is not inherited either. The element's own value is its
+    // computed value; effectiveOpacity is that multiplied by every
+    // ancestor's, which is the approximation of group opacity the
+    // painter uses in the absence of an offscreen layer.
+    s.opacity = 1.0
     ascii op = styleProp(props, 'opacity')
     if op != null {
         parseNumberAt(asciiTrim(op), 0)
@@ -914,19 +2313,175 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             if numEnd < op.length && op.charCodeAt(numEnd) == CH_PERCENT { o = o / 100.0 }
             if o < 0.0 { o = 0.0 }
             if o > 1.0 { o = 1.0 }
-            s.opacity = s.opacity * o
+            s.opacity = o
         }
     }
+    s.effectiveOpacity = (isRoot ? 1.0 : parent.effectiveOpacity) * s.opacity
 
     // non-inherited
     int dfltDisplay = DISPLAY_INLINE
     s.display = parseDisplay(styleProp(props, 'display'), dfltDisplay)
     s.background = colorProp(props, 'background-color', s.color, COLOR_TRANSPARENT)
+    // A background image paints over the background colour. Only
+    // gradients are supported; `url()` needs a fetch the cascade cannot
+    // do, and is left for Backgrounds and Borders 3 (todo.md).
+    s.counterReset = ''
+    s.counterIncrement = ''
+    if anyCounters {
+        ascii cr = styleProp(props, 'counter-reset')
+        ascii ci = styleProp(props, 'counter-increment')
+        if cr != null { s.counterReset = cr.toText() }
+        if ci != null { s.counterIncrement = ci.toText() }
+    }
+    s.backgroundImage = noGradient()
+    s.backgroundUrl = ''
+    ascii bgimg = styleProp(props, 'background-image')
+    if bgimg != null {
+        s.backgroundImage = parseGradient(bgimg, s.color, s.fontSize)
+        if !s.backgroundImage.present {
+            s.backgroundUrl = parseUrlValue(bgimg)
+            if s.backgroundUrl != '' { anyBackgroundUrl = true }
+        }
+    }
+    // background-repeat: the two-value form names the axes separately,
+    // and the one-value form applies to both.
+    s.backgroundRepeatX = true
+    s.backgroundRepeatY = true
+    ascii bgrep = styleProp(props, 'background-repeat')
+    if bgrep != null {
+        // The lowered string is held in a local: the slices the split
+        // returns alias it, and a temporary would be released out from
+        // under them (FINDINGS.md, "ascii aliases are not retained").
+        ascii bgrepLow = asciiLower(bgrep)
+        arr[ascii] parts = asciiSplitSpace(bgrepLow)
+        // The slices are indexed rather than bound to a local: binding
+        // one releases an alias that was never retained (FINDINGS.md,
+        // "ascii aliases are not retained"). Valgrind found this; the
+        // tests passed either way.
+        if parts.length == 1 {
+            if parts[0] == 'no-repeat' { s.backgroundRepeatX = false  s.backgroundRepeatY = false }
+            else if parts[0] == 'repeat-x' { s.backgroundRepeatY = false }
+            else if parts[0] == 'repeat-y' { s.backgroundRepeatX = false }
+        } else if parts.length >= 2 {
+            s.backgroundRepeatX = parts[0] != 'no-repeat'
+            s.backgroundRepeatY = parts[1] != 'no-repeat'
+        }
+    }
+    s.backgroundPosX = lenPercent(0.0)
+    s.backgroundPosY = lenPercent(0.0)
+    ascii bgpos = styleProp(props, 'background-position')
+    if bgpos != null {
+        ascii bgposLow = asciiLower(bgpos)
+        arr[ascii] parts = asciiSplitSpace(bgposLow)
+        if parts.length >= 1 { s.backgroundPosX = parsePositionAxis(parts[0], true, s.fontSize) }
+        if parts.length >= 2 { s.backgroundPosY = parsePositionAxis(parts[1], false, s.fontSize) }
+        else if parts.length == 1 {
+            // one value positions the horizontal axis and centres the
+            // other, unless it is a vertical keyword
+            if parts[0] == 'top' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(0.0) }
+            else if parts[0] == 'bottom' { s.backgroundPosX = lenPercent(50.0)  s.backgroundPosY = lenPercent(100.0) }
+            else { s.backgroundPosY = lenPercent(50.0) }
+        }
+    }
+    // box-shadow (Backgrounds and Borders 3 §6): a comma-separated list,
+    // each `<offset-x> <offset-y> <blur>? <spread>? <colour>? inset?` in
+    // any order. A style that does not mention it leaves the list empty,
+    // which is the zero value.
+    ascii shadowDecl = styleProp(props, 'box-shadow')
+    if shadowDecl != null {
+        ascii shadowLow = asciiLower(asciiTrim(shadowDecl))
+        if shadowLow != 'none' && shadowLow != '' {
+            arr[Shadow] list = []
+            arr[ascii] pieces = splitTopLevelCommas(shadowDecl)
+            for int i = 0, i < pieces.length, i++ {
+                Shadow sh = parseShadow(pieces[i], s.color, s.fontSize)
+                if sh != null { list.push(sh) }
+            }
+            if list.length > 0 { s.shadows = list }
+        }
+    }
+    // background-clip and background-origin (Backgrounds and Borders 3
+    // §3.7, §3.8). Both initial values are the zero value of their
+    // field, so a style that names neither writes nothing here.
+    ascii bgclip = styleProp(props, 'background-clip')
+    if bgclip != null {
+        ascii bgclipLow = asciiLower(asciiTrim(bgclip))
+        if bgclipLow == 'padding-box' { s.backgroundClip = BGCLIP_PADDING }
+        else if bgclipLow == 'content-box' { s.backgroundClip = BGCLIP_CONTENT }
+        else { s.backgroundClip = BGCLIP_BORDER }
+    }
+    ascii bgorigin = styleProp(props, 'background-origin')
+    if bgorigin != null {
+        ascii bgoriginLow = asciiLower(asciiTrim(bgorigin))
+        if bgoriginLow == 'border-box' { s.backgroundOrigin = BGORIGIN_BORDER }
+        else if bgoriginLow == 'content-box' { s.backgroundOrigin = BGORIGIN_CONTENT }
+        else { s.backgroundOrigin = BGORIGIN_PADDING }
+    }
+    // background-size (Backgrounds and Borders 3 §3.9). `auto` is the
+    // initial value on both axes and is the zero value of these fields,
+    // so a style that does not mention it writes nothing here.
+    ascii bgsize = styleProp(props, 'background-size')
+    if bgsize != null {
+        // The lowered string is held in a local and its words indexed
+        // rather than bound (FINDINGS.md, "ascii aliases are not
+        // retained").
+        ascii bgsizeLow = asciiLower(bgsize)
+        arr[ascii] parts = asciiSplitSpace(bgsizeLow)
+        if parts.length >= 1 && parts[0] == 'cover' { s.backgroundSizeKind = BGSIZE_COVER }
+        else if parts.length >= 1 && parts[0] == 'contain' { s.backgroundSizeKind = BGSIZE_CONTAIN }
+        else if parts.length >= 1 {
+            Len sw = parseLength(parts[0], s.fontSize)
+            // One value gives the width and leaves the height `auto`,
+            // which takes its size from the image's own ratio.
+            Len sh = lenAuto()
+            if parts.length >= 2 { sh = parseLength(parts[1], s.fontSize) }
+            if sw.kind == LEN_PX || sw.kind == LEN_PERCENT || sh.kind == LEN_PX || sh.kind == LEN_PERCENT {
+                s.backgroundSizeKind = BGSIZE_EXPLICIT
+                s.backgroundSizeW = sw
+                s.backgroundSizeH = sh
+            }
+        }
+    }
+    // object-fit and object-position (CSS Images 3 §5.5, §5.6). The
+    // initial position is `50% 50%`, unlike background-position's
+    // `0% 0%`, so the centre is written in rather than left at the
+    // zero value.
+    s.objectPosX = lenPercent(50.0)
+    s.objectPosY = lenPercent(50.0)
+    ascii objfit = styleProp(props, 'object-fit')
+    if objfit != null {
+        // The lowered string is held in a local and its words indexed
+        // rather than bound, because a bound slice releases an alias the
+        // compiler never retained (FINDINGS.md, "ascii aliases are not
+        // retained").
+        ascii objfitLow = asciiLower(objfit)
+        if objfitLow == 'contain' { s.objectFit = OBJECTFIT_CONTAIN }
+        else if objfitLow == 'cover' { s.objectFit = OBJECTFIT_COVER }
+        else if objfitLow == 'none' { s.objectFit = OBJECTFIT_NONE }
+        else if objfitLow == 'scale-down' { s.objectFit = OBJECTFIT_SCALE_DOWN }
+        else { s.objectFit = OBJECTFIT_FILL }
+    }
+    ascii objpos = styleProp(props, 'object-position')
+    if objpos != null {
+        ascii objposLow = asciiLower(objpos)
+        arr[ascii] parts = asciiSplitSpace(objposLow)
+        if parts.length >= 2 {
+            s.objectPosX = parsePositionAxis(parts[0], true, s.fontSize)
+            s.objectPosY = parsePositionAxis(parts[1], false, s.fontSize)
+        } else if parts.length == 1 {
+            // one value positions the horizontal axis and centres the
+            // other, unless it is a vertical keyword
+            if parts[0] == 'top' { s.objectPosY = lenPercent(0.0) }
+            else if parts[0] == 'bottom' { s.objectPosY = lenPercent(100.0) }
+            else { s.objectPosX = parsePositionAxis(parts[0], true, s.fontSize) }
+        }
+    }
     s.width = lenProp(props, 'width', s.fontSize, lenAuto())
     s.height = lenProp(props, 'height', s.fontSize, lenAuto())
     s.minWidth = lenProp(props, 'min-width', s.fontSize, lenAuto())
     s.maxWidth = lenProp(props, 'max-width', s.fontSize, lenAuto())
     s.minHeight = lenProp(props, 'min-height', s.fontSize, lenAuto())
+    s.maxHeight = lenProp(props, 'max-height', s.fontSize, lenAuto())
     Len zero = lenPx(0.0)
     s.marginTop = lenProp(props, 'margin-top', s.fontSize, zero)
     s.marginRight = lenProp(props, 'margin-right', s.fontSize, zero)
@@ -945,6 +2500,13 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.borderBottomColor = colorProp(props, 'border-bottom-color', s.color, s.color)
     s.borderLeftColor = colorProp(props, 'border-left-color', s.color, s.color)
     s.borderStyle = (s.borderTop + s.borderRight + s.borderBottom + s.borderLeft) > 0 ? BORDER_SOLID : BORDER_NONE
+    // The declared keyword per side. `borderWidthProp` has already
+    // turned `none` and `hidden` into a zero width, so a side with no
+    // width paints nothing whatever this says.
+    s.borderTopStyle = borderStyleProp(props, 'top')
+    s.borderRightStyle = borderStyleProp(props, 'right')
+    s.borderBottomStyle = borderStyleProp(props, 'bottom')
+    s.borderLeftStyle = borderStyleProp(props, 'left')
     s.borderRadius = 0
     ascii br = styleProp(props, 'border-radius')
     if br != null {
@@ -977,6 +2539,181 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'bottom' || t == 'text-bottom' || t == 'sub' { s.verticalAlign = VALIGN_BOTTOM }
         else if t == 'inherit' && !isRoot { s.verticalAlign = parent.verticalAlign }
     }
+    // ---- flexbox ------------------------------------------------------
+    s.flexDirection = FLEX_ROW
+    s.flexWrap = FLEXWRAP_NOWRAP
+    ascii fd = styleProp(props, 'flex-direction')
+    if fd != null {
+        ascii t = asciiLower(fd)
+        if t == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
+        else if t == 'column' { s.flexDirection = FLEX_COLUMN }
+        else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
+    }
+    // flex-flow is flex-direction and flex-wrap in either order, and a
+    // longhand after it still wins because the cascade has already
+    // ordered them -- this only reads whichever landed last.
+    ascii ff = styleProp(props, 'flex-flow')
+    if ff != null {
+        ascii ffLow = asciiLower(ff)
+        arr[ascii] parts = asciiSplitSpace(ffLow)
+        for int i = 0, i < parts.length, i++ {
+            if parts[i] == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
+            else if parts[i] == 'column' { s.flexDirection = FLEX_COLUMN }
+            else if parts[i] == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
+            else if parts[i] == 'row' { s.flexDirection = FLEX_ROW }
+            else if parts[i] == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
+            else if parts[i] == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
+            else if parts[i] == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
+        }
+    }
+    ascii fwrap = styleProp(props, 'flex-wrap')
+    if fwrap != null {
+        ascii t = asciiLower(asciiTrim(fwrap))
+        if t == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
+        else if t == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
+        else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
+    }
+    s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_START)
+    s.alignItems = parseAlignValue(styleProp(props, 'align-items'), BOXALIGN_STRETCH)
+    s.alignSelf = parseAlignValue(styleProp(props, 'align-self'), BOXALIGN_AUTO)
+    s.alignContent = parseAlignValue(styleProp(props, 'align-content'), BOXALIGN_STRETCH)
+    s.flexGrow = 0.0
+    s.flexShrink = 1.0
+    s.flexBasis = lenAuto()
+    ascii fx = styleProp(props, 'flex')
+    if fx != null {
+        ascii t = asciiLower(asciiTrim(fx))
+        if t == 'none' {
+            s.flexGrow = 0.0
+            s.flexShrink = 0.0
+        } else if t == 'auto' {
+            s.flexGrow = 1.0
+            s.flexShrink = 1.0
+        } else if t == 'initial' {
+            // `flex: initial` is `0 1 auto`, which is what the three
+            // fields were just set to.
+        } else {
+            // `flex: <grow> [<shrink>] [<basis>]`; a bare number is the
+            // grow factor and makes the basis zero, which is what makes
+            // `flex: 1` share the whole line rather than the slack.
+            arr[ascii] parts = cssTokens(fx)
+            int numsSeen = 0
+            s.flexBasis = lenPx(0.0)
+            for int i = 0, i < parts.length, i++ {
+                ascii pt = asciiLower(parts[i])
+                parseNumberAt(pt, 0)
+                bool bare = numOk && numEnd == pt.length
+                if bare && numsSeen == 0 { s.flexGrow = numValue  numsSeen = 1 }
+                else if bare && numsSeen == 1 { s.flexShrink = numValue  numsSeen = 2 }
+                else {
+                    Len l = parseLength(pt, s.fontSize)
+                    if l.kind != LEN_INVALID { s.flexBasis = l }
+                }
+            }
+        }
+    }
+    ascii fg = styleProp(props, 'flex-grow')
+    if fg != null { parseNumberAt(asciiTrim(fg), 0)  if numOk { s.flexGrow = numValue } }
+    ascii fs2 = styleProp(props, 'flex-shrink')
+    if fs2 != null { parseNumberAt(asciiTrim(fs2), 0)  if numOk { s.flexShrink = numValue } }
+    ascii fb = styleProp(props, 'flex-basis')
+    if fb != null {
+        Len l = parseLength(fb, s.fontSize)
+        if l.kind != LEN_INVALID { s.flexBasis = l }
+    }
+    s.rowGap = 0
+    s.columnGap = 0
+    ascii gp = styleProp(props, 'gap')
+    if gp != null {
+        arr[ascii] parts = cssTokens(gp)
+        if parts.length > 0 {
+            Len a = parseLength(parts[0], s.fontSize)
+            if a.kind == LEN_PX { s.rowGap = roundPx(a.v)  s.columnGap = s.rowGap }
+        }
+        if parts.length > 1 {
+            Len b2 = parseLength(parts[1], s.fontSize)
+            if b2.kind == LEN_PX { s.columnGap = roundPx(b2.v) }
+        }
+    }
+    s.rowGap = pxProp(props, 'row-gap', s.fontSize, s.rowGap)
+    s.columnGap = pxProp(props, 'column-gap', s.fontSize, s.columnGap)
+    s.order = 0
+    ascii od = styleProp(props, 'order')
+    if od != null {
+        int o = asciiTrim(od).toText().toInt()
+        if o != null { s.order = o }
+    }
+    s.boxSizing = BOX_CONTENT
+    ascii bsz = styleProp(props, 'box-sizing')
+    if bsz != null && asciiLower(bsz) == 'border-box' { s.boxSizing = BOX_BORDER }
+    s.captionSide = CAPTION_TOP
+    ascii cs2 = styleProp(props, 'caption-side')
+    if cs2 != null && asciiLower(cs2) == 'bottom' { s.captionSide = CAPTION_BOTTOM }
+    s.wordSpacing = isRoot ? 0 : parent.wordSpacing
+    s.wordSpacing = pxProp(props, 'word-spacing', s.fontSize, s.wordSpacing)
+    s.outlineWidth = 0
+    s.outlineColor = s.color
+    ascii ow = styleProp(props, 'outline-width')
+    ascii ost = styleProp(props, 'outline-style')
+    ascii oc = styleProp(props, 'outline-color')
+    ascii osh = styleProp(props, 'outline')
+    if osh != null {
+        // `outline` is width, style and colour in any order.
+        arr[ascii] parts = cssTokens(osh)
+        for int i = 0, i < parts.length, i++ {
+            ascii t = asciiLower(parts[i])
+            if t == 'none' || t == 'hidden' { s.outlineWidth = 0 }
+            else if t == 'solid' || t == 'dashed' || t == 'dotted' || t == 'double'
+                 || t == 'groove' || t == 'ridge' || t == 'inset' || t == 'outset' {
+                if s.outlineWidth == 0 { s.outlineWidth = 3 }
+            } else {
+                int c = parseCssColor(t, s.color)
+                if c != COLOR_UNSET { s.outlineColor = c }
+                else {
+                    Len l = parseLength(t, s.fontSize)
+                    if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+                }
+            }
+        }
+    }
+    if ow != null {
+        Len l = parseLength(ow, s.fontSize)
+        if l.kind == LEN_PX { s.outlineWidth = roundPx(l.v) }
+    }
+    if ost != null && (asciiLower(ost) == 'none' || asciiLower(ost) == 'hidden') { s.outlineWidth = 0 }
+    if oc != null {
+        int c = parseCssColor(oc, s.color)
+        if c != COLOR_UNSET { s.outlineColor = c }
+    }
+    s.clearSide = CLEAR_NONE
+    ascii cl = styleProp(props, 'clear')
+    if cl != null {
+        ascii t = asciiLower(cl)
+        if t == 'left' { s.clearSide = CLEAR_LEFT }
+        else if t == 'right' { s.clearSide = CLEAR_RIGHT }
+        else if t == 'both' { s.clearSide = CLEAR_BOTH }
+    }
+    s.position = POS_STATIC
+    ascii pos = styleProp(props, 'position')
+    if pos != null {
+        ascii t = asciiLower(pos)
+        if t == 'relative' { s.position = POS_RELATIVE }
+        else if t == 'absolute' { s.position = POS_ABSOLUTE }
+        else if t == 'fixed' { s.position = POS_FIXED }
+        // `sticky` behaves as `relative` with no scroll offset applied,
+        // which is what it is until scrolling is part of layout.
+        else if t == 'sticky' { s.position = POS_RELATIVE }
+    }
+    s.top = lenProp(props, 'top', s.fontSize, lenAuto())
+    s.right = lenProp(props, 'right', s.fontSize, lenAuto())
+    s.bottom = lenProp(props, 'bottom', s.fontSize, lenAuto())
+    s.left = lenProp(props, 'left', s.fontSize, lenAuto())
+    s.zIndex = 0
+    ascii zi = styleProp(props, 'z-index')
+    if zi != null {
+        int z = asciiTrim(zi).toText().toInt()
+        if z != null { s.zIndex = z }
+    }
     s.floatSide = FLOAT_NONE
     ascii fl = styleProp(props, 'float')
     if fl != null {
@@ -1004,13 +2741,27 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
     }
     Style s = computeStyle(n, parent, isRoot)
     n.style = s
+    // The counters an element resets or increments are in force for its
+    // own generated content, so they are applied before it is resolved.
+    if anyCounters {
+        applyCounterProperty(s.counterReset.toAscii(), styleDepth, true)
+        applyCounterProperty(s.counterIncrement.toAscii(), styleDepth, false)
+    }
+    computePseudoElements(n, s)
+    styleDepth++
     for int i = 0, i < n.children.length, i++ {
         computeStylesFrom(n.children[i], s, false)
     }
+    styleDepth--
+    // An instance created by a child is in scope for that child's
+    // following siblings, so it lives until the children are done.
+    if anyCounters { popCountersBelow(styleDepth + 1) }
 }
 
 void func computeStyles(doc:Node) {
     Style none
+    styleDepth = 0
+    resetCounters()
     computeStylesFrom(doc, none, true)
     if archtelosTiming { log(cascadeProfile()) }
 }

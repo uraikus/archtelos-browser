@@ -50,6 +50,56 @@ for src in tests/unit/*.f tests/render/*.f; do
         echo "FAILED: $src"; failed=1
     fi
 done
+# Before grading the engine, check the instrument can grade anything: a
+# row whose value Chromium computes no differently from the initial value
+# reads as "not implemented" however complete the implementation is.
+if ! python3 tests/chromium.py properties-audit tests/conformance/css-properties.txt; then
+    echo "FAILED: tests/conformance/css-properties.txt"; failed=1
+fi
+
+# Which CSS properties actually change what renders. This floor went
+# down once, from 89, when the instrument stopped crediting a property
+# for a field belonging to another: `outline-style` was registering
+# because declaring it gives the outline a width. The engine did not
+# regress; the measurement got stricter.
+PROPERTIES_MIN=113
+if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
+    if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
+        echo "FAILED: tests/conformance/properties.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/properties.f"; failed=1
+fi
+
+# Every HTML element's default display, against Chromium's own answer.
+ELEMENTS_MIN=122
+if compile tests/conformance/elements.f "$BUILD/elements" >/dev/null; then
+    if ! run "$BUILD/elements" --min "$ELEMENTS_MIN"; then
+        echo "FAILED: tests/conformance/elements.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/elements.f"; failed=1
+fi
+
+# Which CSS selectors match the same elements Chromium matches, on one
+# fixture document. The expectations are checked in; when Chromium is
+# present they are regenerated first, so a selector whose meaning this
+# project got wrong cannot be frozen into the file it is graded against.
+SELECTORS_MIN=56
+if [ -n "$(python3 tests/chromium.py which 2>/dev/null)" ]; then
+    python3 tests/chromium.py selectors tests/fixtures/selectors.html \
+        tests/conformance/css-selectors.txt > "$BUILD/chromium-selectors.txt" 2>/dev/null \
+        && [ -s "$BUILD/chromium-selectors.txt" ] \
+        && cp "$BUILD/chromium-selectors.txt" tests/conformance/chromium-selectors.txt
+fi
+if compile tests/conformance/selectors.f "$BUILD/selectors" >/dev/null; then
+    if ! run "$BUILD/selectors" --min "$SELECTORS_MIN"; then
+        echo "FAILED: tests/conformance/selectors.f"; failed=1
+    fi
+else
+    echo "COMPILE FAILED: tests/conformance/selectors.f"; failed=1
+fi
+
 if compile tests/conformance/html5lib.f "$BUILD/conformance" >/dev/null; then
     if ! run "$BUILD/conformance" --min "$CONFORMANCE_MIN"; then
         echo "FAILED: tests/conformance/html5lib.f"; failed=1

@@ -61,4 +61,77 @@ checkEq(resolveUrl(p4.url, 'https://other.org/p'), 'https://other.org/p', 'absol
 checkEq(resolveUrl('dir/page.html', 'img/a.png'), 'dir/img/a.png', 'relative file path')
 checkEq(resolveUrl('http://h.com', 'x'), 'http://h.com/x', 'host without path')
 check(linkAt(p4.root, 350, 8) == null, 'no link on empty space')
+
+// a flex row actually paints side by side, not stacked: geometry the
+// unit suite checks in numbers, checked here in pixels.
+Page p5 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px"><div style="width:60px;background:red"></div><div style="width:60px;background:blue"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p5, 0, 0, 300)
+check(getPixelColor(30, 20) == red, 'the first flex item paints at the start of the row')
+check(getPixelColor(90, 20) == blue, 'the second beside it, not below it')
+check(getPixelColor(30, 60) == white, 'and nothing is stacked underneath')
+
+// justify-content: flex-end moves the pair to the far edge
+Page p6 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px;justify-content:flex-end"><div style="width:60px;background:red"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p6, 0, 0, 300)
+check(getPixelColor(370, 20) == red, 'flex-end paints the item against the far edge')
+check(getPixelColor(30, 20) == white, 'and nothing at the start')
+
+// an audio element with controls paints a bar; one without paints
+// nothing at all
+Page p7 = pageFromHtml('<body style="margin:0"><audio src="x.mp3" controls></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p7, 0, 0, 300)
+check(getPixelColor(150, 27) != white, 'the audio controls paint a bar')
+check(getPixelColor(150, 100) == white, 'and nothing below it')
+check(getPixelColor(350, 27) == white, 'and nothing past its 300px width')
+
+Page p8 = pageFromHtml('<body style="margin:0"><audio src="x.mp3"></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p8, 0, 0, 300)
+check(getPixelColor(150, 27) == white, 'an audio without controls paints nothing')
+
+// ---- list markers count in the system they were asked for ---------------
+// The exact labels are checked in tests/unit/test_markers.f, which can
+// compare strings; what these check is that the label reaches the
+// marker, by painting the same list item under different systems and
+// requiring the ink to differ. Two systems that agreed on every pixel
+// would mean the style never reached the painter, which is what used to
+// happen: every ordered list counted in arabic numerals.
+text listHead = '<!doctype html><body style="margin:0;font:16px/20px monospace">'
+
+arr[int] func markerInk(html:text, rowFrom:int, rowTo:int) {
+    Page p = pageFromHtml(listHead + html + '</body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    arr[int] out = []
+    for int y = rowFrom, y < rowTo, y++ {
+        int n = 0
+        for int x = 0, x < 40, x++ { if getPixelColor(x, y) != white { n++ } }
+        out.push(n)
+    }
+    return out
+}
+
+bool func sameInk(a:arr[int], b:arr[int]) {
+    if a.length != b.length { return false }
+    for int i = 0, i < a.length, i++ { if a[i] != b[i] { return false } }
+    return true
+}
+
+text fourItems = '<li>x</li><li>x</li><li>x</li><li>x</li>'
+arr[int] dec4 = markerInk('<ol style="list-style-type:decimal">' + fourItems + '</ol>', 60, 80)
+arr[int] rom4 = markerInk('<ol style="list-style-type:lower-roman">' + fourItems + '</ol>', 60, 80)
+arr[int] ROM4 = markerInk('<ol style="list-style-type:upper-roman">' + fourItems + '</ol>', 60, 80)
+check(!sameInk(dec4, rom4), 'the fourth marker differs between decimal and lower-roman')
+check(!sameInk(rom4, ROM4), 'and between lower-roman and upper-roman')
+
+arr[int] one1 = markerInk('<ol type="1"><li>x</li></ol>', 0, 20)
+arr[int] oneA = markerInk('<ol type="a"><li>x</li></ol>', 0, 20)
+arr[int] oneI = markerInk('<ol type="I"><li>x</li></ol>', 0, 20)
+check(!sameInk(one1, oneA), 'an ol type=a marker differs from type=1')
+check(!sameInk(one1, oneI), 'and type=I differs from both')
+check(!sameInk(oneA, oneI), 'as the attribute is meant to')
+
 finish('render')

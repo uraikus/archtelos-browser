@@ -6,42 +6,138 @@ describes the present (CLAUDE.md, §3).
 
 ## CSS: move to the 2026 snapshot
 
-The style engine is written against CSS as generally understood rather
-than against a specific edition. The target is
-**[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)**, which names
-the modules that are stable enough to implement, the same way the WHATWG
-HTML Living Standard now governs the parser.
+Where the engine stands against
+**[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
+specification by specification, in [css-2026.md](css-2026.md). The
+snapshot's official definition of CSS is 24 specifications; the engine
+implements no part of 8 of them. That list, not a sense of what feels
+modern, sets the order below.
 
-The work, in the order it is worth doing:
+### The cascade
 
-1. **Read the snapshot and write down the delta.** Produce a table of
-   the modules it lists against what `src/css/` implements, so the rest
-   of this section can be replaced by something measured rather than
-   guessed.
-2. **Find a conformance corpus, as was done for HTML.** The HTML parser
-   went from 20% to 93% against the standard's own tests, level with
-   Chromium,
-   and the only reason that was possible is that a corpus existed and
-   could be run. `web-platform-tests/css` is the equivalent; the first
-   question is which of its tests can run without JavaScript, since the
-   reference-comparison harness assumes a scripting browser. A pixel
-   comparison against Chromium on a fixed page set (both already wired
-   up in `tests/chromium.py`) may be the more practical instrument.
-3. **Selectors Level 4**: `:is()`, `:where()`, `:has()`, `:not()` with a
-   full selector list rather than one compound, and the case-insensitive
-   attribute flag. The parser already rejects what it does not
-   understand, so these fail closed rather than wrongly.
-4. **Cascade Level 5**: `@layer` ordering (blocks are currently
-   flattened and their contents used), `revert`, and `!important`
-   interaction with layers.
-5. **Values Level 4**: `calc()`, `min()`, `max()`, `clamp()`, and custom
-   properties with `var()`. Custom properties are currently dropped at
-   parse time.
-6. **Box model and layout modules**: `position`, floats, Flexbox,
-   Grid — see the layout section below, which is where the real work is.
-7. **Colors Level 4/5**: `lab()`, `lch()`, `oklab()`, `oklch()`,
-   `color-mix()`. The runtime color model is already a packed RGBA int,
-   so these are parse-and-convert rather than architecture.
+The seven conformance bugs are fixed: specificity is compared as a
+triple, importance inverts the origin order, `inherit` takes the
+parent's computed value, `@supports` evaluates its condition,
+`text-decoration` and `opacity` no longer inherit, `rem` and `vh`
+resolve against the real root font size and viewport, and an unparseable
+selector drops its whole rule. What is left of CSS Cascade 4:
+
+1. **`revert`**, which rolls a property back to the value the previous
+   cascade origin gave. It behaves as `unset` today because the origins
+   are not kept apart once the cascade has run; doing it properly means
+   keeping a per-origin computed value, or recomputing with the author
+   declarations removed.
+2. **`all`**, which sets every property at once to a CSS-wide keyword.
+
+### Then the official definition, largest holes first
+
+1. **What is left of the CSS2 chapters**: `overflow: scroll` and
+   `auto`, which need a scrollable area rather than only a clip, and
+   paged media (§13). Positioning (§9.3), floats (§9.5), generated
+   content (§12) and `overflow: hidden` clipping (§11) are done.
+2. **What is left of Flexible Box 1**: `flex-basis: content`, the
+   min-content floor that keeps an item from shrinking below its own
+   content, and nested flex containers as flex items. `flex-wrap`,
+   `align-content`, `baseline` alignment and auto margins are done.
+3. **`::first-line`**, and the `url()` in `content` that would let
+   generated content carry an image. `::first-letter` is done, and
+   `::before` and `::after` generate boxes from strings, `attr()`,
+   `counter()`, `counters()` and the four quote keywords. `::first-line`
+   is the harder half: the line it names does not exist until line
+   breaking has run, so restyling it means breaking the line twice or
+   re-breaking after the style changes the metrics.
+
+   None of this is gradeable by the selector instrument -- a
+   pseudo-element selects part of an element rather than an element, so
+   `querySelectorAll` has no answer to compare against -- nor by the
+   property instrument, which cannot see `counter-reset`,
+   `counter-increment` or `quotes` because Chromium does not enumerate
+   them on a computed style. It is measured by geometry and by the
+   generated text, as tests/unit/test_counters.f and tests/unit/test_quotes.f do.
+4. **CSS Images 3, completed**: `conic-gradient()`, gradient
+   interpolation hints, and the one degenerate case left — an ellipse
+   with zero height and non-zero width, which the standard renders as a
+   mirrored linear gradient and this renders as the last stop, the same
+   as every other degenerate shape. Linear and radial gradients,
+   `object-fit` and `object-position` are done.
+
+   **Headless Chromium cannot supply pixel ground truth in this
+   container**, which is what anything graded in pixels rather than
+   geometry has to work around: `--screenshot` paints only the first
+   scanline of the page. A plain 40x40 block of flat colour comes back
+   as one row of colour and 39 rows of white, with or without
+   `--virtual-time-budget`, so it is the screenshot pipeline rather than
+   anything about images. `tests/chromium.py` is unaffected because it
+   reads the DOM rather than pixels. `object-fit` and `object-position`
+   were graded against the specification's own sizing algorithm instead,
+   which is exact; `tests/render/objectfit.f` derives every expectation
+   from the intrinsic size and the box and states the derivation beside
+   the check. A radial gradient can be graded the same way.
+5. **Backgrounds and Borders 3, completed**: `background-attachment`;
+   more than one background layer per box; `border-image`; a blurred
+   shadow whose falloff is a real Gaussian rather than the accumulated
+   alpha of nested rectangles the canvas's lack of a blur forces. A
+   single background image from `url()` with `repeat`,
+   `position`, `size`, `origin` and `clip` is done, and so is every border style, per side. A background clipped to the padding or
+   content edge still uses the border box's `border-radius` rather than
+   the smaller inner curve, which needs the rounded-rectangle path that
+   an image layer does not have (FINDINGS.md, "an image is a drawable
+   surface with a smaller API").
+6. **Fonts 3**, which is **blocked on Festina rather than on effort**: a
+   numeric `font-weight` has nowhere to go, because the runtime stores
+   the weight in a two-valued Cairo enum and decides it by searching the
+   style string for `bold`; and `@font-face` cannot be done at all,
+   because `cairo_select_font_face` picks a family from the system and
+   no call loads a font file. FINDINGS.md has the measurements and
+   festina.md §3l the proposal. Until Festina grows either, the most
+   this item can gain is `font-variant` and `font-stretch`, which are
+   the parts that do not need a font the system lacks.
+7. **Counter Styles 3**: `@counter-style`, and the predefined styles
+   beyond the six that number as themselves — the alphabetic and roman
+   ones are done, along with the `<ol type>` attribute. What is left is
+   `list-style-position` and `list-style-image` from Lists 3, and
+   `decimal-leading-zero`, which parses as plain decimal.
+8. The remainder of the official definition, lower value for this
+   renderer but still part of the definition: Writing Modes 3, Basic
+   User Interface 3, Multi-column 1, Transforms 1, Compositing and
+   Blending 1, Containment 1, Easing 1, Namespaces 3.
+
+### After the official definition
+
+Grid; `@layer` ordering, which is discarded today (Cascade 5); the
+Media Queries 4 range syntax; Selectors 4's `:is()`, `:where()`,
+`:has()` and a selector list inside `:not()`; `color-mix()` and the
+wider colour spaces; `box-sizing`, since every box is content-box; the
+`display` corrections in Display 3; and the Text 3 and Text Decoration 3
+gaps. These sit in the snapshot's three lower classes, which is lower
+than their prominence suggests.
+
+### The instrument
+
+**Three measurements exist**, each with a floor in `tests/run.sh`:
+`tests/conformance/properties.f` reports how many of the 369 CSS
+properties the instrument can grade change what this engine renders
+(113; Chromium reports 373, and four of them cannot be graded by a probe
+that is an ordinary element),
+`tests/conformance/elements.f` how many of the 122 HTML elements get
+the default `display` Chromium gives them (122 of 122), and
+`tests/conformance/selectors.f` how many of 61 selectors match the same
+elements as Chromium (56). Each entry in the work above should move the
+first number, and the runner names every property that still does
+nothing.
+
+**Find a CSS conformance corpus.** The HTML parser went from 20% to 93%
+against the standard's own tests, level with Chromium, and the only
+reason that was possible is that a corpus existed and could be run.
+`css/` in web-platform-tests is the equivalent, and the first question
+is how much of it runs without script, since the reference-comparison
+harness assumes a scripting browser. A pixel comparison against Chromium
+on a fixed page set, both already wired up in `tests/chromium.py`, may be
+the more practical instrument.
+
+**Re-checking the snapshot needs it supplied.** `www.w3.org` is refused
+by this network's egress policy, so a session cannot fetch the document
+itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
@@ -81,40 +177,152 @@ rather than quality: `noscript01.dat` assumes a disabled scripting flag,
 which is permanently true here. `webkit02.dat` and three other files are
 genuine leads.
 
+## A margin that collapses through to the root is dropped
+
+`<body style="margin:0"><div style="margin-top:40px">` puts the div at
+the very top. Chromium puts it at 40, and says so:
+`getBoundingClientRect().top` is 40 there and 0 here.
+
+`layoutDocument` computes the margin collapsing into the root and never
+applies it, because applying it at the root double-counts the ordinary
+case where `layoutBlock` already has. The fix is to separate the margin
+that collapses *through* the root from the one that collapses *into* it.
+Found while testing absolute positioning, which resolves against the
+ancestor's border box and so depends on it.
+
 ## Layout
 
 The layout engine handles normal flow well and does not attempt the
 rest. In rough order of how often real pages need it:
 
-- **Floats.** `float: left/right` is parsed and computed but laid out
-  as if static. This is the most visible gap on older pages.
-- **Positioning.** `position: relative/absolute/fixed/sticky` are all
-  laid out as static.
-- **Flexbox**, then **Grid**. Both currently fall back to block layout,
-  which is why a modern page lays out as a single column.
-- **`overflow: hidden`** clips nothing: the canvas has no clip region,
-  so a clipped box would need to be drawn into an offscreen image and
-  composited. See festina.md.
-- **Generated content** (`::before`, `::after`), which the selector
-  parser already recognizes and refuses to match.
+- **Block formatting contexts.** A float belongs to one and cannot
+  escape it; there is a single float list for the document instead, so
+  `overflow: hidden` or an inline-block does not contain a float, and a
+  float does not grow the parent that holds it.
+- **`position: sticky`**, which computes as `relative` because nothing
+  in layout knows the scroll offset.
+- **Grid**, which still falls back to block layout.
+- **Sub-pixel layout.** Every length is an integer, so three items
+  sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
+  rounds only when painting. Distributing free space by rounding the
+  running total rather than each share puts the *edges* in the right
+  place, which is what the flex code now does, but an isolated width can
+  still be a pixel off.
 - **Vertical writing modes**, **multi-column**, **`aspect-ratio`**.
+
+## Networking is blocked on two Festina bugs
+
+Neither is a design decision and neither has a workaround in this
+repository. Both are written up in FINDINGS.md with minimal
+reproductions and proposed in festina.md.
+
+1. **An HTTP response over 64 KiB takes thirty seconds.** The runtime's
+   client reads to EOF rather than to `Content-Length`, and a keep-alive
+   server never sends EOF, so the read ends when the 30 second socket
+   timeout fires. The bytes are correct; only the wait is wrong. Most
+   real pages are over 64 KiB, so this is the single thing standing
+   between this browser and the live web. `tests/latencyserver.py`
+   serves under the limit to keep the preload benchmark measuring
+   prefetching instead of this.
+2. **The query string is dropped from every request.** `GET /page?a=1`
+   goes out as `GET /page`, with `req.code` 200 and `req.url`
+   unchanged, so nothing can detect it. Half the web is behind a query
+   string and the URL is the only input `send()` takes.
+
+Until the first is fixed there is no honest end-to-end benchmark against
+a real site, and the numbers in benchmarks.md are all local files or a
+local server.
+
+## Networking, once it is unblocked
+
+- **Prefetch across a navigation, not only within one.** The preload
+  scanner's cache is cleared at the start of every load, so a resource
+  shared by two pages is fetched twice. A cache keyed by URL with the
+  response's own validators would fix it, and would need the
+  conditional-request headers the fetch layer does not send yet.
+- **Teach the scanner `media`.** `gatherStylesheets` skips a
+  `<link rel=stylesheet media=print>`; the scanner does not, so one gets
+  prefetched and thrown away. That is a request nobody wanted, which is
+  the one kind of mistake a scanner is not allowed to make. Evaluating
+  the query needs `evaluateMediaQuery`, which lives in the CSS layer,
+  and `src/net/` does not import the CSS layer — so this is a layering
+  question before it is a code one.
+- **Let a worker fetch a local file.** A preload worker speaks HTTP and
+  nothing else, so a `file://` page dispatches nothing. That is the
+  right trade today, because a local read is microseconds, but it makes
+  the scanner untestable without a server.
+- **Follow redirects on a worker.** A worker cannot call `resolveUrl`
+  (a thread body may not call a top-level function, FINDINGS.md), so a
+  prefetch that redirects is abandoned and refetched on the main thread.
+  Correct, and one round trip wasted.
 
 ## Performance
 
-Parsing is 6% of the time to render a 51 KB page; the cascade is 34%
-and layout 31% (benchmarks.md). Neither has an obvious hot spot left —
-they are constant-factor costs spread evenly. Worth trying, in order:
+Chromium parses, styles and lays out the 51 KB page about **3.7 times
+faster** — 25.3 ms against 93 — with both sides measured from inside and
+start-up outside the timer (benchmarks.md). The cascade and layout are
+88% of our time and all of the gap, and **layout is now the larger half
+of the two**. In order:
 
-- **Share computed styles between elements whose matched declarations
-  are identical.** Most elements in a real document have the same
-  declarations as a sibling.
-- **Cache the box tree across relayouts** when only the viewport width
-  changed, instead of rebuilding it.
+- **Collecting and applying declarations, now that computing them is
+  cheap.** Matching is 7 ms and applying 13 ms of a 31 ms cascade, and
+  both are still paid per element: 8,578 selector tests and 11,614
+  declarations applied into a fresh map. The same insight that made
+  computing cheap applies again — an element whose matched rule set is
+  identical to a sibling's could share the merged declaration map too,
+  and then the whole cascade would be paid once per distinct style
+  rather than once per element.
+- **Read the declarations an element has, rather than asking for every
+  property it might have.** `computeStyle` looks up about 73 named
+  properties per element and 83% of them find nothing. This matters much
+  less now that a distinct style is computed only 24 times on the
+  benchmark page, but it is still the shape that keeps the phase flat as
+  more properties land.
+- **An angled gradient is painted a rectangle per band per row**, which
+  is 14 ms for sixty boxes where an axis-aligned one is 1 ms
+  (benchmarks.md). Rendering the gradient once into an offscreen image
+  and drawing that image would make the angle free; `blankImage` and
+  image drawing exist, so this needs no new language feature.
+- **Give the vectorizer a loop it can take.** LLVM autovectorizes
+  Festina's IR and reaches almost none of this browser's hot loops:
+  `paintLinearGradient` gets 14 packed operations against 45 scalar
+  ones, `asciiIndexOf` and `cascadeMatches` get none, because they exit
+  early or chase pointers (benchmarks.md). The gradient row fill is the
+  one that could plainly be rewritten branch-free over a row of pixels,
+  and it is the same rewrite the offscreen-image item above wants.
+- **Layout, which is now the bigger half.** 48 ms against the cascade's
+  28: building the box tree is 14 ms, placing text 12, measuring it 9.
+  The box tree is rebuilt from scratch on every relayout even when only
+  the viewport width changed.
+- **Four of those 93 ms are the preload scanner's worker threads**, on a
+  page that prefetches nothing: glibc's `malloc` abandons its
+  single-threaded fast path at the first `pthread_create` and never
+  takes it back, and Festina allocates on almost every operation
+  (FINDINGS.md). Festina cannot create a thread on demand, so this is
+  not fixable here — festina.md proposes the lazy start that would fix
+  it, and until then it is the one place this project breaks its own
+  rule that a feature must not cost the pages that do not use it.
 - **A string interner.** A large share of both phases is comparing and
   hashing tag, class and property names that could be integers. This
   wants language support to be worth it; see festina.md.
 
+**Do not compare unequal canvases again.** PNG encoding is linear in
+pixels and dominates at this page size: the same page onto 800x8000
+instead of 800x600 costs 336 ms instead of 120 ms, and all of that
+difference is encoding. `tests/bench.sh` pins both engines to 800x600.
+
 ## Deliberate non-work
+
+- **Playing audio.** `<audio>` lays out and draws its controls, and it
+  does not play. Festina has real audio — `aud`, `.play()`, `.stop()`,
+  `.isPlaying()` — but using it links ALSA and libmpg123, and Festina
+  links them dynamically, so the produced binary would carry
+  `libasound.so.2` and `libmpg123.so.0` as runtime `NEEDED` entries the
+  way it already carries `libcairo.so.2`. A browser that cannot start on
+  a machine without a sound library is a worse browser, and this is two
+  new system dependencies rather than one. festina.md proposes the fix:
+  open the audio device lazily, so a program that merely *can* play
+  audio does not hard-require the library to start.
 
 - **JavaScript.** Out of scope permanently. It is a second language
   implementation, not a renderer feature, and its absence is what makes

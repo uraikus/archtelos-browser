@@ -14,6 +14,18 @@ Two modes, both used by tests/bench.sh:
   parse        Times Chromium's HTML parser on a set of pages, using
                DOMParser inside the page and reporting milliseconds.
 
+  selectors    Reports which element ids each selector in a list matches
+               in a fixture document, using querySelectorAll, so this
+               project's selector engine can be compared against the
+               browser's own rather than against an opinion.
+
+  render       Times parse, style and layout on a set of pages, inside
+               the page, so the number excludes process start-up. The
+               alternative -- timing the whole command and subtracting a
+               start-up baseline -- subtracts two numbers near 500 ms to
+               get one near 50, and Chromium's start-up varies by over
+               100 ms run to run, so the answer was mostly noise.
+
 Chromium is found via CHROME, or the Playwright browser directory that
 ships in this container. Nothing here is part of the browser: it is
 benchmark tooling, and it only ever reads the corpus and the pages.
@@ -301,6 +313,192 @@ report(res);
     return 0
 
 
+def render_timing(paths, iterations):
+    """Parse, style and lay out each page, inside the page.
+
+    The document is parsed with DOMParser, adopted into a sized
+    container in the live document, and then a layout is forced by
+    reading offsetHeight -- which is what makes style resolution and
+    layout actually happen rather than being deferred. Painting and PNG
+    encoding are not included, and neither is process start-up: this is
+    the phase this project's cascade and layout are compared against.
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("chromium: not found; skipping", file=sys.stderr)
+        return 1
+    docs = {}
+    for p in paths:
+        with open(p, "rb") as fh:
+            docs[os.path.basename(p)] = fh.read().decode("utf-8", "replace")
+    harness = """<!doctype html><body><pre id=out></pre><div id=host style="width:800px"></div><script>
+%s
+var PAYLOAD = "%s";
+var DOCS = %s, N = %d, res = {};
+var host = document.getElementById('host');
+for (var name in DOCS) {
+  var html = DOCS[name], best = Infinity;
+  for (var i = 0; i < N; i++) {
+    host.textContent = '';
+    var t0 = performance.now();
+    var d = new DOMParser().parseFromString(html, 'text/html');
+    if (!d.documentElement) throw new Error('parse failed');
+    // adopting the body's children keeps the page's own <style> rules,
+    // so the cascade has the same work to do as the real load
+    var head = d.head ? Array.prototype.slice.call(d.head.children) : [];
+    for (var h = 0; h < head.length; h++) {
+      if (head[h].tagName === 'STYLE') host.appendChild(document.adoptNode(head[h]));
+    }
+    while (d.body && d.body.firstChild) host.appendChild(document.adoptNode(d.body.firstChild));
+    var h2 = host.offsetHeight;          // forces style and layout
+    var t1 = performance.now();
+    if (!h2) throw new Error('laid out to nothing');
+    if (t1 - t0 < best) best = t1 - t0;
+  }
+  res[name] = best;
+}
+report(res);
+</script>""" % (REPORT_JS, encode_payload(docs), DECODE_JS, iterations)
+    dom = run_chrome(chrome, harness)
+    result = read_result(dom)
+    if result is None:
+        print("chromium: no result from the harness", file=sys.stderr)
+        return 1
+    for name, ms in result.items():
+        print("chromium-render %s %.3f" % (name, ms))
+    return 0
+
+
+def selector_matches(fixture, selector_file):
+    """Which element ids each selector matches, according to Chromium.
+
+    The fixture is loaded as a real document and each selector is run
+    through querySelectorAll, so the answer is the browser's own
+    matching rather than a reimplementation of it. Prints one line per
+    selector: the selector, a tab, then the matched ids separated by
+    spaces (empty when none matched, the word INVALID when Chromium
+    rejects the selector).
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("chromium: not found; skipping", file=sys.stderr)
+        return 1
+    with open(fixture, "rb") as fh:
+        doc = fh.read().decode("utf-8", "replace")
+    selectors = []
+    with open(selector_file, "rb") as fh:
+        for raw in fh.read().decode("utf-8", "replace").split("\n"):
+            line = raw.strip()
+            # A comment is "# " or a bare "#": an id selector is "#name"
+            # with no space, and treating every leading # as a comment
+            # silently dropped every id selector from the list.
+            if not line or line == "#" or line.startswith("# "):
+                continue
+            selectors.append(line)
+    harness = """<!doctype html><body><pre id=out></pre><script>
+%s
+var PAYLOAD = "%s";
+var DATA = %s, res = {};
+var parser = new DOMParser();
+var doc = parser.parseFromString(DATA.doc, 'text/html');
+for (var i = 0; i < DATA.selectors.length; i++) {
+  var sel = DATA.selectors[i];
+  try {
+    var hits = doc.querySelectorAll(sel);
+    var ids = [];
+    for (var j = 0; j < hits.length; j++) ids.push(hits[j].id || '?');
+    res[sel] = ids.join(' ');
+  } catch (e) {
+    res[sel] = 'INVALID';
+  }
+}
+report(res);
+</script>""" % (REPORT_JS, encode_payload({"doc": doc, "selectors": selectors}), DECODE_JS)
+    dom = run_chrome(chrome, harness)
+    result = read_result(dom)
+    if result is None:
+        print("chromium: no result from the harness", file=sys.stderr)
+        return 1
+    for sel in selectors:
+        print("%s\t%s" % (sel, result.get(sel, "INVALID")))
+    return 0
+
+
+
+def properties_audit(path):
+    """Checks that every row of css-properties.txt can register at all.
+
+    A row's value must be one Chromium itself computes differently from
+    the property's initial value; otherwise the property could be
+    implemented perfectly and the row would still read as missing. The
+    value is applied the way tests/conformance/properties.f applies it --
+    written into a style attribute, so a row may carry two declarations
+    where one is not enough. A row with a third column declares itself
+    ungradeable and says why; those are reported, not failed.
+    """
+    chrome = find_chrome()
+    if not chrome:
+        print("properties audit: skipped -- no chromium")
+        return 0
+    rows, excused = [], {}
+    for line in open(path):
+        line = line.rstrip("\n")
+        if not line or line.startswith("#") or "\t" not in line:
+            continue
+        parts = line.split("\t")
+        rows.append([parts[0], parts[1]])
+        if len(parts) >= 3 and parts[2]:
+            excused[parts[0]] = parts[2]
+    payload = encode_payload({"rows": rows})
+    html = """<!doctype html><html><body><div id=host></div><pre id=out></pre>
+<script>%s
+var PAYLOAD = "%s"; var data = %s;
+var host = document.getElementById('host'); var bad = [];
+for (var i = 0; i < data.rows.length; i++) {
+  var prop = data.rows[i][0], val = data.rows[i][1];
+  // A row may carry declarations beyond the property under test, because
+  // some properties do nothing without one. Those are context: the row
+  // must differ from an element that already has them, or it is the
+  // context doing the work and the row proves nothing about the property.
+  var semi = val.indexOf(';');
+  var own = semi < 0 ? val : val.slice(0, semi);
+  var context = semi < 0 ? '' : val.slice(semi + 1);
+  host.innerHTML = '<p id="a" style="' + context + '"></p>'
+                 + '<p id="b" style="' + prop + ': ' + own + ';' + context + '"></p>';
+  var before = getComputedStyle(document.getElementById('a')).getPropertyValue(prop);
+  var after  = getComputedStyle(document.getElementById('b')).getPropertyValue(prop);
+  if (after === before) bad.push([prop, val]);
+}
+report(bad);
+</script></body></html>""" % (REPORT_JS, payload, DECODE_JS)
+    bad = read_result(run_chrome(chrome, html))
+    if bad is None:
+        print("properties audit: FAILED -- no result from chromium")
+        return 1
+    version = "unknown"
+    try:
+        version = subprocess.run([chrome, "--version"], capture_output=True,
+                                 text=True, timeout=30).stdout.strip() or "unknown"
+    except Exception:
+        pass
+    unexpected = [b for b in bad if b[0] not in excused]
+    stale = [p for p in excused if p not in {b[0] for b in bad}]
+    for prop, val in unexpected:
+        print("properties audit: %s = %r cannot register -- %s computes it "
+              "no differently from the initial value" % (prop, val, version))
+    for prop in stale:
+        print("properties audit: %s is marked ungradeable but Chromium can now "
+              "tell it from the initial value -- drop the third column" % prop)
+    if unexpected or stale:
+        print("properties audit: FAILED -- %d row(s) measure nothing"
+              % (len(unexpected) + len(stale)))
+        return 1
+    print("properties audit: all %d rows can register against %s "
+          "(%d declared ungradeable)"
+          % (len(rows) - len(excused), version, len(excused)))
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -311,6 +509,12 @@ def main():
         return detail(sys.argv[2], sys.argv[3:])
     if sys.argv[1] == "parse":
         return parse_timing(sys.argv[3:], int(sys.argv[2]))
+    if sys.argv[1] == "render":
+        return render_timing(sys.argv[3:], int(sys.argv[2]))
+    if sys.argv[1] == "selectors":
+        return selector_matches(sys.argv[2], sys.argv[3])
+    if sys.argv[1] == "properties-audit":
+        return properties_audit(sys.argv[2])
     if sys.argv[1] == "which":
         chrome = find_chrome()
         print(chrome or "")

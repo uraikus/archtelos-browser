@@ -8,6 +8,9 @@
 // ARCHTELOS_TIMING=1 in the environment makes the pipeline log how
 // long each phase took, and layout its own hot spots.
 bool archtelosTiming = environment.ARCHTELOS_TIMING != null
+// Turns the preload scanner off, so the benchmark can measure the same
+// page with and without it rather than quoting one number.
+bool archtelosNoPreload = environment.ARCHTELOS_NO_PRELOAD != null
 
 const int CH_TAB = 9
 const int CH_LF = 10
@@ -26,6 +29,7 @@ const int CH_STAR = 42
 const int CH_PLUS = 43
 const int CH_COMMA = 44
 const int CH_MINUS = 45
+const int CH_N_LOWER = 110
 const int CH_DOT = 46
 const int CH_SLASH = 47
 const int CH_0 = 48

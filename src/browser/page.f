@@ -20,6 +20,25 @@ struct Page {
 int maxImagesPerPage = 60
 int maxStylesheetsPerPage = 20
 
+// Runs the preload scanner over the decoded source and starts fetching
+// what it found. Returns immediately: the requests run on the worker
+// threads while this thread parses, which is the whole point of
+// scanning before the parse rather than after it.
+void func startPreload(base:text, src:ascii) {
+    preloadReset()
+    if archtelosNoPreload { return }
+    if !isHttpUrl(base) { return }
+    arr[PreloadHint] hints = scanPreloads(src)
+    arr[text] urls = []
+    for int i = 0, i < hints.length, i++ {
+        text abs = withoutFragment(resolveUrl(base, hints[i].url))
+        // A worker speaks HTTP and nothing else; a local file costs
+        // nothing to read on the thread that needs it.
+        if isHttpUrl(abs) { urls.push(abs) }
+    }
+    preloadDispatch(urls)
+}
+
 // Stylesheets in document order: <style> elements and
 // <link rel=stylesheet>, both honoring a media attribute.
 void func gatherStylesheets(page:Page, n:Node, count:arr[int]) {
@@ -85,6 +104,31 @@ void func gatherImages(page:Page) {
     }
 }
 
+// Fetches every background image a computed style names, storing it
+// under its resolved URL and rewriting the style to hold that URL so
+// the painter can find it. Styles are shared between elements that
+// matched the same rules, so this may see one twice; resolving an
+// already-absolute URL returns it unchanged.
+void func gatherBackgroundImages(page:Page, n:Node) {
+    if n.kind == NODE_ELEMENT && n.style.backgroundUrl != '' {
+        text raw = n.style.backgroundUrl
+        ascii a = raw.toAscii()
+        if a != null && !asciiStartsWithLower(a, 'data:', 0) {
+            text target = resolveUrl(page.url, raw)
+            n.style.backgroundUrl = target
+            if loadedImages[target] == null {
+                Resource r = fetchUrl(target)
+                if r.ok {
+                    http holder = {'url': 'http://localhost/', 'body': r.data}
+                    img decoded = holder.toImg()
+                    if decoded != null { loadedImages[target] = decoded }
+                }
+            }
+        }
+    }
+    for int i = 0, i < n.children.length, i++ { gatherBackgroundImages(page, n.children[i]) }
+}
+
 Page func loadPage(url:text, width:int) {
     Page page
     page.url = url
@@ -102,9 +146,19 @@ Page func loadPage(url:text, width:int) {
         page.doc = errorDocument(url, r.error)
     } else {
         page.url = r.finalUrl
-        page.doc = parseHtmlBlob(r.data)
+        // Decoded once and used twice: the scanner reads the same
+        // bytes the tokenizer is about to.
+        ascii src = blobToAsciiSafe(r.data).toAscii()
+        int tp = now()
+        startPreload(page.url, src)
+        timing('preload scan', tp)
+        page.doc = parseHtml(src)
+        int tc = now()
+        preloadCollect()
+        timing('preload wait', tc)
     }
     timing('parse', t1)
+    gatherFrames(page)
     preparePage(page, width)
     page.loaded = r.ok
     return page
@@ -118,7 +172,12 @@ Page func pageFromHtml(html:text, baseUrl:text, width:int) {
     page.width = width
     page.error = ''
     nodeRegistryReset()
+    // No scan: there is no base to resolve against and nothing was
+    // fetched. Clearing the cache keeps a resource fetched for an
+    // earlier page from being served to this one unrevalidated.
+    preloadReset()
     page.doc = parseHtmlText(html)
+    gatherFrames(page)
     preparePage(page, width)
     page.loaded = true
     return page
@@ -128,6 +187,70 @@ Node func errorDocument(url:text, error:text) {
     return parseHtmlText(`<html><head><title>Cannot load page</title></head><body style="font-family: sans-serif; margin: 40px"><h1 style="color:#b00">Cannot load page</h1><p>The page at <b>${url}</b> could not be loaded.</p><p><code>${error}</code></p></body></html>`)
 }
 
+// How deep a frame may nest before this stops following src. A page
+// that frames itself would otherwise recurse until the stack gives out.
+const int MAX_FRAME_DEPTH = 3
+int frameDepth = 0
+
+// Lays out the document a frame names, into its own box tree.
+//
+// This deliberately does NOT reset the node registry: the frame's nodes
+// have to coexist with the nodes of the document that contains them.
+// It does reset the cascade, because a stylesheet inside a frame must
+// not reach the page around it -- and the caller runs it before its own
+// cascade for exactly that reason.
+Box func loadFrameDocument(url:text, width:int, height:int) {
+    if frameDepth >= MAX_FRAME_DEPTH { return null }
+    Resource r = fetchUrl(url)
+    if !r.ok { return null }
+    frameDepth++
+    Node doc = parseHtmlBlob(r.data)
+    Page inner
+    inner.url = r.finalUrl
+    inner.doc = doc
+    inner.width = width
+    cascadeReset()
+    setCssViewport(width, height)
+    arr[int] count = [0]
+    gatherStylesheets(inner, doc, count)
+    gatherImages(inner)
+    computeStyles(doc)
+    Box root = layoutDocument(doc, width)
+    if root != null { numberListItems(root) }
+    frameDepth--
+    return root
+}
+
+// Resolves every frame's src and lays its document out, before the
+// containing page's own cascade runs.
+void func gatherFrames(page:Page) {
+    arr[Node] frames = []
+    collectElements(page.doc, 'iframe', frames)
+    collectElements(page.doc, 'frame', frames)
+    for int i = 0, i < frames.length, i++ {
+        Node n = frames[i]
+        text src = getAttr(n, 'src')
+        if src == null || src == '' { continue }
+        text target = resolveUrl(page.url, src)
+        if target == page.url { continue }
+        setAttr(n, 'data-frame-src', target)
+        if loadedFrames[target] != null { continue }
+        int w = attrPx(n, 'width', FRAME_DEFAULT_W)
+        int h = attrPx(n, 'height', FRAME_DEFAULT_H)
+        Box root = loadFrameDocument(target, w, h)
+        if root != null { loadedFrames[target] = root }
+    }
+}
+
+// A frame's width/height attribute in pixels, or the default.
+int func attrPx(n:Node, name:text, dflt:int) {
+    text v = getAttr(n, name)
+    if v == null { return dflt }
+    int px = v.trim().toInt()
+    if px == null || px <= 0 { return dflt }
+    return px
+}
+
 void func timing(label:text, since:int) {
     if archtelosTiming { log(`[timing] ${label}: ${now() - since} ms`) }
 }
@@ -135,7 +258,7 @@ void func timing(label:text, since:int) {
 void func preparePage(page:Page, width:int) {
     int t0 = now()
     cascadeReset()
-    cssViewportWidth = width
+    setCssViewport(width, cssViewportHeight)
     arr[int] count = [0]
     gatherStylesheets(page, page.doc, count)
     timing('stylesheets', t0)
@@ -147,6 +270,13 @@ void func preparePage(page:Page, width:int) {
     int t2 = now()
     computeStyles(page.doc)
     timing('cascade', t2)
+    // Background images come from computed styles, so they cannot be
+    // collected with the <img> elements before the cascade has run.
+    if anyBackgroundUrl {
+        int tb = now()
+        gatherBackgroundImages(page, page.doc)
+        timing('background images', tb)
+    }
     int t3 = now()
     layoutPage(page, width)
     timing('layout', t3)

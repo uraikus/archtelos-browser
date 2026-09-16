@@ -19,6 +19,14 @@ const int DISPLAY_TABLE_ROW = 6
 const int DISPLAY_TABLE_CELL = 7
 const int DISPLAY_TABLE_ROW_GROUP = 8
 const int DISPLAY_FLEX = 9
+const int DISPLAY_TABLE_CAPTION = 10
+const int DISPLAY_TABLE_COLUMN = 11
+const int DISPLAY_TABLE_COLUMN_GROUP = 12
+const int DISPLAY_TABLE_HEADER_GROUP = 13
+const int DISPLAY_TABLE_FOOTER_GROUP = 14
+const int DISPLAY_RUBY = 15
+const int DISPLAY_CONTENTS = 16
+const int DISPLAY_INLINE_FLEX = 17
 
 // text-align
 const int ALIGN_LEFT = 0
@@ -42,6 +50,10 @@ const int LIST_DISC = 1
 const int LIST_CIRCLE = 2
 const int LIST_SQUARE = 3
 const int LIST_DECIMAL = 4
+const int LIST_LOWER_ALPHA = 5
+const int LIST_UPPER_ALPHA = 6
+const int LIST_LOWER_ROMAN = 7
+const int LIST_UPPER_ROMAN = 8
 
 // vertical-align (inline-level boxes only)
 const int VALIGN_BASELINE = 0
@@ -49,9 +61,99 @@ const int VALIGN_MIDDLE = 1
 const int VALIGN_TOP = 2
 const int VALIGN_BOTTOM = 3
 
+// flex-direction
+const int FLEX_ROW = 0
+const int FLEX_ROW_REVERSE = 1
+const int FLEX_COLUMN = 2
+const int FLEX_COLUMN_REVERSE = 3
+
+// justify-content, align-items and align-self, which share a vocabulary
+// (Box Alignment 3). The prefix is not `ALIGN_`, which belongs to
+// `text-align` above: two runs of `const int` under one prefix is how
+// `ALIGN_CENTER` and `ALIGN_CENTRE` would come to mean different things
+// one letter apart. See FINDINGS.md, "constants with the same value
+// collide silently".
+const int BOXALIGN_START = 0
+const int BOXALIGN_END = 1
+const int BOXALIGN_CENTRE = 2
+const int BOXALIGN_STRETCH = 3
+const int BOXALIGN_BASELINE = 4
+const int BOXALIGN_SPACE_BETWEEN = 5
+const int BOXALIGN_SPACE_AROUND = 6
+const int BOXALIGN_SPACE_EVENLY = 7
+const int BOXALIGN_AUTO = 8
+
+// flex-wrap. A container is single-line unless it says otherwise;
+// wrap-reverse flips the cross axis, which reverses both the order of
+// the lines and the side of its own line an item aligns to.
+const int FLEXWRAP_NOWRAP = 0
+const int FLEXWRAP_WRAP = 1
+const int FLEXWRAP_WRAP_REVERSE = 2
+
+// background-clip and background-origin (Backgrounds and Borders 3
+// §3.7, §3.8). Each is numbered so that its own initial value is zero --
+// `border-box` for the clip and `padding-box` for the origin -- which is
+// why the two do not share a numbering. A style that mentions neither
+// then writes nothing, and `noGradient`-style per-element work is
+// avoided.
+const int BGCLIP_BORDER = 0
+const int BGCLIP_PADDING = 1
+const int BGCLIP_CONTENT = 2
+
+const int BGORIGIN_PADDING = 0
+const int BGORIGIN_BORDER = 1
+const int BGORIGIN_CONTENT = 2
+
+// background-size (Backgrounds and Borders 3 §3.9). `auto` is the
+// initial value, so it is 0 and a style that never mentions the
+// property needs no work -- and neither do the two `Len` fields, whose
+// zero value is already `auto`.
+const int BGSIZE_AUTO = 0
+const int BGSIZE_COVER = 1
+const int BGSIZE_CONTAIN = 2
+const int BGSIZE_EXPLICIT = 3
+
+// object-fit (CSS Images 3 §5.5): how a replaced element's content is
+// sized inside the content box the element's own width and height gave
+// it. `fill` is the initial value and stretches to the box, so it is 0
+// and a style that never mentions the property needs no work.
+const int OBJECTFIT_FILL = 0
+const int OBJECTFIT_CONTAIN = 1
+const int OBJECTFIT_COVER = 2
+const int OBJECTFIT_NONE = 3
+const int OBJECTFIT_SCALE_DOWN = 4
+
+// box-sizing
+const int BOX_CONTENT = 0
+const int BOX_BORDER = 1
+
+// caption-side
+const int CAPTION_TOP = 0
+const int CAPTION_BOTTOM = 1
+
+// clear
+const int CLEAR_NONE = 0
+const int CLEAR_LEFT = 1
+const int CLEAR_RIGHT = 2
+const int CLEAR_BOTH = 3
+
+// position
+const int POS_STATIC = 0
+const int POS_RELATIVE = 1
+const int POS_ABSOLUTE = 2
+const int POS_FIXED = 3
+const int POS_STICKY = 4
+
 // border-style
 const int BORDER_NONE = 0
 const int BORDER_SOLID = 1
+const int BORDER_DASHED = 2
+const int BORDER_DOTTED = 3
+const int BORDER_DOUBLE = 4
+const int BORDER_GROOVE = 5
+const int BORDER_RIDGE = 6
+const int BORDER_INSET = 7
+const int BORDER_OUTSET = 8
 
 // text-transform
 const int TT_NONE = 0
@@ -71,13 +173,161 @@ const int FLOAT_RIGHT = 2
 const int LEN_AUTO = 0
 const int LEN_PX = 1
 const int LEN_PERCENT = 2
+// calc() can mix the two -- `calc(100% - 2em)` is the common case -- and
+// neither part can be resolved until the containing block is known.
+const int LEN_CALC = 3
 
 struct Len {
     kind:int
-    v:float
+    v:float     // pixels, or the percentage for LEN_PERCENT
+    pct:float   // LEN_CALC only: the percentage part, added to v
+}
+
+// A linear gradient, as CSS Images 3 defines it: a line through the box
+// at `angle` degrees clockwise from "up", and colour stops along it.
+// `stops` and `offsets` are parallel; an offset is a fraction of the
+// line's length, already resolved so the painter has only to draw.
+//
+// Festina's canvas fills a linear gradient between exactly two colours
+// (`fillLinearGradient`), so a gradient with more stops is painted as a
+// band per adjacent pair. See FINDINGS.md, "a gradient has two stops".
+// A stop's position may be a percentage, a length, or absent, and a
+// length can only be turned into a fraction once the gradient line's
+// length is known -- which is at paint time, not cascade time. So the
+// position is kept as it was written.
+const int GSTOP_AUTO = 0
+const int GSTOP_PERCENT = 1
+const int GSTOP_PX = 2
+
+// How far a radial gradient's ray reaches (CSS Images 3 §3.4.2).
+// `farthest-corner` is the initial value, so it is 0 and a gradient that
+// names no size needs no work.
+const int RADEXT_FARTHEST_CORNER = 0
+const int RADEXT_CLOSEST_SIDE = 1
+const int RADEXT_CLOSEST_CORNER = 2
+const int RADEXT_FARTHEST_SIDE = 3
+const int RADEXT_EXPLICIT = 4
+
+// One `box-shadow` (Backgrounds and Borders 3 §6). A style with no
+// shadow has an empty list, which is the zero value, so nothing is
+// written per element.
+struct Shadow {
+    dx:int
+    dy:int
+    blur:int
+    spread:int
+    color:int
+    inset:bool
+}
+
+struct Gradient {
+    present:bool
+    repeating:bool
+    angle:float          // degrees, clockwise from pointing up; linear only
+    stops:arr[int]       // packed colours
+    posKind:arr[int]     // GSTOP_*
+    posVal:arr[float]    // a fraction for PERCENT, pixels for PX
+    // A radial gradient runs out from a centre rather than along a
+    // line. The stop list above means the same thing either way: a
+    // fraction of the ray instead of a fraction of the line.
+    radial:bool
+    radialCircle:bool    // `circle`; otherwise an ellipse, the initial shape
+    radialExtent:int     // RADEXT_*
+    radialRx:Len         // RADEXT_EXPLICIT only
+    radialRy:Len
+    radialPosX:Len       // the centre, as a fraction of the box, not of any leftover
+    radialPosY:Len
+}
+
+// The label a list marker shows for its position (CSS2 §12.6).
+//
+// The alphabetic system is bijective base 26: there is no zero digit, so
+// 26 is `z` and 27 is `aa`. Taking the remainder before the decrement
+// gives `a0` instead, which is the usual way to get this wrong.
+//
+// The roman system is the subtractive one -- 4 is `iv`, not `iiii` --
+// and it can write neither zero nor a negative nor anything above 3999.
+// A counter style that cannot represent its value falls back to decimal,
+// which the standard asks for and which is also the only answer that
+// leaves the list readable.
+text func listMarkerLabel(n:int, style:int) {
+    if style == LIST_LOWER_ALPHA || style == LIST_UPPER_ALPHA {
+        if n < 1 { return `${n}` }
+        text out = ''
+        int v = n
+        while v > 0 {
+            v--
+            int digit = v % 26
+            text letter = style == LIST_LOWER_ALPHA
+                ? 'abcdefghijklmnopqrstuvwxyz'[digit]
+                : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[digit]
+            out = letter + out
+            v = Math.floorDiv(v, 26)
+        }
+        return out
+    }
+    if style == LIST_LOWER_ROMAN || style == LIST_UPPER_ROMAN {
+        if n < 1 || n > 3999 { return `${n}` }
+        arr[int] values = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+        arr[text] lower = ['m', 'cm', 'd', 'cd', 'c', 'xc', 'l', 'xl', 'x', 'ix', 'v', 'iv', 'i']
+        arr[text] upper = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I']
+        text out = ''
+        int v = n
+        for int i = 0, i < values.length, i++ {
+            while v >= values[i] {
+                out = out + (style == LIST_LOWER_ROMAN ? lower[i] : upper[i])
+                v = v - values[i]
+            }
+        }
+        return out
+    }
+    return `${n}`
+}
+
+Gradient func noGradient() {
+    Gradient g
+    g.present = false
+    g.repeating = false
+    g.angle = 180.0
+    g.stops = []
+    g.posKind = []
+    g.posVal = []
+    // The radial fields are left at their zero values, which are already
+    // the initial ones: not radial, not a circle, farthest-corner, and a
+    // centre that `resolveGradientCenter` reads an unset length as. This
+    // runs once per element, so four `Len` structs written here to say
+    // what the zero value already says would be four allocations on
+    // every element of every page.
+    return g
 }
 
 struct Style {
+    serial:int
+    backgroundImage:Gradient
+    // A background image from url(). The URL is resolved and fetched by
+    // the page pipeline, which stores the decoded image under it.
+    backgroundUrl:text
+    backgroundRepeatX:bool
+    backgroundRepeatY:bool
+    backgroundPosX:Len
+    backgroundPosY:Len
+    backgroundSizeKind:int
+    backgroundSizeW:Len
+    backgroundSizeH:Len
+    backgroundClip:int
+    backgroundOrigin:int
+    shadows:arr[Shadow]
+    // object-fit and object-position, which move a replaced element's
+    // content inside its content box and change no geometry.
+    objectFit:int
+    objectPosX:Len
+    objectPosY:Len
+    // The declared values, not the running counts: two elements that
+    // matched the same rules share this Style and still stand at
+    // different counts, which live in the cascade's counter stack.
+    counterReset:text
+    quotes:text
+    counterIncrement:text
     display:int
     color:int
     background:int
@@ -93,12 +343,40 @@ struct Style {
     listStyle:int
     verticalAlign:int
     floatSide:int
-    opacity:float
+    clearSide:int
+    position:int
+    top:Len
+    right:Len
+    bottom:Len
+    left:Len
+    zIndex:int
+    opacity:float           // the element's own computed opacity
+    effectiveOpacity:float  // it, multiplied by every ancestor's: paint uses this
+    inheritedDecoration:int // decoration propagated from ancestors, for paint
     width:Len
     height:Len
     minWidth:Len
     maxWidth:Len
     minHeight:Len
+    maxHeight:Len
+    boxSizing:int
+    flexDirection:int
+    justifyContent:int
+    alignItems:int
+    alignSelf:int
+    alignContent:int
+    flexWrap:int
+    flexGrow:float
+    flexShrink:float
+    flexBasis:Len
+    rowGap:int
+    columnGap:int
+    order:int
+    captionSide:int
+    wordSpacing:int
+    outlineWidth:int
+    outlineColor:int
+    minHeightSet:bool
     marginTop:Len
     marginRight:Len
     marginBottom:Len
@@ -115,7 +393,14 @@ struct Style {
     borderRightColor:int
     borderBottomColor:int
     borderLeftColor:int
+    // `borderStyle` is only whether the box has any border at all, kept
+    // for the early-out; each side carries its own style, because a box
+    // may be solid on one edge and dashed on the next.
     borderStyle:int
+    borderTopStyle:int
+    borderRightStyle:int
+    borderBottomStyle:int
+    borderLeftStyle:int
     borderRadius:int
     borderSpacing:int
     borderCollapse:bool
@@ -124,6 +409,16 @@ struct Style {
     hidden:bool             // visibility: hidden
     overflowHidden:bool
     fontKey:text            // cache key for the text measurer
+    customProps:map[text]   // custom properties in scope, inherited
+}
+
+// text-decoration is a bit set built with +, so a union has to check
+// each bit rather than use an operator (FINDINGS.md, "no bitwise ops").
+int func decoUnion(a:int, b:int) {
+    int out = 0
+    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
+    if Math.floor(a / 2) % 2 == 1 || Math.floor(b / 2) % 2 == 1 { out = out + DECO_LINE_THROUGH }
+    return out
 }
 
 Len func lenPx(px:float) {
@@ -150,7 +445,16 @@ Len func lenPercent(pct:float) {
 int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
+    if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
     return roundPx(l.v)
+}
+
+Len func lenCalc(px:float, pct:float) {
+    Len l
+    l.kind = LEN_CALC
+    l.v = px
+    l.pct = pct
+    return l
 }
 
 bool func lenIsAuto(l:Len) {
@@ -158,9 +462,35 @@ bool func lenIsAuto(l:Len) {
 }
 
 bool func displayIsBlockLevel(d:int) {
-    return d == DISPLAY_BLOCK || d == DISPLAY_LIST_ITEM || d == DISPLAY_TABLE || d == DISPLAY_FLEX
+    return d == DISPLAY_BLOCK || d == DISPLAY_LIST_ITEM || d == DISPLAY_TABLE
+        || d == DISPLAY_FLEX || d == DISPLAY_TABLE_CAPTION
 }
 
 bool func displayIsInlineLevel(d:int) {
     return d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK
+        || d == DISPLAY_RUBY || d == DISPLAY_CONTENTS || d == DISPLAY_INLINE_FLEX
+}
+
+// A positioned box is one that `position` takes out of the ordinary
+// flow rules: it establishes a containing block for its absolutely
+// positioned descendants, and it paints above its in-flow siblings.
+bool func positionIsPositioned(p:int) {
+    return p != POS_STATIC
+}
+
+// Absolute and fixed are the two that leave the flow entirely.
+bool func positionIsOutOfFlow(p:int) {
+    return p == POS_ABSOLUTE || p == POS_FIXED
+}
+
+// The three row-group values differ only in where a table puts them,
+// which this engine does not reorder, so layout treats them alike.
+bool func displayIsRowGroup(d:int) {
+    return d == DISPLAY_TABLE_ROW_GROUP || d == DISPLAY_TABLE_HEADER_GROUP
+        || d == DISPLAY_TABLE_FOOTER_GROUP
+}
+
+// A column box generates no box of its own; a table reads its width.
+bool func displayIsColumn(d:int) {
+    return d == DISPLAY_TABLE_COLUMN || d == DISPLAY_TABLE_COLUMN_GROUP
 }

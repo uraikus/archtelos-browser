@@ -7,7 +7,7 @@ The project has two purposes, equally weighted: render real pages
 correctly, and keep finding the places where Festina is insufficient.
 The renderer is real — its own HTML tokenizer and tree builder, a CSS
 parser and cascade, block, inline and table layout, painting on
-Festina's canvas, and an HTTP(S) client — all in one 2.2 MB native
+Festina's canvas, and an HTTP(S) client — all in one 2.4 MB native
 binary that links nothing Festina does not already link. What building
 it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
 Festina should gain as a result is in [festina.md](festina.md).
@@ -16,9 +16,12 @@ Festina should gain as a result is in [festina.md](festina.md).
 [WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
 the standard's own tree-construction corpus it passes **1,535 of 1,652**
 cases — the same number Chromium 141 passes on the same corpus, and 84
-of the 117 each fails are the same cases. CSS targets the
-[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/); see
-[todo.md](todo.md) for that gap.
+of the 117 each fails are the same cases. **CSS selectors match the same
+elements Chromium matches in 56 of 61 cases**, the five exceptions all
+being Selectors 4. CSS targets the
+[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose official
+definition of CSS is 24 specifications; the engine implements no part of
+8 of them. Where it stands on each is in [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
 
@@ -90,12 +93,76 @@ percentage columns, `colspan`, row heights and vertical alignment. Form
 controls are drawn as boxes.
 
 **Painting** covers backgrounds, borders with rounded corners,
-text with underline and line-through, images, broken-image placeholders,
-list markers and opacity.
+text with underline and line-through, borders in every CSS style —
+`solid`, `dashed`, `dotted`, `double`, and the four relief styles that
+shade their edges — with each side keeping its own, `box-shadow`
+with offset, blur, spread, `inset` and a list of shadows, images,
+broken-image placeholders,
+list markers — `disc`, `circle`, `square`, `decimal`, `lower-alpha`,
+`upper-alpha`, `lower-roman` and `upper-roman`, and the `<ol type>`
+attribute that asks for them — and opacity. `linear-gradient()` and
+`repeating-linear-gradient()` paint as background images, at any angle
+and with any number of colour stops; `radial-gradient()` and
+`repeating-radial-gradient()` do the same out from a centre, as a circle
+or an ellipse, sized by any of the four extent keywords or explicit
+radii and placed with `at`. `background-image: url()`
+paints a fetched image with `background-repeat`,
+`background-position` and `background-size`, which takes `cover`,
+`contain`, lengths, percentages and `auto` on either axis.
+`background-origin` chooses the edge a background is placed from and
+`background-clip` the edge it is cut off at — border, padding or
+content — and a tile that runs past that edge is cut off there. `object-fit` and `object-position` size and place a replaced
+element's own content inside its box, in all five fitting values, and
+clip it to the content box.
 
-Floats, positioned boxes, Flexbox and Grid are laid out as static
-blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
-[todo.md](todo.md) for what is planned and what is deliberately not.
+**`::before` and `::after`** generate boxes from `content`, which takes
+quoted strings, `attr()`, `counter()`, `counters()` and the four quote
+keywords. `counter-reset` and `counter-increment` maintain counters with
+the standard's scoping, and `quotes` gives `open-quote` and
+`close-quote` their strings at a depth that runs over the document in
+document order rather than following element nesting — so `<q>` renders
+its quotation marks.
+
+**`::first-letter`** styles the first letter of the first line of a
+block on its own, taking any punctuation in front of it along, skipping
+leading whitespace, and finding the letter inside a nested inline. Only
+the first of the block, not the first of every descendant.
+`::first-line` still makes its rule unusable rather than matching the
+element. `url()` in `content` is not implemented, and a counter always
+renders in decimal.
+
+**Flex containers** wrap: `flex-direction`, `flex-wrap` and the
+`flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
+`flex-basis` and the `flex` shorthand, `justify-content`,
+`align-items`, `align-self`, `align-content` and the `gap` family.
+Items are broken into lines that grow and shrink independently,
+`align-content` distributes the lines across the cross axis,
+`wrap-reverse` flips it, an auto margin takes the free space before
+`justify-content` is consulted, and `align-items: baseline` lines the
+text up rather than the boxes.
+
+**`<audio>`** draws its controls at the size Chromium draws them, and is
+invisible without a `controls` attribute, as the standard's own
+stylesheet says. It does not play: see todo.md.
+
+**`overflow: hidden`** clips a box's descendants, text included, by
+painting them into an offscreen image — the canvas has no clip region
+and an image clips at its own bounds. A `border-radius` inside such a
+box is drawn square, because an image has no path API.
+
+**Subresources are prefetched while the page is parsed.** A preload
+scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>` and
+`<script src>` before tree construction and hands the absolute URLs to
+four worker threads, so the network overlaps the parse rather than
+following it. `ARCHTELOS_NO_PRELOAD=1` turns it off.
+
+Two Festina bugs stand between this and the live web: an HTTP response
+larger than 64 KiB takes thirty seconds, and the query string is dropped
+from every request. Both are in FINDINGS.md with reproductions and in
+todo.md with their consequences.
+
+Grid is laid out as a static block, and there is no JavaScript. See [todo.md](todo.md) for what is planned and
+what is deliberately not.
 
 ## Repository
 
@@ -106,15 +173,15 @@ blocks; `overflow: hidden` clips nothing; there is no JavaScript. See
 | `src/html/` | `decode.f`, `entities.f`, `named_refs.f` (the standard's reference table), `tokenizer.f`, `parser.f` |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's serialization) |
 | `src/css/` | `parser.f`, `ua.f` (the user-agent stylesheet), `style.f`, `cascade.f` |
-| `src/layout/layout.f` | the box tree, block and inline formatting, tables |
+| `src/layout/layout.f` | the box tree, block and inline formatting, tables, floats, positioning, flex |
 | `src/paint/paint.f` | painting and hit testing |
-| `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
+| `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and its worker threads) |
 | `src/util/` | `text.f`, `color.f`, `named_colors.f` |
 | `tests/` | unit suites, offscreen pixel checks, the conformance runner, the runners |
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-11,289 lines of Festina in `src/` and `browser.f`.
+14,659 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -124,10 +191,18 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers five unit suites (utilities, HTML, CSS parser,
-cascade, layout geometry), an offscreen render suite that checks real
-pixels with `getPixelColor`, the conformance suite, and a headless
-render of every example. There is no test framework: `tests/assert.f` is
+The runner covers nineteen unit suites (utilities, HTML, CSS parser,
+cascade, cascade rules, values, layout geometry, box properties,
+positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
+counters, quotes, first letter, audio, the preload scanner), six
+offscreen render suites that check real pixels with `getPixelColor` —
+general rendering, linear gradients, radial gradients, overflow
+clipping, background images and object fitting — three conformance
+runners that measure the engine against
+Chromium — CSS properties, default element displays, and which elements
+a selector matches — a check that every row of the property instrument
+could register at all, the HTML conformance suite, and a headless render
+of every example. There is no test framework: `tests/assert.f` is
 a dozen lines and every suite is an ordinary Festina program.
 
 The conformance suite needs the standard's corpus:
@@ -157,13 +232,47 @@ Against headless Chromium on the same pages —
 
 | | This browser | Chromium 141 |
 |---|---|---|
-| Start-up (screenshot a one-line page) | 6 ms | 458 ms |
-| Parse 51 KB of HTML | 8 ms | 1.7 ms |
-| Render 51 KB, start-up subtracted | 311 ms | 72 ms |
+| Parse, style and lay out 51 KB | 93 ms | 25.3 ms |
+| Parse 51 KB of HTML | 8 ms | 2.1–3.9 ms |
+| Peak memory, 51 KB page | 17.9 MB | 194.8 MB |
+| Binary | 2.4 MB | 463 MB |
+| Screenshot a one-line page | 38 ms | 453 ms |
 
-A native binary starts two orders of magnitude faster, and Chromium does
-the actual rendering work about four times faster. Parsing is 6% of that
-time; the cascade and layout are 82%.
+**Chromium renders about three and three quarter times faster.** The first row is
+the one that describes the engines: both sides are timed from inside,
+with process start-up and PNG encoding outside the timer, because
+Chromium spends about 450 ms starting up, and subtracting a baseline
+that varies by 106 ms run to run measures the variance rather than the
+work.
+The cascade and layout are 88% of our time and all of the gap, and
+layout is now the larger half of the two; parsing is 9%.
+
+The last row is a different question with a different answer: a native
+binary is finished before Chromium has started, which matters if what
+you want is a screenshot from a shell script and matters not at all as a
+statement about rendering.
+
+The memory and binary rows are the same trade seen from the other side:
+what is absent from this browser — a JavaScript engine, a compositor, a
+sandbox, a network stack, ICU — is most of what Chromium is carrying.
+Chromium's footprint is flat across all three benchmark pages because it
+is almost entirely fixed cost, while this browser's grows with the
+document, from 13 MB to 18 MB as the page goes from 4 KB to 51 KB.
+
+**Subresources are prefetched while the page is parsed.** A preload
+scanner reads the raw bytes for `<link rel=stylesheet>`, `<img src>`
+and `<script src>` before tree construction and fetches them on four
+worker threads. Against a server answering in 50 ms, a page with
+sixteen subresources loads **3.77 times faster** than the same page with
+the scanner turned off, and one large enough to parse waits for nothing
+at all.
+
+It is not free to pages that never prefetch: its four worker threads
+cost the 51 KB local benchmark page 4 ms, because glibc's `malloc`
+gives up its single-threaded fast path at the first `pthread_create`
+and Festina allocates constantly. Festina cannot start a thread on
+demand, so there is nowhere to put the fix — FINDINGS.md and
+benchmarks.md carry the measurement.
 
 ## Working on this
 

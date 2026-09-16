@@ -13,6 +13,70 @@ int paintBottom = 1000000000
 
 const float KAPPA = 0.5523
 
+// ---- where the painting goes -----------------------------------------
+//
+// `overflow: hidden` needs a clip region and the canvas has none. What
+// Festina does have is images that are themselves drawable surfaces and
+// that clip at their own bounds -- rectangles and text alike -- so a
+// clipped subtree is painted into one and blitted back.
+//
+// Every primitive below therefore goes through a wrapper that sends it
+// to the canvas or to the current layer. An image's own translate()
+// carries the offset, so the wrappers pass document coordinates
+// unchanged.
+//
+// An image is not the canvas's equal: it has no path API at all -- no
+// beginPath, moveTo, lineTo or fillPath (FINDINGS.md, "an image is a
+// drawable surface with a smaller API"). Inside a clipped subtree a
+// rounded rectangle is therefore drawn square. That is recorded rather
+// than hidden, and it is why the wrappers for the path calls exist at
+// all: they turn a path into its rectangular approximation on a layer
+// and leave it exact on the canvas.
+img paintLayer = null
+
+bool func paintingToLayer() {
+    return paintLayer != null
+}
+
+void func pDrawRect(x:int, y:int, w:int, h:int) {
+    if paintLayer == null { drawRect(x, y, w, h) }
+    else { paintLayer.drawRect(x, y, w, h) }
+}
+
+void func pDrawCircle(x:int, y:int, r:int) {
+    if paintLayer == null { drawCircle(x, y, r) }
+    else { paintLayer.drawCircle(x, y, r) }
+}
+
+void func pDrawText(t:text, x:int, y:int) {
+    if paintLayer == null { drawText(t, x, y) }
+    else { paintLayer.drawText(t, x, y) }
+}
+
+void func pDrawImage(i:img, x:int, y:int) {
+    if paintLayer == null { drawImage(i, x, y) }
+    else { paintLayer.drawImage(i, x, y) }
+}
+
+void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
+    if paintLayer == null { drawImage(i, x, y, w, h) }
+    else { paintLayer.drawImage(i, x, y, w, h) }
+}
+
+
+// A filled rounded rectangle. On the canvas this is a bezier path; on a
+// layer there is no path API, so the corners are square. The shape is
+// wrong by a few pixels at each corner and the box is still there,
+// which is the better of the two failures available.
+void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
+    if paintLayer == null {
+        roundedRectPath(x, y, w, h, r)
+        fillPath()
+    } else {
+        paintLayer.drawRect(x, y, w, h)
+    }
+}
+
 void func paintFill(c:int, opacity:float) {
     applyFillColor(colorWithOpacity(c, opacity))
 }
@@ -34,16 +98,796 @@ void func roundedRectPath(x:int, y:int, w:int, h:int, rIn:int) {
     closePath()
 }
 
-void func paintBackground(x:int, y:int, w:int, h:int, s:Style) {
-    if !colorIsPaintable(s.background) || w <= 0 || h <= 0 { return }
-    paintFill(s.background, s.opacity)
-    if s.borderRadius > 0 {
-        roundedRectPath(x, y, w, h, s.borderRadius)
-        fillPath()
+// The rectangle `background-clip` paints within and the one
+// `background-origin` places the image in (Backgrounds and Borders 3
+// §3.7, §3.8), chosen from the box's three edges. The caller passes the
+// border box and the two inset quadruples rather than a struct, because
+// this runs for every box on the page and a struct here would be an
+// allocation for each one.
+int bgAreaX = 0
+int bgAreaY = 0
+int bgAreaW = 0
+int bgAreaH = 0
+
+void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
+                         x:int, y:int, w:int, h:int,
+                         bl:int, bt:int, br:int, bb:int,
+                         pl:int, pt:int, pr:int, pb:int) {
+    if which == borderEdge {
+        bgAreaX = x  bgAreaY = y  bgAreaW = w  bgAreaH = h
+        return
+    }
+    if which == contentEdge {
+        bgAreaX = x + bl + pl
+        bgAreaY = y + bt + pt
+        bgAreaW = w - bl - br - pl - pr
+        bgAreaH = h - bt - bb - pt - pb
+        return
+    }
+    bgAreaX = x + bl
+    bgAreaY = y + bt
+    bgAreaW = w - bl - br
+    bgAreaH = h - bt - bb
+}
+
+// The box's shadows, painted beneath its own background (Backgrounds
+// and Borders 3 §6). Each is the border box offset by its two lengths
+// and grown by its spread.
+//
+// The canvas has no blur. The falloff is drawn as nested rectangles, one
+// per pixel of the blur's reach, each at a small alpha: where more of
+// them overlap the alpha accumulates, so the shadow is densest against
+// its own edge and fades outwards. The shape and extent are exact and
+// the curve of the fade is not, which is the honest trade for a
+// primitive the canvas does not have.
+//
+// `inset` shadows are painted by paintInsetShadows, after the
+// background rather than under it.
+void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
+    if s.shadows.length == 0 { return }
+    for int i = s.shadows.length - 1, i >= 0, i-- {
+        Shadow sh = s.shadows[i]
+        if sh.inset { continue }
+        if !colorIsPaintable(sh.color) { continue }
+        int sx = x + sh.dx - sh.spread
+        int sy = y + sh.dy - sh.spread
+        int sw = w + sh.spread + sh.spread
+        int sh2 = h + sh.spread + sh.spread
+        if sw <= 0 || sh2 <= 0 { continue }
+        if sh.blur <= 0 {
+            paintFill(sh.color, s.effectiveOpacity)
+            pDrawRect(sx, sy, sw, sh2)
+            fillAlpha(1.0)
+            continue
+        }
+        // The blur reaches about the blur radius beyond the shadow's
+        // edge. Each ring is drawn at an alpha that, accumulated over
+        // the rings that cover it, reaches full opacity at the core.
+        int reach = sh.blur
+        float step = 1.0 / (reach + 1).toFloat()
+        applyFillColor(sh.color)
+        for int r = reach, r >= 1, r-- {
+            fillAlpha(step * s.effectiveOpacity)
+            pDrawRect(sx - r, sy - r, sw + r + r, sh2 + r + r)
+        }
+        paintFill(sh.color, s.effectiveOpacity)
+        pDrawRect(sx, sy, sw, sh2)
+        fillAlpha(1.0)
+    }
+}
+
+// The area between two rectangles -- the outer one minus the inner --
+// as four rectangles. The inner is clamped to the outer first, so a
+// shadow offset further than the box is wide fills it rather than
+// painting a negative band.
+void func fillFrame(ox:int, oy:int, ow:int, oh:int, ix:int, iy:int, iw:int, ih:int) {
+    int left = maxInt(ix, ox)
+    int top = maxInt(iy, oy)
+    int right = minInt(ix + iw, ox + ow)
+    int bottom = minInt(iy + ih, oy + oh)
+    if right < left { right = left }
+    if bottom < top { bottom = top }
+    if top > oy { pDrawRect(ox, oy, ow, top - oy) }
+    if bottom < oy + oh { pDrawRect(ox, bottom, ow, oy + oh - bottom) }
+    if left > ox { pDrawRect(ox, top, left - ox, bottom - top) }
+    if right < ox + ow { pDrawRect(right, top, ox + ow - right, bottom - top) }
+}
+
+// `inset` shadows (Backgrounds and Borders 3 §6). The shadow is the
+// padding box minus that box offset by the shadow's lengths and shrunk
+// by its spread, so it reads as a band inside an edge rather than a
+// shape outside the box. It paints over the background and under the
+// content, which is why it is a second pass rather than part of the one
+// that puts the outer shadows underneath.
+//
+// The blur works the way the outer one does and inwards: a frame per
+// pixel of reach, each at a small alpha, so the alpha accumulates
+// against the edge and thins towards the middle.
+void func paintInsetShadows(x:int, y:int, w:int, h:int,
+                            bl:int, bt:int, br:int, bb:int, s:Style) {
+    if s.shadows.length == 0 { return }
+    int px = x + bl
+    int py = y + bt
+    int pw = w - bl - br
+    int ph = h - bt - bb
+    if pw <= 0 || ph <= 0 { return }
+    for int i = s.shadows.length - 1, i >= 0, i-- {
+        Shadow sh = s.shadows[i]
+        if !sh.inset { continue }
+        if !colorIsPaintable(sh.color) { continue }
+        int ix = px + sh.dx + sh.spread
+        int iy = py + sh.dy + sh.spread
+        int iw = pw - sh.spread - sh.spread
+        int ih = ph - sh.spread - sh.spread
+        if sh.blur > 0 {
+            applyFillColor(sh.color)
+            float step = 1.0 / (sh.blur + 1).toFloat()
+            for int d = 1, d <= sh.blur, d++ {
+                fillAlpha(step * s.effectiveOpacity)
+                fillFrame(px, py, pw, ph, ix + d, iy + d, iw - d - d, ih - d - d)
+            }
+        }
+        paintFill(sh.color, s.effectiveOpacity)
+        fillFrame(px, py, pw, ph, ix, iy, iw, ih)
+        fillAlpha(1.0)
+    }
+}
+
+void func paintBackground(x:int, y:int, w:int, h:int,
+                          bl:int, bt:int, br:int, bb:int,
+                          pl:int, pt:int, pr:int, pb:int, s:Style) {
+    if w <= 0 || h <= 0 { return }
+    // This runs for every box on the page, so neither area is worked
+    // out unless it is asked for: the clip only when it is not the
+    // border box it defaults to, and the origin only when there is an
+    // image to place in it.
+    int clipX = x
+    int clipY = y
+    int clipW = w
+    int clipH = h
+    if s.backgroundClip != BGCLIP_BORDER {
+        backgroundArea(s.backgroundClip, BGCLIP_BORDER, BGCLIP_CONTENT,
+                       x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+        clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
+        if clipW <= 0 || clipH <= 0 { return }
+    }
+
+    if colorIsPaintable(s.background) {
+        paintFill(s.background, s.effectiveOpacity)
+        if s.borderRadius > 0 {
+            // The radius is the border box's; a clipped background keeps
+            // it rather than deriving the smaller inner curve.
+            pFillRounded(clipX, clipY, clipW, clipH, s.borderRadius)
+        } else {
+            pDrawRect(clipX, clipY, clipW, clipH)
+        }
+        fillAlpha(1.0)
+    }
+    // the background image paints over the colour
+    bool hasImage = s.backgroundImage.present || s.backgroundUrl != ''
+    if !hasImage { return }
+    backgroundArea(s.backgroundOrigin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
+                   x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+    int origX = bgAreaX
+    int origY = bgAreaY
+    int origW = bgAreaW
+    int origH = bgAreaH
+    if origW <= 0 || origH <= 0 { origX = clipX  origY = clipY  origW = clipW  origH = clipH }
+    if s.backgroundImage.present {
+        paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
     } else {
-        drawRect(x, y, w, h)
+        paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+    }
+}
+
+// A gradient takes its geometry from the positioning area and must not
+// paint outside the painting area. When the two are the same rectangle
+// -- which they are unless `background-clip` says otherwise -- it paints
+// straight onto the target. Otherwise it goes through an image the size
+// of the painting area, the clip region the canvas does not have.
+void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
+                               origX:int, origY:int, origW:int, origH:int, s:Style) {
+    if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
+        if s.backgroundImage.radial {
+            paintRadialGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        } else {
+            paintLinearGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        }
+        return
+    }
+    img prev = paintLayer
+    img layer = blankImage(clipW, clipH)
+    // the layer carries the offset, so the gradient is still painted in
+    // document coordinates
+    layer.translate(0 - clipX, 0 - clipY)
+    paintLayer = layer
+    if s.backgroundImage.radial {
+        paintRadialGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    } else {
+        paintLinearGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    }
+    paintLayer = prev
+    fillAlpha(s.effectiveOpacity)
+    pDrawImage(layer, clipX, clipY)
+    fillAlpha(1.0)
+}
+
+// One axis of a position, resolved against the space the image leaves
+// over: a percentage aligns that much of the image with that much of
+// the box, so `100%` puts its right edge on the box's right edge rather
+// than pushing it a box-width across. `background-position` and
+// `object-position` are the same computation over different leftovers
+// -- the box minus the tile, and the box minus the fitted object.
+int func resolvePositionAxis(l:Len, leftover:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return roundPx(leftover.toFloat() * l.v / 100.0) }
+    if l.kind == LEN_PX { return roundPx(l.v) }
+    return 0
+}
+
+// A background image, tiled and positioned inside the box. It is
+// painted into an image the size of the box and drawn back, because a
+// tile that runs off the edge has to be cut off there and Festina's
+// canvas has no clip region -- the same reason overflow: hidden works
+// the way it does (FINDINGS.md, "an image is a drawable surface with a
+// smaller API").
+// The size a background image is drawn at (Backgrounds and Borders 3
+// §3.9), from its intrinsic size and the box. `auto` on one axis takes
+// its size from the other through the image's own ratio; `auto` on both
+// is the intrinsic size. A percentage is of the box.
+int bgTileW = 0
+int bgTileH = 0
+
+void func backgroundTileSize(s:Style, iw:int, ih:int, w:int, h:int) {
+    bgTileW = iw
+    bgTileH = ih
+    if s.backgroundSizeKind == BGSIZE_AUTO { return }
+    float fw = w.toFloat() / iw.toFloat()
+    float fh = h.toFloat() / ih.toFloat()
+    if s.backgroundSizeKind == BGSIZE_COVER || s.backgroundSizeKind == BGSIZE_CONTAIN {
+        float scale = s.backgroundSizeKind == BGSIZE_COVER
+            ? (fw > fh ? fw : fh)
+            : (fw < fh ? fw : fh)
+        bgTileW = roundPx(iw.toFloat() * scale)
+        bgTileH = roundPx(ih.toFloat() * scale)
+        return
+    }
+    bool autoW = s.backgroundSizeW.kind != LEN_PX && s.backgroundSizeW.kind != LEN_PERCENT
+    bool autoH = s.backgroundSizeH.kind != LEN_PX && s.backgroundSizeH.kind != LEN_PERCENT
+    if autoW && autoH { return }
+    if !autoW { bgTileW = roundPx(lenToPx(s.backgroundSizeW, w, s.fontSize)) }
+    if !autoH { bgTileH = roundPx(lenToPx(s.backgroundSizeH, h, s.fontSize)) }
+    if autoW { bgTileW = roundPx(iw.toFloat() * bgTileH.toFloat() / ih.toFloat()) }
+    if autoH { bgTileH = roundPx(ih.toFloat() * bgTileW.toFloat() / iw.toFloat()) }
+}
+
+void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
+                               x:int, y:int, w:int, h:int, s:Style) {
+    if w <= 0 || h <= 0 || clipW <= 0 || clipH <= 0 { return }
+    img src = loadedImages[s.backgroundUrl]
+    if src == null { return }
+    int srcW = src.width
+    int srcH = src.height
+    if srcW <= 0 || srcH <= 0 { return }
+    backgroundTileSize(s, srcW, srcH, w, h)
+    int iw = bgTileW
+    int ih = bgTileH
+    if iw <= 0 || ih <= 0 { return }
+    // The drawn size, not the intrinsic one, is what the position
+    // distributes the leftover of and what the repeat steps by.
+    bool scaled = iw != srcW || ih != srcH
+    int ox = resolvePositionAxis(s.backgroundPosX, w - iw, s.fontSize)
+    int oy = resolvePositionAxis(s.backgroundPosY, h - ih, s.fontSize)
+
+    // Where the first tile starts. Repeating backwards from the
+    // declared position keeps the tile grid anchored to it.
+    int startX = ox
+    int startY = oy
+    if s.backgroundRepeatX { while startX > 0 { startX = startX - iw } }
+    if s.backgroundRepeatY { while startY > 0 { startY = startY - ih } }
+
+    // The tiles are laid out in the positioning area and painted into
+    // an image the size of the painting area, so `background-clip` cuts
+    // them off wherever it says. The offset between the two carries the
+    // difference; it is zero unless the clip and the origin disagree.
+    int shiftX = x - clipX
+    int shiftY = y - clipY
+    img layer = blankImage(clipW, clipH)
+    int ty = startY
+    bool moreY = true
+    while moreY {
+        int tx = startX
+        bool moreX = true
+        while moreX {
+            // An unscaled blit is exact to the pixel and a scaled one
+            // is filtered, so the tile is only scaled when it has to be.
+            if scaled { layer.drawImage(src, tx + shiftX, ty + shiftY, iw, ih) }
+            else { layer.drawImage(src, tx + shiftX, ty + shiftY) }
+            if !s.backgroundRepeatX { moreX = false }
+            else {
+                tx = tx + iw
+                if tx >= w { moreX = false }
+            }
+        }
+        if !s.backgroundRepeatY { moreY = false }
+        else {
+            ty = ty + ih
+            if ty >= h { moreY = false }
+        }
+    }
+    // The tiles go into the layer at full alpha and the element's
+    // opacity is applied once, to the blit. Setting it before the tiles
+    // would apply it twice -- once into the layer's own pixels and
+    // again as the layer is composited -- and leaving it unset paints a
+    // fully opaque image on a half-transparent box.
+    fillAlpha(s.effectiveOpacity)
+    pDrawImage(layer, clipX, clipY)
+    fillAlpha(1.0)
+}
+
+// ---- linear gradients (CSS Images 3) ---------------------------------
+//
+// The gradient line runs through the centre of the box at the declared
+// angle, long enough that the corners furthest along it map to 0 and 1,
+// which is what makes `to bottom right` reach the corners exactly
+// (CSS Images 3 SS3.4.1).
+//
+// It is painted as a run of one-pixel bands, each a flat colour. That
+// is not how one would like to draw a gradient: Festina's canvas has
+// `fillLinearGradient`, but its two colour arguments must be literals
+// -- "a color must come from a literal, so the compiler can resolve it
+// once" -- and a CSS gradient's colours are known only at run time. It
+// also interpolates between exactly two stops, where CSS allows any
+// number. See FINDINGS.md, "a gradient cannot be built at run time".
+//
+// There is no clip region on the canvas either (todo.md), so an
+// off-axis band cannot be drawn as a rotated rectangle and clipped; it
+// is built as the polygon where the band meets the box and filled as a
+// path.
+
+float gradDirX = 0.0
+float gradDirY = 1.0
+
+// Unit vector along the gradient line. CSS measures the angle clockwise
+// from pointing up, and y grows downwards on the canvas.
+void func gradientDirection(angleDeg:float) {
+    float rad = angleDeg * 3.14159265358979 / 180.0
+    gradDirX = Math.sin(rad)
+    gradDirY = 0.0 - Math.cos(rad)
+}
+
+float func absFloat(v:float) { return v < 0.0 ? 0.0 - v : v }
+float func minFloat(a:float, b:float) { return a < b ? a : b }
+float func maxFloat(a:float, b:float) { return a > b ? a : b }
+
+// Stop positions resolved to fractions of the gradient line, which
+// needs the line's length and so cannot happen before paint time. A
+// stop with no position sits halfway between its neighbours, and the
+// first and last default to 0 and 1 (CSS Images 3 SS3.4.3); positions
+// never decrease.
+arr[float] gradOffsets = []
+
+void func resolveGradientStops(g:Gradient, length:float) {
+    arr[float] out = []
+    int n = g.stops.length
+    for int i = 0, i < n, i++ {
+        if g.posKind[i] == GSTOP_PERCENT { out.push(g.posVal[i]) }
+        else if g.posKind[i] == GSTOP_PX { out.push(length > 0.0 ? g.posVal[i] / length : 0.0) }
+        else { out.push(0.0 - 1.0) }
+    }
+    if out[0] < 0.0 { out[0] = 0.0 }
+    if out[n - 1] < 0.0 { out[n - 1] = 1.0 }
+    for int i = 1, i < n - 1, i++ {
+        if out[i] >= 0.0 { continue }
+        int j = i + 1
+        while j < n && out[j] < 0.0 { j++ }
+        float lo = out[i - 1]
+        float hi = j < n ? out[j] : 1.0
+        int gap = j - i + 1
+        for int k = i, k < j, k++ {
+            out[k] = lo + (hi - lo) * (k - i + 1).toFloat() / gap.toFloat()
+        }
+        i = j - 1
+    }
+    for int i = 1, i < n, i++ {
+        if out[i] < out[i - 1] { out[i] = out[i - 1] }
+    }
+    gradOffsets = out
+}
+
+// The colour at `t` along the line, interpolated in sRGB between the
+// two stops that bracket it -- which is what both Chromium and the
+// standard do for an ordinary gradient.
+int func gradientColorAt(g:Gradient, offsets:arr[float], tIn:float) {
+    float t = tIn
+    int n = g.stops.length
+    if n == 0 { return COLOR_TRANSPARENT }
+    if n == 1 { return g.stops[0] }
+    if g.repeating {
+        float first = offsets[0]
+        float last = offsets[n - 1]
+        float span = last - first
+        if span > 0.0 {
+            float rel = (t - first) / span
+            rel = rel - Math.floor(rel).toFloat()
+            t = first + rel * span
+        }
+    }
+    if t <= offsets[0] { return g.stops[0] }
+    if t >= offsets[n - 1] { return g.stops[n - 1] }
+    for int i = 0, i + 1 < n, i++ {
+        float a = offsets[i]
+        float b = offsets[i + 1]
+        if t < a || t > b { continue }
+        if b <= a { return g.stops[i + 1] }
+        float f = (t - a) / (b - a)
+        int c0 = g.stops[i]
+        int c1 = g.stops[i + 1]
+        return packColor(
+            lerpChannel(colorRed(c0), colorRed(c1), f),
+            lerpChannel(colorGreen(c0), colorGreen(c1), f),
+            lerpChannel(colorBlue(c0), colorBlue(c1), f),
+            lerpChannel(colorAlpha(c0), colorAlpha(c1), f))
+    }
+    return g.stops[n - 1]
+}
+
+int func lerpChannel(a:int, b:int, f:float) {
+    int v = roundPx(a.toFloat() + (b.toFloat() - a.toFloat()) * f)
+    if v < 0 { return 0 }
+    if v > 255 { return 255 }
+    return v
+}
+
+void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
+    if g.stops.length < 2 || w <= 0 || h <= 0 { return }
+    gradientDirection(g.angle)
+    float dx = gradDirX
+    float dy = gradDirY
+
+    float halfW = w.toFloat() / 2.0
+    float halfH = h.toFloat() / 2.0
+    float half = absFloat(halfW * dx) + absFloat(halfH * dy)
+    if half <= 0.0 { return }
+    float length = half + half
+    float cxf = x.toFloat() + halfW
+    float cyf = y.toFloat() + halfH
+    float x0 = cxf - dx * half
+    float y0 = cyf - dy * half
+
+    resolveGradientStops(g, length)
+    arr[float] offsets = gradOffsets
+    fillAlpha(opacity)
+    bool horizontal = absFloat(dy) < 0.001
+    bool vertical = absFloat(dx) < 0.001
+    int steps = roundPx(length)
+    if steps < 1 { steps = 1 }
+
+    for int i = 0, i < steps, i++ {
+        float t0 = i.toFloat() / steps.toFloat()
+        float t1 = (i + 1).toFloat() / steps.toFloat()
+        int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
+        if colorAlpha(c) == 0 { continue }
+        applyFillColor(c)
+        if horizontal || vertical {
+            // the band is a rectangle, so no polygon is needed
+            float a0 = x0 + dx * length * t0 + dy * 0.0
+            float b0 = y0 + dy * length * t0
+            float a1 = x0 + dx * length * t1
+            float b1 = y0 + dy * length * t1
+            if horizontal {
+                int lo = roundPx(minFloat(a0, a1))
+                int hi = roundPx(maxFloat(a0, a1))
+                int bx = maxInt(lo, x)
+                int bw = minInt(hi, x + w) - bx
+                if bw > 0 { pDrawRect(bx, y, bw, h) }
+            } else {
+                int lo = roundPx(minFloat(b0, b1))
+                int hi = roundPx(maxFloat(b0, b1))
+                int by = maxInt(lo, y)
+                int bh = minInt(hi, y + h) - by
+                if bh > 0 { pDrawRect(x, by, w, bh) }
+            }
+            continue
+        }
+        // Off-axis. Painting the band as a polygon is the obvious
+        // thing and it is wrong: the vertices have to be whole pixels,
+        // so abutting diagonal slivers are anti-aliased against each
+        // other and the result is stippled rather than smooth -- a
+        // 400x300 gradient came out as a 77 KB PNG, which is what a
+        // smooth ramp never is.
+        //
+        // Instead the band is drawn as one-pixel-tall horizontal runs,
+        // one per row of the box. Every rectangle then has integer
+        // coordinates and covers whole pixels exactly, so nothing is
+        // blended with anything, at the cost of a rectangle per band
+        // per row.
+        float base = dx * 0.5 + dy * 0.5
+        float p0 = length * t0
+        float p1 = length * t1
+        float ox = dx * x0 + dy * y0
+        for int row = y, row < y + h, row++ {
+            // p = dx*(px + 0.5) + dy*(row + 0.5) - ox, solved for px
+            float atRow = dy * (row.toFloat() + 0.5) - ox + dx * 0.5
+            float lo = (p0 - atRow) / dx
+            float hi = (p1 - atRow) / dx
+            if hi < lo { float t = lo  lo = hi  hi = t }
+            int xa = maxInt(roundPx(lo), x)
+            int xb = minInt(roundPx(hi), x + w)
+            if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
+        }
     }
     fillAlpha(1.0)
+}
+
+// ---- radial gradients (CSS Images 3 §3.4.2) --------------------------
+//
+// The ray runs from the centre outwards, and a stop's position is a
+// fraction of it exactly as it is a fraction of the line for a linear
+// gradient, so the stop machinery above is shared unchanged. What
+// differs is the geometry: how long the ray is, which the size keyword
+// decides, and what shape its ends trace.
+//
+// It is painted as concentric bands for the same reason the linear one
+// is painted as parallel ones -- the canvas's own gradient fill takes
+// only literal colours (FINDINGS.md, "a gradient cannot be built at run
+// time"). A band is drawn as one-pixel-tall horizontal runs, one per
+// row, for the same reason the off-axis linear bands are: every
+// rectangle then covers whole pixels, so abutting bands are not
+// anti-aliased against each other into a stipple.
+
+// The centre of a radial gradient. A percentage here is a fraction of
+// the box, not of any leftover space -- `at 50% 50%` is the middle of
+// the box whatever the gradient's size, which is why this is not
+// resolvePositionAxis.
+float func resolveGradientCenter(l:Len, extent:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return extent.toFloat() * l.v / 100.0 }
+    if l.kind == LEN_PX { return l.v }
+    return extent.toFloat() / 2.0
+}
+
+// The ray's two radii, from the size keyword and the centre's distance
+// to the sides. An ellipse takes each axis on its own; a circle takes
+// one radius for both. A corner keyword is the side one scaled so the
+// ellipse passes through that corner, which for equal aspect ratios is
+// the side distance times the square root of two.
+float radRx = 0.0
+float radRy = 0.0
+
+void func radialRadii(g:Gradient, cx:float, cy:float, x:int, y:int, w:int, h:int, fontSize:int) {
+    float leftD = cx - x.toFloat()
+    float rightD = (x + w).toFloat() - cx
+    float topD = cy - y.toFloat()
+    float bottomD = (y + h).toFloat() - cy
+    float closeX = minFloat(absFloat(leftD), absFloat(rightD))
+    float farX = maxFloat(absFloat(leftD), absFloat(rightD))
+    float closeY = minFloat(absFloat(topD), absFloat(bottomD))
+    float farY = maxFloat(absFloat(topD), absFloat(bottomD))
+    float root2 = 1.41421356237309
+
+    if g.radialExtent == RADEXT_EXPLICIT {
+        radRx = lenToPx(g.radialRx, w, fontSize)
+        radRy = lenToPx(g.radialRy, h, fontSize)
+        return
+    }
+    if g.radialCircle {
+        float r = 0.0
+        if g.radialExtent == RADEXT_CLOSEST_SIDE { r = minFloat(closeX, closeY) }
+        else if g.radialExtent == RADEXT_FARTHEST_SIDE { r = maxFloat(farX, farY) }
+        else if g.radialExtent == RADEXT_CLOSEST_CORNER {
+            r = Math.sqrt(closeX * closeX + closeY * closeY)
+        } else {
+            r = Math.sqrt(farX * farX + farY * farY)
+        }
+        radRx = r
+        radRy = r
+        return
+    }
+    if g.radialExtent == RADEXT_CLOSEST_SIDE { radRx = closeX  radRy = closeY }
+    else if g.radialExtent == RADEXT_FARTHEST_SIDE { radRx = farX  radRy = farY }
+    else if g.radialExtent == RADEXT_CLOSEST_CORNER { radRx = closeX * root2  radRy = closeY * root2 }
+    else { radRx = farX * root2  radRy = farY * root2 }
+}
+
+// A length against the axis it is measured along; a percentage of that
+// axis, as an explicit radius takes.
+float func lenToPx(l:Len, extent:int, fontSize:int) {
+    if l.kind == LEN_PERCENT { return extent.toFloat() * l.v / 100.0 }
+    if l.kind == LEN_PX { return l.v }
+    return 0.0
+}
+
+void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
+    if g.stops.length < 2 || w <= 0 || h <= 0 { return }
+    float cx = x.toFloat() + resolveGradientCenter(g.radialPosX, w, 0)
+    float cy = y.toFloat() + resolveGradientCenter(g.radialPosY, h, 0)
+    radialRadii(g, cx, cy, x, y, w, h, 0)
+    float rx = radRx
+    float ry = radRy
+    // A degenerate gradient -- one whose ending shape has a zero radius,
+    // which `closest-side` centred on an edge produces -- renders as a
+    // gradient line of zero length, and that is a solid fill of the last
+    // stop (CSS Images 3 §3.4.2.3, via §3.4.1).
+    if rx <= 0.0 || ry <= 0.0 {
+        int last = g.stops[g.stops.length - 1]
+        if colorAlpha(last) == 0 { return }
+        fillAlpha(opacity)
+        applyFillColor(last)
+        pDrawRect(x, y, w, h)
+        fillAlpha(1.0)
+        return
+    }
+
+    // A stop given in pixels is a distance along the ray, so the ray's
+    // own length is what a percentage is measured against. The ray runs
+    // to the ellipse, so it is rx long in the horizontal direction; that
+    // is the length the standard resolves a length-valued stop against.
+    resolveGradientStops(g, rx)
+    arr[float] offsets = gradOffsets
+    fillAlpha(opacity)
+
+    // How far out the box reaches, in ray fractions: the largest
+    // normalised distance to any corner. Bands beyond 1 paint the last
+    // stop for a plain gradient and repeat for a repeating one, so both
+    // are covered by running the bands all the way out.
+    float tMax = 0.0
+    for int i = 0, i < 4, i++ {
+        float px = i < 2 ? x.toFloat() : (x + w).toFloat()
+        float py = (i == 0 || i == 2) ? y.toFloat() : (y + h).toFloat()
+        float ndx = (px - cx) / rx
+        float ndy = (py - cy) / ry
+        float d = Math.sqrt(ndx * ndx + ndy * ndy)
+        if d > tMax { tMax = d }
+    }
+    if tMax <= 0.0 { return }
+
+    // One band per pixel of the longer radius, so a band is about a
+    // pixel wide where the gradient is widest.
+    int steps = roundPx(maxFloat(rx, ry) * tMax)
+    if steps < 1 { steps = 1 }
+    if steps > 4096 { steps = 4096 }
+
+    for int i = 0, i < steps, i++ {
+        float t0 = tMax * i.toFloat() / steps.toFloat()
+        float t1 = tMax * (i + 1).toFloat() / steps.toFloat()
+        int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
+        if colorAlpha(c) == 0 { continue }
+        applyFillColor(c)
+        // On each row the band is the pair of intervals where the
+        // normalised distance falls between t0 and t1: solving
+        // ((px-cx)/rx)^2 + ((row-cy)/ry)^2 = t^2 for px gives a half
+        // width of rx*sqrt(t^2 - ndy^2), one interval each side of the
+        // centre.
+        for int row = y, row < y + h, row++ {
+            float ndy = (row.toFloat() + 0.5 - cy) / ry
+            float sq = ndy * ndy
+            float in0 = t0 * t0 - sq
+            float in1 = t1 * t1 - sq
+            if in1 <= 0.0 { continue }
+            float half1 = rx * Math.sqrt(in1)
+            float half0 = in0 > 0.0 ? rx * Math.sqrt(in0) : 0.0
+            // right of the centre
+            int xa = maxInt(roundPx(cx + half0), x)
+            int xb = minInt(roundPx(cx + half1), x + w)
+            if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
+            // and left of it
+            int xc = maxInt(roundPx(cx - half1), x)
+            int xd = minInt(roundPx(cx - half0), x + w)
+            if xd > xc { pDrawRect(xc, row, xd - xc, 1) }
+        }
+    }
+    fillAlpha(1.0)
+}
+
+// One side of a border, in its own style (Backgrounds and Borders 3
+// §4.3). `horizontal` says which way the line runs: a top or bottom
+// edge is `w` long and `thick` deep, a left or right edge the other way
+// about, and the two differ only in which axis the pattern steps along.
+//
+// The standard fixes `double` exactly -- two lines and a gap, each as
+// near a third of the width as the width allows -- and leaves the dash
+// and dot lengths to the user agent. These follow the usual convention:
+// a dash three times the border's thickness, a dot square, each
+// separated by a gap of its own length, and the run is stretched so a
+// whole number of them spans the edge rather than leaving a stub.
+// The darker of the two shades the relief styles use. CSS2 §8.5.3 fixes
+// only that the colours are "based on" the border colour and leaves the
+// rest to the user agent; half brightness is the usual choice and is
+// what makes a `groove` read as carved rather than as two arbitrary
+// colours.
+int func borderShadeDark(c:int) {
+    return packColor(Math.floorDiv(colorRed(c), 2), Math.floorDiv(colorGreen(c), 2),
+                     Math.floorDiv(colorBlue(c), 2), colorAlpha(c))
+}
+
+// `inset`, `outset`, `groove` and `ridge` shade an edge to suggest
+// relief. `inset` darkens the top and left so the box reads as sunken
+// and `outset` does the reverse; `groove` and `ridge` split each edge in
+// half and shade the halves oppositely, which is what carves a line into
+// the surface rather than tilting the whole box.
+//
+// `leading` says which end of the box this edge is: the top and the left
+// take one shade, the bottom and the right the other.
+void func paintBorderRelief(x:int, y:int, w:int, h:int, horizontal:bool,
+                            leading:bool, style:int, base:int, opacity:float) {
+    int thick = horizontal ? h : w
+    bool outerDark = false
+    bool innerDark = false
+    if style == BORDER_INSET { outerDark = leading  innerDark = leading }
+    else if style == BORDER_OUTSET { outerDark = !leading  innerDark = !leading }
+    else if style == BORDER_GROOVE { outerDark = leading  innerDark = !leading }
+    else { outerDark = !leading  innerDark = leading }
+
+    int half = Math.floorDiv(thick, 2)
+    if half < 1 || outerDark == innerDark {
+        // one shade for the whole edge: inset and outset, and any edge
+        // too thin to split
+        paintFill(outerDark ? borderShadeDark(base) : base, opacity)
+        pDrawRect(x, y, w, h)
+        return
+    }
+    // The outer half is the one against the outside of the box, which is
+    // the near side for a top or left edge and the far side for the
+    // others.
+    int outerOffset = leading ? 0 : thick - half
+    int innerOffset = leading ? half : 0
+    int innerThick = thick - half
+    paintFill(outerDark ? borderShadeDark(base) : base, opacity)
+    if horizontal { pDrawRect(x, y + outerOffset, w, half) }
+    else { pDrawRect(x + outerOffset, y, half, h) }
+    paintFill(innerDark ? borderShadeDark(base) : base, opacity)
+    if horizontal { pDrawRect(x, y + innerOffset, w, innerThick) }
+    else { pDrawRect(x + innerOffset, y, innerThick, h) }
+}
+
+void func paintBorderSide(x:int, y:int, w:int, h:int, horizontal:bool, leading:bool,
+                          style:int, base:int, opacity:float) {
+    if w <= 0 || h <= 0 { return }
+    int thick = horizontal ? h : w
+    int along = horizontal ? w : h
+    if style == BORDER_GROOVE || style == BORDER_RIDGE
+        || style == BORDER_INSET || style == BORDER_OUTSET {
+        paintBorderRelief(x, y, w, h, horizontal, leading, style, base, opacity)
+        return
+    }
+    paintFill(base, opacity)
+    if style == BORDER_SOLID || style == BORDER_NONE {
+        pDrawRect(x, y, w, h)
+        return
+    }
+    if style == BORDER_DOUBLE {
+        // A width that does not divide by three gives the extra pixels
+        // to the lines rather than the gap, which keeps a 2px double
+        // border visible as two 1px lines with no gap to spare.
+        int line = Math.floorDiv(thick + 2, 3)
+        int gap = thick - line - line
+        if gap < 1 || line < 1 {
+            pDrawRect(x, y, w, h)
+            return
+        }
+        if horizontal {
+            pDrawRect(x, y, w, line)
+            pDrawRect(x, y + thick - line, w, line)
+        } else {
+            pDrawRect(x, y, line, h)
+            pDrawRect(x + thick - line, y, line, h)
+        }
+        return
+    }
+    // dashed and dotted: a run of marks with an equal gap after each.
+    int mark = style == BORDER_DOTTED ? thick : thick * 3
+    if mark < 1 { mark = 1 }
+    int period = mark + mark
+    int count = Math.floorDiv(along + period - 1, period)
+    if count < 1 { count = 1 }
+    // stretch the period so the marks end flush with the edge
+    for int i = 0, i < count, i++ {
+        int start = Math.floorDiv(along * i, count)
+        int end = Math.floorDiv(along * (i + 1), count)
+        int len = Math.floorDiv(end - start + 1, 2)
+        if len < 1 { len = 1 }
+        if horizontal { pDrawRect(x + start, y, len, h) }
+        else { pDrawRect(x, y + start, w, len) }
+    }
 }
 
 void func paintBorders(b:Box) {
@@ -60,30 +904,38 @@ void func paintBorders(b:Box) {
     bool skipLeft = b.kind == BOX_CELL && s.borderCollapse && b.tableCol > 0
     if s.borderRadius > 0 && b.bt == b.br && b.bt == b.bb && b.bt == b.bl && b.bt > 0 {
         // a uniform rounded border is stroked along the path's centre
-        int c = colorWithOpacity(s.borderTopColor, s.opacity)
+        int c = colorWithOpacity(s.borderTopColor, s.effectiveOpacity)
         borderColor(colorRed(c), colorGreen(c), colorBlue(c))
         lineWidth(b.bt)
         int half = Math.floorDiv(b.bt, 2)
-        roundedRectPath(x + half, y + half, w - b.bt, h - b.bt, maxInt(s.borderRadius - half, 1))
-        strokePath()
+        if paintLayer == null {
+            roundedRectPath(x + half, y + half, w - b.bt, h - b.bt, maxInt(s.borderRadius - half, 1))
+            strokePath()
+        } else {
+            // no path API on a layer: the border is drawn as four sides
+            paintLayer.drawRect(x, y, w, b.bt)
+            paintLayer.drawRect(x, y + h - b.bb, w, b.bb)
+            paintLayer.drawRect(x, y, b.bl, h)
+            paintLayer.drawRect(x + w - b.br, y, b.br, h)
+        }
         borderColor(-1, -1, -1)
         return
     }
     if b.bt > 0 && colorIsPaintable(s.borderTopColor) && !skipTop {
-        paintFill(s.borderTopColor, s.opacity)
-        drawRect(x, y, w, b.bt)
+        paintBorderSide(x, y, w, b.bt, true, true, s.borderTopStyle,
+                        s.borderTopColor, s.effectiveOpacity)
     }
     if b.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-        paintFill(s.borderBottomColor, s.opacity)
-        drawRect(x, y + h - b.bb, w, b.bb)
+        paintBorderSide(x, y + h - b.bb, w, b.bb, true, false, s.borderBottomStyle,
+                        s.borderBottomColor, s.effectiveOpacity)
     }
     if b.bl > 0 && colorIsPaintable(s.borderLeftColor) && !skipLeft {
-        paintFill(s.borderLeftColor, s.opacity)
-        drawRect(x, y, b.bl, h)
+        paintBorderSide(x, y, b.bl, h, false, true, s.borderLeftStyle,
+                        s.borderLeftColor, s.effectiveOpacity)
     }
     if b.br > 0 && colorIsPaintable(s.borderRightColor) {
-        paintFill(s.borderRightColor, s.opacity)
-        drawRect(x + w - b.br, y, b.br, h)
+        paintBorderSide(x + w - b.br, y, b.br, h, false, false, s.borderRightStyle,
+                        s.borderRightColor, s.effectiveOpacity)
     }
     fillAlpha(1.0)
 }
@@ -104,34 +956,49 @@ Line func firstLineOf(b:Box) {
     return null
 }
 
+// An outline is drawn just outside the border box and takes no space,
+// so it can overlap whatever is next to it (CSS Basic User Interface 3).
+// Every outline style paints solid, as every border style does.
+void func paintOutline(b:Box) {
+    Style s = b.style
+    int w = s.outlineWidth
+    if w <= 0 || b.w <= 0 || b.h <= 0 { return }
+    applyFillColor(colorWithOpacity(s.outlineColor, s.effectiveOpacity))
+    pDrawRect(b.x - w, b.y - w, b.w + w + w, w)
+    pDrawRect(b.x - w, b.y + b.h, b.w + w + w, w)
+    pDrawRect(b.x - w, b.y, w, b.h)
+    pDrawRect(b.x + b.w, b.y, w, b.h)
+    fillAlpha(1.0)
+}
+
 void func paintListMarker(b:Box) {
     Style s = b.style
     if s.listStyle == LIST_NONE { return }
     Line ln = firstLineOf(b)
     int baseline = ln != null ? ln.baseline : contentY(b) + fontAscent(s)
     int fs = s.fontSize
-    paintFill(s.color, s.opacity)
+    paintFill(s.color, s.effectiveOpacity)
     int edge = contentX(b)
-    if s.listStyle == LIST_DECIMAL {
-        text label = `${b.listIndex}.`
+    if s.listStyle != LIST_DISC && s.listStyle != LIST_CIRCLE && s.listStyle != LIST_SQUARE {
+        text label = `${listMarkerLabel(b.listIndex, s.listStyle)}.`
         setFontFor(s)
         int w = measureTextWidth(label)
-        drawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)
+        pDrawText(label, edge - w - roundPx(fs.toFloat() * 0.5), baseline)
     } else {
         int r = maxInt(roundPx(fs.toFloat() * 0.19), 2)
         int cx = edge - roundPx(fs.toFloat() * 0.9)
         int cy = baseline - roundPx(fs.toFloat() * 0.33)
         if s.listStyle == LIST_DISC {
-            drawCircle(cx, cy, r)
+            pDrawCircle(cx, cy, r)
         } else if s.listStyle == LIST_CIRCLE {
-            int c = colorWithOpacity(s.color, s.opacity)
+            int c = colorWithOpacity(s.color, s.effectiveOpacity)
             borderColor(colorRed(c), colorGreen(c), colorBlue(c))
             lineWidth(1)
             fillStyle(-1, -1, -1)
-            drawCircle(cx, cy, r)
+            pDrawCircle(cx, cy, r)
             borderColor(-1, -1, -1)
         } else {
-            drawRect(cx - r, cy - r, r * 2, r * 2)
+            pDrawRect(cx - r, cy - r, r * 2, r * 2)
         }
     }
     fillAlpha(1.0)
@@ -141,26 +1008,27 @@ void func paintTextFragment(f:Fragment) {
     Style s = f.box.style
     if s.hidden { return }
     setFontFor(s)
-    paintFill(s.color, s.opacity)
+    paintFill(s.color, s.effectiveOpacity)
     if s.letterSpacing == 0 {
-        drawText(f.content, f.x, f.baseline)
+        pDrawText(f.content, f.x, f.baseline)
     } else {
         // letter-spacing: one glyph at a time, each advanced by its
         // own width plus the spacing (drawText has no spacing itself)
         arr[text] chars = f.content.split('')
         int x = f.x
         for int i = 0, i < chars.length, i++ {
-            drawText(chars[i], x, f.baseline)
+            pDrawText(chars[i], x, f.baseline)
             x = x + measureTextWidth(chars[i]) + s.letterSpacing
         }
     }
-    if s.textDecoration > 0 {
+    int deco = decoUnion(s.textDecoration, s.inheritedDecoration)
+    if deco > 0 {
         int thickness = maxInt(1, Math.floorDiv(s.fontSize, 16))
-        if s.textDecoration == DECO_UNDERLINE || s.textDecoration == DECO_UNDERLINE + DECO_LINE_THROUGH {
-            drawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
+        if deco == DECO_UNDERLINE || deco == DECO_UNDERLINE + DECO_LINE_THROUGH {
+            pDrawRect(f.x, f.baseline + 1 + Math.floorDiv(thickness, 2), f.w, thickness)
         }
-        if s.textDecoration >= DECO_LINE_THROUGH {
-            drawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
+        if deco >= DECO_LINE_THROUGH {
+            pDrawRect(f.x, f.baseline - roundPx(s.fontSize.toFloat() * 0.3), f.w, thickness)
         }
     }
     fillAlpha(1.0)
@@ -170,18 +1038,74 @@ void func paintInlineBackground(f:Fragment) {
     Box ib = f.box
     Style s = ib.style
     if s.hidden || f.w <= 0 { return }
-    paintBackground(f.x, f.y, f.w, f.h, s)
+    // an inline fragment carries no padding or border of its own, so
+    // its three background areas are all the fragment's own rectangle
+    paintBackground(f.x, f.y, f.w, f.h, 0, 0, 0, 0, 0, 0, 0, 0, s)
     if s.borderStyle != BORDER_NONE {
         if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
-            paintFill(s.borderTopColor, s.opacity)
-            drawRect(f.x, f.y, f.w, ib.bt)
+            paintFill(s.borderTopColor, s.effectiveOpacity)
+            pDrawRect(f.x, f.y, f.w, ib.bt)
         }
         if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-            paintFill(s.borderBottomColor, s.opacity)
-            drawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
+            paintFill(s.borderBottomColor, s.effectiveOpacity)
+            pDrawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
         }
         fillAlpha(1.0)
     }
+}
+
+// The concrete size object-fit gives a replaced element's content,
+// from its intrinsic size and the content box (CSS Images 3 §5.5).
+// Returned as a scale factor rather than a size so the caller rounds
+// once.
+float func objectFitScale(fit:int, iw:int, ih:int, w:int, h:int) {
+    float sx = w.toFloat() / iw.toFloat()
+    float sy = h.toFloat() / ih.toFloat()
+    if fit == OBJECTFIT_CONTAIN { return sx < sy ? sx : sy }
+    if fit == OBJECTFIT_COVER { return sx > sy ? sx : sy }
+    if fit == OBJECTFIT_NONE { return 1.0 }
+    // scale-down is the smaller of `none` and `contain`, which is
+    // `contain` capped at 1: an image already inside its box is left
+    // alone, and a larger one is shrunk to fit.
+    float fitted = sx < sy ? sx : sy
+    return fitted < 1.0 ? fitted : 1.0
+}
+
+// A replaced element's content, sized by object-fit and placed by
+// object-position. The object can be larger than the box -- `cover`
+// and `none` both allow it -- and a replaced element clips its content
+// to the content box, so it is painted into an image that size and
+// blitted back, the canvas having no clip region (FINDINGS.md, "an
+// image is a drawable surface with a smaller API").
+void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
+    int iw = b.imgW
+    int ih = b.imgH
+    if iw <= 0 || ih <= 0 {
+        pDrawImageScaled(b.image, x, y, w, h)
+        return
+    }
+    float scale = objectFitScale(b.style.objectFit, iw, ih, w, h)
+    int ow = roundPx(iw.toFloat() * scale)
+    int oh = roundPx(ih.toFloat() * scale)
+    if ow <= 0 || oh <= 0 { return }
+    int ox = resolvePositionAxis(b.style.objectPosX, w - ow, b.style.fontSize)
+    int oy = resolvePositionAxis(b.style.objectPosY, h - oh, b.style.fontSize)
+    // An object that lands exactly inside the box needs no layer: the
+    // clip has nothing to cut, and a direct blit avoids allocating and
+    // compositing an image the size of the box.
+    if ox >= 0 && oy >= 0 && ox + ow <= w && oy + oh <= h {
+        pDrawImageScaled(b.image, x + ox, y + oy, ow, oh)
+        return
+    }
+    // The caller has already set the element's opacity for the direct
+    // blit above. The layer is drawn into at full alpha and composited
+    // at that opacity, so it is applied once rather than to both the
+    // layer's pixels and the blit.
+    img layer = blankImage(w, h)
+    fillAlpha(1.0)
+    layer.drawImage(b.image, ox, oy, ow, oh)
+    fillAlpha(b.style.opacity)
+    pDrawImage(layer, x, y)
 }
 
 void func paintImage(b:Box) {
@@ -192,23 +1116,76 @@ void func paintImage(b:Box) {
     if w <= 0 || h <= 0 { return }
     if b.image != null {
         fillAlpha(b.style.opacity)
-        drawImage(b.image, x, y, w, h)
+        // `fill` is the initial value and stretches the content to the
+        // box, which is one blit and the only thing a page that does
+        // not mention object-fit ever reaches.
+        if b.style.objectFit == OBJECTFIT_FILL { pDrawImageScaled(b.image, x, y, w, h) }
+        else { paintFittedImage(b, x, y, w, h) }
         fillAlpha(1.0)
         return
     }
     // a broken image: a thin frame and the alt text
     fillStyle(192, 192, 192)
-    drawRect(x, y, w, 1)
-    drawRect(x, y + h - 1, w, 1)
-    drawRect(x, y, 1, h)
-    drawRect(x + w - 1, y, 1, h)
+    pDrawRect(x, y, w, 1)
+    pDrawRect(x, y + h - 1, w, 1)
+    pDrawRect(x, y, 1, h)
+    pDrawRect(x + w - 1, y, 1, h)
     text alt = getAttr(b.node, 'alt')
     if alt != null && alt != '' && h >= b.style.fontSize {
         setFontFor(b.style)
         paintFill(b.style.color, b.style.opacity)
-        drawText(alt, x + 2, y + fontAscent(b.style) + 1)
+        pDrawText(alt, x + 2, y + fontAscent(b.style) + 1)
         fillAlpha(1.0)
     }
+}
+
+// An audio element's controls. Chromium draws a rounded bar with a play
+// button, a timeline and a volume control; this draws the same shape at
+// the same size, so a page laid out around it looks right, without
+// pretending to be pixel-identical to another browser's widget.
+void func paintAudioControls(b:Box) {
+    int x = b.x + b.bl + b.pl
+    int y = b.y + b.bt + b.pt
+    int w = b.w - b.bl - b.br - b.pl - b.pr
+    int h = b.h - b.bt - b.bb - b.pt - b.pb
+    if w <= 0 || h <= 0 { return }
+
+    fillStyle(241, 243, 244)
+    pFillRounded(x, y, w, h, Math.floorDiv(h, 2))
+
+    // the play triangle
+    int cy = y + Math.floorDiv(h, 2)
+    int px = x + 16
+    int r = 7
+    fillStyle(60, 64, 67)
+    beginPath()
+    moveTo(px, cy - r)
+    lineTo(px + 12, cy)
+    lineTo(px, cy + r)
+    closePath()
+    fillPath()
+
+    // the timeline, and the elapsed part of it
+    int tx = px + 26
+    int tw = w - (tx - x) - 60
+    if tw > 0 {
+        fillStyle(189, 193, 198)
+        pDrawRect(tx, cy - 1, tw, 3)
+        fillStyle(60, 64, 67)
+        pDrawCircle(tx, cy, 5)
+    }
+
+    // the speaker
+    int vx = x + w - 34
+    fillStyle(60, 64, 67)
+    pDrawRect(vx, cy - 4, 5, 8)
+    beginPath()
+    moveTo(vx + 5, cy - 4)
+    lineTo(vx + 11, cy - 9)
+    lineTo(vx + 11, cy + 9)
+    lineTo(vx + 5, cy + 4)
+    closePath()
+    fillPath()
 }
 
 void func paintFormControl(b:Box) {
@@ -226,11 +1203,11 @@ void func paintFormControl(b:Box) {
             borderColor(118, 118, 118)
             lineWidth(1)
             fillStyle(255, 255, 255)
-            drawCircle(x + r, y + r, r - 1)
+            pDrawCircle(x + r, y + r, r - 1)
             borderColor(-1, -1, -1)
             if checked {
                 fillStyle(0, 0, 0)
-                drawCircle(x + r, y + r, maxInt(r - 4, 2))
+                pDrawCircle(x + r, y + r, maxInt(r - 4, 2))
             }
         } else if checked {
             fillStyle(0, 0, 0)
@@ -264,30 +1241,164 @@ void func paintLines(b:Box) {
     }
 }
 
-void func paintBox(b:Box) {
-    if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
-    if !boxVisible(b) { return }
+// Whether a box with `overflow: hidden` has anything inside worth
+// clipping. A box whose content fits needs no layer, and a layer is the
+// expensive part -- an image the size of the box, painted and blitted.
+bool func boxClipsAnything(b:Box) {
+    int w = b.w - b.bl - b.br
+    int h = b.h - b.bt - b.bb
+    if w <= 0 || h <= 0 { return true }
+    return b.children.length > 0
+}
+
+// Paints a box whose descendants are clipped: the box itself onto the
+// current target, then its children into a layer the size of its
+// padding box, which is blitted back. An image clips at its own bounds,
+// which is the clip region the canvas does not have.
+void func paintClipped(b:Box) {
     Style s = b.style
     if b.kind != BOX_ANON && !s.hidden {
-        if b.kind == BOX_ROW {
-            paintBackground(b.x, b.y, b.w, b.h, s)
-        } else {
-            paintBackground(b.x, b.y, b.w, b.h, s)
-            paintBorders(b)
-        }
+        paintShadows(b.x, b.y, b.w, b.h, s)
+        paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+        paintBorders(b)
+        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
     }
-    if b.kind == BOX_IMAGE {
-        if !s.hidden { paintImage(b) }
-        return
-    }
-    if b.isListItem && !s.hidden { paintListMarker(b) }
-    if !s.hidden { paintFormControl(b) }
+    int px = b.x + b.bl
+    int py = b.y + b.bt
+    int pw = b.w - b.bl - b.br
+    int ph = b.h - b.bt - b.bb
+    if pw <= 0 || ph <= 0 { return }
+
+    img layer = blankImage(pw, ph)
+    // the layer's own transform carries the offset, so everything
+    // painted into it still speaks document coordinates
+    layer.translate(0 - px, 0 - py)
+    paintLayer = layer
     paintLines(b)
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
         paintBox(c)
     }
+    paintLayer = null
+    pDrawImage(layer, px, py)
+}
+
+void func paintBox(b:Box) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
+    if !boxVisible(b) { return }
+    // `overflow: hidden` clips this box's descendants to its padding box
+    // (CSS2 §11.1.1). The box itself -- its background and border -- is
+    // not clipped, so it paints normally and only the inside goes to a
+    // layer.
+    if b.style.overflowHidden && !paintingToLayer() && boxClipsAnything(b) {
+        paintClipped(b)
+        return
+    }
+    Style s = b.style
+    if b.kind != BOX_ANON && !s.hidden {
+        // a shadow is cast by the border box and lies under it
+        paintShadows(b.x, b.y, b.w, b.h, s)
+        if b.kind == BOX_ROW {
+            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+        } else {
+            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+            paintBorders(b)
+        }
+        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
+    }
+    if b.kind == BOX_IMAGE {
+        if !s.hidden { paintImage(b) }
+        return
+    }
+    if b.kind == BOX_AUDIO {
+        paintAudioControls(b)
+        return
+    }
+    if b.kind == BOX_IFRAME {
+        if !s.hidden { paintFrame(b) }
+        return
+    }
+    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+    if b.isListItem && !s.hidden { paintListMarker(b) }
+    if !s.hidden { paintFormControl(b) }
+    paintLines(b)
+    // In-flow children first, then the positioned ones in z-index order:
+    // a positioned box paints above its in-flow siblings whatever the
+    // document order (CSS2 §9.9). This is the painting order for the
+    // common case, not the full stacking-context algorithm -- there is
+    // no opacity or transform layer to sort against yet.
+    // A document with no positioned box anywhere needs neither the
+    // skip test nor the second pass: one loop in document order is the
+    // whole painting order.
+    if !docHasPositioned {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+            paintBox(c)
+        }
+        return
+    }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) { continue }
+        paintBox(c)
+    }
+    int lowest = 0
+    int highest = 0
+    bool anyPositioned = false
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if !boxIsPositioned(c) { continue }
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if !anyPositioned || c.style.zIndex < lowest { lowest = c.style.zIndex }
+        if !anyPositioned || c.style.zIndex > highest { highest = c.style.zIndex }
+        anyPositioned = true
+    }
+    if !anyPositioned { return }
+    for int z = lowest, z <= highest, z++ {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+            if !boxIsPositioned(c) { continue }
+            if c.style.zIndex != z { continue }
+            paintBox(c)
+        }
+    }
+}
+
+// A frame paints the document it loaded, translated into its content
+// box. The tree is reached through loadedFrames by key rather than held
+// on the box: a field of the box's own type is the back-pointer shape
+// CLAUDE.md §6 rules out. There is no clip region on the canvas
+// (todo.md), so the vertical extent is enforced by the same cull
+// paintDocument already does and wider content can still spill.
+void func paintFrame(b:Box) {
+    int cx = b.x + b.bl + b.pl
+    int cy = b.y + b.bt + b.pt
+    int cw = b.w - b.bl - b.br - b.pl - b.pr
+    int ch = b.h - b.bt - b.bb - b.pt - b.pb
+    if cw <= 0 || ch <= 0 { return }
+    applyFillColor(COLOR_WHITE)
+    pDrawRect(cx, cy, cw, ch)
+    fillAlpha(1.0)
+    if b.frameKey == null { return }
+    Box inner = loadedFrames[b.frameKey]
+    if inner == null { return }
+    int savedTop = paintTop
+    int savedBottom = paintBottom
+    text savedFont = currentFontKey
+    saveState()
+    translate(cx, cy)
+    paintTop = 0
+    paintBottom = ch
+    currentFontKey = ''
+    paintBox(inner)
+    restoreState()
+    paintTop = savedTop
+    paintBottom = savedBottom
+    currentFontKey = savedFont
 }
 
 // The document's canvas background: the body's background propagates

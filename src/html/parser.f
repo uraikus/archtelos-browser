@@ -478,6 +478,7 @@ int func createElementForToken(tok:Token) {
     Node el = newElement(tok.name)
     el.attrs = tok.attrs
     el.present = tok.present
+    el.hasPresHint = tok.hasPresHint
     return el.id
 }
 
@@ -1453,6 +1454,7 @@ void func mergeAttributesInto(id:int, tok:Token) {
         if v == null { v = '' }
         nodeRegistry[id].attrs[names[i]] = v
         nodeRegistry[id].present[names[i]] = true
+        if isPresentationalAttr(names[i]) { nodeRegistry[id].hasPresHint = true }
     }
 }
 
@@ -2293,6 +2295,7 @@ int func insertForeignElement(tok:Token, ns:int) {
         if v == null { v = '' }
         el.attrs[attrName] = v
         el.present[attrName] = true
+        if isPresentationalAttr(attrName) { el.hasPresHint = true }
     }
     findInsertionPlace(0)
     insertAtPlace(el.id)

@@ -10,6 +10,64 @@ Ordered by how much a fix would be worth here.
 
 ---
 
+## Forward declarations
+
+A function must be defined before the line that mentions it, which makes
+two mutually recursive functions awkward: `calcParseTerm` calls
+`calcParseSum` and `calcParseSum` calls `calcParseTerm`, and a signature
+with no body is a syntax error.
+
+**Proposal.** Either resolve function names across the whole compilation
+unit regardless of order, which is what the one global namespace already
+implies, or accept a bodiless signature as a declaration.
+
+**What it would delete here.** Nothing yet: the calc() parser is ordered
+to avoid the problem. It is a constraint on how the next recursive
+grammar can be written, not a workaround already in the tree.
+
+## Enums
+
+Every small value type in this renderer is a run of `const int`:
+`DISPLAY_*`, `BOX_*`, `ALIGN_*`, `DECO_*`, `WS_*`, `LIST_*`, `VALIGN_*`,
+`BORDER_*`, `TT_*`, `COMB_*`, `ATTR_*`, `FRAG_*`, `ORIGIN_*`,
+`CSSWIDE_*`. They are prefixed by hand because nothing scopes them, and
+two of them can quietly share a value: `BOX_IFRAME = 10` was added next
+to `BOX_IMAGE = 5` and collided with `BOX_BR = 10` further down the same
+run, so every frame was laid out as a line break.
+
+**Proposal.** `enum Box { Block, Inline, Text, ... }`, with values
+distinct by construction, the name scoped to the type, and a switch over
+one required to be exhaustive.
+
+**What it would delete here.** About sixty `const int` declarations and
+every naming prefix on them, plus the class of bug above.
+
+## Integer division and bitwise operators
+
+`/` is float division whatever its operands and there are no bitwise
+operators, so a packed integer is written and read through `Math.floor`
+and `%`:
+
+```festina
+int func specIds(s:int) { return Math.floor(s / (SPEC_BASE * SPEC_BASE)) }
+int func decoUnion(a:int, b:int) {
+    int out = 0
+    if a % 2 == 1 || b % 2 == 1 { out = out + DECO_UNDERLINE }
+    ...
+}
+```
+
+**Proposal.** `a // b` for integer division, and `&`, `|`, `^`, `~`,
+`<<`, `>>` on `int`. Both are single-instruction operations that every
+systems language has, and their absence shows up wherever a value is
+packed: a CSS specificity triple, a text-decoration bit set, a Unicode
+character class, a tokenizer's flags.
+
+**What it would delete here.** `specIds`, `specClasses`, `specTypes`
+and `decoUnion` in `src/css/style.f` and `src/css/parser.f` become one
+expression each, and the comments explaining why they are not become
+unnecessary.
+
 ## 1 Fix the memory-safety bug in `ascii` aliasing
 
 **Today.** `ascii b = a` — where `a` is another local, a parameter, an
@@ -92,12 +150,273 @@ pointer type`, naming neither the variable nor the line.
 
 **Proposal.** Resolve names innermost-first, as every other block-scoped
 language does. If shadowing a global function is meant to be forbidden,
-reject it at the declaration with a real diagnostic. Either way, a
-`func[...]` value must never satisfy a `text` parameter.
+reject it at the declaration with a real diagnostic — which the compiler
+already does for a builtin's name, and only for that: `func f(free:int)`
+is refused by the parser at the right column, while `func f(prop:int)`
+is not. Either way, a `func[...]` value must never satisfy a `text`
+parameter.
 
-**What it removes here.** Two renames made under duress (`prop` →
-`styleProp`, `newElement` → `replacement`) and the class of bug that
-cost an afternoon the first time.
+**What it removes here.** Four renames made under duress — `prop` →
+`styleProp`, `newElement` → `replacement`, and in the flex layout
+`free` → `spare` and `contentX`/`contentY` → `flexOriginX`/`flexOriginY`
+— and the class of bug that cost an afternoon the first time. The
+`contentX` case is the sharpest illustration: two locals named after two
+functions in the same file compiled to IR that named the functions where
+integers belonged, and the only diagnostic was an LLVM parse error four
+thousand lines from the mistake.
+
+---
+
+## 3b Make `==` on two struct references work, or refuse it
+
+**Today.** Structs are references. `a == c` for two struct values passes
+the analyzer and emits `icmp eq i64` against a `ptr`; the compile dies
+in the LLVM backend with `'%t7' defined with type 'ptr' but expected
+'i64'`, naming neither the expression nor the source line.
+
+**Proposal.** Compare the references, which is what a reference type
+makes natural and what the emitted code was reaching for anyway. If
+identity comparison is meant to be unavailable, reject `==` on struct
+operands in the analyzer with a real diagnostic.
+
+**What it removes here.** The `Style.serial` field exists partly so the
+cascade's tests can ask whether two elements were handed the same
+computed style. The cache needs a serial regardless, but the tests
+should not have had to learn that.
+
+---
+
+## 3c Let a color be made from numbers, and a gradient from a list
+
+**Today.** `color` values must be literals, so `fillLinearGradient` —
+whose two colour arguments are `color`-typed — cannot be called by any
+program whose colours come from data. A browser's colours always do. The
+diagnostic suggests `fillStyle(r, g, b)` for runtime colours, which is
+right for a flat fill and cannot reach the gradient call. The gradient
+also takes exactly two stops and drops alpha, where CSS allows any
+number of stops with alpha.
+
+A `color` is also opaque in the other direction: it cannot be
+interpolated into a string or read apart, so a pixel cannot be compared
+to another with a tolerance.
+
+**Proposal.** Three things, in order of how much they unlock:
+
+1. `rgb(r, g, b)` and `rgba(r, g, b, a)` as expressions producing a
+   `color` from runtime integers. The literal form stays for the common
+   case; this is the escape hatch.
+2. `fillGradient(x0, y0, x1, y1, stops)` taking an array of
+   `(offset, color)`, so a multi-stop gradient is one call.
+3. `.red`, `.green`, `.blue`, `.alpha` on a `color`, and a string form,
+   so a colour can be inspected and printed.
+
+**What it removes here.** `linear-gradient()` is painted as hundreds of
+one-pixel bands set with `fillStyle`, and off-axis as hundreds of
+clipped polygons, because the one call that would do it exactly cannot
+be called. It also removes a test helper that paints a candidate colour
+and reads it back in order to compare two colours with a tolerance.
+
+A clip region on the canvas would help the same case independently: with
+one, an off-axis band would be a rotated rectangle rather than a polygon
+computed by hand.
+
+---
+
+## 3d Open the audio device lazily
+
+**Today.** A program that uses `aud` gets ALSA and libmpg123 on its link
+line, dynamically, so the binary carries `libasound.so.2` and
+`libmpg123.so.0` as runtime `NEEDED` entries. It will not start on a
+machine that lacks them, whether or not it ever plays a sound. The
+feature split in `festina/cli.py` already keeps these off the link line
+for programs that do not use audio at all — the remaining gap is
+programs that use it conditionally.
+
+**Proposal.** Load the audio device through `dlopen` at the first
+`.play()`, and answer false from `.isPlaying()` and do nothing on
+`.play()` when it is unavailable. The same argument applies to Cairo and
+X11 for a program that only ever renders offscreen, but audio is the
+sharpest case: a browser can be fully useful with no sound at all.
+
+**What it removes here.** This browser draws an `<audio>` element's
+controls and cannot play it, because playing would make a sound library
+a condition of the browser starting. With a lazy open it would play
+where a device exists and stay silent where none does, which is what a
+browser should do anyway.
+
+---
+
+## 3e Give an image the canvas's path API
+
+**Today.** An `img` is a drawable surface — `drawRect`, `drawText`,
+`drawCircle`, `drawImage`, transforms, a state stack — and it clips at
+its own bounds, which makes it the clip region the canvas does not have.
+It has no path API at all: `beginPath`, `moveTo`, `lineTo`, `curveTo`,
+`closePath`, `fillPath` and `strokePath` exist only at the canvas level.
+
+**Proposal.** Put the same seven calls on `img`, as `_IMAGE_LAYER_OPS`
+already does for `translate`, `saveState` and the rest. They are the
+same Cairo calls against a different surface.
+
+**What it removes here.** `overflow: hidden` is implemented by painting
+the clipped subtree into an image, and inside such a subtree a
+`border-radius` is drawn square because the rounded rectangle is a
+bezier path. Nothing else about the clipped subtree is approximate.
+
+A canvas-level clip region would solve the same problem from the other
+end, and would be faster — no intermediate surface to allocate and
+blit — but the path API is the smaller change and unlocks more.
+
+---
+
+## 3f Read an HTTP body to its `Content-Length`
+
+**Today.** `req.send()` returns the right bytes for any response, and
+takes thirty seconds to do it whenever the response exceeds 64 KiB in
+total. The read loop ends at EOF; a keep-alive server never sends one;
+the 30 second `SO_RCVTIMEO` is what actually ends the read. A 640 KB
+page that `curl` fetches in 53 ms costs 30.8 seconds.
+
+**Proposal.** End the read at `Content-Length` when the response
+declares one, and at the terminating zero-length chunk when it is
+chunked — both already parsed elsewhere in the same file. Keep the
+timeout as the backstop it was meant to be.
+
+**What it removes here.** The browser becomes able to load a real web
+page. At present every page over 64 KiB — which is most of them — costs
+half a minute, and the benchmark server has to stay under the limit to
+measure anything at all.
+
+---
+
+## 3g Send the query string
+
+**Today.** `req.send()` builds its request line from the URL's path and
+drops the query: `http://host/page?a=1` is sent as `GET /page`. The
+query is parsed into the URL value and then not used. `req.code` is 200
+and `req.url` is unchanged, so nothing observable says the request was
+altered.
+
+**Proposal.** Append the query to the request-line target. Failing that,
+throw on a URL carrying a query, the way an unresolvable host throws —
+answering a different URL silently is the worst of the options.
+
+**What it removes here.** Every search, every `?v=` cache-buster, every
+paginated link. A browser has no way to compensate, because the URL is
+the only input `send()` takes.
+
+---
+
+## 3h Let a caller wait for a worker's answer
+
+**Today.** `drain()` waits for a worker to finish but yields nothing;
+`reply`/`callback` and worker-to-main `postMessage` both deliver through
+main's event loop, which straight-line code never reaches. A program
+that wants a worker's result *here* has one option: post a
+manually-managed `T?`, which crosses by reference, let the workers write
+into it, and use `drain()` as the barrier. That is what this browser's
+preload scanner does — uncounted shared mutable memory, reached through
+a hole in the ownership model, because the supported mechanism cannot
+express the wait.
+
+**Proposal.** A blocking `worker.ask(x):Reply`, and `pool.askAll(xs):arr[Reply]`
+for the fan-out case. The runtime already has both halves: `drain()`
+blocks, and `reply` types the answer.
+
+**What it removes here.** `src/net/preload.f`'s shared `PreloadBatch?`
+and its `free`, and with them the only place in this program where two
+threads write the same memory.
+
+---
+
+## 3i Let a thread body call a pure function, and let a pool instance know its index
+
+**Today.** A thread body may not call any top-level function, and
+`NAME[i]` cannot learn its own `i`. A pool that divides work between its
+instances is therefore impossible, and the fallback — N separately named
+threads — is N copies of the same body differing in one literal.
+
+**Proposal.** Either half fixes it. Allow a thread body to call a
+top-level function that touches no global (the analyzer already knows
+which those are), or expose the instance index to the body as
+`self.index`.
+
+**What it removes here.** `src/net/preload.f` carries the same eleven
+line HTTP fetch four times, at offsets 0, 1, 2 and 3. One of them would
+do.
+
+---
+
+## 3j Start a thread when it is first used
+
+**Today.** Every declared thread starts before the first top-level
+statement, whether the program goes on to use it or not. Because glibc's
+`malloc` gives up its single-threaded fast path permanently at the first
+`pthread_create`, that start makes allocation-heavy code about 9% slower
+for the life of the process — measured on an allocation-only probe, and
+not reproduced on an allocation-free one. Killing the threads
+afterwards does not give it back.
+
+**Proposal.** Create a declared thread lazily, on the first
+`postMessage`, `giveRequest` or `live` addressed to it. `on load()`
+runs then rather than at start-up, which is the only visible change and
+is what "the thread started" already means. A program that declares a
+worker for a case that does not arise would pay nothing.
+
+**What it removes here.** The preload scanner's four workers cost the
+51 KB benchmark page 4 ms, and that page is a local file that dispatches
+no prefetch at all. Every `file://` page in this browser pays for a
+network feature it never reaches. There is no way to write around it:
+the declaration is what starts the thread.
+
+---
+
+## 3k Give an image `drawImage`'s source rectangle
+
+**Today.** The canvas takes three forms of `drawImage`: the whole image
+at a point, the whole image scaled into a box, and a source rectangle
+scaled into a destination rectangle. An `img` used as a destination
+takes only the first two — `img.drawImage() expects 3 or 5 argument(s),
+got 9`.
+
+**Proposal.** Add the nine-argument entry to `_IMAGE_LAYER_OPS`
+alongside the three- and five-argument ones it already has. The runtime
+call it needs is the image-surface counterpart of the canvas's own, and
+nothing about the drawing differs.
+
+**What it removes here.** The source rectangle is how a drawable surface
+paints part of an image rather than all of it, so without it on an image
+destination, clipping a scaled draw inside a layer needs a whole extra
+image to draw into and blit back. `object-fit: cover` and `object-fit:
+none` both put content outside the content box by construction and have
+to cut it off there; with the nine-argument form this would be one call
+and no allocation. Painting into an image rather than the canvas is the
+ordinary case, not the exotic one — every element inside an opacity
+group or an `overflow: hidden` ancestor is doing it.
+
+---
+
+## 3l Give a font a real weight, and a way to load one
+
+**Today.** `changeFont(px, style, family)` decides the weight by
+searching the style string for `bold`, and stores it in a
+`cairo_font_weight_t`, which has two members. Every numeric weight
+measures identically to `normal` — `700` included — and `semibold`
+comes out bold because the word contains `bold`. `cairo_select_font_face`
+is Cairo's toy API, so the family is whatever the system already has and
+no font file can be loaded.
+
+**Proposal.** An overload taking the weight as a number —
+`changeFont(px, weight, italic, family)` — resolved through FontConfig or
+`cairo_ft_font_face_create_for_ft_face`, which is also the call that
+would let a font be loaded from a file or a blob.
+
+**What it removes here.** CSS has nine font weights and this browser can
+render two of them, so 400 and 500 look the same and so do 600 and 900.
+The cascade already computes the right number; there is nowhere to put
+it. And `@font-face` — a page shipping its own typeface, which is most
+of the modern web — cannot be implemented at all, which is why CSS Fonts
+3 is the one roadmap item blocked outright rather than merely unstarted.
 
 ---
 
@@ -239,7 +558,7 @@ file grew a function of the same name.
 |---|---|
 | `blob.toImg()` | An image fetched over HTTP can only be decoded by building an `http` literal whose body is the blob and calling `.toImg()` on it. |
 | `fontAscent()` / `fontDescent()` | Text metrics give an advance width and an inked height, and nothing else, so every baseline in `src/layout/layout.f` is placed with hard-coded DejaVu ratios. Any other font is laid out slightly wrong. |
-| A clip region on the canvas | `overflow: hidden` cannot be implemented. Everything else the canvas needs for a browser is already there. |
+| A clip region on the canvas | `overflow: hidden`, background tiling, `object-fit` and `background-clip` all clip by painting into an intermediate image the size of the clip and blitting it back, because an image clips at its own bounds and the canvas cannot. Each one costs an allocation and a composite that a clip region would not, and each new feature that needs a clip adds another. |
 | A settable window title | The page title has to live in the status bar. |
 | `ascii.toInt()` | The semantic analyzer accepts it; codegen rejects it with `cannot access field 'toInt' on ascii`. `a.toText().toInt()` works. |
 | Bitwise operators and hex literals | Colors are packed with `*`, `/` and `%`, and 148 CSS color constants are generated as decimal because there is no `0xRRGGBB`. |
@@ -270,8 +589,8 @@ Worth saying, because this document is otherwise a list of gaps.
   check real pixels with no display.
 - **Template literals span lines**, which is how the user-agent
   stylesheet is embedded as plain readable CSS.
-- **The compiler is quick and its diagnostics are precise.** 11,289
-  lines in 9.1 seconds, over half of which is one generated table, and
+- **The compiler is quick and its diagnostics are precise.** 12,978
+  lines in 9.5 seconds, over half of which is one generated table, and
   `file:line:column` on every error.
-- **The result is one 2.2 MB native binary** that starts in 6 ms,
+- **The result is one 2.3 MB native binary** that starts in 6 ms,
   against 448 ms for the browser it is measured beside.
