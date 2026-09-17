@@ -160,6 +160,10 @@ bool func containerQueryHolds(nid:int, q:int) {
 bool cascadeSawShape = false
 
 void func cascadeReset() {
+    // The `@page` rules come out of the same stylesheets, so they are
+    // dropped with everything else: a second cascade of one document
+    // would otherwise register every one of them twice.
+    resetPageRules()
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -3142,6 +3146,28 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // to find it, and `display: inherit` for the resolver to.
     if name == 'display' && !isDisplayKeyword(value)
         && cssWideKeyword(value) == CSSWIDE_NONE { return }
+    // CSS2's three page-break properties are the three fragmentation
+    // properties under their older names (Fragmentation 3 §4.4), so they
+    // are renamed here rather than implemented again. That makes the
+    // cascade between an old spelling and a new one one property's
+    // cascade: two properties would let whichever was read last always
+    // win, whatever the stylesheet said. `always` is the old spelling of
+    // `page` and every other value carries over as itself.
+    // Applied again under the modern name rather than renamed in place:
+    // binding the value to a local `ascii` here would alias a parameter
+    // the compiler never retained (FINDINGS.md, "ascii aliases are not
+    // retained"), which segfaults on the release at the end of the call.
+    if name == 'page-break-before' || name == 'page-break-after' {
+        bool always = asciiLower(asciiTrim(value)) == 'always'
+        text modern = name == 'page-break-before' ? 'break-before' : 'break-after'
+        if always { applyDecl(props, modern, 'page'.toAscii()) }
+        else { applyDecl(props, modern, value) }
+        return
+    }
+    if name == 'page-break-inside' {
+        applyDecl(props, 'break-inside', value)
+        return
+    }
     // The logical border shorthands are renamed before anything else,
     // because the shorthand dispatch below reads the name: renaming
     // afterwards left `border-block-start` as a longhand nobody handles.
@@ -3892,17 +3918,32 @@ int func lineStyleKeyword(t:ascii) {
 
 // Whether a token is one of the line-style keywords at all, which the
 // `outline` shorthand needs in order to tell a style from a colour.
-// break-before and break-after, reduced to what a column context can
-// act on. `page` and the page-side keywords ask for a page break, and
-// there are no pages here, so they read as `auto`; `avoid-page` is
-// likewise not an instruction about a column.
+// break-before and break-after. `column` ends a column and `page` ends
+// a page; the page-side keywords -- `left`, `right`, `recto`, `verso` --
+// each end a page as well, and the side they ask for is not honoured,
+// because honouring it means generating the blank page that makes the
+// next one land on that side. `avoid`, `avoid-column` and `avoid-page`
+// all forbid a break, since the only two contexts here are the column
+// and the page.
 int func breakKeyword(v:ascii) {
     if v == null { return BRK_AUTO }
     ascii t = asciiLower(asciiTrim(v))
-    if t == 'column' || t == 'avoid-column' || t == 'avoid' {
-        return t == 'column' ? BRK_COLUMN : BRK_AVOID
+    if t == 'column' { return BRK_COLUMN }
+    if t == 'page' || t == 'left' || t == 'right' || t == 'recto' || t == 'verso' {
+        return BRK_PAGE
     }
+    if t == 'avoid' || t == 'avoid-column' || t == 'avoid-page' { return BRK_AVOID }
     return BRK_AUTO
+}
+
+// `page` names the page an element belongs on, or nothing for `auto`.
+// The name is an identifier, so its case is its own.
+text func pageNameProp(v:ascii) {
+    if v == null { return '' }
+    ascii t = asciiTrim(v)
+    if t.length == 0 { return '' }
+    if asciiLower(t) == 'auto' { return '' }
+    return t.toText()
 }
 
 // A positive integer property -- `orphans` and `widows` -- keeping the
@@ -5325,6 +5366,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.breakBefore = breakKeyword(styleProp(props, 'break-before'))
     s.breakAfter = breakKeyword(styleProp(props, 'break-after'))
     s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
+    s.pageName = pageNameProp(styleProp(props, 'page'))
     s.orphans = countProp(props, 'orphans', isRoot ? 2 : parent.orphans)
     s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
     ascii cspan = styleProp(props, 'column-span')

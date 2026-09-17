@@ -3,6 +3,7 @@
 // lay out at a width, paint onto the canvas.
 
 import ../paint/paint.f
+import ../layout/paginate.f
 import ../net/fetch.f
 import ../html/parser.f
 
@@ -347,6 +348,45 @@ void func layoutPage(page:Page, width:int) {
 
 // Paints the document into the canvas region starting at screen row
 // `top`, scrolled by `scrollY`, for `viewHeight` rows.
+// One page of a paginated render: the strip of the document that begins
+// at `startY`, placed inside the page box's margins.
+//
+// Nothing is moved to make a page. The document is laid out once, at the
+// page area's width, and a page is that document drawn at an offset --
+// which is the same thing a scroll position is, and uses the same
+// painter.
+//
+// A box that straddles a page boundary is painted whole, because the
+// painter culls by box and not by pixel, so the margins are laid back
+// over it afterwards in the page's own colour. The page box's background
+// is the root element's, propagated to it (CSS2 §13.2).
+void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
+    if page.root == null { return }
+    int t0 = now()
+    int areaW = pageAreaWidth(box)
+    // How much of the sheet this page actually carries: a page that ends
+    // at a break before its area is full leaves the rest of the sheet
+    // blank, rather than showing the content the next page begins with.
+    int areaH = minInt(pageAreaHeight(box), maxInt(endY - startY, 0))
+    int bg = canvasBackground(page.root)
+    applyFillColor(bg)
+    drawRect(0, 0, box.width, box.height)
+    fillAlpha(1.0)
+    paintScrollY = startY
+    paintViewHeight = areaH
+    saveState()
+    translate(box.marginLeft, box.marginTop - startY)
+    paintDocument(page.root, startY, startY + areaH)
+    restoreState()
+    applyFillColor(bg)
+    drawRect(0, 0, box.width, box.marginTop)
+    drawRect(0, box.marginTop + areaH, box.width, box.height - box.marginTop - areaH)
+    drawRect(0, 0, box.marginLeft, box.height)
+    drawRect(box.marginLeft + areaW, 0, box.width - box.marginLeft - areaW, box.height)
+    fillAlpha(1.0)
+    timing('paint', t0)
+}
+
 void func paintPage(page:Page, top:int, scrollY:int, viewHeight:int) {
     if page.root == null { return }
     int t0 = now()

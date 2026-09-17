@@ -5,6 +5,72 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Paged media, and a browser that prints
+
+CSS2's last unimplemented chapter. `@page` declares the page box: `size`
+in the ten named sheets the standard lists -- A5 through A3, B5, B4, the
+two JIS sizes, letter, legal and ledger -- or as one or two lengths,
+turned by `portrait` and `landscape`; `margin` in the one-to-four-value
+form, with percentages of the page box. `@page :first`, `:left` and
+`:right` declare it for particular pages, and a named `@page` for the
+pages a `page` property sends there. The selectors are weighed as the
+triple Paged Media 3 6.5 gives, so `:first` outranks `:right` on the
+first page however the two are ordered, and rules accumulate rather than
+replace: what a later rule does not say, an earlier one still does.
+
+`--print out.png` writes `out-1.png`, `out-2.png` and so on, one image to
+a sheet. `@media print` is the medium such a render answers to, so a
+document's print stylesheet is the one that reaches its pages -- and the
+`@page` rules almost always inside it.
+
+**A page is a fragmentation container like a column, so this is the
+column algorithm over a different container**: the same units, the same
+rules about where a break is allowed -- forced, forbidden, orphans,
+widows -- and the same search for the nearest allowed point. What differs
+is that the height is asked for one page at a time, because `@page
+:first` can make the first sheet a different size from the rest, so no
+single target would do.
+
+CSS2's `page-break-before`, `page-break-after` and `page-break-inside`
+are the three fragmentation properties under older names (Fragmentation
+3 4.4), so a declaration under an old name is applied under the new one
+rather than implemented twice. That makes the cascade between the two
+spellings one property's cascade; two properties would let whichever was
+read last always win, whatever the stylesheet said.
+
+Nothing is moved to make a page. The document is laid out once, at the
+page area's width, and a page is that document drawn at an offset --
+which is what a scroll position already is, and uses the same painter.
+
+**Three bugs, each found by a check that could fail.**
+
+A block of 120px holding one 19px line reported the *line's* extent to
+the fragmenter, so four of them fitted into 80px of a page. The unit a
+child contributes now reaches the child's own bottom. This was a
+multi-column bug too, and had been one all along: a 120px block in a
+column occupies 120px of it. Both column suites pass unchanged.
+
+The host to fragment was found by descending through boxes with a single
+child, which looked equivalent to "the body" and was not: a document
+whose body holds one block descends past the body into that block, finds
+no children, and comes out one page however tall the block is. It is the
+body's box now.
+
+A page painted the whole of its area even when it ended at a break before
+the area was full, so the last sheet showed the first inch of the next
+one. A page carries the strip between its own two offsets.
+
+Chromium 141 is the yardstick throughout, printed to PDF and read back:
+the `/MediaBox` gives the page box -- `size: A4` is 594.96 x 841.92pt,
+`size: 400px 600px` is 300 x 450pt exactly -- and counting `/Type /Page`
+gives the page count, which is where every count in the suite comes from.
+Four 120px blocks on a 500px page area are one page and five are two; an
+unbreakable 700px block is two and a 1200px block is three; a block on a
+named page is three, because the name breaks into the run and out of it
+again. The one number that is stated rather than matched is the default
+margin, which no standard fixes: 0.4in here against the 37px a side
+Chromium's print dialog defaults to.
+
 ### A shadow follows the box's `border-radius`
 
 `box-shadow` was cast from a rectangle whatever the box's corners did,

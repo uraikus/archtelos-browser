@@ -161,7 +161,15 @@ broken-image placeholders,
 a background image can be fixed to the viewport so it does not scroll,
 list markers from a counter style — the predefined ones and any a page
 defines with `@counter-style`, out of the same five numbering systems —
-and the `<ol type>` attribute that asks for them, and opacity. `linear-gradient()` and
+and the `<ol type>` attribute that asks for them, and opacity.
+It prints, too: `--print out.png` paginates the document into the page
+box `@page` declares — one of ten named sheet sizes or a pair of
+lengths, turned by `landscape`, with margins, and a box of its own for
+the first page, the left-hand pages, the right-hand ones or any page a
+`page` property names — and writes `out-1.png`, `out-2.png` and so on,
+one to a sheet. A page is a fragmentation container like a column, so
+`break-before: page` and the `page-break-*` properties CSS2 spells them
+with put a break where a document asks for one. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle
@@ -376,7 +384,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-26,586 lines of Festina in `src/` and `browser.f`.
+28,348 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -386,7 +394,7 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-five unit suites (utilities, HTML, CSS parser,
+The runner covers forty-six unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
@@ -394,12 +402,12 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, the preload scanner), seventeen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, the preload scanner), eighteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
-images, text decoration, transforms, right-to-left text, box shadows and
-first lines — three conformance
+images, text decoration, transforms, right-to-left text, box shadows,
+first lines and printed pages — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

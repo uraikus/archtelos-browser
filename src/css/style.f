@@ -257,6 +257,10 @@ const int OBJECTFIT_SCALE_DOWN = 4
 const int BRK_AUTO = 0
 const int BRK_COLUMN = 1
 const int BRK_AVOID = 2
+// A page break breaks a column as well, because a column lives on a
+// page: the value is separate from BRK_COLUMN so a column context can
+// tell which it was asked for, and both force a column to end.
+const int BRK_PAGE = 3
 
 // CSS Masking 1's `clip-path`, and the CSS2 `clip` that preceded it.
 // A shape is kept as it was written -- lengths and percentages -- and
@@ -737,6 +741,11 @@ struct Style {
     breakBefore:int
     breakAfter:int
     breakInsideAvoid:bool
+    // The page this element belongs on (Paged Media 3 §3.4), empty for
+    // `auto`. It does not inherit -- Chromium computes `auto` on the
+    // child of an element that named a page -- so a named page is the
+    // elements that asked for it and the ones laid out between them.
+    pageName:text
     orphans:int
     widows:int
     justifyItems:int

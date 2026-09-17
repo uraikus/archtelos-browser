@@ -10,6 +10,7 @@
 
 import ../util/text.f
 import counterstyles.f
+import page.f
 
 const int COMB_NONE = 0
 const int COMB_DESCENDANT = 1
@@ -1094,6 +1095,7 @@ arr[text] supportedProperties = [
     'column-rule', 'column-rule-width', 'column-rule-style', 'column-rule-color',
     'column-span', 'column-fill',
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
+    'page', 'page-break-before', 'page-break-after', 'page-break-inside',
     'clip-path', 'clip', 'shape-outside', 'shape-margin',
     'grid-template-columns', 'grid-template-rows', 'grid-template-areas',
     'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow',
@@ -1355,10 +1357,12 @@ const int MEDIA_COLOR_BITS = 8
 const int MEDIA_DPI = 96
 
 bool func evaluateMediaTerm(term:ascii) {
-    // Every media type but `all` and `screen` names a device this is
-    // not: `print` and `speech` are the two the standard still has, and
-    // the rest are deprecated and match nothing.
-    return term.length == 0 || term == 'all' || term == 'screen'
+    // `all` is every medium, and of the two the standard still has this
+    // is whichever one is being rendered for: `print` while a document
+    // is being paginated and `screen` otherwise. `speech` is a device
+    // this is not, and the rest are deprecated and match nothing.
+    if term.length == 0 || term == 'all' { return true }
+    return cssMediaPrint ? term == 'print' : term == 'screen'
 }
 
 // The comparisons a feature may be written with. `min-` and `max-` are
@@ -1869,6 +1873,14 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 if csName != '' {
                     cssCounterStyles[csName] = parseCounterStyleBody(src.slice(brace + 1, close))
                 }
+            } else if atName == 'page' {
+                // The prelude is the page selector and the body an
+                // ordinary declaration list. Nothing is resolved here:
+                // which rules speak for a page depends on its number,
+                // and that is pagination's to know.
+                int close = blockEnd - 1
+                if close < brace + 1 { close = brace + 1 }
+                parsePageRule(src.slice(nameEnd, brace), src.slice(brace + 1, close))
             } else if atName == 'container' {
                 // The rules inside go into the sheet like any others,
                 // each tagged with this query. Nothing is evaluated
@@ -1905,7 +1917,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 cssCurrentLayer = outerLayer
                 cssCurrentLayerName = outerName
             }
-            // @font-face, @keyframes, @page, @import ...: skipped
+            // @font-face, @keyframes, @import ...: skipped
             i = blockEnd
             declStart = i
             continue

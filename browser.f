@@ -375,6 +375,7 @@ on close() { }
 
 text startUrl = ''
 text screenshotPath = ''
+text printPath = ''
 int requestedWidth = 1024
 int requestedHeight = 768
 bool screenshotHeightGiven = false
@@ -383,6 +384,9 @@ for int i = 1, i < argv.length, i++ {
     text arg = argv[i]
     if arg == '--screenshot' && i + 1 < argv.length {
         screenshotPath = argv[i + 1]
+        i++
+    } else if arg == '--print' && i + 1 < argv.length {
+        printPath = argv[i + 1]
         i++
     } else if arg == '--width' && i + 1 < argv.length {
         int w = argv[i + 1].toInt()
@@ -396,7 +400,8 @@ for int i = 1, i < argv.length, i++ {
         }
         i++
     } else if arg == '--help' || arg == '-h' {
-        log('usage: browser [url-or-file] [--screenshot out.png] [--width W] [--height H]')
+        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H]')
+        log('  --print paginates the document and writes out-1.png, out-2.png, ...')
         close(0)
     } else {
         startUrl = arg
@@ -410,6 +415,52 @@ setClientHeight(requestedHeight)
 // later be grown to the whole document, which is a canvas, not a
 // viewport.
 setCssViewport(requestedWidth, requestedHeight)
+
+// `out.png` page 3 is `out-3.png`: the number goes before the extension
+// so the files sort and open as the pictures they are.
+text func printPageName(path:text, n:int) {
+    ascii a = path.toAscii()
+    int dot = 0 - 1
+    for int i = 0, i < a.length, i++ {
+        if a.charCodeAt(i) == CH_DOT { dot = i }
+    }
+    if dot <= 0 { return `${path}-${n}` }
+    return `${a.slice(0, dot).toText()}-${n}${a.slice(dot, a.length).toText()}`
+}
+
+if printPath != '' {
+    // A paginated render is the print medium, so the document's print
+    // stylesheet is the one that applies -- and the `@page` rules almost
+    // always inside it.
+    cssMediaPrint = true
+    if startUrl == '' {
+        page = pageFromHtml(welcomeHtml, 'about:welcome', PAGE_DEFAULT_W)
+    } else {
+        page = loadPage(startUrl, PAGE_DEFAULT_W)
+    }
+    // The width to lay out at is the page area's, and the page box comes
+    // out of the document's own stylesheet, so it is not known until the
+    // document has been read once. It is laid out again at that width
+    // rather than guessed at.
+    PageBox firstBox = pageBoxFor('', 1)
+    int areaW = pageAreaWidth(firstBox)
+    setCssViewport(areaW, pageAreaHeight(firstBox))
+    preparePage(page, areaW)
+    paginateDocument(page.root)
+    int written = 0
+    for int i = 0, i < pageStartY.length, i++ {
+        PageBox pbox = pageBoxes[i]
+        setClientWidth(pbox.width)
+        setClientHeight(pbox.height)
+        clearCanvas()
+        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i])
+        text out = printPageName(printPath, i + 1)
+        if saveCanvas(out) { written++ } else { log(`could not write ${out}`) }
+    }
+    log(`wrote ${written} page(s) of ${pageStartY.length}, ${firstBox.width}x${firstBox.height}`)
+    if page.error != '' { log(`load error: ${page.error}`) }
+    close(written > 0 && written == pageStartY.length ? 0 : 1)
+}
 
 if screenshotPath != '' {
     // headless: lay out at the requested width, size the canvas to the

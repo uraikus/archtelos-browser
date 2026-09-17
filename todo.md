@@ -40,7 +40,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **What is left of the CSS2 chapters**: paged media (§13). A wheel
+1. **What is left of the CSS2 chapters**: nothing whole. Paged media
+   (§13) is in -- `@page` with `size` and `margin`, the page selectors,
+   named pages, the three `page-break-*` properties and a `--print` that
+   writes one image per page -- but three parts of it are not:
+   the **margin boxes** (`@top-center` and its fifteen siblings), which
+   are parsed and dropped because each is a box generated from `content`
+   in a place the layout engine has no notion of; **the side a
+   `break-before: left` asks for**, which needs a blank page generated to
+   put the next one on the right side; and **a page's own `size` when a
+   named page declares a different one**, because the document is laid
+   out once at the first page's width and a page that wanted a wider
+   sheet would need a second layout. A wheel
    over a scroll container scrolls it, the thumb follows, and the thumb
    can be taken hold of and dragged. Both axes scroll, both thumbs drag,
    and a wheel tilted sideways scrolls a container across **on X11 and

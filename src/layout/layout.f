@@ -2161,16 +2161,33 @@ int func columnBreakPoint(units:arr[ColumnUnit], i:int, colStart:int) {
     return -1
 }
 
+// Which container the units are being collected for. A `column` ends a
+// column and a `page` ends a page, and neither ends the other: Chromium
+// leaves a column exactly where it was when a child inside it asks for
+// `break-before: page`, because on screen there is no page to break.
+bool fragForPage = false
+
 void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
     bool pendingForce = false
     bool pendingAvoid = false
+    int forces = fragForPage ? BRK_PAGE : BRK_COLUMN
+    text pendingPage = ''
+    bool havePage = false
     for int i = from, i < to, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
         if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
-        bool force = pendingForce || c.style.breakBefore == BRK_COLUMN
+        bool force = pendingForce || c.style.breakBefore == forces
         bool avoid = pendingAvoid || c.style.breakBefore == BRK_AVOID
-        pendingForce = c.style.breakAfter == BRK_COLUMN
+        // A change of `page` between two siblings forces a break, since
+        // the two belong on differently named pages (Paged Media 3
+        // §3.4). On screen there are no named pages and nothing to do.
+        if fragForPage {
+            if havePage && c.style.pageName != pendingPage { force = true }
+            pendingPage = c.style.pageName
+            havePage = true
+        }
+        pendingForce = c.style.breakAfter == forces
         pendingAvoid = c.style.breakAfter == BRK_AVOID
         // A child that may not be broken goes in as one unit, however
         // many lines it holds: a unit is the smallest thing a column
@@ -2183,6 +2200,14 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
                 u.hasLine = true
                 u.top = c.lines[j].y
                 u.bottom = c.lines[j].y + c.lines[j].h
+                // The last line carries whatever of the child sits
+                // below it -- a declared height, a bottom padding, a
+                // margin -- because that space is in the container too,
+                // and a fragmenter that measured the text alone would
+                // fit four 120px blocks into 80px of column.
+                if j == c.lines.length - 1 {
+                    u.bottom = maxInt(u.bottom, c.y + c.h + c.mb)
+                }
                 u.forceBefore = j == 0 && force
                 u.avoidBefore = j == 0 && avoid
                 u.childIndex = i
