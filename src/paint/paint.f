@@ -2479,7 +2479,6 @@ void func paintClipped(b:Box) {
 // padding box and over whatever is behind them (CSS Overflow 3 §3.2).
 // The thumb is as long a share of the track as the box is of the
 // content it scrolls, and never shorter than it can be seen at.
-const int SCROLLBAR_MIN_THUMB = 12
 
 void func paintScrollbars(b:Box) {
     if b.sbW <= 0 && b.sbH <= 0 { return }
@@ -2491,24 +2490,16 @@ void func paintScrollbars(b:Box) {
     // Chromium's classic scrollbar, so that the pixels can be compared
     // with its own: a #fcfcfc track and a #8b8b8b thumb.
     if b.sbW > 0 {
-        int trackH = ph - b.sbH
         fillAlpha(1.0)
         fillStyle(252, 252, 252)
-        pDrawRect(px + pw - b.sbW, py, b.sbW, trackH)
-        int visible = maxInt(ph - b.pt - b.pb - b.sbH, 1)
-        // A bar with nothing to scroll is an empty track, which is what
-        // Chromium draws and what says at a glance that there is
-        // nothing below the fold.
-        if b.scrollH > visible {
-            int thumbH = maxInt(Math.floorDiv(trackH * visible, b.scrollH), SCROLLBAR_MIN_THUMB)
-            if thumbH > trackH { thumbH = trackH }
-            // The thumb sits as far down its own run as the content is
-            // through what there is of it, so it reaches the bottom
-            // exactly when the content does.
-            int range = maxInt(boxScrollRange(b), 1)
-            int thumbY = Math.floorDiv((trackH - thumbH) * boxScrollTop(b), range)
+        pDrawRect(px + pw - b.sbW, py, b.sbW, scrollTrackHeight(b))
+        // The thumb is drawn from the same four functions the pointer is
+        // tested against, so what it looks like and what can be taken
+        // hold of are one rectangle (layout.f).
+        if scrollThumbShown(b) {
             fillStyle(139, 139, 139)
-            pDrawRect(px + pw - b.sbW + 4, py + thumbY, b.sbW - 8, thumbH)
+            pDrawRect(scrollThumbLeft(b), scrollThumbTop(b),
+                      scrollThumbWidth(b), scrollThumbHeight(b))
         }
     }
     if b.sbH > 0 {
@@ -2521,7 +2512,8 @@ void func paintScrollbars(b:Box) {
             int thumbW = maxInt(Math.floorDiv(trackW * visible, b.scrollW), SCROLLBAR_MIN_THUMB)
             if thumbW > trackW { thumbW = trackW }
             fillStyle(139, 139, 139)
-            pDrawRect(px, py + ph - b.sbH + 4, thumbW, b.sbH - 8)
+            pDrawRect(px, py + ph - b.sbH + SCROLLBAR_THUMB_INSET,
+                      thumbW, b.sbH - 2 * SCROLLBAR_THUMB_INSET)
         }
     }
     fillAlpha(1.0)
@@ -2812,6 +2804,47 @@ Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
     if dy > 0 && scrolled >= range { return null }
     if dy < 0 && scrolled <= 0 { return null }
     return b
+}
+
+// The scroll container whose vertical thumb is under the pointer, or
+// null. The same walk `scrollContainerAt` does, against the thumb's own
+// rectangle rather than the box's: a press on the thumb takes hold of it
+// and a press anywhere else does not.
+Box func scrollThumbAt(b:Box, x:int, y:int) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    int scrolled = boxScrollTop(b)
+    int inner = scrolled > 0 ? y + scrolled : y
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
+            Box found = scrollThumbAt(c, x, inner)
+            if found != null { return found }
+        }
+    }
+    if !scrollThumbShown(b) { return null }
+    int tx = scrollThumbLeft(b)
+    int ty = scrollThumbTop(b)
+    if x < tx || x >= tx + scrollThumbWidth(b) { return null }
+    if y < ty || y >= ty + scrollThumbHeight(b) { return null }
+    return b
+}
+
+// Puts the thumb's top at `top`, in the track's own coordinates, and
+// scrolls the box to match. The offset the pointer had inside the thumb
+// when it was pressed is the caller's to subtract, so the content does
+// not jump on the first pixel of the drag.
+//
+// Answers whether the box moved, which is what tells a drag that reached
+// an end from one that did not.
+bool func scrollThumbDragTo(b:Box, top:int) {
+    if !scrollThumbShown(b) { return false }
+    int run = scrollTrackHeight(b) - scrollThumbHeight(b)
+    if run <= 0 { return false }
+    int want = top - scrollTrackTop(b)
+    int range = boxScrollRange(b)
+    int to = clampInt(Math.floorDiv(want * range, run), 0, range)
+    return boxScrollBy(b, to - boxScrollTop(b))
 }
 
 // The href of the nearest enclosing link of a box, or null.

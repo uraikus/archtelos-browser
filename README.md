@@ -201,8 +201,11 @@ tiles with the leftover shared out around them.
 scrollbar and paint one there — always for `scroll`, and for `auto` only
 where the content overflows, the thumb being as long a share of the
 track as the box is of what it scrolls. **The wheel over such a box
-scrolls it**, and the page only once it has reached its end; a link
-inside one is clickable where it looks.
+scrolls it**, and the page only once it has reached its end; **the
+vertical thumb can be taken hold of and dragged**, following the pointer
+even once it has left the bar; and a link inside one is clickable where
+it looks. A horizontal bar is raised by a line of text too long to break
+as well as by a child box reaching past the edge.
 
 `background-origin` chooses the edge a background is placed from and
 `background-clip` the edge it is cut off at — border, padding or

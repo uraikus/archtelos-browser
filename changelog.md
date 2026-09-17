@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A draggable scrollbar thumb, and a horizontal bar for a long line
+
+Two things todo.md named around scroll containers.
+
+**A line of text raises the horizontal `auto` bar.** The check that
+decides it walked the children and not the lines inside them, so a word
+with nowhere to break overflowed its box without raising one. Chromium
+141 on a 100x60 box of `overflow: auto` at 16px/20px monospace gives
+`Supercalifragilisticexpialidocious` a client height of 45 -- the
+fifteen pixels a bar takes -- against 60 for text that fits, and the
+same 45 for a 300px child, which is the case that already worked and is
+the reference the new one is read against. The walk goes to the lines
+rather than to the text boxes, because a text box has no geometry of its
+own here: the fragments carry their positions in document coordinates.
+Both walks are asked only by a scroll container, so what they cost is
+paid by the boxes that have one.
+
+**The thumb can be taken hold of.** A press on it starts a drag, the
+pointer moving scrolls the box, and a release ends it -- the pointer may
+leave the bar and the thumb still follows, which is what every scrollbar
+does. The box is held by node id rather than by the Box itself, because
+a box tree lasts one layout and a drag outlives several.
+
+**The thumb's geometry is one definition now.** The painter worked it
+out inline and a hit test would have had to work it out again; the four
+functions that place it live in the layout engine, the painter draws
+from them and the pointer is tested against them, so where the thumb
+looks and where it can be grabbed are the same rectangle by construction
+rather than by two formulas that agree. The pixel checks that already
+say the thumb is drawn in the right place pass unchanged through that
+refactor, which is what says the move was faithful.
+
+Only the vertical thumb drags; the horizontal one is painted and not yet
+hit tested (todo.md).
+
 ### `image-set()`, `image()` and `cross-fade()`, closing CSS Images
 
 The three image notations the level defines beside its gradients.

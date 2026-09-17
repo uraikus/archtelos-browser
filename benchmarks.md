@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,824,088 |
+| This browser, the whole program | 2,828,832 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1068,3 +1068,26 @@ after:  90 91 91 91 90 91 94 89 89 94 92 96 90
 that interleave, which is what two builds of the same source look like
 on this machine. What is left per layer is two boolean tests and a float
 comparison.
+
+The draggable thumb and the horizontal bar a long line raises cost
+**4,744 bytes** (2,824,088 → 2,828,832), and **neither benchmark page
+can say what they cost in time**, which is worth saying rather than
+leaving the reader to infer it from a number that did not move. Neither
+page has a scroll container on it, so neither reaches the two walks that
+measure how far content overflows, and neither reaches `paintScrollbars`
+past its first line. What the pages can say is that nothing else got
+slower: twenty-six paired samples of `generated.html`, in two rounds,
+
+```
+before: 106 109 104 105 116 109 109 110 108 110 108
+after:  114 113 107 108 107 112 113 110 106 109 109
+
+before: 115 108 108 106 105 104 104 105 105 105 106 105 109 109 108
+after:  111 113 106 109 103 111 105 104 105 110 107 117 106 107 106
+```
+
+— a best of 104 against 106 in the first round and 104 against 103 in
+the second, which is the two rounds disagreeing about the sign of a
+difference they both put at one or two milliseconds. That is what the
+binary's own layout looks like on this machine, and it is why a single
+round of eleven is not enough to claim one.

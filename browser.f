@@ -207,6 +207,23 @@ void func wheelAt(x:int, y:int, dy:int) {
 on mouseWheelUp(x:int, y:int) { wheelAt(x, y, -SCROLL_STEP) }
 on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 
+// The scroll container whose thumb the pointer took hold of, and how far
+// down the thumb it pressed, so the content does not jump on the first
+// pixel of the drag. The box is held by node id rather than by the Box
+// itself: a box tree lasts one layout and a drag outlives several.
+int dragThumbNode = 0
+int dragThumbGrab = 0
+
+// The box a drag is on, found again in the tree laid out most recently.
+Box func dragThumbBox(b:Box) {
+    if b.node != null && b.node.id == dragThumbNode && b.sbW > 0 { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box found = dragThumbBox(b.children[i])
+        if found != null { return found }
+    }
+    return null
+}
+
 on mouseDown(x:int, y:int, button:int) {
     if button != 1 { return }
     if y < TOOLBAR_H {
@@ -224,14 +241,37 @@ on mouseDown(x:int, y:int, button:int) {
         repaint()
     }
     if y >= clientHeight - STATUS_H || page.root == null { return }
+    // A press on a scrollbar's thumb takes hold of it, and nothing else
+    // happens with that press: it is not a click on what is behind it.
+    Box thumb = scrollThumbAt(page.root, x, y - TOOLBAR_H + scrollY)
+    if thumb != null {
+        dragThumbNode = thumb.node.id
+        dragThumbGrab = (y - TOOLBAR_H + scrollY) - scrollThumbTop(thumb)
+        return
+    }
     text href = linkAt(page.root, x, y - TOOLBAR_H + scrollY)
     if isNavigableHref(href) {
         navigate(resolveUrl(page.url, href))
     }
 }
 
+on mouseUp(x:int, y:int, button:int) {
+    if button == 1 { dragThumbNode = 0 }
+}
+
 on mouse(x:int, y:int) {
     if page.root == null { return }
+    // A drag in progress moves the thumb and nothing else: the pointer
+    // may leave the bar, and the thumb still follows it, which is what
+    // every scrollbar does.
+    if dragThumbNode != 0 {
+        Box held = dragThumbBox(page.root)
+        if held == null { dragThumbNode = 0 }
+        else {
+            if scrollThumbDragTo(held, y - TOOLBAR_H + scrollY - dragThumbGrab) { repaint() }
+            return
+        }
+    }
     text before = statusText
     text href = null
     if y >= TOOLBAR_H && y < clientHeight - STATUS_H {

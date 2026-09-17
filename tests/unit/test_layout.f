@@ -321,4 +321,36 @@ checkEqInt(ovChild('overflow:scroll', 'height:100%').h, 85,
 checkEqInt(ovChild('overflow:visible', 'height:100%').h, 100,
            'and `visible` is the initial value, which scrolls nothing')
 
+// ---- a line too long to break raises the horizontal bar --------------
+// The overflow that raises an `auto` horizontal bar can come from a line
+// of text as well as from a child box: a word with nowhere to break is
+// wider than its container and there is nothing layout can do about it.
+// Chromium 141 on a 100x60 box of `overflow: auto` at 16px/20px
+// monospace:
+//
+//   Supercalifragilisticexpialidocious   clientHeight 45 -- a bar
+//   short words here ok                  clientHeight 60 -- none
+//   a 300px inline-block child           clientHeight 45 -- a bar
+//
+// The third is the case that already worked and is the reference the
+// first is read against: the same 15 pixels, taken for the same reason.
+Box func lineOverflowBox(inner:text) {
+    Box root = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+        + '<div id="s" style="width:100px;height:60px;overflow:auto">'
+        + inner + '</div></body>', 400)
+    return findBox(root, 'div')
+}
+
+Box longWord = lineOverflowBox('Supercalifragilisticexpialidocious')
+Box shortWords = lineOverflowBox('short words here ok')
+Box wideChild = lineOverflowBox('<span style="display:inline-block;width:300px;height:10px"></span>')
+
+// The instrument first: the case that already worked has to show the
+// bar, or the two below are being read against nothing.
+checkEqInt(wideChild.sbH, 15, 'a child reaching past the edge raises the horizontal bar')
+checkEqInt(shortWords.sbH, 0, 'and text that fits raises none')
+checkEqInt(longWord.sbH, 15, 'a word too long to break raises one as well')
+check(longWord.scrollW > 100, 'and the scrollable width is the word, not the box')
+checkEqInt(longWord.sbH, wideChild.sbH, 'the same bar, for the same reason')
+
 finish('layout')

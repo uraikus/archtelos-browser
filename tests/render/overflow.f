@@ -241,4 +241,55 @@ checkEqInt(boxScrollRange(scl), 55, 'the box scrolls by what its content exceeds
 check(boxScrollBy(scl, 400), 'scrolling to the end brings the link up')
 check(linkAt(plink.root, 20, 70) == 'deep.html', 'and clicking where it now is finds it')
 
+// ---- the thumb can be taken hold of -----------------------------------
+// A press on the thumb takes hold of it and moving the pointer scrolls
+// the box. What makes that safe to check is that the painter draws the
+// thumb from the same four functions the pointer is tested against, so
+// the two cannot drift: the pixel checks above already say the thumb is
+// drawn where those functions put it.
+Page pdrag = pageFromHtml(head
+    + '<div id="d" style="width:200px;height:100px;overflow:auto;background:#ddffdd">'
+    + '<div style="height:300px"></div></div></body>', 'test.html', 400)
+arr[Box] dboxes = []
+collectBoxesForTag(pdrag.root, 'div', dboxes)
+Box drag = dboxes[0]
+check(drag != null && drag.sbW == 15, 'the box has a vertical scrollbar')
+boxScrollReset()
+
+int tTop = scrollTrackTop(drag)
+int tRun = scrollTrackHeight(drag) - scrollThumbHeight(drag)
+int tMidX = scrollThumbLeft(drag) + Math.floorDiv(scrollThumbWidth(drag), 2)
+
+// Where the thumb is, and where it is not.
+check(scrollThumbAt(pdrag.root, tMidX, tTop + 2) != null, 'the pointer finds the thumb on it')
+check(scrollThumbAt(pdrag.root, tMidX, tTop + scrollTrackHeight(drag) - 2) == null,
+      'and finds nothing on the empty part of the track')
+check(scrollThumbAt(pdrag.root, 100, tTop + 2) == null, 'nor anywhere off the bar')
+
+// Dragging it the length of its run scrolls the box the whole way, and
+// dragging it back brings it back.
+check(scrollThumbDragTo(drag, tTop + tRun), 'dragging the thumb to the end scrolls the box')
+checkEqInt(boxScrollTop(drag), boxScrollRange(drag), 'all the way to the end')
+check(scrollThumbDragTo(drag, tTop), 'and dragging it back to the top')
+checkEqInt(boxScrollTop(drag), 0, 'scrolls the box back to the start')
+
+// Half way down the run is half way through the content, to the pixel
+// the integer division lands on.
+check(scrollThumbDragTo(drag, tTop + Math.floorDiv(tRun, 2)), 'a drag to the middle moves it')
+checkEqInt(boxScrollTop(drag),
+           Math.floorDiv(Math.floorDiv(tRun, 2) * boxScrollRange(drag), tRun),
+           'and lands where that share of the run says')
+
+// The thumb moves with the content, which is the agreement that matters:
+// wherever the box is scrolled to, the pointer finds the thumb at the
+// place the painter has just drawn it.
+boxScrollReset()
+boxScrollBy(drag, 400)
+check(scrollThumbAt(pdrag.root, tMidX, scrollThumbTop(drag) + 2) != null,
+      'after scrolling, the thumb is found where it is now drawn')
+checkEqInt(scrollThumbTop(drag) + scrollThumbHeight(drag),
+           tTop + scrollTrackHeight(drag),
+           'and a box scrolled to its end puts the thumb at the end of its track')
+boxScrollReset()
+
 finish('overflow')

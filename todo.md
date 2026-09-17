@@ -44,19 +44,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **What is left of the CSS2 chapters**: **a draggable scrollbar**,
-   and paged media (§13). A wheel over a scroll container scrolls it and
-   the thumb follows, but the thumb cannot be taken hold of: that needs
-   the pointer's press and release tracked against the track it is in,
-   which is interaction rather than layout. Neither is `scroll-behavior`
-   or a keyboard scroll of the focused container.
-
-   **A horizontal `auto` bar is raised by a child box reaching past the
-   content edge, not by a line of text doing it**: the check walks the
-   children, not the lines inside them, so a single unbreakable word
-   wider than its box overflows without raising one. The lines are
-   there to be measured -- `paintLines` walks them -- so this is a walk
-   to write rather than anything missing.
+1. **What is left of the CSS2 chapters**: paged media (§13). A wheel
+   over a scroll container scrolls it, the thumb follows, and the thumb
+   can be taken hold of and dragged. What is still missing around it is
+   `scroll-behavior`, a keyboard scroll of the focused container, and a
+   click on the empty part of a track, which every browser treats as a
+   page up or down. **Only the vertical thumb drags**: a horizontal one
+   is painted and is not yet hit tested, which is the same three
+   functions over the other axis.
 
    Positioning (§9.3), floats (§9.5), generated content (§12) and
    `overflow: hidden` clipping (§11) are done.

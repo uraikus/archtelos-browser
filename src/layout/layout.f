@@ -1485,6 +1485,53 @@ bool func boxScrollBy(b:Box, dy:int) {
 // content geometry can be compared with Chromium's directly.
 const int SCROLLBAR_PX = 15
 
+// The shortest a thumb gets, however long the content is, so that a very
+// long document still leaves something to take hold of.
+const int SCROLLBAR_MIN_THUMB = 12
+
+// How far the thumb is inset from the two long sides of its track.
+const int SCROLLBAR_THUMB_INSET = 4
+
+// The vertical thumb's geometry, in document coordinates. The painter
+// draws the thumb from these and the pointer is tested against them, so
+// where it looks and where it can be taken hold of are the same
+// rectangle by construction rather than by two formulas that agree.
+int func scrollTrackTop(b:Box) { return b.y + b.bt }
+
+int func scrollTrackHeight(b:Box) { return b.h - b.bt - b.bb - b.sbH }
+
+int func scrollVisibleHeight(b:Box) {
+    return maxInt(b.h - b.bt - b.bb - b.pt - b.pb - b.sbH, 1)
+}
+
+// A bar with nothing to scroll is an empty track, which is what Chromium
+// draws and what says at a glance that there is nothing below the fold.
+bool func scrollThumbShown(b:Box) {
+    return b.sbW > 0 && b.scrollH > scrollVisibleHeight(b)
+}
+
+int func scrollThumbHeight(b:Box) {
+    int trackH = scrollTrackHeight(b)
+    int thumbH = maxInt(Math.floorDiv(trackH * scrollVisibleHeight(b), maxInt(b.scrollH, 1)),
+                        SCROLLBAR_MIN_THUMB)
+    return thumbH > trackH ? trackH : thumbH
+}
+
+// The thumb sits as far down its own run as the content is through what
+// there is of it, so it reaches the bottom exactly when the content
+// does.
+int func scrollThumbTop(b:Box) {
+    int run = scrollTrackHeight(b) - scrollThumbHeight(b)
+    int range = maxInt(boxScrollRange(b), 1)
+    return scrollTrackTop(b) + Math.floorDiv(run * boxScrollTop(b), range)
+}
+
+int func scrollThumbLeft(b:Box) {
+    return b.x + b.bl + (b.w - b.bl - b.br) - b.sbW + SCROLLBAR_THUMB_INSET
+}
+
+int func scrollThumbWidth(b:Box) { return b.sbW - 2 * SCROLLBAR_THUMB_INSET }
+
 // One pass of a block's own content, which an `auto` scroll container
 // does twice: once to find out whether it overflows, and again with the
 // scrollbar's room taken out.
@@ -1503,13 +1550,41 @@ int func layoutBlockContent(b:Box, innerX:int, innerY:int, width:int) {
 // all -- the horizontal half of the scrollable overflow area. Only the
 // boxes are asked, not the lines inside them, which is why a single
 // unbreakable word wider than its box does not raise a scrollbar here.
+// How far the content of a box reaches past its own content edge. Both
+// walks below are asked only by a scroll container, so what they cost is
+// paid by the boxes that have one and by nothing else.
+//
+// A line counts as well as a child box: a word with nowhere to break is
+// wider than its container, and there is nothing layout can do about it
+// but let it overflow. The fragments carry their own positions in
+// document coordinates, so the rightmost edge of the rightmost fragment
+// is the whole of the measurement -- and the walk goes to the lines
+// rather than to the text boxes, because a text box has no geometry of
+// its own here.
+int func linesReachRight(b:Box) {
+    int right = 0
+    for int i = 0, i < b.lines.length, i++ {
+        Line ln = b.lines[i]
+        for int j = 0, j < ln.frags.length, j++ {
+            Fragment f = ln.frags[j]
+            if f.kind == FRAG_INLINE_BG { continue }
+            if f.x + f.w > right { right = f.x + f.w }
+        }
+    }
+    return right
+}
+
 bool func childrenReachPast(b:Box, edge:int) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT { continue }
         if c.x + c.w + c.mr > edge { return true }
+        // An anonymous box holds the inline content of a block that
+        // also has block-level children, and its lines are where that
+        // content's width is.
+        if c.kind == BOX_ANON && linesReachRight(c) > edge { return true }
     }
-    return false
+    return linesReachRight(b) > edge
 }
 
 int func childrenReach(b:Box, innerX:int) {
@@ -1519,11 +1594,17 @@ int func childrenReach(b:Box, innerX:int) {
         if c.kind == BOX_TEXT { continue }
         int r = c.x + c.w + c.mr - innerX
         if r > reach { reach = r }
+        if c.kind == BOX_ANON {
+            int lr = linesReachRight(c) - innerX
+            if lr > reach { reach = lr }
+        }
     }
+    int own = linesReachRight(b) - innerX
+    if own > reach { reach = own }
     return reach
 }
 
-// The containing block's own content height while its children are// The containing block's own content height while its children are
+// The containing block's own content height while its children are
 // being laid out, or -1 where that height is not definite. A percentage
 // height is a percentage of this (CSS2 §10.5), and computes to `auto`
 // where there is nothing to take a percentage of -- which is what makes
@@ -1718,9 +1799,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
 
     // The second pass an `auto` axis needs. A vertical bar appears when
     // the content is taller than the box; a horizontal one when a child
-    // reaches past its right edge, which is where this engine looks --
-    // a line of text too long to break is not counted, and todo.md says
-    // so.
+    // box or a line of text reaches past its right edge.
     if s.overflowY == OVERFLOW_AUTO && b.sbW == 0 && ownDefinite >= 0
         && contentH > ownDefinite {
         b.sbW = SCROLLBAR_PX
