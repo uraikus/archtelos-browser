@@ -87,7 +87,25 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    from the intrinsic size and the box and states the derivation beside
    the check. A radial gradient can be graded the same way.
 5. **Backgrounds and Borders 3, completed**: `border-image-repeat`'s
-   `round` and `space`, which fit the last tile rather than cutting it;
+   `round` and `space`, which fit the last tile rather than cutting it —
+   **and the scaling they are fitted into, which is a divergence nobody
+   had written down**. §6.5 scales each edge image to the border's
+   thickness before tiling it: the top edge is scaled vertically to the
+   top border width and horizontally by the same factor, and the tiles
+   are laid down at *that* size. This engine tiles the region at its own
+   natural size, so `border-image: url(nine.png) 3 repeat` on a 10px
+   border lays down three 3px tiles and a cut fourth where the standard
+   lays down exactly one 10px tile. The fixture hides it: a 3px region
+   in a 10px border is the one case where the scaled tile fills the edge
+   exactly, so the current test's premise — that a repeated edge shows
+   more of the white column than a stretched one — is a statement about
+   this engine rather than about the standard. Fixing the scaling comes
+   first, then `round` (rescale so a whole number fits) and `space`
+   (whole tiles, the leftover distributed around them) are arithmetic on
+   top of it. There is no Chromium pixel to check any of it against, so
+   the expectations have to be derived from §6.5's own algorithm and the
+   derivation written beside each check, as `tests/render/objectfit.f`
+   does;
    a blurred
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces. A
