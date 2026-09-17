@@ -1890,7 +1890,24 @@ void func paintOutline(b:Box) {
 }
 
 void func paintListMarker(b:Box) {
-    Style s = b.style
+    // The marker is drawn in its ::marker style where there is one, so
+    // the colour, the font size and the disc's radius all follow from
+    // one lookup rather than from three (layout.f).
+    Style s = markerStyleOf(b)
+    // A `content` on ::marker replaces the label the counter would give.
+    text declared = markerContentOf(b)
+    if declared != null {
+        if declared == '' { return }
+        Line dln = firstLineOf(b)
+        int dbase = dln != null ? dln.baseline : contentY(b) + fontAscent(s)
+        paintFill(s.color, s.effectiveOpacity)
+        setFontFor(s)
+        int dw = measureTextWidth(declared)
+        pDrawText(declared, s.listInside ? contentX(b)
+                                         : contentX(b) - dw - roundPx(s.fontSize.toFloat() * 0.5),
+                  dbase)
+        return
+    }
     // list-style-image replaces the marker entirely, at the image's own
     // size, and falls back to the type's marker when the image could
     // not be fetched (Lists 3 §3.1).

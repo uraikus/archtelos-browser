@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,833,664 |
+| This browser, the whole program | 2,838,064 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1103,3 +1103,18 @@ millisecond apart in opposite directions -- two rounds that do not agree
 on a sign, which is this machine rather than the feature. One round had
 a reading of 157 on the new side, and a single round is exactly what
 such a reading would have been allowed to decide.
+
+`::marker` costs **4,400 bytes** (2,833,664 → 2,838,064) and nothing
+measurable in time. This is one feature `generated.html` *can* speak
+for: the page is forty sections of a heading, a paragraph, a list and a
+table, so every list item on it paints a marker and reaches the two
+lookups the feature added. Both answer on their first line when no rule
+anywhere named `::marker`. Thirteen paired samples give
+
+```
+before: 105 108 108 110 110 109 108 109 107 109 111 109 132
+after:  110 106 111 111 114 109 108 118 109 109 109 111 105
+```
+
+— the same best of 105, medians a millisecond apart, and the highest
+reading on the side without the feature.

@@ -261,4 +261,62 @@ check(a1.children.length >= 3, 'the div has two anonymous runs and the paragraph
 checkEqInt(a1.children[0].lines[0].h, 50, 'the first run takes the pseudo-element line-height')
 checkEqInt(a1.children[2].lines[0].h, 20, 'the run after the paragraph does not')
 
+// ---- ::marker (CSS Lists 3 §3) ----------------------------------------
+// The pseudo-element styles a list item's marker. What it can change of
+// the geometry is how much room the marker takes, which an inside
+// marker takes out of the line: Chromium 141 on a 300px `ul` of
+// `list-style-position: inside` at 16px/20px monospace starts the item's
+// text at
+//
+//   plain disc                          x 22
+//   ::marker { color: red }             x 22 -- a colour moves nothing
+//   ::marker { content: "=> " }         x 29 -- three characters of it
+//   ::marker { font-size: 32px }        x 43
+//   li { font-size: 32px }              x 43 -- the same marker, reached
+//                                              the other way
+//
+// The last pair is the check that does not depend on either number:
+// a 32px marker is a 32px marker whether the font size came from the
+// pseudo-element or from the item, and the two differ in the width of
+// the item's own text, which is what says they are two different cases
+// rather than one written twice.
+Fragment func markerLine(rules:text, liStyle:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;font:16px/20px monospace">'
+        + '<style>ul{margin:0;padding:0;list-style-position:inside;width:300px}'
+        + rules + '</style>'
+        + '<ul><li id="m" style="' + liStyle + '">x</li></ul></body>', 'about:blank', 400)
+    arr[Box] lis = []
+    collectBoxesForTag(p.root, 'li', lis)
+    if lis.length == 0 { return null }
+    Box li = lis[0]
+    if li.lines.length == 0 { return null }
+    for int i = 0, i < li.lines[0].frags.length, i++ {
+        Fragment f = li.lines[0].frags[i]
+        if f.kind == FRAG_TEXT { return f }
+    }
+    return null
+}
+
+Fragment mPlain = markerLine('', '')
+Fragment mColour = markerLine('#m::marker { color: #ff0000 }', '')
+Fragment mBigMarker = markerLine('#m::marker { font-size: 32px }', '')
+Fragment mBigItem = markerLine('', 'font-size: 32px')
+Fragment mContent = markerLine('#m::marker { content: "=> " }', '')
+check(mPlain != null && mColour != null && mBigMarker != null
+      && mBigItem != null && mContent != null, 'every list item has a line of text')
+
+checkEqInt(mColour.x, mPlain.x, 'a colour on ::marker moves the text not at all')
+check(mBigMarker.x > mPlain.x, 'a bigger marker pushes the text along')
+checkEqInt(mBigMarker.x, mBigItem.x,
+    'and a 32px marker is the same width whichever rule made it 32px')
+check(mBigMarker.w < mBigItem.w,
+    'while the item text itself is only bigger where the item is')
+
+// `content` replaces the marker with the string it names, and the room
+// it takes is that string measured in the marker font -- which is the
+// text measurer's answer rather than a number written here.
+checkEqInt(mContent.x - mPlain.x,
+           measureWidth(mContent.box.style, '=> ') - listMarkerAdvance(mPlain.box.style, 1),
+           '`content` on ::marker takes the room its own string measures')
+
 finish('pseudo')

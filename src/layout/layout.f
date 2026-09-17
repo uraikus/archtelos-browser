@@ -2476,6 +2476,28 @@ void func applyFloatsToLine() {
 // line. The painter draws the marker into exactly this space, so the
 // two agree by construction rather than by two formulas that look
 // alike.
+// The style a list item's marker is drawn in: its ::marker rule where
+// there is one, and the item's own style otherwise. The pseudo-element's
+// style is computed with the item as its parent, so an inherited
+// property -- `list-style-type`, `list-style-position`, `color` -- is
+// already the item's unless the rule changed it.
+//
+// A page that names no ::marker pays one boolean.
+Style func markerStyleOf(b:Box) {
+    if !anyMarker || b.node == null || b.node.id <= 0 { return b.style }
+    if pseudoHasMarker[pseudoKey(b.node.id, 'marker')] == null { return b.style }
+    return pseudoStyleOf(b.node.id, 'marker')
+}
+
+// What the marker says. A `content` on ::marker replaces the counter
+// label with its own string, which is what `content: counter(list-item)`
+// is for -- and an empty one draws nothing at all.
+text func markerContentOf(b:Box) {
+    if !anyMarker || b.node == null || b.node.id <= 0 { return null }
+    if pseudoHasMarker[pseudoKey(b.node.id, 'marker')] == null { return null }
+    return pseudoContentOf(b.node.id, 'marker')
+}
+
 int func listMarkerAdvance(s:Style, index:int) {
     if s.listStyle == LIST_NONE { return 0 }
     int fs = s.fontSize
@@ -2496,7 +2518,10 @@ void func beginLine() {
     // An inside marker is part of the first line and pushes the content
     // along; an outside one hangs in the margin and costs nothing here.
     if ifcLineCount == 0 && ifcBox.isListItem && ifcBox.style.listInside {
-        ifcX = ifcX + listMarkerAdvance(ifcBox.style, ifcBox.listIndex)
+        Style ms = markerStyleOf(ifcBox)
+        text mc = markerContentOf(ifcBox)
+        ifcX = ifcX + (mc == null ? listMarkerAdvance(ms, ifcBox.listIndex)
+                                  : measureWidth(ms, mc))
     }
     ifcPendingSpace = false
     ifcLineHasContent = false

@@ -254,4 +254,33 @@ check(getPixelColor(25, 75) == lime, 'color(display-p3) paints through the casca
 check(getPixelColor(25, 105) == blue, 'hwb() in the border shorthand')
 check(getPixelColor(35, 125) == black, 'lab() paints inside that border')
 
+// ---- ::marker reaches the painter -------------------------------------
+// The geometry ::marker changes is checked in tests/unit/test_pseudo.f
+// against Chromium's own numbers. What a pixel adds is the half it
+// cannot see: a colour changes no geometry at all, so a rule that never
+// reached the painter would pass every check there and none here.
+color func markerPixel(rules:text) {
+    Page p = pageFromHtml(listHead
+        + '<style>ul{margin:0;padding:0;list-style-position:inside}' + rules + '</style>'
+        + '<ul><li id="m">x</li></ul></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    // The disc sits at the start of the first line and spans x 3 to 8,
+    // its edge pixels anti-aliased; x=5 is inside it, so it carries the
+    // marker's own colour rather than a blend of it.
+    return getPixelColor(5, 10)
+}
+
+color markerRed = '#ff0000'
+color plainMarker = markerPixel('')
+check(!(plainMarker == markerRed), 'the marker is not red without a rule saying so')
+check(markerPixel('#m::marker { color: #ff0000 }') == markerRed,
+      'and `::marker { color }` paints it in that colour')
+
+// `:marker` with one colon is not a pseudo-element -- only the four the
+// standard gives a legacy spelling are -- so it matches nothing and the
+// marker keeps its own colour.
+check(markerPixel('#m:marker { color: #ff0000 }') == plainMarker,
+      'a one-colon `:marker` is not a pseudo-element and changes nothing')
+
 finish('render')

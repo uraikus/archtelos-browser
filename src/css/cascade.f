@@ -78,6 +78,9 @@ bool pseudoNonTag = false
 // whether any rule anywhere asks for one at all.
 map[bool] pseudoHasFirstLetter = {}
 map[bool] pseudoHasFirstLine = {}
+// Which elements have a ::marker style, and whether any rule asks.
+map[bool] pseudoHasMarker = {}
+bool anyMarker = false
 bool anyFirstLetter = false
 // Whether any rule on the page names ::first-line. A page that does not
 // pays one boolean per element and nothing else.
@@ -182,6 +185,8 @@ void func cascadeReset() {
     pseudoNonTag = false
     pseudoHasFirstLetter = {}
     pseudoHasFirstLine = {}
+    pseudoHasMarker = {}
+    anyMarker = false
     anyFirstLetter = false
     anyFirstLine = false
     firstLineStyles = {}
@@ -244,6 +249,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                 text pk = selectorKey(sel)
                 if sel.pseudoElement == 'first-letter' { anyFirstLetter = true }
                 if sel.pseudoElement == 'first-line' { anyFirstLine = true }
+                if sel.pseudoElement == 'marker' { anyMarker = true }
                 if pk == '*' || pk.charCodeAt(0) == CH_HASH || pk.charCodeAt(0) == CH_DOT {
                     pseudoNonTag = true
                 } else {
@@ -1473,6 +1479,25 @@ void func computeFirstLineStyles(n:Node) {
     computeFirstLineSubtree(n, ps)
 }
 
+// ::marker styles a list item's marker (CSS Lists 3 §3). Like
+// ::first-letter it restyles something already there, so an empty rule
+// is still a rule -- but unlike it, a `content` replaces what the marker
+// says, so the string is kept beside the style.
+void func computeMarkerFor(n:Node, own:Style) {
+    arr[Match] matches = collectPseudoMatches(n, 'marker')
+    if matches.length == 0 { return }
+    map[text] props = {}
+    cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    applyMatches(props, matches)
+    arr[text] noQuotes = []
+    contentQuotePairs = noQuotes
+    if anyQuotes { contentQuotePairs = parseQuotePairs(own.quotes.toAscii()) }
+    text content = resolveContent(styleProp(props, 'content'), n)
+    pseudoStyles[pseudoKey(n.id, 'marker')] = computeStyleValues(n, own, false, props)
+    if content != null { pseudoContents[pseudoKey(n.id, 'marker')] = content }
+    pseudoHasMarker[pseudoKey(n.id, 'marker')] = true
+}
+
 void func computePseudoElements(n:Node, own:Style) {
     if !anyPseudoRules { return }
     // One map lookup rules out every element no pseudo rule names,
@@ -1483,6 +1508,7 @@ void func computePseudoElements(n:Node, own:Style) {
     computePseudoFor(n, own, 'after')
     if anyFirstLetter { computeFirstLetterFor(n, own) }
     if anyFirstLine { computeFirstLineFor(n, own) }
+    if anyMarker { computeMarkerFor(n, own) }
 }
 
 // A style attribute holding non-ASCII (a font name, say): rewrite the

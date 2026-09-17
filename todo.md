@@ -67,9 +67,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    far one. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
 3. **The pseudo-elements this does not have.** `::before`, `::after`,
-   `::first-letter` and `::first-line` are done; `::marker`,
+   `::first-letter`, `::first-line` and `::marker` are done;
    `::selection`, `::placeholder`, `::backdrop` and `::target-text` are
-   not. Two limits of `::first-line` are worth naming rather than
+   not, and the first three of those need something this browser has no
+   notion of -- a selection, a placeholder attribute laid out as text,
+   and a top layer. Two limits of `::first-line` are worth naming rather than
    leaving to be discovered: the restricted property set the standard
    defines for it is not enforced, so a declaration the standard would
    ignore there is applied instead (none of the ones that would matter

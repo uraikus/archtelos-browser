@@ -295,8 +295,15 @@ first line is bold and red and stays bold and black on the second. It
 changes the line's own metrics as well as its colours — a first line
 with a bigger font is taller and holds fewer words — and where a block's
 inline content sits in an anonymous box, beside block-level siblings,
-the rule belongs to the first of those boxes and to no other. A counter
-always renders in decimal.
+the rule belongs to the first of those boxes and to no other.
+
+**`::marker`** styles a list item's marker: a colour changes nothing but
+the pixels, a `font-size` makes the marker as wide as one the item's own
+font size would have made, and a `content` replaces the label with its
+own string — which is where `content: counter(list-item)` belongs. It
+has only the two-colon spelling the standard gives it; `:marker` with
+one colon is not a pseudo-element and matches nothing. A counter always
+renders in decimal.
 
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,

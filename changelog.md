@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `::marker`
+
+The pseudo-element restyles a list item's marker (CSS Lists 3 §3). A
+colour on it changes no geometry; a `font-size` makes the marker wider
+and pushes an inside item's text along; a `content` replaces the label
+the counter would give, which is where `content: counter(list-item)`
+belongs.
+
+Chromium 141 on a 300px `ul` of `list-style-position: inside` at
+16px/20px monospace starts the item's text at x 22 for a plain disc, 22
+under `::marker { color: red }`, 29 under `content: "=> "`, and 43 under
+`font-size: 32px`. The last is the row worth having: `li { font-size:
+32px }` puts the text at 43 as well, so a 32px marker is a 32px marker
+whichever rule made it one -- and the item's own text is 10px wide in
+the first case and 19 in the second, which is what says they are two
+different cases rather than one written twice. This engine's disc is
+42px rather than 43 at that size, because its own metric is 1.3 times
+the font size where Chromium's is a hair more, so the checks are written
+as that agreement rather than against either number.
+
+**The style is one lookup, not three.** The painter read the item's
+style for the colour, the font size and the disc's radius; it reads the
+marker's style for all three now, and because a ::marker style is
+computed with the item as its parent, every inherited property --
+`list-style-type`, `list-style-position`, `color` -- is already the
+item's unless the rule changed it.
+
+`:marker` with one colon is **not** a pseudo-element: only the four the
+standard gives a legacy spelling are, so the selector parser now
+separates the two lists and `:marker` falls through to the pseudo-class
+handling, where it matches nothing. There is a check for that, because
+a parser that accepted it would have passed every other check here.
+
+**The first pixel check was reading white.** A colour changes no
+geometry, so only a pixel can say a ::marker colour reached the painter
+at all -- and the probe read x=10, which is past the disc. The disc
+spans x 3 to 8 with its edges anti-aliased; x=5 is inside it. The engine
+was right and the check was looking in the wrong place.
+
 ### The horizontal axis scrolls too
 
 The entry above left the horizontal thumb undragged and called it "the

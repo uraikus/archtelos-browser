@@ -60,7 +60,7 @@ struct Compound {
     classes:arr[text]
     attrs:arr[AttrSel]
     pseudos:arr[text]       // e.g. 'first-child', 'nth-child:2:1'
-    pseudoElement:text      // '' = none; 'before', 'after', 'first-letter', 'first-line'
+    pseudoElement:text      // '' = none; 'before', 'after', 'first-letter', 'first-line', 'marker'
     // The functional pseudo-classes that take a selector list of their
     // own: `:not()`, `:is()`, `:where()` and `:has()`. One list serves
     // all four because they differ only in how a match is read, which
@@ -729,17 +729,26 @@ Compound func parseCompound() {
             int end = scanIdent(start)
             ascii name = asciiLower(selSrc.slice(start, end))
             selPos = end
-            // `::before`, `::after`, `::first-letter` and
-            // `::first-line`, and the one-colon spellings CSS2 used,
-            // name a box other than this element's own.
-            bool isElementPseudo = name == 'before' || name == 'after'
+            // `::before`, `::after`, `::first-letter` and `::first-line`
+            // name a box other than this element's own, and each has a
+            // one-colon spelling CSS2 used. `::marker` names one too and
+            // has no such spelling: `:marker` is not a pseudo-element,
+            // so it falls through to the pseudo-class handling below and
+            // matches nothing.
+            bool isLegacyPseudo = name == 'before' || name == 'after'
                 || name == 'first-line' || name == 'first-letter'
-            if doubleColon || isElementPseudo {
+            bool isElementPseudo = isLegacyPseudo || name == 'marker'
+            if doubleColon {
                 if isElementPseudo {
                     comp.pseudoElement = name.toText()
                 } else {
                     comp.unsupported = true
                 }
+                any = true
+                continue
+            }
+            if isLegacyPseudo {
+                comp.pseudoElement = name.toText()
                 any = true
                 continue
             }
