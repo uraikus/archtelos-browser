@@ -192,4 +192,75 @@ checkEqInt(byId(pmin.root, 'f6i').w, 50,
 checkEqInt(byId(pmin.root, 'f7i').w, wordFour,
            'and stops at its longest word, which is what its content needs')
 
+// ---- `order` re-sorts the items, and keeps ties in document order ------
+// `order` changes the order the items are laid out and painted in and
+// nothing about the document. Items sort by it and, within one value,
+// by where they are written -- which is what makes the sort a stable
+// one rather than any sort at all.
+//
+// Chromium 141 on this row, a 400px container holding five items of
+// 50, 60, 70, 80 and 90 pixels with `order` 2, 0, -1, 2, 0:
+//
+//   the -1 item first at x = 0, then the two 0 items in document order
+//   at 70 and 130, then the two 2 items in document order at 220 and 270
+//
+// and on the same three items in a `row-reverse` container, which lays
+// the same sequence out from the other end: -1 at 330, 0 at 270, 2 at 220.
+Page pord = pageFromHtml(head
+    + '<div id="oc" style="display:flex;width:400px">'
+    + '<div id="oa" style="width:50px;height:20px;order:2"></div>'
+    + '<div id="ob" style="width:60px;height:20px"></div>'
+    + '<div id="occ" style="width:70px;height:20px;order:-1"></div>'
+    + '<div id="od" style="width:80px;height:20px;order:2"></div>'
+    + '<div id="oe" style="width:90px;height:20px"></div></div>'
+    + '<div id="oc2" style="display:flex;width:400px;flex-direction:row-reverse">'
+    + '<div id="of" style="width:50px;height:20px;order:2"></div>'
+    + '<div id="og" style="width:60px;height:20px"></div>'
+    + '<div id="oh" style="width:70px;height:20px;order:-1"></div></div></body>',
+    'about:blank', 400)
+checkEqInt(byId(pord.root, 'occ').x, 0, 'the item with the lowest order comes first')
+checkEqInt(byId(pord.root, 'ob').x, 70, 'then the first item that left order alone')
+checkEqInt(byId(pord.root, 'oe').x, 130, 'and the second, in the order they are written')
+checkEqInt(byId(pord.root, 'oa').x, 220, 'then the first of the two that asked for 2')
+checkEqInt(byId(pord.root, 'od').x, 270, 'and the second, which is what makes the sort a stable one')
+checkEqInt(byId(pord.root, 'oh').x, 330, '`row-reverse` lays the same sequence out from the other end')
+checkEqInt(byId(pord.root, 'og').x, 270, 'with the next one beside it')
+checkEqInt(byId(pord.root, 'of').x, 220, 'and the highest order last, which is leftmost here')
+
+// ---- a reverse direction packs from the far edge -----------------------
+// `row-reverse` and `column-reverse` run the main axis the other way, so
+// the main-start edge is the right one (or the bottom) and
+// `justify-content: flex-start` packs the items against it. Reversing
+// the sequence is not enough on its own: it puts the items in the right
+// order and leaves the free space on the wrong side, which is what this
+// engine did -- a `row-reverse` row of two items sat at the left edge
+// where Chromium puts it at the right.
+//
+// Chromium 141, a 400px container with items of 50 and 60 pixels:
+//
+//   row-reverse                       the first item at 350, the second at 290
+//   row-reverse, justify-content:     the first at 60, the second at 0
+//     flex-end
+//   column-reverse, 200px tall,       the first 180 down, the second 150
+//     items 20 and 30 tall
+Page prev = pageFromHtml(head
+    + '<div id="rv" style="display:flex;flex-direction:row-reverse;width:400px">'
+    + '<div id="rva" style="width:50px;height:20px"></div>'
+    + '<div id="rvb" style="width:60px;height:20px"></div></div>'
+    + '<div id="rv2" style="display:flex;flex-direction:row-reverse;width:400px;'
+    + 'justify-content:flex-end"><div id="rvc" style="width:50px;height:20px"></div>'
+    + '<div id="rvd" style="width:60px;height:20px"></div></div>'
+    + '<div id="rv3" style="display:flex;flex-direction:column-reverse;width:400px;height:200px">'
+    + '<div id="rve" style="width:50px;height:20px"></div>'
+    + '<div id="rvf" style="width:60px;height:30px"></div></div></body>',
+    'about:blank', 400)
+checkEqInt(byId(prev.root, 'rva').x, 350, 'row-reverse puts the first item against the right edge')
+checkEqInt(byId(prev.root, 'rvb').x, 290, 'and the second beside it, running leftwards')
+checkEqInt(byId(prev.root, 'rvc').x, 60, 'flex-end in a reverse row packs against the left edge')
+checkEqInt(byId(prev.root, 'rvd').x, 0, 'with the second item reaching it')
+int colTop = byId(prev.root, 'rv3').y
+checkEqInt(byId(prev.root, 'rve').y - colTop, 180,
+           'column-reverse puts the first item against the bottom edge')
+checkEqInt(byId(prev.root, 'rvf').y - colTop, 150, 'and the second above it')
+
 finish('flex')

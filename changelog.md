@@ -5,6 +5,24 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A reverse flex direction packs against the far edge
+
+`row-reverse` and `column-reverse` run the main axis the other way, so
+the main-start edge is the right one (or the bottom) and
+`justify-content: flex-start` packs the items against it. This engine
+reversed the sequence and laid it out from the near edge, which put the
+items in the right order and the free space on the wrong side: a
+`row-reverse` row of two items sat at the left edge where Chromium puts
+it at the right, and `flex-end` sat at the right where Chromium puts it
+at the left. The items are laid out forwards now and each position
+mirrored against the line's own extent, which is one operation for both
+the order and the packing.
+
+It came out of writing a test for `order`, which todo.md listed as
+missing and which turned out to be implemented, with no test of its own:
+five checks of the sort and its stability pass unchanged, and the three
+about `row-reverse` beside them did not.
+
 ### A flex item does not shrink below what its content needs
 
 Flexible Box 1 §4.5 gives an item whose `min-width` is `auto` -- the

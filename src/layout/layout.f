@@ -3980,6 +3980,10 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     arr[int] lineCross = []
     arr[int] lineBaseline = []
     arr[int] lineLeftover = []
+    // How much main axis each line actually uses, which is what a
+    // reverse direction measures its positions back from where the
+    // container's own main size is indefinite.
+    arr[int] lineUsedMain = []
     arr[int] lineAutoMargins = []
     for int li = 0, li < lines, li++ {
         int first = lineFirst[li]
@@ -4061,6 +4065,12 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
             spare = 0
         }
         if spare < 0 { spare = 0 }
+        int usedMain = mainGap * (n - 1)
+        for int i = first, i <= last, i++ {
+            Box it = items[i]
+            usedMain = usedMain + mainSize[i] + (row ? it.ml + it.mr : it.mt + it.mb)
+        }
+        lineUsedMain.push(usedMain)
         lineLeftover.push(spare)
         lineAutoMargins.push(autos)
 
@@ -4143,8 +4153,16 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
         int autoShare = autos > 0 ? Math.floorDiv(leftover, autos) : 0
         int cursor = 0
         int autoSeen = 0
+        // A reverse direction runs the main axis the other way: the
+        // items keep their order and the whole of it is measured from
+        // the far edge, so the first item is the rightmost (or the
+        // lowest). Laying them out forwards and mirroring each position
+        // is what puts `justify-content: flex-start` against that far
+        // edge, which reversing the sequence alone does not.
+        bool reversed = flexIsReverse(s)
+        int mirrorBase = mainAvail >= 0 ? mainAvail : lineUsedMain[li]
         for int k = 0, k < n, k++ {
-            int idx = flexIsReverse(s) ? last - k : first + k
+            int idx = first + k
             Box item = items[idx]
             int size = mainSize[idx]
             int align = item.style.alignSelf == BOXALIGN_AUTO ? s.alignItems : item.style.alignSelf
@@ -4170,6 +4188,10 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
 
             int offset = autos > 0 ? 0 : flexOffsetFor(s.justifyContent, leftover, n, k, mainGap)
             int mainPos = cursor + offset + leadAuto
+            if reversed {
+                int outerMain = size + (row ? item.ml + item.mr : item.mt + item.mb)
+                mainPos = mirrorBase - mainPos - outerMain
+            }
             int crossPos = 0
             int itemCross = row ? item.h + item.mt + item.mb : item.w + item.ml + item.mr
             if align == BOXALIGN_BASELINE && row {
