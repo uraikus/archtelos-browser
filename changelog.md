@@ -32,8 +32,16 @@ the reason to measure first rather than write first: with four 100px
 children in an 85px snapport, Chromium leaves 10 at 10, pulls 40 back to
 15 -- the first child's own end -- and sends 60 on to 100.
 
-The property instrument goes from 214 to 224 of 405, and `--fields` says
-each of the ten moved its own field. All ten change where a scroll comes
+The eight logical longhands -- `scroll-padding-block-start` and its
+siblings -- are the physical eight under the names a writing mode gives
+them, so they are renamed where every other logical property here is
+renamed rather than implemented again. Each is checked against the
+physical one it stands for *and* against the undeclared case, because a
+pair of aliases that both did nothing would agree with each other
+perfectly.
+
+The property instrument goes from 214 to 232 of 405, and `--fields` says
+each of the eighteen moved its own field. All ten change where a scroll comes
 to rest, so none of them is a count that moved without anything else
 moving.
 

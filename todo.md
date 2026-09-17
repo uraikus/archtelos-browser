@@ -288,18 +288,13 @@ image does not have.
 
 `scroll-snap-type`, `scroll-snap-align`, `scroll-padding` and
 `scroll-margin` are in, and a scroll comes to rest on a snap position.
-Three things are not:
+Two things are not:
 
 **`scroll-snap-stop: always`**, which forbids a scroll from passing a
 snap point even when the gesture would carry it further. That needs a
 notion this engine has not got: one *gesture*. A wheel event here is a
 scroll position, not a movement with a magnitude that might skip several
 points, so there is nothing yet for `always` to stop.
-
-**The logical `scroll-padding` and `scroll-margin` longhands** --
-`scroll-padding-block-start` and its seven siblings. The physical eight
-are done; the logical ones map onto them the way every other logical
-property here does, so this is the existing machinery and not new work.
 
 **Snap areas deeper than a child.** The positions come from the
 container's own children, which is the depth this engine fragments and

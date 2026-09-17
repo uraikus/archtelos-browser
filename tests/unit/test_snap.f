@@ -139,6 +139,27 @@ checkEqInt(snapTo(Y_MAND, 'scroll-snap-align:start;scroll-margin-top:10px', 6, 3
 checkEqInt(snapTo(Y_MAND, 'scroll-snap-align:start;scroll-margin:10px', 6, 30, 46), 50,
            'and its shorthand as well')
 
+// ---- the logical longhands ----------------------------------------------
+// `scroll-padding-block-start` and its seven siblings are the physical
+// eight under the names a writing mode gives them, which in the
+// left-to-right horizontal mode this engine lays out in is a renaming.
+// Each is checked against the physical one it stands for, so a rename
+// that went to the wrong edge would show as a different landing.
+checkEqInt(snapTo('scroll-snap-type:y mandatory;scroll-padding-block-start:10px',
+                  'scroll-snap-align:start', 6, 30, 46),
+           snapTo('scroll-snap-type:y mandatory;scroll-padding-top:10px',
+                  'scroll-snap-align:start', 6, 30, 46),
+           'scroll-padding-block-start is scroll-padding-top')
+checkEqInt(snapTo(Y_MAND, 'scroll-snap-align:start;scroll-margin-block-start:10px', 6, 30, 46),
+           snapTo(Y_MAND, 'scroll-snap-align:start;scroll-margin-top:10px', 6, 30, 46),
+           'and scroll-margin-block-start is scroll-margin-top')
+// Both of those would also pass if neither declaration did anything, so
+// the pair has to differ from the undeclared case as well.
+check(snapTo('scroll-snap-type:y mandatory;scroll-padding-block-start:10px',
+             'scroll-snap-align:start', 6, 30, 46)
+      != snapTo(Y_MAND, 'scroll-snap-align:start', 6, 30, 46),
+      'and each of them moves the landing at all')
+
 // ---- a snap area taller than the snapport --------------------------------
 // A child that overflows the snapport is a *range* of valid positions
 // rather than a point (§6.1), so a position inside it is left alone and

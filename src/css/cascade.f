@@ -3357,6 +3357,25 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // aliases rather than a feature of their own.
     if name == 'padding-block-start' { name = 'padding-top' }
     if name == 'padding-block-end' { name = 'padding-bottom' }
+    // The scroll box's two families take the same aliases, because a
+    // snapport's padding and a snap area's margin are the box's own
+    // edges under other names (Scroll Snap 1 §6.2, §6.3).
+    if name == 'scroll-padding-block-start' { name = 'scroll-padding-top' }
+    if name == 'scroll-padding-block-end' { name = 'scroll-padding-bottom' }
+    if name == 'scroll-padding-inline-start' {
+        name = cascadeApplyRtl ? 'scroll-padding-right' : 'scroll-padding-left'
+    }
+    if name == 'scroll-padding-inline-end' {
+        name = cascadeApplyRtl ? 'scroll-padding-left' : 'scroll-padding-right'
+    }
+    if name == 'scroll-margin-block-start' { name = 'scroll-margin-top' }
+    if name == 'scroll-margin-block-end' { name = 'scroll-margin-bottom' }
+    if name == 'scroll-margin-inline-start' {
+        name = cascadeApplyRtl ? 'scroll-margin-right' : 'scroll-margin-left'
+    }
+    if name == 'scroll-margin-inline-end' {
+        name = cascadeApplyRtl ? 'scroll-margin-left' : 'scroll-margin-right'
+    }
     if name == 'inset-block-start' { name = 'top' }
     if name == 'inset-block-end' { name = 'bottom' }
     if name == 'inset-inline-start' { name = cascadeApplyRtl ? 'right' : 'left' }
