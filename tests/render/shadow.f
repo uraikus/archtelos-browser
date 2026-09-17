@@ -68,6 +68,98 @@ check(getPixelColor(5, 40) == white, 'and fades out before it gets far')
 bool nearIsStronger = getPixelColor(18, 40) != getPixelColor(26, 40)
 check(nearIsStronger, 'and is stronger near the box than further from it')
 
+// ---- the falloff is the Gaussian the standard asks for (§7.1) -----------
+// A shadow's blur is a Gaussian blur of the shadow's own shape whose
+// standard deviation is half the blur radius. A Gaussian blur of a
+// rectangle has a closed form: along one axis it is the difference of
+// the Gaussian's own integral at the two edges, and the whole of it is
+// the two axes multiplied, because a two-dimensional Gaussian is two
+// one-dimensional ones. That is what makes a corner a quarter of the
+// colour where an edge is a half of it.
+//
+// The box is 60x40 at (20,20), so it runs from x = 20 to x = 80 and
+// from y = 20 to y = 60, and `box-shadow: 0 0 20px red` blurs it with a
+// standard deviation of 10. **The box is only four standard deviations
+// tall, so the two horizontal edges' blurs overlap through the whole of
+// it**: along the middle row the vertical term is 0.954, not 1, and an
+// expectation that read the alpha half a pixel past the right edge as
+// the Gaussian's own 0.480 would be wrong by that factor. It is the
+// difference of the two integrals that is right, and the difference is
+// what these numbers are:
+//
+//   (80, 40)  half a pixel past the right edge     0.458089
+//   (90, 40)  a standard deviation past it         0.140137
+//   (100, 40) two standard deviations              0.019258
+//   (40, 19)  half a pixel above the top edge      0.470329
+//   (80, 60)  diagonally past the bottom right     0.230446
+//   (19, 19)  and past the top left                0.230446
+//
+// Chromium 141 paints this page -- read with `tests/chromium.py pixels`
+// -- as #ff8989, #ffdcdc and #fffcfc along that row and #ffc4c4 at the
+// corner, which over white is 0.463, 0.137, 0.012 and 0.231 of red
+// against the 0.458, 0.140, 0.019 and 0.230 here. The corner is exact
+// to the byte; the others are Chromium's own approximation, which
+// blurs with three box blurs rather than with a Gaussian.
+//
+// The check paints a patch of the same red at the alpha the standard
+// asks for, on the same white page, and requires the shadow's pixel to
+// be that colour -- an expectation this engine cannot meet by being
+// consistent with itself.
+//
+// One eight-bit level of slack, because the painter quantizes twice:
+// one axis's profile is an image, so it is rounded to a byte before the
+// other axis's share multiplies it, and a product of two rounded
+// numbers can land a level away from the product of the exact ones. It
+// shows in the tails, where a level is a large share of a small alpha,
+// and the checks that pass exactly are marked as such below. A level is
+// far less than the difference between this falloff and any other: the
+// nested rectangles this replaced were a whole 0.52 out at the edge.
+color func patchAt(alpha:float) {
+    fillStyle(white)
+    fillAlpha(1.0)
+    drawRect(300, 200, 12, 12)
+    fillStyle(red)
+    fillAlpha(alpha)
+    drawRect(300, 200, 12, 12)
+    fillAlpha(1.0)
+    return getPixelColor(305, 205)
+}
+
+bool func isAlpha(c:color, alpha:float) {
+    return c == patchAt(alpha) || c == patchAt(alpha + 0.002)
+        || c == patchAt(alpha - 0.002)
+}
+
+shot('0 0 20px red')
+color edgeHalf = getPixelColor(80, 40)
+color edgeOneSigma = getPixelColor(90, 40)
+color edgeTwoSigma = getPixelColor(100, 40)
+color pastCorner = getPixelColor(80, 60)
+color farOut = getPixelColor(115, 40)
+color leftEdge = getPixelColor(19, 40)
+color topEdge = getPixelColor(40, 19)
+color topLeft = getPixelColor(19, 19)
+check(edgeHalf == patchAt(0.458089), 'against its own edge a blurred shadow is half its colour')
+check(edgeOneSigma == patchAt(0.140137), 'a standard deviation out it is the Gaussian\'s integral')
+check(isAlpha(edgeTwoSigma, 0.019258), 'and two standard deviations out, to a level')
+check(pastCorner == patchAt(0.230446),
+      'a corner is the two axes multiplied, as a two-dimensional Gaussian is')
+check(farOut == white, 'and three and a half standard deviations out there is nothing left')
+check(leftEdge == patchAt(0.458089), 'the left edge falls off the same way as the right')
+check(topEdge == patchAt(0.470329),
+      'and the top by its own axis, which the box is wide enough not to crowd')
+check(topLeft == patchAt(0.230446), 'with the same product at that corner')
+
+// Half the blur radius is half the standard deviation. The box is eight
+// of those tall now, so the vertical term is 0.99993 along the middle
+// row and the horizontal one carries the answer: 0.460141 half a pixel
+// out, 0.135657 five and a half pixels out, nothing at 18.
+shot('0 0 10px red')
+check(getPixelColor(80, 40) == patchAt(0.460141),
+      'a narrower blur is steeper against the edge')
+check(getPixelColor(85, 40) == patchAt(0.135657), 'and falls off in proportion to it')
+check(getPixelColor(98, 40) == white, 'reaching nothing three standard deviations out')
+
 // ---- no blur, no spread, no offset paints nothing visible ---------------
 shot('0 0 0 red')
 check(getPixelColor(15, 40) == white, 'a shadow with no offset, blur or spread hides behind the box')

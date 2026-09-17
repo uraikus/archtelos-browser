@@ -87,13 +87,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    algorithms, which is exact where it applies; what the pixel mode adds
    is an answer for the questions no algorithm settles on its own, such
    as where a tiling starts.
-5. **Backgrounds and Borders 3, completed**: a blurred shadow whose
-   falloff is a real Gaussian rather than the accumulated alpha of
-   nested rectangles the canvas's lack of a blur forces, which
-   `tests/chromium.py pixels` can now be asked for:
-   Chromium's own profile under `box-shadow: 0 0 20px #000` ramps from
-   nothing 25px out to `#858585` against the box's edge, half the
-   shadow's alpha at the edge being what a Gaussian blurred step gives.
+5. **Backgrounds and Borders 3, completed**: **an `inset` shadow's
+   blur**, which is still frames whose alpha accumulates inward where an
+   outer shadow's is now the standard's Gaussian worked out from its
+   closed form. The arithmetic is already there and the inside is the
+   complement of the outside: one minus the two axes multiplied, which
+   is what two passes at `1 - fx` and `1 - fy` accumulate to, so it
+   needs no per-pixel work at all and not even the ramp images the
+   corners of an outer shadow use. `text-shadow`'s blur is the same
+   approximation and the same two passes would serve it. **And a
+   shadow does not follow a `border-radius`**: it is drawn as a
+   rectangle whatever the box's corners do, which a rounded card shows
+   at each corner.
 
    A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as

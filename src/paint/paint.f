@@ -261,12 +261,9 @@ void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
 // and Borders 3 §6). Each is the border box offset by its two lengths
 // and grown by its spread.
 //
-// The canvas has no blur. The falloff is drawn as nested rectangles, one
-// per pixel of the blur's reach, each at a small alpha: where more of
-// them overlap the alpha accumulates, so the shadow is densest against
-// its own edge and fades outwards. The shape and extent are exact and
-// the curve of the fade is not, which is the honest trade for a
-// primitive the canvas does not have.
+// The canvas has no blur, so the falloff is computed rather than
+// filtered -- which a rectangle allows, because a Gaussian blur of one
+// has a closed form. See gaussIntegral and paintBlurredRect below.
 //
 // `inset` shadows are painted by paintInsetShadows, after the
 // background rather than under it.
@@ -287,20 +284,145 @@ void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
             fillAlpha(1.0)
             continue
         }
-        // The blur reaches about the blur radius beyond the shadow's
-        // edge. Each ring is drawn at an alpha that, accumulated over
-        // the rings that cover it, reaches full opacity at the core.
-        int reach = sh.blur
-        float step = 1.0 / (reach + 1).toFloat()
-        applyFillColor(sh.color)
-        for int r = reach, r >= 1, r-- {
-            fillAlpha(step * s.effectiveOpacity)
-            pDrawRect(sx - r, sy - r, sw + r + r, sh2 + r + r)
-        }
-        paintFill(sh.color, s.effectiveOpacity)
-        pDrawRect(sx, sy, sw, sh2)
-        fillAlpha(1.0)
+        paintBlurredRect(sx, sy, sw, sh2, sh.color, s.effectiveOpacity, sh.blur)
     }
+}
+
+// The Gaussian's own integral: the share of a blur's weight that is
+// still on one side of a point `z` standard deviations past it. `erf`
+// is Abramowitz and Stegun 7.1.26, whose error is below 1.5e-7 -- a
+// thousandth of the 1/255 a painted pixel can tell apart.
+float func gaussIntegral(z:float) {
+    float x = z / 1.4142135623730951
+    bool negative = x < 0.0
+    float ax = negative ? -x : x
+    float t = 1.0 / (1.0 + 0.3275911 * ax)
+    float poly = t * (0.254829592 + t * (0.0 - 0.284496736 + t * (1.421413741
+               + t * (0.0 - 1.453152027 + t * 1.061405429))))
+    float e = 1.0 - poly * Math.exp(0.0 - ax * ax)
+    float erf = negative ? 0.0 - e : e
+    return 0.5 * (1.0 + erf)
+}
+
+// One axis of a blurred rectangle: what a point at `p` keeps of a
+// rectangle running from `lo` to `hi`, blurred by `sigma`. A Gaussian
+// blur of a rectangle is the difference of the Gaussian's integrals at
+// its two edges, and the blur of a two-dimensional rectangle is the two
+// axes multiplied -- which is what makes a corner a quarter of the
+// colour where an edge is a half of it.
+float func blurAxis(p:float, lo:float, hi:float, sigma:float) {
+    return gaussIntegral((p - lo) / sigma) - gaussIntegral((p - hi) / sigma)
+}
+
+// One axis's profile as a one pixel tall image, so a whole row of a
+// blurred corner can be drawn with one blit rather than a pixel at a
+// time: `drawImage` multiplies the image's own alpha by `fillAlpha`,
+// and a product of the two axes is exactly what a separable blur is.
+// The key is everything the answer depends on, so a page whose boxes
+// share a shadow builds each ramp once.
+map[img] shadowRamps = {}
+
+img func shadowRamp(key:text, n:int, from:float, span:float, sigma:float, c:int) {
+    img hit = shadowRamps[key]
+    if hit != null { return hit }
+    img out = blankImage(n, 1)
+    fillStyle(colorRed(c), colorGreen(c), colorBlue(c))
+    for int i = 0, i < n, i++ {
+        float a = blurAxis(from + i.toFloat() + 0.5, 0.0, span, sigma)
+        if a <= 0.002 { continue }
+        fillAlpha(a > 1.0 ? 1.0 : a)
+        out.drawPixel(i, 0)
+    }
+    fillAlpha(1.0)
+    shadowRamps[key] = out
+    return out
+}
+
+// A rectangle blurred by a Gaussian of standard deviation half the blur
+// radius, which is what Backgrounds and Borders 3 §7.1 asks a shadow's
+// blur to be.
+//
+// The blur is separable, so the rectangle divides into nine parts: four
+// corners where both axes are still changing, four edges where only one
+// is, and the middle where neither is. Only the corners are worked out a
+// pixel at a time, and only once per distinct shadow; an edge is one
+// row or column per pixel of the reach, and the middle is a single fill.
+void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blur:int) {
+    if w <= 0 || h <= 0 { return }
+    float sigma = blur.toFloat() / 2.0
+    // Three standard deviations out the Gaussian has 0.0013 of its
+    // weight left, which is a third of what a pixel can show.
+    int reach = maxInt(roundPx(sigma * 3.0), 1)
+    int rx = minInt(reach, Math.floorDiv(w, 2))
+    int ry = minInt(reach, Math.floorDiv(h, 2))
+    int midW = w - rx - rx
+    int midH = h - ry - ry
+    float fw = w.toFloat()
+    float fh = h.toFloat()
+    int shade = colorWithOpacity(c, opacity)
+    if !colorIsPaintable(shade) { return }
+    float own = colorAlpha(shade).toFloat() / 255.0
+
+    // The middle, at the one alpha the whole of it has.
+    float fxMid = midW > 0
+        ? blurAxis((rx + Math.floorDiv(midW, 2)).toFloat() + 0.5, 0.0, fw, sigma)
+        : 0.0
+    float fyMid = midH > 0
+        ? blurAxis((ry + Math.floorDiv(midH, 2)).toFloat() + 0.5, 0.0, fh, sigma)
+        : 0.0
+    fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
+    if midW > 0 && midH > 0 {
+        float a = fxMid * fyMid * own
+        fillAlpha(a > 1.0 ? 1.0 : a)
+        pDrawRect(x + rx, y + ry, midW, midH)
+    }
+
+    // The four edges: one row or column per pixel, from the reach
+    // outside to the inner corner.
+    if midW > 0 {
+        for int j = 0, j < reach + ry, j++ {
+            float fy = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma)
+            float a = fxMid * fy * own
+            if a <= 0.002 { continue }
+            fillAlpha(a > 1.0 ? 1.0 : a)
+            pDrawRect(x + rx, y - reach + j, midW, 1)
+            pDrawRect(x + rx, y + h + reach - 1 - j, midW, 1)
+        }
+    }
+    if midH > 0 {
+        for int i = 0, i < reach + rx, i++ {
+            float fx = blurAxis((i - reach).toFloat() + 0.5, 0.0, fw, sigma)
+            float a = fx * fyMid * own
+            if a <= 0.002 { continue }
+            fillAlpha(a > 1.0 ? 1.0 : a)
+            pDrawRect(x - reach + i, y + ry, 1, midH)
+            pDrawRect(x + w + reach - 1 - i, y + ry, 1, midH)
+        }
+    }
+    fillAlpha(1.0)
+
+    // The four corners, where both axes are still changing. Each row of
+    // one is the horizontal profile at that row's own share of the
+    // vertical one, which is one blit of the ramp at that alpha: the
+    // whole shadow costs a row of work per pixel of the reach rather
+    // than a pixel of work per pixel of it.
+    int cw = reach + rx
+    if cw <= 0 || reach + ry <= 0 { return }
+    text rampKey = `${blur}|${shade}|${cw}|${w}`
+    img rampLeft = shadowRamp(rampKey + '|l', cw, (0 - reach).toFloat(),
+                              fw, sigma, shade)
+    img rampRight = shadowRamp(rampKey + '|r', cw, fw - rx.toFloat(),
+                               fw, sigma, shade)
+    for int j = 0, j < reach + ry, j++ {
+        float a = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma) * own
+        if a <= 0.002 { continue }
+        fillAlpha(a > 1.0 ? 1.0 : a)
+        pDrawImage(rampLeft, x - reach, y - reach + j)
+        pDrawImage(rampRight, x + w - rx, y - reach + j)
+        pDrawImage(rampLeft, x - reach, y + h + reach - 1 - j)
+        pDrawImage(rampRight, x + w - rx, y + h + reach - 1 - j)
+    }
+    fillAlpha(1.0)
 }
 
 // The area between two rectangles -- the outer one minus the inner --

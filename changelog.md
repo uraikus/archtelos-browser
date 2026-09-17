@@ -5,6 +5,46 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An outer box-shadow's blur is the Gaussian the standard asks for
+
+Backgrounds and Borders 3 §7.1 asks for a shadow blurred by a Gaussian
+whose standard deviation is half the blur radius. The painter drew
+nested rectangles at a small alpha each and let the alpha accumulate,
+which reached full opacity against the shadow's own edge where the
+standard asks for half of it, and gave a corner an edge's value where
+the standard asks for the two multiplied.
+
+A Gaussian blur of a rectangle has a closed form, so it is computed
+rather than filtered: along one axis the alpha is the difference of the
+Gaussian's own integral at the two edges, and the whole of it is the two
+axes multiplied. `gaussIntegral` is Abramowitz and Stegun 7.1.26, whose
+error is below 1.5e-7 -- a thousandth of the 1/255 a painted pixel can
+tell apart.
+
+**A separable blur is a product, and `drawImage` multiplies by
+`fillAlpha`.** Working each corner out a pixel at a time cost 91 ms on a
+page of 60 differently coloured shadows. One axis is a one pixel tall
+image instead, blitted once per row at the other axis's own share, so
+the shadow costs a row of work per pixel of the reach rather than a
+pixel of work per pixel of it: the same page is 5 to 7 ms, against 3 ms
+for the nested rectangles it replaces, and a page of 60 boxes sharing
+one shadow is 3 ms against 2. The ramps are cached by everything the
+answer depends on, so a page whose boxes share a shadow builds each
+once.
+
+The expectations are the closed form's own numbers, with Chromium's
+pixels beside them: for `box-shadow: 0 0 20px red` on a 60x40 box, this
+engine and Chromium agree on the corner to the byte, and differ by one
+or two parts in 255 along the edges, which is Chromium's approximation
+rather than the standard's Gaussian -- it blurs with three box blurs.
+
+**The test's first version was wrong where the engine was right.** It
+expected half the colour half a pixel past the edge, which is what a
+blurred *edge* leaves; the box is four standard deviations tall, so its
+two horizontal blurs overlap through the whole of it and the middle row
+keeps 0.954 of the vertical term, not 1. The closed form says so and
+Chromium's pixels agree with it.
+
 ### A background tiled at a scaled size has hard edges and no seam
 
 A scaled blit samples half a source pixel past the rectangle it fills,

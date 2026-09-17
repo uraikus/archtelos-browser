@@ -862,6 +862,24 @@ image of its own does not reach the layer machinery at all.
 feature reached through one string comparison per declaration looks
 like. Nothing walks the property list unless a page says `all`.
 
+The Gaussian blur of an outer `box-shadow` costs **4,384 bytes**
+(2,787,088 → 2,791,472) and about twice the paint time of the nested
+rectangles it replaces, which is a few milliseconds on a page made of
+shadows and nothing at all on one without them: `paintShadows` returns
+on the first line where a box has none.
+
+Measured on two pages of 60 cards each, best of five, `paint` from
+`ARCHTELOS_TIMING=1`. Sixty cards sharing one `0 2px 8px` shadow: 1 to
+2 ms before, 3 ms after. Sixty cards with a `0 2px 20px` shadow in 60
+*different* colours, so nothing is shared and every ramp is built: 3 ms
+before, 5 to 7 ms after. The first version of the change worked each
+corner out a pixel at a time and took **91 ms** on that second page;
+blitting one axis's profile at the other axis's alpha is what brought it
+down, because `drawImage` multiplies an image's own alpha by `fillAlpha`
+and that product is what a separable blur is.
+
+Neither benchmark page has a shadow on it, so no table above moves.
+
 Percentage and elliptical `border-radius` costs **9,088 bytes**
 (2,759,536 → 2,768,624). The corners are resolved per painted box now
 rather than once per computed style, which is eight lengths and a
