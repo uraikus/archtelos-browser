@@ -88,6 +88,16 @@ bool anyFirstLine = false
 // characters, so a descendant's first-line style is what it computes to
 // with that fictional element as its parent -- which is this walk.
 map[Style] firstLineStyles = {}
+// Whether any declaration anywhere says `revert` or `revert-layer`. A
+// page that does not pays one boolean per element and nothing else: the
+// user-agent origin's values are only kept where something asks to roll
+// back to them.
+bool anyRevert = false
+// The user-agent origin's declarations for the element being computed,
+// which is what `revert` rolls back to. Rebuilt per element, and only
+// where a page says `revert` at all.
+map[text] revertBase = {}
+bool revertBaseTaken = false
 // Whether any computed style anywhere asked for a background image by
 // url(). A page with none never walks the document looking for them.
 bool anyBackgroundUrl = false
@@ -170,6 +180,7 @@ void func cascadeReset() {
     anyFirstLetter = false
     anyFirstLine = false
     firstLineStyles = {}
+    anyRevert = false
     anyBackgroundUrl = false
     anyCounters = false
     anyQuotes = false
@@ -253,6 +264,11 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawDirection {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'direction' { cascadeSawDirection = true  break }
+                }
+            }
+            if !anyRevert {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if declIsRevert(rule.decls[d].value) { anyRevert = true  break }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -830,6 +846,11 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
             }
+            // A style attribute is parsed per element rather than
+            // indexed, so this is where its `revert` is noticed -- in
+            // time, because the element's own declarations are applied
+            // after this runs.
+            if !anyRevert && declIsRevert(decls[d].value) { anyRevert = true }
             Match m
             m.decl = decls[d]
             m.weight = matchWeight(decls[d].important, ORIGIN_INLINE, CASCADE_NO_LAYER, 0, d)
@@ -1356,9 +1377,7 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
-    for int i = 0, i < matches.length, i++ {
-        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
-    }
+    applyMatches(props, matches)
     // open-quote and close-quote read the element's own `quotes` list,
     // and move a document-wide depth as a side effect, so the list has
     // to be in place before the value is resolved.
@@ -1389,9 +1408,7 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
-    for int i = 0, i < matches.length, i++ {
-        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
-    }
+    applyMatches(props, matches)
     pseudoStyles[pseudoKey(n.id, 'first-letter')] = computeStyleValues(n, own, false, props)
     pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
 }
@@ -1404,9 +1421,7 @@ void func computeFirstLineFor(n:Node, own:Style) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
-    for int i = 0, i < matches.length, i++ {
-        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
-    }
+    applyMatches(props, matches)
     pseudoStyles[pseudoKey(n.id, 'first-line')] = computeStyleValues(n, own, false, props)
     pseudoHasFirstLine[pseudoKey(n.id, 'first-line')] = true
 }
@@ -2923,6 +2938,68 @@ bool func matchedDirectionRtl(matches:arr[Match], parentRtl:bool) {
     return rtl
 }
 
+// The weight of a declaration in the user-agent origin that is not
+// important: `originRank` gives it 0, and everything else at least 1,
+// so one comparison says which side of the origin boundary a match
+// falls on. An important user-agent declaration ranks above every
+// author one and so wins outright, which is why `revert` never has to
+// roll back past it.
+const int UA_WEIGHT_LIMIT = 10000000000000000
+
+// Whether a declaration's value is the `revert` keyword. `revert-layer`
+// counts here because an unlayered declaration reverts its origin,
+// which is the same thing (Cascade 5 §6.3).
+bool func declIsRevert(v:ascii) {
+    if v == null { return false }
+    ascii t = asciiLower(asciiTrim(v))
+    return t == 'revert' || t == 'revert-layer'
+}
+
+// The declarations of one element, applied in cascade order, with
+// `revert` resolved.
+//
+// `revert` rolls a property back to the value the previous origin gave
+// it (Cascade 4 §7.4), so what it needs is that origin's answer kept
+// apart from the winner. The matches arrive sorted, so the user-agent
+// origin's declarations are exactly the ones before the first weight at
+// or above the boundary: copying `props` there is the whole of the
+// bookkeeping, and it is done only on a page that says `revert`.
+//
+// Resolving afterwards rather than at the declaration is what makes a
+// shorthand work: `applyDecl` has already expanded it into longhands by
+// then, and each of those carries the keyword.
+void func applyMatches(props:map[text], matches:arr[Match]) {
+    if !anyRevert {
+        for int i = 0, i < matches.length, i++ {
+            applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+        }
+        return
+    }
+    revertBase = {}
+    revertBaseTaken = false
+    for int i = 0, i < matches.length, i++ {
+        if !revertBaseTaken && matches[i].weight >= UA_WEIGHT_LIMIT {
+            arr[text] ks = props.keys()
+            for int k = 0, k < ks.length, k++ { revertBase[ks[k]] = props[ks[k]] }
+            revertBaseTaken = true
+        }
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    // A `revert` still in the map came from the user-agent origin
+    // itself, or found nothing to roll back to; either way it is
+    // `unset`, which is what removing the declaration leaves.
+    arr[text] names = props.keys()
+    for int i = 0, i < names.length, i++ {
+        // The entry goes through a `text` local first: a `text` made
+        // from a map entry is a private copy where an `ascii` one would
+        // alias it (FINDINGS.md, "ascii aliasing").
+        text raw = props[names[i]]
+        if !declIsRevert(raw.toAscii()) { continue }
+        if revertBase[names[i]] == null { delete props[names[i]] }
+        else { props[names[i]] = revertBase[names[i]] }
+    }
+}
+
 const int CSSWIDE_NONE = 0
 const int CSSWIDE_INHERIT = 1
 const int CSSWIDE_INITIAL = 2
@@ -2957,11 +3034,24 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
             delete props[had[i]]
         }
         if allKw == CSSWIDE_INITIAL { setProp(props, 'all', value) }
+        // `all: revert` puts the previous origin's declarations back,
+        // which is what the drop above took away.
+        if declIsRevert(value) {
+            arr[text] base = revertBase.keys()
+            for int i = 0, i < base.length, i++ {
+                if base[i] == 'direction' || base[i] == 'unicode-bidi' { continue }
+                props[base[i]] = revertBase[base[i]]
+            }
+        }
         return
     }
     // `display` is validated here rather than where it is read, because
-    // by then the declaration it beat is gone. See isDisplayKeyword.
-    if name == 'display' && !isDisplayKeyword(value) { return }
+    // by then the declaration it beat is gone. See isDisplayKeyword. A
+    // CSS-wide keyword is a valid value for every property, so it goes
+    // through: `display: revert` has to reach the map for the rollback
+    // to find it, and `display: inherit` for the resolver to.
+    if name == 'display' && !isDisplayKeyword(value)
+        && cssWideKeyword(value) == CSSWIDE_NONE { return }
     // The logical border shorthands are renamed before anything else,
     // because the shorthand dispatch below reads the name: renaming
     // afterwards left `border-block-start` as a longhand nobody handles.
@@ -3891,9 +3981,7 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     int t1 = archtelosTiming ? now() : 0
     cascadeApplyRtl = cascadeSawDirection
         && matchedDirectionRtl(matches, isRoot ? false : parent.directionRtl)
-    for int i = 0, i < matches.length, i++ {
-        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
-    }
+    applyMatches(props, matches)
     if archtelosTiming {
         profApplyMs = profApplyMs + (now() - t1)
         profElements++
@@ -4504,8 +4592,16 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.effectiveOpacity = (isRoot ? 1.0 : parent.effectiveOpacity) * s.opacity
 
     // non-inherited
+    // `inline` is both the fallback when nothing declares `display` and
+    // the property's initial value, so `initial` and `unset` land on it
+    // by taking the same path a missing declaration takes. `inherit` is
+    // the one that needs the parent, because `display` does not inherit
+    // on its own.
     int dfltDisplay = DISPLAY_INLINE
-    s.display = parseDisplay(styleProp(props, 'display'), dfltDisplay)
+    ascii displayDecl = styleProp(props, 'display')
+    s.display = cssWideKeyword(displayDecl) == CSSWIDE_INHERIT
+        ? (isRoot ? dfltDisplay : parent.display)
+        : parseDisplay(displayDecl, dfltDisplay)
     s.background = colorProp(props, 'background-color', s.color, COLOR_TRANSPARENT)
     // A background image paints over the background colour. Only
     // gradients are supported; `url()` needs a fetch the cascade cannot

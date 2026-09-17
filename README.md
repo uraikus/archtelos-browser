@@ -81,7 +81,13 @@ general-sibling combinators, `:first-child`, `:last-child`,
 `:only-child`, `:nth-child(odd|even|n)`, `:first-of-type`,
 `:last-of-type`, `:root`, `:link` and `:not(compound)`. The cascade
 handles specificity, source order, `!important`, inline styles and HTML
-presentational attributes. `@media` is evaluated against the viewport,
+presentational attributes. The CSS-wide keywords all work: `inherit`
+takes the parent's computed value, `initial` the initial one, `unset`
+whichever of the two the property calls for, and **`revert` rolls the
+property back to the value the previous origin gave it** — the
+user-agent sheet's here, because there is no user origin, and `unset`
+where that origin declared nothing. `all` applies any of them to every
+property at once. `@media` is evaluated against the viewport,
 over every feature Media Queries 3 defines — sizes, `orientation`,
 `aspect-ratio`, `color`, `resolution` and the rest — and Level 4's own,
 which say what this browser is: `scripting: none`, because there is no

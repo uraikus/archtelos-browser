@@ -132,4 +132,124 @@ check(keepsDir.directionRtl, '`all` does not touch `direction`')
 Style bogus = styleOf('<span id="a" style="all:red">x</span>', 'a')
 checkEqInt(bogus.color, packColor(255, 0, 0, 255), '`all: red` is invalid and leaves the inherited colour')
 
+// ---- revert (Cascade 4 §7.4) -----------------------------------------
+// `revert` rolls the property back to the value the previous cascade
+// origin gave it -- here the user-agent sheet's, because there is no
+// user origin -- and to `unset` when that origin declared nothing.
+// Chromium 141 on this markup, read off `getComputedStyle`:
+//
+//   b { font-weight: normal }        plain b 400, reverted b 700
+//   span { display: block }          plain span block, reverted inline
+//   div { display: inline }          plain div inline, reverted block
+//   li { list-style-type: square }   plain li square, reverted disc
+//   p { color: red }                 plain p red, reverted black
+//   i { font-weight: revert }        400 -- the UA sheet says nothing
+//   b { all: revert }                font-weight 700 and display inline
+//
+// The two `p` rows are the ones that tell `revert` apart from a
+// no-op: the user-agent sheet has no `color` for a paragraph, so the
+// rollback lands on the inherited value rather than on anything the UA
+// declared.
+Style func revertStyleOf(markup:text, tag:text, id:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>'
+        + 'b { font-weight: normal }'
+        + 'span { display: block }'
+        + 'div.inl { display: inline }'
+        + 'li { list-style-type: square }'
+        + 'p { color: #ff0000 }'
+        + '</style></head><body>' + markup + '</body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    arr[Node] found = []
+    collectElements(d, tag, found)
+    for int i = 0, i < found.length, i++ {
+        if attrOf(found[i].id, 'id') == id { return found[i].style }
+    }
+    return null
+}
+
+// The author rule wins where nothing reverts, which is the reference
+// every check below is read against.
+Style bPlain = revertStyleOf('<b id="a">x</b>', 'b', 'a')
+Style bRevert = revertStyleOf('<b id="a" style="font-weight: revert">x</b>', 'b', 'a')
+check(bPlain != null && bRevert != null, 'both <b> elements have styles')
+check(!bPlain.fontBold, 'the author rule takes the boldness off <b>')
+check(bRevert.fontBold, 'and `revert` puts the user-agent sheet back')
+
+Style spanPlain = revertStyleOf('<span id="a">x</span>', 'span', 'a')
+Style spanRevert = revertStyleOf('<span id="a" style="display: revert">x</span>', 'span', 'a')
+checkEqInt(spanPlain.display, DISPLAY_BLOCK, 'the author rule makes a span a block')
+checkEqInt(spanRevert.display, DISPLAY_INLINE, 'and `revert` gives it back the UA display')
+
+Style divPlain = revertStyleOf('<div class="inl" id="a">x</div>', 'div', 'a')
+Style divRevert = revertStyleOf('<div class="inl" id="a" style="display: revert">x</div>', 'div', 'a')
+checkEqInt(divPlain.display, DISPLAY_INLINE, 'the author rule makes a div inline')
+checkEqInt(divRevert.display, DISPLAY_BLOCK, 'and `revert` gives it back block')
+
+Style liPlain = revertStyleOf('<ul><li id="a">x</li></ul>', 'li', 'a')
+Style liRevert = revertStyleOf('<ul><li id="a" style="list-style-type: revert">x</li></ul>', 'li', 'a')
+checkEqInt(liPlain.listStyle, LIST_SQUARE, 'the author rule squares the marker')
+checkEqInt(liRevert.listStyle, LIST_DISC, 'and `revert` gives back the UA disc')
+
+// The case that tells a rollback from a no-op: the user-agent sheet
+// declares no `color` for a paragraph, so reverting one lands on the
+// inherited value and not on anything the UA said.
+Style pPlain = revertStyleOf('<p id="a">x</p>', 'p', 'a')
+Style pRevert = revertStyleOf('<p id="a" style="color: revert">x</p>', 'p', 'a')
+checkEqInt(pPlain.color, packColor(255, 0, 0, 255), 'the author rule reddens a paragraph')
+checkEqInt(pRevert.color, COLOR_BLACK, 'and `revert` falls through to the inherited colour')
+
+// A property the user-agent sheet says nothing about on this element
+// reverts to `unset` rather than to some other element's UA value.
+Style iRevert = revertStyleOf('<i id="a" style="font-weight: revert">x</i>', 'i', 'a')
+check(!iRevert.fontBold, '`revert` on a property the UA sheet does not set is `unset`')
+
+// `all: revert` rolls every property back at once.
+Style allRevert = revertStyleOf('<b id="a" style="all: revert">x</b>', 'b', 'a')
+check(allRevert.fontBold, '`all: revert` restores the UA boldness')
+checkEqInt(allRevert.display, DISPLAY_INLINE, 'and leaves the UA display alone')
+
+// `revert-layer` with no layer above it reverts to the previous origin
+// too, which is what Cascade 5 says when the declaration is unlayered.
+Style bRevertLayer = revertStyleOf('<b id="a" style="font-weight: revert-layer">x</b>', 'b', 'a')
+check(bRevertLayer.fontBold, '`revert-layer` outside a layer reverts the origin')
+
+// ---- the CSS-wide keywords on `display` -------------------------------
+// `display` is validated where it is applied, because by then the
+// declaration it beat is gone -- and a CSS-wide keyword is a valid value
+// for every property, so it has to go through that check. Chromium 141
+// on `.par { display: inline-block }` around `span.a { display: block }`:
+//
+//   #i1 { display: inherit }   inline-block, the parent's
+//   #i2 { display: bogus }     block, the author rule's -- invalid is dropped
+//
+// `initial` and `unset` are the initial value, which for `display` is
+// `inline`, because `display` does not inherit.
+Style func displayKeywordStyle(decl:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>'
+        + '.par { display: inline-block } span.a { display: block }'
+        + '</style></head><body><div class="par">'
+        + '<span class="a" id="k" style="' + decl + '">x</span></div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    arr[Node] found = []
+    collectElements(d, 'span', found)
+    for int i = 0, i < found.length, i++ {
+        if attrOf(found[i].id, 'id') == 'k' { return found[i].style }
+    }
+    return null
+}
+
+checkEqInt(displayKeywordStyle('').display, DISPLAY_BLOCK, 'the author rule makes the span a block')
+checkEqInt(displayKeywordStyle('display: inherit').display, DISPLAY_INLINE_BLOCK,
+    '`display: inherit` takes the parent display')
+checkEqInt(displayKeywordStyle('display: initial').display, DISPLAY_INLINE,
+    '`display: initial` is inline, the initial value')
+checkEqInt(displayKeywordStyle('display: unset').display, DISPLAY_INLINE,
+    '`display: unset` is the same, because display does not inherit')
+checkEqInt(displayKeywordStyle('display: bogus').display, DISPLAY_BLOCK,
+    'and an invalid value is dropped, leaving the author rule')
+
 finish('cascade')

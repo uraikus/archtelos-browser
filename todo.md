@@ -22,18 +22,21 @@ parent's computed value, `@supports` evaluates its condition,
 resolve against the real root font size and viewport, and an unparseable
 selector drops its whole rule. What is left of CSS Cascade 4:
 
-1. **`revert`**, which rolls a property back to the value the previous
-   cascade origin gave. It behaves as `unset` today because the origins
-   are not kept apart once the cascade has run; doing it properly means
-   keeping a per-origin computed value, or recomputing with the author
-   declarations removed.
+1. **`revert-layer` inside a layer.** `revert` is done, and
+   `revert-layer` is read as `revert`, which is what the standard says
+   for an unlayered declaration and understates it inside one: rolling
+   back to the *previous layer* rather than the previous origin needs
+   the layers kept apart the way the origins now are, which is a second
+   snapshot taken at each layer boundary rather than only at the origin
+   one.
 2. **`all: inherit`**. `all` itself is done — it drops every declaration
-   before it in the block and, for `initial`, computes the element as
+   before it in the block; for `initial` it computes the element as
    though it had no parent, which is what every default in
-   `computeStyleValues` already means by "root"; `unset` and `revert`
-   need nothing beyond the dropping, because taking the parent's value
-   for an inherited property and the initial value for the rest is what
-   the ordinary cascade does. `inherit` is the one that does not fit:
+   `computeStyleValues` already means by "root"; for `revert` it puts
+   the previous origin's declarations back; and `unset` needs nothing
+   beyond the dropping, because taking the parent's value for an
+   inherited property and the initial value for the rest is what the
+   ordinary cascade does. `inherit` is the one that does not fit:
    giving a *non-inherited* property the parent's value means copying
    the parent style field by field, and a hand-written list of a
    struct's fields is exactly what rotted in `styleDigest`. It wants a

@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `revert`
+
+The keyword rolls a property back to the value the previous cascade
+origin gave it (Cascade 4 §7.4) instead of behaving as `unset`.
+Chromium 141 on the same markup, read off `getComputedStyle`: with
+`b { font-weight: normal }` in the author sheet, a reverted `<b>` is 700
+against a plain one's 400; with `span { display: block }`, a reverted
+span is `inline`; with `li { list-style-type: square }`, a reverted `li`
+is `disc`. A reverted `color` on a paragraph is black, because the
+user-agent sheet declares none and the rollback falls through to the
+inherited value -- which is the row that tells a rollback from a no-op.
+
+**The bookkeeping is one map copy, at one point.** The matches arrive
+sorted, so the user-agent origin's declarations are exactly those before
+the first weight at or above the origin boundary; copying the property
+map there is the whole of it. An important user-agent declaration ranks
+above every author one and so wins outright, which is why the rollback
+never has to reach past one. A page that never says `revert` does not
+take the copy at all.
+
+Resolving the keyword after every declaration has been applied, rather
+than at each one, is what makes it reach a shorthand: `applyDecl` has
+expanded the shorthand into longhands by then, and each of those carries
+the keyword. `all: revert` is the one that cannot work that way, because
+`all` drops the map it would be resolved from, so it puts the previous
+origin's declarations back where the drop took them away.
+
+`display: revert` needed the one property that is validated where it is
+applied to let a CSS-wide keyword through -- `display` is checked there
+because by then the declaration it beat is gone. Letting them through
+turned up `display: inherit`, which had been dropped with the invalid
+values and now takes the parent's display, as Chromium does: a span
+under an `inline-block` parent computes to `inline-block`. `initial` and
+`unset` were already right, because the initial value of `display` is
+`inline` and that is also the fallback a missing declaration takes.
+
 ### `::first-line`
 
 The pseudo-element restyles whichever characters end up on the first

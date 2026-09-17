@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,814,744 |
+| This browser, the whole program | 2,815,120 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -995,3 +995,18 @@ regression; the wider sample is what shows that to be the machine.
 
 The run's own control qualified at 7.7%: Chromium renders
 `generated.html` in 24.0 ms against the 26.0 recorded here.
+
+`revert` costs **376 bytes** (2,814,744 → 2,815,120) and nothing to a
+page that does not say it: the map copy that keeps the user-agent
+origin's declarations apart is taken only where a declaration somewhere
+asked to roll back to them, and the apply loop is otherwise the one it
+was. Nine paired samples of `generated.html`, rebuilt and run
+alternately with the revision before it in the same minutes, give
+
+```
+before: 109 110 109 109 104 107 107 109 107
+after:  106 109 105 109 107 106 106 108 113
+```
+
+— a best of 104 against 105, one millisecond apart on two series that
+overlap through their whole range.
