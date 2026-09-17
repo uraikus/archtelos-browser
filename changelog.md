@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Looking for an image cost the pages that have none
+
+The first thing the second benchmark page measured was not a feature.
+Its phase list beside `generated.html`'s showed `images: 2 ms` on a
+document with no `<img>` in it: two milliseconds of walking 2,728
+elements to find nothing. Two more walks went unreported beside it,
+because resolving `<iframe>` and `<frame>` is not a timed phase and
+searched the whole tree for each of the two tags.
+
+`newElement` is the one place a node with a tag is made, so it answers
+"is there an image in this registry" and "is there a frame" for a
+comparison it makes once per element, and all three walks are skipped on
+a document with neither. The flags clear with the node registry they
+describe, which is the right lifetime: a framed document shares that
+registry deliberately, so the answer is about the registry and never a
+claim about one document — it can be true where a walk would find
+nothing, which costs a walk, and cannot be false where a walk would have
+found something, which would lose an image.
+
+About 3 ms of 136 end to end on `generated.html`, six alternating
+samples apiece with no overlap between the series. The rendering phases
+do not move, because none of the three walks was inside them.
+
+`tests/unit/test_images.f` is the check that no insertion path gets past
+the flag: an image in the body, one foster-parented out of a table, one
+beside foreign content, and one in a document loaded into a frame, each
+naming a different file because `loadedImages` is a cache that outlives
+a page and a second case naming the first case's file would pass either
+way.
+
 ### A second benchmark page, and a check that it measures anything
 
 `generated.html` — the page every figure in benchmarks.md is taken

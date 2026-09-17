@@ -207,26 +207,30 @@ not where the time goes.
 | fetch (local file) | 0 ms |
 | parse | 9 ms |
 | stylesheets | 1 ms |
-| images | 1 ms |
+| images | 0 ms |
 | cascade | 35 ms |
-| layout | 54 ms |
-| paint | 11 ms |
+| layout | 56 ms |
+| paint | 8 ms |
 
-The cascade and layout are **93%** of it. Parsing is 9%, and paint —
-once it is not also encoding six megapixels — is 7 ms. Chromium does the
-first four of those phases in 26.0 ms against our 101; the whole gap is
-here, and **layout is the larger half of it**.
+Of the 101 ms before painting, the cascade and layout are 91 — **90%**.
+Parsing is 9%, and paint, once it is not also encoding six megapixels,
+is 8 ms. Chromium does the first five phases in 26.0 ms against our 101;
+the whole gap is here, and **layout is the larger half of it**. The
+`images` row is zero because this page has no image and no longer walks
+its tree looking for one — see below.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
-declarations across 2,728 elements. Collecting them is 12 ms, applying
-14 ms and computing 7 ms — the last of those because only **24 distinct
-styles** are computed for the 2,728 elements, and the rest are handed a
-style a previous element already produced. Computing styles is the phase worth
-attacking next, and the one that grows with every property implemented.
+declarations across 2,728 elements. Five consecutive runs put collecting
+them at 6 to 16 ms, applying at 14 to 17 and computing at 3 to 7 — the
+sub-phase timers are noisier than the phase totals they add up to, so
+read them as proportions and not as figures. Computing is the small one
+because only **24 distinct styles** are computed for the 2,728 elements
+and the rest are handed a style a previous element already produced;
+it is still the phase that grows with every property implemented.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
-cache and reach Cairo (9 ms total); building the box tree is 23 ms and
-inline placement 14 ms.
+cache and reach Cairo (7 to 9 ms across those runs); building the box
+tree is 21 to 23 ms and inline placement 8 to 14.
 
 ## What the CSS work cost, measured
 
@@ -419,9 +423,9 @@ resolution.
 The image is in both columns and therefore in neither difference: a
 stylesheet can turn a grid into a block but it cannot un-write an
 `<img>`, so both pages fetch and decode the same PNG. That cost is in
-the phase list instead — `images: 4 ms` here against 2 ms on
-`generated.html`, which has no image at all and pays that for a walk of
-the tree looking for one.
+the phase list instead — `images: 4 ms` here against 0 on
+`generated.html`. It read 2 ms there when this page was first measured,
+on a document with no image in it at all, which is the next section.
 
 What the page cannot do is attribute the 10 ms to any one feature.
 Turning them off one at a time would take six more control pages; the
@@ -445,6 +449,38 @@ image's natural size was its box's size, which makes `fill`, `cover`
 and `contain` paint identical pixels — `object-fit` was in the
 stylesheet and in none of the measurements. The image is 120x60 in a
 96x64 box now, and the probe's canvas is 3,000 pixels tall.
+
+## What looking for an image cost the pages that have none
+
+The first thing the second page measured was not a feature. Reading its
+phase list beside `generated.html`'s showed `images: 2 ms` on a document
+with no `<img>` in it: the two milliseconds were a walk of 2,728
+elements finding nothing. Two more walks went unreported beside it,
+because resolving `<iframe>` and `<frame>` is not a timed phase and
+searched the whole tree for each.
+
+`newElement` is the one place a tagged node is made, so it can answer
+"is there an image in this registry" and "is there a frame" for the cost
+of a comparison it makes once per element, and the three walks are
+skipped on a document that has neither. Six alternating best-of-3
+samples of the revision before it against this one, in the same minutes:
+
+| | Best | Samples |
+|---|---|---|
+| before | 136 ms | 136, 136, 137, 138, 138, 150 |
+| after | 133 ms | 133, 133, 133, 134, 134, 134 |
+
+**About 3 ms**, and the series do not overlap: the worst reading after
+is better than the best reading before. The parse, stylesheet, cascade
+and layout phases do not move at all — none of the three walks is inside
+them — so the rendering table above is unaffected and this is entirely
+in what the command takes end to end. The binary is 80 bytes larger.
+
+That is a small number by itself. What makes it worth writing down is
+that it was invisible for as long as the only large page had no image
+on it: the cost of looking for something is paid by the pages that do
+not have it, which is the failure the rule about features costing
+nothing is meant to catch, and it took a second page to see it.
 
 ## What the preload scanner is worth
 

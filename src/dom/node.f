@@ -38,9 +38,27 @@ int nextNodeId = 1
 // several documents alive simply lets it grow.
 arr[Node] nodeRegistry = [null]
 
+// Whether any element in this registry is one the page pipeline would
+// otherwise have to go looking for. Each of those searches is a walk of
+// the whole document, and a page with no image and no frame -- which is
+// most pages -- should not pay for one: the walk for <img> alone is 2
+// ms of a 102 ms render on a page with no image in it. They are set in
+// `newElement`, the one place a tagged node is made, so no insertion
+// path can put an element into a tree without setting them, and they
+// are cleared with the registry the nodes belong to. A document loaded
+// into a frame shares that registry deliberately, so the answer is
+// "this registry has one somewhere" and never a claim about one
+// document: it can be true where a walk finds nothing, which costs a
+// walk, and cannot be false where a walk would have found something,
+// which would lose an image.
+bool sawImageElement = false
+bool sawFrameElement = false
+
 void func nodeRegistryReset() {
     nodeRegistry = [null]
     nextNodeId = 1
+    sawImageElement = false
+    sawFrameElement = false
 }
 
 void func registerNode(n:Node) {
@@ -103,6 +121,8 @@ bool func hasClassOf(nid:int, cls:text) {
 }
 
 Node func newElement(tag:text) {
+    if tag == 'img' { sawImageElement = true }
+    else if tag == 'iframe' || tag == 'frame' { sawFrameElement = true }
     Node n
     n.id = nextNodeId
     nextNodeId++

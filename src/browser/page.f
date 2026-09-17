@@ -81,6 +81,7 @@ void func gatherStylesheets(page:Page, n:Node, count:arr[int]) {
 // Loads every <img src>, storing the decoded image under its resolved
 // URL and stamping that URL on the element for layout to find.
 void func gatherImages(page:Page) {
+    if !sawImageElement { return }
     arr[Node] imgs = []
     collectElements(page.doc, 'img', imgs)
     int loaded = 0
@@ -262,6 +263,7 @@ Box func loadFrameDocument(url:text, width:int, height:int) {
 // Resolves every frame's src and lays its document out, before the
 // containing page's own cascade runs.
 void func gatherFrames(page:Page) {
+    if !sawFrameElement { return }
     arr[Node] frames = []
     collectElements(page.doc, 'iframe', frames)
     collectElements(page.doc, 'frame', frames)
