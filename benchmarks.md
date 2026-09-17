@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,838,064 |
+| This browser, the whole program | 2,838,232 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1118,3 +1118,10 @@ after:  110 106 111 111 114 109 108 118 109 109 109 111 105
 
 — the same best of 105, medians a millisecond apart, and the highest
 reading on the side without the feature.
+
+Scrolling a container across with the wheel costs **168 bytes**
+(2,838,064 → 2,838,232) and is not timed here, which is a statement
+rather than an omission: the only new code is one function the shell
+calls from a mouse-button handler, and the benchmark runs the renderer
+with no window and no pointer. A paired series would measure the
+machine, and there is already enough of that in this file.

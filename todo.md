@@ -46,13 +46,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 1. **What is left of the CSS2 chapters**: paged media (§13). A wheel
    over a scroll container scrolls it, the thumb follows, and the thumb
-   can be taken hold of and dragged. What is still missing around it is
-   `scroll-behavior`, a keyboard scroll of the focused container, and a
+   can be taken hold of and dragged. Both axes scroll, both thumbs drag,
+   and a wheel tilted sideways scrolls a container across **on X11 and
+   nowhere else**: the language has no horizontal wheel event, and no
+   event of any kind carries a modifier, so neither a horizontal wheel
+   nor shift-wheel is expressible as such. X11 happens to send a tilt as
+   a press of button 6 or 7 and this reads those; a Windows build reads
+   `WM_MOUSEWHEEL` only, so the same gesture produces nothing there
+   (FINDINGS.md, finding 38; festina.md §3s). What is also missing is a
+   keyboard scroll of the focused container, `scroll-behavior`, and a
    click on the empty part of a track, which every browser treats as a
-   page up or down. Both axes scroll and both thumbs
-   drag. What is left around them is the wheel, which scrolls a
-   container down but never across -- a shift-wheel or a horizontal
-   wheel would, and this reads neither.
+   page up or down.
 
    Positioning (§9.3), floats (§9.5), generated content (§12) and
    `overflow: hidden` clipping (§11) are done.

@@ -5,6 +5,32 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A wheel tilted sideways scrolls a container across
+
+The scroll container had both axes and both thumbs but only a vertical
+wheel. Giving it the other one turned up a language gap worth the entry
+it got: **`on mouseWheelUp` and `on mouseWheelDown` are the whole of the
+wheel, and no event of any kind carries a modifier**, so neither a
+horizontal wheel nor shift-wheel -- the two gestures every browser
+offers for this -- is expressible as such (FINDINGS.md, finding 38;
+festina.md §3s).
+
+The data is arriving on X11 under a name that means something else. The
+runtime maps buttons 4 and 5 to the two wheel events and lets every
+other button through as an ordinary press, so a wheel tilted left or
+right reaches a program as `mouseDown` with button 6 or 7. This browser
+reads those, with the finding named beside them. A Windows build reads
+`WM_MOUSEWHEEL` and nothing reads `WM_MOUSEHWHEEL`, so the same gesture
+produces no event at all there and a container scrolls across only by
+its thumb -- which is the part of the gap worth fixing upstream first:
+two backends disagreeing about whether an event exists.
+
+`scrollContainerAcrossAt` answers the same question across that
+`scrollContainerAt` answers down -- which container under the pointer
+can still take a scroll in the direction asked for -- so a box with only
+a vertical bar takes none across, and one at its right end hands the
+rest back.
+
 ### `::marker`
 
 The pseudo-element restyles a list item's marker (CSS Lists 3 §3). A

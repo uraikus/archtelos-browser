@@ -201,10 +201,12 @@ tiles with the leftover shared out around them.
 scrollbar and paint one there — always for `scroll`, and for `auto` only
 where the content overflows, the thumb being as long a share of the
 track as the box is of what it scrolls. **The wheel over such a box
-scrolls it down**, and the page only once it has reached its end;
-**either thumb can be taken hold of and dragged**, following the pointer
-even once it has left the bar; and a link inside one is clickable where
-it looks, on both axes. A horizontal bar is raised by a line of text too
+scrolls it down**, and the page only once it has reached its end; a
+wheel tilted sideways scrolls it across, where the window system says
+one was tilted — X11 does, and Windows does not (FINDINGS.md, finding
+38); **either thumb can be taken hold of and dragged**, following the
+pointer even once it has left the bar; and a link inside one is
+clickable where it looks, on both axes. A horizontal bar is raised by a line of text too
 long to break as well as by a child box reaching past the edge, and
 scrolling across moves the content the way scrolling down does.
 

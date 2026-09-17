@@ -207,6 +207,23 @@ void func wheelAt(x:int, y:int, dy:int) {
 on mouseWheelUp(x:int, y:int) { wheelAt(x, y, -SCROLL_STEP) }
 on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 
+// A wheel tilted sideways scrolls the container under it across. The
+// language has no horizontal wheel event and no event carries a
+// modifier, so neither a horizontal wheel nor shift-wheel is
+// expressible as such -- see FINDINGS.md, finding 38. What X11 does
+// send is a press of button 6 or 7, which `on mouseDown` below hands
+// here; a Windows build sends nothing at all, and scrolls across only
+// by the thumb.
+void func wheelAcrossAt(x:int, y:int, dx:int) {
+    if page == null || page.root == null || y < TOOLBAR_H { return }
+    Box inner = scrollContainerAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
+    if inner != null && boxScrollLeftBy(inner, dx) { repaint() }
+}
+
+// X11's own numbering: 6 is a tilt to the left and 7 to the right.
+const int BUTTON_WHEEL_LEFT = 6
+const int BUTTON_WHEEL_RIGHT = 7
+
 // The scroll container whose thumb the pointer took hold of, and how far
 // down the thumb it pressed, so the content does not jump on the first
 // pixel of the drag. The box is held by node id rather than by the Box
@@ -229,6 +246,8 @@ Box func dragThumbBox(b:Box) {
 }
 
 on mouseDown(x:int, y:int, button:int) {
+    if button == BUTTON_WHEEL_LEFT { wheelAcrossAt(x, y, -SCROLL_STEP)  return }
+    if button == BUTTON_WHEEL_RIGHT { wheelAcrossAt(x, y, SCROLL_STEP)  return }
     if button != 1 { return }
     if y < TOOLBAR_H {
         if x < 30 {

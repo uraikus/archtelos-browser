@@ -2862,6 +2862,30 @@ bool func scrollThumbDragTo(b:Box, top:int) {
     return boxScrollBy(b, to - boxScrollTop(b))
 }
 
+// The scroll container under the pointer that can still be scrolled
+// across in the direction asked for, or null -- the same question
+// `scrollContainerAt` answers down.
+Box func scrollContainerAcrossAt(b:Box, x:int, y:int, dx:int) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    int inner = boxScrollTop(b) > 0 ? y + boxScrollTop(b) : y
+    int innerX = boxScrollLeft(b) > 0 ? x + boxScrollLeft(b) : x
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if innerX >= c.x && innerX < c.x + c.w && inner >= c.y && inner < c.y + c.h {
+            Box found = scrollContainerAcrossAt(c, innerX, inner, dx)
+            if found != null { return found }
+        }
+    }
+    if b.sbH <= 0 { return null }
+    int range = boxScrollLeftRange(b)
+    if range <= 0 { return null }
+    int at = boxScrollLeft(b)
+    if dx > 0 && at >= range { return null }
+    if dx < 0 && at <= 0 { return null }
+    return b
+}
+
 // The same two, across.
 Box func scrollHThumbAt(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }

@@ -765,3 +765,45 @@ node it was looking for. This browser asks all three through an id field
 and calls that a proxy, because a box without an element behind it has
 no id and two boxes generated for one element share one.
 
+
+## 3s Give the wheel its other axis, and every input event its modifiers
+
+`on mouseWheelUp` and `on mouseWheelDown` are the whole of the wheel,
+and no event of any kind says whether a modifier key was held while it
+fired. Two ordinary gestures are therefore inexpressible: a horizontal
+scroll, and any shortcut built on shift-, control- or alt-click.
+
+**The horizontal half is already arriving.** The X11 backend maps
+buttons 4 and 5 to the two wheel events and lets everything else through
+as an ordinary press and release, so a wheel tilted sideways — or a
+trackpad scrolled sideways — reaches the program as `mouseDown` with
+button 6 or 7. The data is there under a name that means something else,
+and a program that wants it has to know that X11 numbers buttons that
+way. The Windows backend reads `WM_MOUSEWHEEL` and nothing reads
+`WM_MOUSEHWHEEL`, so the same gesture produces nothing at all there.
+Two backends disagreeing about whether an event exists is the part worth
+fixing first.
+
+```festina
+on mouseWheelLeft(x:int, y:int)  { ... }
+on mouseWheelRight(x:int, y:int) { ... }
+```
+
+Those two, mapped from X11's buttons 6 and 7 and from `WM_MOUSEHWHEEL`,
+would be the whole of it — and would retire a program's need to know
+either numbering.
+
+**The modifiers are a separate, larger question**, and the cheap form
+would do: a `modifiers:int` on every mouse and key event, a bitmask of
+shift, control, alt and the platform's own. Every backend already has it
+— `ev.xbutton.state` on X11, `wParam`'s low word on Win32, `NSEvent`'s
+`modifierFlags` on Cocoa — and none of it reaches a handler. Adding a
+parameter would break every existing handler, so it wants either a new
+event shape or a `modifierState()` the handler can call.
+
+**What it unlocks.** Scrolling a box sideways, which is what this
+browser wanted it for: a scroll container with a horizontal bar can be
+dragged by its thumb but not scrolled by the wheel, and shift-wheel —
+the gesture every browser offers for exactly this — cannot be read at
+all. Beyond that: shift-click to extend a selection, control-click to
+open in a new tab, alt-drag to pan. A browser is made of these.

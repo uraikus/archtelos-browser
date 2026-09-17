@@ -1181,3 +1181,47 @@ where the value has one -- and name this finding beside it.
 
 **Proposal.** See festina.md §3r.
 
+
+## 38 The wheel has one axis, and no event carries a modifier
+
+`on mouseWheelUp` and `on mouseWheelDown` are the whole of the wheel.
+There is no horizontal pair, and no event of any kind reports whether a
+modifier key was held while it fired:
+
+```festina
+on mouseWheelUp(x:int, y:int)   { log(`up at ${x},${y}`) }
+on mouseWheelDown(x:int, y:int) { log(`down at ${x},${y}`) }
+on mouseDown(x:int, y:int, button:int) { log(`button ${button}`) }
+```
+
+Tilting a wheel left or right, or scrolling a trackpad sideways, reaches
+that program as `button 6` and `button 7` on X11 -- the runtime maps
+buttons 4 and 5 to the two wheel events and lets every other button
+through as a press and a release:
+
+```c
+if (ev.xbutton.button == 4 || ev.xbutton.button == 5) {
+    if (ev.type == ButtonRelease) continue;
+    wev.kind = ev.xbutton.button == 4
+        ? FESTINA_WEVENT_MOUSE_WHEEL_UP : FESTINA_WEVENT_MOUSE_WHEEL_DOWN;
+} else {
+    wev.kind = ev.type == ButtonPress ? FESTINA_WEVENT_MOUSE_DOWN : ...;
+    wev.button = ev.xbutton.button;
+}
+```
+
+So the information is there on X11 and arrives under a name that means
+something else. It is not there on Windows: that backend reads
+`WM_MOUSEWHEEL` and nothing reads `WM_MOUSEHWHEEL`, so a horizontal
+scroll on a Windows build produces no event at all.
+
+**What this costs here.** A browser scrolls a box sideways two ways: a
+horizontal wheel, and a vertical wheel with shift held. Neither is
+expressible. This browser reads buttons 6 and 7 in `on mouseDown`
+instead, which works where X11 does and nowhere else, and cannot offer
+shift-wheel at all because no event says whether shift was down.
+
+**Workaround.** Treat `mouseDown` with button 6 or 7 as a horizontal
+wheel notch, and name this finding beside it.
+
+**Proposal.** See festina.md §3s.

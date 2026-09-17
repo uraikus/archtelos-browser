@@ -358,4 +358,30 @@ checkEqInt(scrollHThumbLeft(across) + scrollHThumbWidth(across),
            'and a box scrolled to its end puts the thumb at the end of its track')
 boxScrollReset()
 
+// ---- the wheel hands a container the scroll it can still take --------
+// A wheel over a scroll container scrolls that container, and the page
+// only once the container has reached its end in the direction asked
+// for. The across-axis answer is the same question over the other axis,
+// and it is the one a horizontal wheel needs -- which this browser reads
+// as a press of X11's button 6 or 7, because the language has no
+// horizontal wheel event (FINDINGS.md, finding 38).
+boxScrollReset()
+check(scrollContainerAcrossAt(pacross.root, 50, 10, 1) != null,
+      'a box with room to its right takes a scroll to the right')
+check(scrollContainerAcrossAt(pacross.root, 50, 10, 0 - 1) == null,
+      'and at its left end it takes none to the left')
+boxScrollLeftBy(across, 1000)
+check(scrollContainerAcrossAt(pacross.root, 50, 10, 1) == null,
+      'at its right end it takes no more to the right')
+check(scrollContainerAcrossAt(pacross.root, 50, 10, 0 - 1) != null,
+      'but takes one back to the left')
+boxScrollReset()
+check(scrollContainerAcrossAt(pacross.root, 50, 250, 1) == null,
+      'and a point outside it finds nothing at all')
+
+// A box that scrolls only down is not a box that scrolls across, which
+// is what keeps a horizontal wheel from moving a vertical list.
+check(scrollContainerAcrossAt(pdrag.root, 50, 10, 1) == null,
+      'a box with only a vertical bar takes no scroll across')
+
 finish('overflow')
