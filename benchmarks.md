@@ -32,11 +32,15 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
 - **Memory** is peak resident set size from `tests/maxrss.py`, and
   **size** is `wc -c` on the binaries. Both are described where they
   are reported.
-- **Pages**: the two examples in this repository, plus
-  `generated.html`, which `tests/bench.sh` generates deterministically
-  (40 sections, each a heading, a bordered card with a wrapping
-  paragraph and a six-item list, and a twelve-row table: 2,728
-  elements, 51 KB). Nobody else's HTML is vendored here.
+- **Pages**: the two examples in this repository plus two generated
+  ones, so the large cases are reproducible without vendoring anyone
+  else's HTML. `generated.html` is 40 sections, each a heading, a
+  bordered card with a wrapping paragraph and a six-item list, and a
+  twelve-row table: 2,728 elements, 51 KB, and no image, counter,
+  grid, multi-column container, transform or form control in it.
+  `features.html` is 24 sections of all six, with
+  `features-plain.html` as its control — see "what the feature page's
+  features cost".
 
 Everything below was measured on 2026-09-16.
 
@@ -96,6 +100,12 @@ What a shell script waiting for a PNG actually experiences:
 | hello.html | 4 KB | 39 ms | 517 ms |
 | css.html | 3 KB | 39 ms | 485 ms |
 | generated.html | 51 KB | 138 ms | 533 ms |
+| features.html | 60 KB | 123 ms | 473 ms |
+
+The last row comes from a later run of the same day, which is why
+Chromium reads 473 there against 485 to 533 above: that 60 ms is the
+start-up spread this section is about, on a browser whose engine did
+the same work in both.
 
 Chromium's column here moved by 40 ms between two runs an hour apart on
 an idle machine, and ours by 8, while the rendering table below held to
@@ -125,6 +135,12 @@ see the spread below.
 | hello.html | 4 KB | 11 ms | 1.1 ms | 10x |
 | css.html | 3 KB | 11 ms | 0.9 ms | 12x |
 | generated.html | 51 KB | 101 ms | 26.0 ms | **3.9x** |
+| features.html | 60 KB | 85 ms | 21.8 ms | **3.9x** |
+
+The feature page is larger in bytes and smaller in elements — 1,688
+against 2,728 — which is why it renders faster than the page above it
+while landing on the same ratio. Its row is one run rather than the
+middle of eight; the run's control qualified at 8.1%.
 
 **Chromium renders the 51 KB page about four times faster**, and the gap
 is wider on small pages because a fixed cost of about 10 ms has nothing
@@ -171,6 +187,7 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 | hello.html | 4 KB | <1 ms | 0.1 ms |
 | css.html | 3 KB | <1 ms | 0.1 ms |
 | generated.html | 51 KB | 8 ms | 2.2 ms |
+| features.html | 60 KB | 6 ms | 1.5 ms |
 
 **Between two and four times slower** on the large page. Ours is 8 ms
 run after run; Chromium's has been measured between 2.1 and 3.9 ms
@@ -356,6 +373,79 @@ Both figures are measured at 800x600, which is the viewport, so most of
 the 4,080-pixel-tall page is culled. A page whose angled gradients are
 all on screen pays more.
 
+## What the feature page's features cost
+
+`generated.html` is headings, paragraphs, lists and tables. It has no
+`<img>`, no counter, no grid, no multi-column container, no transform
+and no form control, so six features landed whose code none of its
+2,728 elements reaches and whose only number in this file was a size in
+bytes. `features.html` is the second page, measured beside the first
+rather than in place of it: replacing it would throw away every figure
+above, because a new page is a new control the same way a new reference
+browser is.
+
+It is 24 sections of 1,688 elements — a two-area named grid and a
+three-column grid of figures, four images a section at a size that
+makes `object-fit` do work, counters on the headings and on the step
+lists, rotated and scaled inline badges, a three-column multi-column
+block, and a form row of checkboxes, radios, a `field-sizing: content`
+text input and a button.
+
+`features-plain.html` is its control: the same markup, the same element
+count, the same image, and a stylesheet that turns the grids into
+blocks, the multi-column containers into one column, the transforms
+into `none`, the generated counters into no generated content,
+`object-fit` back to its initial value and the form controls out of
+being painted as form controls. What separates the two rows is those
+features doing their work.
+
+| Page | Cascade | Layout | Paint | End to end |
+|---|---|---|---|---|
+| features off (the control) | 24 ms | 44 ms | 6 ms | 114 ms |
+| features on | 26 ms | 50 ms | 7 ms | **124 ms** |
+
+**About 10 ms, and most of it is layout.** A difference between two
+numbers near 120 is the shape this file has got wrong before, so both
+terms' spreads are here and not the difference alone. Eight alternating
+best-of-3 samples give the control at 113, 115, 115, 116, 116, 117, 118
+and 122 ms end to end against the feature page's 124, 125, 125, 125,
+126, 126, 127 and 127 — two series that do not overlap. Per phase the
+separation is cleaner still: layout 44 to 45 against 50 to 51, cascade
+24 to 25 against 26 to 27, paint 6 to 7 against 7 to 8. The end-to-end
+table above reads 123 ms for the same page in the same run, one below
+the best of these samples, which is the size of the noise at this
+resolution.
+
+The image is in both columns and therefore in neither difference: a
+stylesheet can turn a grid into a block but it cannot un-write an
+`<img>`, so both pages fetch and decode the same PNG. That cost is in
+the phase list instead — `images: 4 ms` here against 2 ms on
+`generated.html`, which has no image at all and pays that for a walk of
+the tree looking for one.
+
+What the page cannot do is attribute the 10 ms to any one feature.
+Turning them off one at a time would take six more control pages; the
+honest reading is that this is what a page of this shape pays for all
+of them together, against nothing at all before.
+
+### The page is asked whether it still exercises what it claims to
+
+A benchmark page that has quietly stopped exercising a feature reads
+exactly like a feature that costs nothing, which is the failure this
+project keeps finding in its instruments. So
+`tests/featurepage.py --verify` renders the page, renders it again with
+each feature turned off by an appended rule, and requires the pixels or
+the document height to move; `tests/bench.sh` runs it before any of the
+tables and fails the run when something is dead.
+
+It caught two dead features on the first version of the page, before
+any number here was recorded. The form controls sat below the probe's
+canvas, so turning them off changed nothing it could see. And the
+image's natural size was its box's size, which makes `fill`, `cover`
+and `contain` paint identical pixels — `object-fit` was in the
+stylesheet and in none of the measurements. The image is 120x60 in a
+96x64 box now, and the probe's canvas is 3,000 pixels tall.
+
 ## What the preload scanner is worth
 
 The preload scanner reads the raw bytes for `<link rel=stylesheet>`,
@@ -501,6 +591,7 @@ Chromium column understates total system memory for that run.
 | hello.html | 4 KB | 13.2 MB | 194.5 MB |
 | css.html | 3 KB | 13.4 MB | 194.1 MB |
 | generated.html | 51 KB | 18.0 MB | 194.5 MB |
+| features.html | 60 KB | 17.3 MB | 195.1 MB |
 
 **About 15x less on a small page and 10x less on the large one**, and
 the shape differs as much as the size: Chromium's footprint is flat
@@ -721,18 +812,15 @@ control, so none of it is reached there: eight alternating samples give
 99 to 104 ms against the revision before it at 99 to 108, the same best
 on each side.
 
-**That is the sixth feature running whose benchmark can say nothing**,
-and it is worth stating as a fact about the page rather than repeating
-per feature. `generated.html` has no `<img>`, no counters, no grid, no
-multi-column container, no transform and no form control. What it does
-exercise — block and inline layout over 2,728 elements, the cascade, and
-text — is what the headline number measures, and that number is sound.
-What no run here can show is whether a feature outside that set costs
-what it claims to; for those the binary size is the measurement and the
-timing is a control against regressions elsewhere. todo.md carries the
-trade-off: a page that exercised everything would make each feature
-measurable and would invalidate every number in this file that was taken
-against the present one.
+**That was the sixth feature to land whose cost `generated.html` could
+not show**, each of the six measured above in bytes and controlled
+against a timing that never reached it. `generated.html` exercises
+block and inline layout over 2,728 elements, the cascade and text,
+which is what its headline number measures and what makes that number
+sound; it has no `<img>`, no counters, no grid, no multi-column
+container, no transform and no form control. `features.html` has all
+six and is measured beside it, so a run reaches them — see "what the
+feature page's features cost" above for what they come to together.
 
 Together the earlier two leave `generated.html` where it was. The revision before
 both, rebuilt and sampled alternately with this one in the same minutes,

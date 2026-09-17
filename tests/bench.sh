@@ -86,7 +86,29 @@ rows.append('</body></html>')
 open(sys.argv[1], 'w').write('\n'.join(rows))
 PYEOF
 
-PAGES="examples/hello.html examples/css.html $BENCH/generated.html"
+# The second large page. generated.html is headings, paragraphs, lists
+# and tables: no <img>, no counter, no grid, no multi-column container,
+# no transform and no form control, so the features that use those could
+# land without any number here moving. It stays as it is, because every
+# figure in benchmarks.md was taken against it and a new page is a new
+# control the same way a new reference browser is; features.html is
+# measured beside it. tests/featurepage.py writes it, its control, and
+# the image both use.
+python3 tests/featurepage.py "$BENCH" >/dev/null
+
+# And the page is asked whether it still exercises what it claims to,
+# because a page that has quietly stopped reads exactly like a feature
+# that costs nothing. Each feature is turned off by an appended rule and
+# has to change the render.
+FEATURES_BAD=0
+echo
+echo "## Does the feature page exercise its features?"
+echo
+feature_check="$(python3 tests/featurepage.py --verify "$BENCH" "$BENCH/browser" 2>&1)" \
+    || FEATURES_BAD=1
+echo "$feature_check" | sed 's/^/  /'
+
+PAGES="examples/hello.html examples/css.html $BENCH/generated.html $BENCH/features.html"
 
 human_size() { awk 'BEGIN{printf "%.0f KB", '"$(wc -c < "$1")"'/1024}'; }
 
@@ -263,6 +285,49 @@ for name in grad-flat grad-on grad-off; do
     printf "%-34s %12s %12s\n" "$label" "$bp" "$be"
 done
 
+# ---- what the feature page's features cost -------------------------------
+# The same document twice, with the same markup and the same element
+# count; only the stylesheet differs. features-plain.html turns the grid
+# into blocks, the multi-column containers into one column, the
+# transforms into `none`, the generated counters into no generated
+# content, `object-fit` back to its initial value and the form controls
+# out of being painted as form controls. What separates the two rows is
+# those features doing their work.
+#
+# Both pages fetch and decode the same image, so image loading is in
+# both rows and in neither difference; the `images` phase below reports
+# it on its own.
+echo
+echo "## What the feature page's features cost (best of $RUNS, ms)"
+echo
+printf "%-34s %9s %9s %9s %12s\n" "page" "cascade" "layout" "paint" "end to end"
+for name in features-plain features; do
+    bc=999999; bl=999999; bp=999999; be=999999
+    for _ in $(seq "$RUNS"); do
+        start=$(date +%s%N)
+        out=$(ARCHTELOS_TIMING=1 "$BENCH/browser" "$BENCH/$name.html" --screenshot "$BENCH/out.png" \
+              --width "$CANVAS_W" --height "$CANVAS_H" 2>&1)
+        end=$(date +%s%N)
+        ms=$(( (end - start) / 1000000 ))
+        c=$(echo "$out" | awk '/\[timing\] cascade:/ {print $3}')
+        l=$(echo "$out" | awk '/\[timing\] layout:/ {print $3}')
+        p=$(echo "$out" | awk '/\[timing\] paint:/ {print $3}')
+        [ -n "$c" ] && [ "$c" -lt "$bc" ] && bc=$c
+        [ -n "$l" ] && [ "$l" -lt "$bl" ] && bl=$l
+        [ -n "$p" ] && [ "$p" -lt "$bp" ] && bp=$p
+        [ "$ms" -lt "$be" ] && be=$ms
+    done
+    label="$name.html"
+    [ "$name" = "features-plain" ] && label="features off (the control)"
+    [ "$name" = "features" ] && label="features on"
+    printf "%-34s %9s %9s %9s %12s\n" "$label" "$bc" "$bl" "$bp" "$be"
+done
+
+echo
+echo "  Phases, features.html at ${CANVAS_W}px:"
+ARCHTELOS_TIMING=1 "$BENCH/browser" "$BENCH/features.html" --screenshot "$BENCH/out.png" \
+    --width "$CANVAS_W" --height "$CANVAS_H" 2>&1 | grep '^\[timing\]' | sed 's/^\[timing\] /    /'
+
 # ---- what the preload scanner is worth -----------------------------------
 # The scanner reads the raw bytes for <link>, <img> and <script> URLs
 # before tree construction and prefetches them on four worker threads,
@@ -425,7 +490,9 @@ if [ -n "${WPT_HTML_TESTS:-}" ]; then
 fi
 echo
 
-# A disqualified control fails the run, so a script that copies these
+# A disqualified control fails the run, and so does a feature page that
+# has stopped exercising a feature, so a script that copies these
 # numbers anywhere has to decide what to do about it rather than not
 # notice.
-exit "$CONTROL_BAD"
+if [ "$CONTROL_BAD" != 0 ] || [ "$FEATURES_BAD" != 0 ]; then exit 1; fi
+exit 0

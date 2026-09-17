@@ -318,6 +318,8 @@ how a struct graph is shaped, gets a valgrind run.
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, borders, border images, text decoration, transforms, right-to-left text, box shadows |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
+| `tests/featurepage.py` | the second benchmark page, its control and the image both use, and the `--verify` mode that requires the page to still exercise every feature it claims to |
+| `tests/gradpages.py` | the three pages the gradient benchmark compares |
 | `tests/latencyserver.py` | a local HTTP server that answers slowly, so the preload scanner has latency to hide |
 | `tests/maxrss.py` | peak resident set size of a command, for the memory benchmark |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |

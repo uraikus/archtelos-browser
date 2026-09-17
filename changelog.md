@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A second benchmark page, and a check that it measures anything
+
+`generated.html` — the page every figure in benchmarks.md is taken
+against — is headings, paragraphs, lists and tables. It has no `<img>`,
+no counter, no grid, no multi-column container, no transform and no
+form control, so six features landed in a row whose cost no run here
+could show. `features.html` is a second page carrying all six, measured
+beside the first rather than replacing it: a new page is a new control
+the same way a new reference browser is, and replacing this one would
+have thrown away every number in the file.
+
+Its control, `features-plain.html`, is the same markup and the same
+element count with a stylesheet that turns each feature off. The two
+differ by about 10 ms end to end, most of it layout, and both series'
+spreads are recorded beside the difference because subtracting two
+numbers near 120 is how this file has misled before.
+
+**The page's first version did not exercise two of the things it
+claimed to.** The form controls sat below the probe canvas, and the
+image's natural size was exactly its box's size — which makes `fill`,
+`cover` and `contain` paint identical pixels, so `object-fit` was in
+the stylesheet and in none of the measurements. Both were found by
+asking the page rather than by reading it: `tests/featurepage.py
+--verify` renders it, renders it again with each feature turned off by
+an appended rule, and requires the render to change. `tests/bench.sh`
+runs that before any table and fails the run if a feature is dead.
+
 ### `appearance`, `accent-color` and `field-sizing`
 
 Three properties of CSS Basic User Interface 4, taking the count from

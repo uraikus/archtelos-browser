@@ -356,23 +356,6 @@ rest. In rough order of how often real pages need it:
   still be a pixel off.
 - **Vertical writing modes.**
 
-### The benchmark page exercises less than the engine does
-
-`generated.html` has no `<img>`, no counters, no grid, no multi-column
-container, no transform and no form control. Six features have now
-landed whose cost the benchmark cannot measure, because none of their
-code runs on that page: the binary size is the only real number for
-them, and the timing serves as a control against a regression somewhere
-else rather than as a measurement of the feature.
-
-The fix is a page that exercises everything, and its cost is that every
-number in benchmarks.md was taken against the present page — a new page
-is a new control, the same way a new reference browser is, and the
-history would have to be rebuilt against it or abandoned. A second
-benchmark page, measured beside the first rather than replacing it,
-keeps the history and adds the coverage; `tests/bench.sh` already takes
-a list of pages.
-
 ## Networking is blocked on two Festina bugs
 
 Neither is a design decision and neither has a workaround in this
