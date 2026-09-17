@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An inset box-shadow's blur is the same Gaussian, from the other side
+
+The inside of a blurred shadow is the outside of its hole: where an
+outer shadow's alpha is the two axes of the Gaussian multiplied, an
+inset one's is one minus that. Painting `1 - fx` and then `1 - fy` over
+it accumulates to exactly that -- one minus (1 - (1 - fx)) times
+(1 - (1 - fy)) is one minus fx times fy -- so an inset shadow is two
+passes of plain strips, with no per-pixel work and not even the ramp
+images an outer shadow's corners need. Sixty cards with an
+`inset 0 0 12px rgba(0,0,0,.5)` paint in 2 ms against the 1 to 2 ms the
+frames it replaces took, and the binary grows 40 bytes.
+
+Two passes only accumulate to the right answer at full alpha, so a
+shadow that is not fully opaque is painted into an image at full alpha
+and that image blitted at the alpha it wanted -- which is also what
+keeps the strips inside the padding box, since the canvas has no clip
+region.
+
+Against Chromium's pixels on a 60x40 box with `inset 0 0 20px red`:
+0.482, 0.169, 0.031 and 0.706 of red where the Gaussian's own answers
+are 0.504, 0.186, 0.048 and 0.730. Each of Chromium's is a little under
+the Gaussian, the same way its outer shadow was, because three box
+blurs spread a little wider than the Gaussian they stand in for.
+
 ### An outer box-shadow's blur is the Gaussian the standard asks for
 
 Backgrounds and Borders 3 §7.1 asks for a shadow blurred by a Gaussian

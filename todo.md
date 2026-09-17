@@ -87,18 +87,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    algorithms, which is exact where it applies; what the pixel mode adds
    is an answer for the questions no algorithm settles on its own, such
    as where a tiling starts.
-5. **Backgrounds and Borders 3, completed**: **an `inset` shadow's
-   blur**, which is still frames whose alpha accumulates inward where an
-   outer shadow's is now the standard's Gaussian worked out from its
-   closed form. The arithmetic is already there and the inside is the
-   complement of the outside: one minus the two axes multiplied, which
-   is what two passes at `1 - fx` and `1 - fy` accumulate to, so it
-   needs no per-pixel work at all and not even the ramp images the
-   corners of an outer shadow use. `text-shadow`'s blur is the same
-   approximation and the same two passes would serve it. **And a
-   shadow does not follow a `border-radius`**: it is drawn as a
-   rectangle whatever the box's corners do, which a rounded card shows
-   at each corner.
+5. **Backgrounds and Borders 3, completed**: **`text-shadow`'s blur**,
+   which is still repeated draws at a fraction of the alpha where
+   `box-shadow`'s is now the standard's Gaussian. Text is not a
+   rectangle, so the closed form `box-shadow` uses does not carry over:
+   what would is blurring the glyphs' own coverage, which means reading
+   a painted pixel back, and the language cannot (FINDINGS.md, "a
+   painted pixel can be compared but never read"). **And a shadow does
+   not follow a `border-radius`**: it is drawn as a rectangle whatever
+   the box's corners do, which a rounded card shows at each corner. The
+   Gaussian of a rounded rectangle has no closed form, but the corner
+   is a quarter of one and the difference between a square corner and a
+   rounded one is a shape the ramps could be built from.
 
    A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as

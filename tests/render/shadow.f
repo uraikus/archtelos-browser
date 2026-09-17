@@ -213,6 +213,66 @@ check(getPixelColor(22, 40) != blue, 'a blurred inset shadow darkens the inside 
 check(getPixelColor(50, 40) == blue, 'and leaves the centre')
 check(getPixelColor(15, 40) == white, 'without escaping the box')
 
+// ---- and its falloff is the same Gaussian, from the other side ----------
+// The inside of a blurred shadow is the outside of its hole: where an
+// outer shadow keeps the two axes multiplied, an inset one keeps one
+// minus that. The hole here is the padding box itself -- no offset, no
+// spread -- so with `inset 0 0 20px red` on the same 60x40 box the
+// alpha is 1 - fx*fy, which is
+//
+//   (20, 40)  the first column inside the left edge   0.503859
+//   (30, 40)  ten pixels in                           0.185908
+//   (50, 40)  the middle of the box                   0.048378
+//   (20, 20)  the first pixel inside the corner       0.729684
+//   (79, 59)  and the one inside the opposite corner  0.729684
+//
+// -- a half against the edge and three quarters into a corner, which is
+// the outer shadow's half and quarter seen from the other side.
+//
+// Chromium 141 paints the same page at #7b0084, #2b00d4, #0800f7 and
+// #b4004b, which over the blue is 0.482, 0.169, 0.031 and 0.706 of red.
+// Each is a little under the Gaussian's own answer, the same way its
+// outer shadow was: three box blurs spread a little wider than the
+// Gaussian they stand in for, and it is the Gaussian the standard asks
+// for.
+//
+// The patch is painted over the box's own blue here rather than over
+// the page, because that is what the shadow is painted over.
+color func patchOverBox(alpha:float) {
+    fillStyle(blue)
+    fillAlpha(1.0)
+    drawRect(300, 200, 12, 12)
+    fillStyle(red)
+    fillAlpha(alpha)
+    drawRect(300, 200, 12, 12)
+    fillAlpha(1.0)
+    return getPixelColor(305, 205)
+}
+
+// Two eight-bit levels of slack here rather than the one an outer
+// shadow needs, because an inset one is two passes composited over each
+// other and the compositor drops a fraction each time: the middle of
+// this box reads 46 of 255 where the exact answer is 47.4. That is a
+// hundredth of the alpha, against the half the nested frames this
+// replaced were out by.
+bool func isAlphaOverBox(c:color, alpha:float) {
+    return c == patchOverBox(alpha) || c == patchOverBox(alpha + 0.002)
+        || c == patchOverBox(alpha - 0.002) || c == patchOverBox(alpha - 0.006)
+}
+
+shot('inset 0 0 20px red')
+color inEdge = getPixelColor(20, 40)
+color inTen = getPixelColor(30, 40)
+color inMiddle = getPixelColor(50, 40)
+color inCorner = getPixelColor(20, 20)
+color inFarCorner = getPixelColor(79, 59)
+check(isAlphaOverBox(inEdge, 0.503859), 'an inset shadow is half its colour against the edge')
+check(isAlphaOverBox(inTen, 0.185908), 'a standard deviation in it is what the hole leaves')
+check(isAlphaOverBox(inMiddle, 0.048378), 'and the middle of the box keeps a little of it')
+check(isAlphaOverBox(inCorner, 0.729684), 'a corner keeps three quarters, the outer shadow\'s quarter inverted')
+check(isAlphaOverBox(inFarCorner, 0.729684), 'and the opposite corner the same')
+check(getPixelColor(15, 40) == white, 'with nothing outside the box')
+
 // An inset shadow and an outer one on the same box are independent.
 shot('inset 0 0 0 5px red, 15px 0 0 blue')
 check(getPixelColor(22, 40) == red, 'the inset shadow still bands the inside')

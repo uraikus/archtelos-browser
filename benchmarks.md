@@ -878,6 +878,14 @@ blitting one axis's profile at the other axis's alpha is what brought it
 down, because `drawImage` multiplies an image's own alpha by `fillAlpha`
 and that product is what a separable blur is.
 
+An `inset` shadow's Gaussian costs **40 bytes** (2,791,472 →
+2,791,512) and nothing measurable: sixty cards with
+`inset 0 0 12px rgba(0,0,0,.5)` paint in 2 ms against 1 to 2 ms for the
+frames it replaces, five samples each. It is two passes of plain strips
+rather than a pixel at a time, because the inside of a shadow is the
+outside of its hole and one minus a product is what two passes
+accumulate to.
+
 Neither benchmark page has a shadow on it, so no table above moves.
 
 Percentage and elliptical `border-radius` costs **9,088 bytes**

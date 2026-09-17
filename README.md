@@ -138,10 +138,11 @@ styles, `text-emphasis` marks beside every character, and
 `text-shadow` behind it, borders in every CSS style —
 `solid`, `dashed`, `dotted`, `double`, and the four relief styles that
 shade their edges — with each side keeping its own, `box-shadow`
-with offset, blur, spread, `inset` and a list of shadows — an outer
-shadow's blur being the Gaussian the standard asks for, worked out
-from its closed form rather than filtered, so the shadow is half its
-colour against its own edge and a quarter of it past a corner —
+with offset, blur, spread, `inset` and a list of shadows — the blur
+being the Gaussian the standard asks for, worked out from its closed
+form rather than filtered, so an outer shadow is half its colour
+against its own edge and a quarter of it past a corner, and an inset
+one is the same figures inverted —
 images,
 broken-image placeholders,
 a background image can be fixed to the viewport so it does not scroll,

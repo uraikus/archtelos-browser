@@ -469,17 +469,59 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
         int iw = pw - sh.spread - sh.spread
         int ih = ph - sh.spread - sh.spread
         if sh.blur > 0 {
-            applyFillColor(sh.color)
-            float step = 1.0 / (sh.blur + 1).toFloat()
-            for int d = 1, d <= sh.blur, d++ {
-                fillAlpha(step * s.effectiveOpacity)
-                fillFrame(px, py, pw, ph, ix + d, iy + d, iw - d - d, ih - d - d)
-            }
+            paintInsetBlur(px, py, pw, ph, ix, iy, iw, ih,
+                           sh.color, s.effectiveOpacity, sh.blur)
+            continue
         }
         paintFill(sh.color, s.effectiveOpacity)
         fillFrame(px, py, pw, ph, ix, iy, iw, ih)
         fillAlpha(1.0)
     }
+}
+
+// The inside of a blurred shadow is the outside of its hole. An outer
+// shadow's alpha is the two axes multiplied; an inset one's is one
+// minus that, and painting `1 - fx` and then `1 - fy` over it
+// accumulates to exactly that -- one minus (1 - (1 - fx)) times
+// (1 - (1 - fy)) is one minus fx times fy. So an inset shadow is two
+// passes of plain strips: no per-pixel work, and not even the ramp
+// images an outer shadow's corners need.
+//
+// Two passes only accumulate to the right answer at full alpha, so a
+// shadow that is not fully opaque is painted into an image at full
+// alpha and that image blitted at the alpha it wanted -- which is also
+// how the strips are kept inside the padding box without a clip region.
+void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
+                         hx:int, hy:int, hw:int, hh:int,
+                         c:int, opacity:float, blur:int) {
+    if pw <= 0 || ph <= 0 { return }
+    int shade = colorWithOpacity(c, opacity)
+    if !colorIsPaintable(shade) { return }
+    float own = colorAlpha(shade).toFloat() / 255.0
+    float sigma = blur.toFloat() / 2.0
+    float fw = maxInt(hw, 0).toFloat()
+    float fh = maxInt(hh, 0).toFloat()
+    img layer = own >= 0.999 ? null : blankImage(pw, ph)
+    fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
+    for int i = 0, i < pw, i++ {
+        float a = 1.0 - blurAxis((px + i - hx).toFloat() + 0.5, 0.0, fw, sigma)
+        if a <= 0.002 { continue }
+        fillAlpha(a > 1.0 ? 1.0 : a)
+        if layer == null { pDrawRect(px + i, py, 1, ph) }
+        else { layer.drawRect(i, 0, 1, ph) }
+    }
+    for int j = 0, j < ph, j++ {
+        float a = 1.0 - blurAxis((py + j - hy).toFloat() + 0.5, 0.0, fh, sigma)
+        if a <= 0.002 { continue }
+        fillAlpha(a > 1.0 ? 1.0 : a)
+        if layer == null { pDrawRect(px, py + j, pw, 1) }
+        else { layer.drawRect(0, j, pw, 1) }
+    }
+    if layer != null {
+        fillAlpha(own)
+        pDrawImage(layer, px, py)
+    }
+    fillAlpha(1.0)
 }
 
 // The layer being painted. A global rather than a parameter because the
