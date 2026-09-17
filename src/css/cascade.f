@@ -1437,6 +1437,114 @@ arr[ascii] func cssTokens(value:ascii) {
     return out
 }
 
+// ---- one background layer's worth of each longhand -------------------
+// Every background longhand is a comma-separated list, one value per
+// layer (Backgrounds and Borders 3 §3.10), and a list shorter than the
+// image list repeats from its start. These take a value already chosen
+// for a layer, so the first layer and the rest go through the same
+// code and cannot drift apart.
+//
+// The shared empty list of extra layers: nothing writes to it, and it
+// is what almost every style keeps.
+arr[BgLayer] bgNoLayers = []
+
+ascii func layerValue(v:ascii, i:int) {
+    if v == null { return null }
+    arr[ascii] parts = splitTopLevelCommas(v)
+    if parts.length == 0 { return null }
+    // Copied rather than aliased: the slices point into a local that is
+    // gone when this returns (FINDINGS.md, "ascii aliases are not
+    // retained").
+    return dup(asciiTrim(parts[i % parts.length]))
+}
+
+// The two axes of background-repeat. Out-parameters because a Festina
+// function returns one value (FINDINGS.md, "one value out of a
+// function").
+bool bgRepeatXOut = true
+bool bgRepeatYOut = true
+
+void func parseBgRepeat(v:ascii) {
+    bgRepeatXOut = true
+    bgRepeatYOut = true
+    if v == null { return }
+    // The lowered string is held in a local and its words indexed
+    // rather than bound (FINDINGS.md, "ascii aliases are not retained").
+    ascii low = asciiLower(v)
+    arr[ascii] parts = asciiSplitSpace(low)
+    if parts.length == 1 {
+        if parts[0] == 'no-repeat' { bgRepeatXOut = false  bgRepeatYOut = false }
+        else if parts[0] == 'repeat-x' { bgRepeatYOut = false }
+        else if parts[0] == 'repeat-y' { bgRepeatXOut = false }
+    } else if parts.length >= 2 {
+        bgRepeatXOut = parts[0] != 'no-repeat'
+        bgRepeatYOut = parts[1] != 'no-repeat'
+    }
+}
+
+int bgSizeKindOut = BGSIZE_AUTO
+Len bgSizeWOut = lenAuto()
+Len bgSizeHOut = lenAuto()
+
+void func parseBgSize(v:ascii, fontSize:int) {
+    bgSizeKindOut = BGSIZE_AUTO
+    bgSizeWOut = lenAuto()
+    bgSizeHOut = lenAuto()
+    if v == null { return }
+    ascii low = asciiLower(v)
+    arr[ascii] parts = asciiSplitSpace(low)
+    if parts.length == 0 { return }
+    if parts[0] == 'cover' { bgSizeKindOut = BGSIZE_COVER  return }
+    if parts[0] == 'contain' { bgSizeKindOut = BGSIZE_CONTAIN  return }
+    Len sw = parseLength(parts[0], fontSize)
+    // One value gives the width and leaves the height `auto`, which
+    // takes its size from the image's own ratio.
+    Len sh = lenAuto()
+    if parts.length >= 2 { sh = parseLength(parts[1], fontSize) }
+    if sw.kind == LEN_PX || sw.kind == LEN_PERCENT || sh.kind == LEN_PX || sh.kind == LEN_PERCENT {
+        bgSizeKindOut = BGSIZE_EXPLICIT
+        bgSizeWOut = sw
+        bgSizeHOut = sh
+    }
+}
+
+int func parseBgClip(v:ascii) {
+    if v == null { return BGCLIP_BORDER }
+    ascii low = asciiLower(asciiTrim(v))
+    if low == 'padding-box' { return BGCLIP_PADDING }
+    if low == 'content-box' { return BGCLIP_CONTENT }
+    return BGCLIP_BORDER
+}
+
+int func parseBgOrigin(v:ascii) {
+    if v == null { return BGORIGIN_PADDING }
+    ascii low = asciiLower(asciiTrim(v))
+    if low == 'border-box' { return BGORIGIN_BORDER }
+    if low == 'content-box' { return BGORIGIN_CONTENT }
+    return BGORIGIN_PADDING
+}
+
+// Everything but the image itself, for one layer past the first.
+void func bgLayerProps(l:BgLayer, props:map[text], i:int, fontSize:int) {
+    parseBgRepeat(layerValue(styleProp(props, 'background-repeat'), i))
+    l.repeatX = bgRepeatXOut
+    l.repeatY = bgRepeatYOut
+    ascii px = layerValue(styleProp(props, 'background-position-x'), i)
+    ascii py = layerValue(styleProp(props, 'background-position-y'), i)
+    l.posX = px == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(px), true, fontSize)
+    l.posY = py == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(py), false, fontSize)
+    parseBgSize(layerValue(styleProp(props, 'background-size'), i), fontSize)
+    l.sizeKind = bgSizeKindOut
+    l.sizeW = bgSizeWOut
+    l.sizeH = bgSizeHOut
+    ascii clip = layerValue(styleProp(props, 'background-clip'), i)
+    l.clip = clip == null ? BGCLIP_BORDER : parseBgClip(clip)
+    ascii orig = layerValue(styleProp(props, 'background-origin'), i)
+    l.origin = orig == null ? BGORIGIN_PADDING : parseBgOrigin(orig)
+    ascii att = layerValue(styleProp(props, 'background-attachment'), i)
+    l.fixed = att != null && asciiLower(asciiTrim(att)) == 'fixed'
+}
+
 // ---- applying declarations (shorthand expansion) -------------------
 
 void func setProp(props:map[text], name:text, value:ascii) {
@@ -2663,25 +2771,56 @@ void func applyBackgroundShorthand(props:map[text], value:ascii) {
 // One value positions the horizontal axis and centres the other, unless
 // it is a vertical keyword, in which case it does the reverse -- which
 // is what Chromium computes for `background-position: top` too.
-void func applyBackgroundPositionShorthand(props:map[text], value:ascii) {
+// The two axes of one layer's position. Out-parameters, because a
+// Festina function returns one value (FINDINGS.md).
+text bgPosXOut = ''
+text bgPosYOut = ''
+
+void func splitBackgroundPosition(value:ascii) {
+    bgPosXOut = ''
+    bgPosYOut = ''
     ascii low = asciiLower(asciiTrim(value))
     arr[ascii] parts = asciiSplitSpace(low)
     if parts.length >= 2 {
-        props['background-position-x'] = dup(parts[0])
-        props['background-position-y'] = dup(parts[1])
+        bgPosXOut = parts[0].toText()
+        bgPosYOut = parts[1].toText()
         return
     }
     if parts.length != 1 { return }
     if parts[0] == 'top' {
-        props['background-position-x'] = 'center'.toAscii()
-        props['background-position-y'] = 'top'.toAscii()
+        bgPosXOut = 'center'
+        bgPosYOut = 'top'
     } else if parts[0] == 'bottom' {
-        props['background-position-x'] = 'center'.toAscii()
-        props['background-position-y'] = 'bottom'.toAscii()
+        bgPosXOut = 'center'
+        bgPosYOut = 'bottom'
     } else {
-        props['background-position-x'] = dup(parts[0])
-        props['background-position-y'] = 'center'.toAscii()
+        bgPosXOut = parts[0].toText()
+        bgPosYOut = 'center'
     }
+}
+
+void func applyBackgroundPositionShorthand(props:map[text], value:ascii) {
+    // One layer per comma, and each longhand keeps the same list, so a
+    // page with several background images positions each of them
+    // (Backgrounds and Borders 3 §3.10).
+    // Named bgLayerList rather than `layers`: a local that shares a name
+    // with a function anywhere in the program -- including a test's --
+    // resolves to the function, and the namespace is global across
+    // every imported file (FINDINGS.md, finding 9).
+    arr[ascii] bgLayerList = splitTopLevelCommas(value)
+    if bgLayerList.length == 0 { return }
+    text xs = ''
+    text ys = ''
+    for int i = 0, i < bgLayerList.length, i++ {
+        splitBackgroundPosition(asciiTrim(bgLayerList[i]))
+        if bgPosXOut == '' && bgPosYOut == '' { continue }
+        if xs != '' { xs = xs + ', '  ys = ys + ', ' }
+        xs = xs + bgPosXOut
+        ys = ys + bgPosYOut
+    }
+    if xs == '' { return }
+    props['background-position-x'] = xs.toAscii()
+    props['background-position-y'] = ys.toAscii()
 }
 
 // Which way the inline axis runs for the element these matches belong
@@ -4267,14 +4406,40 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if ci != null { s.counterIncrement = ci.toText() }
         if cst != null { s.counterSet = cst.toText() }
     }
+    // background-image and the longhands beside it are comma-separated
+    // lists, one value per layer (§3.10). The first layer goes in the
+    // fields it has always been in -- so a page with one background or
+    // none pays nothing -- and the rest go in `bgExtra`, which is the
+    // shared empty list until a page declares a second.
     s.backgroundImage = noGradient()
     s.backgroundUrl = ''
+    s.bgExtra = bgNoLayers
     ascii bgimg = styleProp(props, 'background-image')
+    int layerCount = 1
     if bgimg != null {
-        s.backgroundImage = parseGradient(bgimg, s.color, s.fontSize)
+        arr[ascii] imgParts = splitTopLevelCommas(bgimg)
+        layerCount = maxInt(imgParts.length, 1)
+        ascii first = layerCount > 1 ? dup(asciiTrim(imgParts[0])) : bgimg
+        s.backgroundImage = parseGradient(first, s.color, s.fontSize)
         if !s.backgroundImage.present {
-            s.backgroundUrl = parseUrlValue(bgimg)
+            s.backgroundUrl = parseUrlValue(first)
             if s.backgroundUrl != '' { anyBackgroundUrl = true }
+        }
+        if layerCount > 1 {
+            arr[BgLayer] extra = []
+            for int i = 1, i < layerCount, i++ {
+                BgLayer l
+                ascii one = dup(asciiTrim(imgParts[i]))
+                l.image = parseGradient(one, s.color, s.fontSize)
+                l.url = ''
+                if !l.image.present {
+                    l.url = parseUrlValue(one)
+                    if l.url != '' { anyBackgroundUrl = true }
+                }
+                bgLayerProps(l, props, i, s.fontSize)
+                extra.push(l)
+            }
+            s.bgExtra = extra
         }
     }
     // border-image. The source goes through the same gathering as a
@@ -4344,44 +4509,25 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     // background-attachment: fixed paints the background against the
     // viewport rather than the document, so it does not scroll.
-    ascii bga = styleProp(props, 'background-attachment')
+    // Every one of these is the first layer's slice of a comma-separated
+    // list, read by the same functions the other layers use.
+    ascii bga = layerValue(styleProp(props, 'background-attachment'), 0)
     if bga != null {
         s.backgroundFixed = asciiLower(asciiTrim(bga)) == 'fixed'
     }
-    // background-repeat: the two-value form names the axes separately,
-    // and the one-value form applies to both.
-    s.backgroundRepeatX = true
-    s.backgroundRepeatY = true
-    ascii bgrep = styleProp(props, 'background-repeat')
-    if bgrep != null {
-        // The lowered string is held in a local: the slices the split
-        // returns alias it, and a temporary would be released out from
-        // under them (FINDINGS.md, "ascii aliases are not retained").
-        ascii bgrepLow = asciiLower(bgrep)
-        arr[ascii] parts = asciiSplitSpace(bgrepLow)
-        // The slices are indexed rather than bound to a local: binding
-        // one releases an alias that was never retained (FINDINGS.md,
-        // "ascii aliases are not retained"). Valgrind found this; the
-        // tests passed either way.
-        if parts.length == 1 {
-            if parts[0] == 'no-repeat' { s.backgroundRepeatX = false  s.backgroundRepeatY = false }
-            else if parts[0] == 'repeat-x' { s.backgroundRepeatY = false }
-            else if parts[0] == 'repeat-y' { s.backgroundRepeatX = false }
-        } else if parts.length >= 2 {
-            s.backgroundRepeatX = parts[0] != 'no-repeat'
-            s.backgroundRepeatY = parts[1] != 'no-repeat'
-        }
-    }
+    parseBgRepeat(layerValue(styleProp(props, 'background-repeat'), 0))
+    s.backgroundRepeatX = bgRepeatXOut
+    s.backgroundRepeatY = bgRepeatYOut
     // Only the longhands are read: `background-position` was expanded
     // into them where it was applied, so the later of a shorthand and a
     // longhand wins whichever way round they are written.
     s.backgroundPosX = lenPercent(0.0)
     s.backgroundPosY = lenPercent(0.0)
-    ascii bgposX = styleProp(props, 'background-position-x')
+    ascii bgposX = layerValue(styleProp(props, 'background-position-x'), 0)
     if bgposX != null {
         s.backgroundPosX = parsePositionAxis(asciiLower(asciiTrim(bgposX)), true, s.fontSize)
     }
-    ascii bgposY = styleProp(props, 'background-position-y')
+    ascii bgposY = layerValue(styleProp(props, 'background-position-y'), 0)
     if bgposY != null {
         s.backgroundPosY = parsePositionAxis(asciiLower(asciiTrim(bgposY)), false, s.fontSize)
     }
@@ -4405,44 +4551,21 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // background-clip and background-origin (Backgrounds and Borders 3
     // §3.7, §3.8). Both initial values are the zero value of their
     // field, so a style that names neither writes nothing here.
-    ascii bgclip = styleProp(props, 'background-clip')
-    if bgclip != null {
-        ascii bgclipLow = asciiLower(asciiTrim(bgclip))
-        if bgclipLow == 'padding-box' { s.backgroundClip = BGCLIP_PADDING }
-        else if bgclipLow == 'content-box' { s.backgroundClip = BGCLIP_CONTENT }
-        else { s.backgroundClip = BGCLIP_BORDER }
-    }
-    ascii bgorigin = styleProp(props, 'background-origin')
+    ascii bgclip = layerValue(styleProp(props, 'background-clip'), 0)
+    if bgclip != null { s.backgroundClip = parseBgClip(bgclip) }
+    ascii bgorigin = layerValue(styleProp(props, 'background-origin'), 0)
     if bgorigin != null {
-        ascii bgoriginLow = asciiLower(asciiTrim(bgorigin))
-        if bgoriginLow == 'border-box' { s.backgroundOrigin = BGORIGIN_BORDER }
-        else if bgoriginLow == 'content-box' { s.backgroundOrigin = BGORIGIN_CONTENT }
-        else { s.backgroundOrigin = BGORIGIN_PADDING }
+        s.backgroundOrigin = parseBgOrigin(bgorigin)
     }
     // background-size (Backgrounds and Borders 3 §3.9). `auto` is the
     // initial value on both axes and is the zero value of these fields,
     // so a style that does not mention it writes nothing here.
-    ascii bgsize = styleProp(props, 'background-size')
+    ascii bgsize = layerValue(styleProp(props, 'background-size'), 0)
     if bgsize != null {
-        // The lowered string is held in a local and its words indexed
-        // rather than bound (FINDINGS.md, "ascii aliases are not
-        // retained").
-        ascii bgsizeLow = asciiLower(bgsize)
-        arr[ascii] parts = asciiSplitSpace(bgsizeLow)
-        if parts.length >= 1 && parts[0] == 'cover' { s.backgroundSizeKind = BGSIZE_COVER }
-        else if parts.length >= 1 && parts[0] == 'contain' { s.backgroundSizeKind = BGSIZE_CONTAIN }
-        else if parts.length >= 1 {
-            Len sw = parseLength(parts[0], s.fontSize)
-            // One value gives the width and leaves the height `auto`,
-            // which takes its size from the image's own ratio.
-            Len sh = lenAuto()
-            if parts.length >= 2 { sh = parseLength(parts[1], s.fontSize) }
-            if sw.kind == LEN_PX || sw.kind == LEN_PERCENT || sh.kind == LEN_PX || sh.kind == LEN_PERCENT {
-                s.backgroundSizeKind = BGSIZE_EXPLICIT
-                s.backgroundSizeW = sw
-                s.backgroundSizeH = sh
-            }
-        }
+        parseBgSize(bgsize, s.fontSize)
+        s.backgroundSizeKind = bgSizeKindOut
+        s.backgroundSizeW = bgSizeWOut
+        s.backgroundSizeH = bgSizeHOut
     }
     // object-fit and object-position (CSS Images 3 §5.5, §5.6). The
     // initial position is `50% 50%`, unlike background-position's

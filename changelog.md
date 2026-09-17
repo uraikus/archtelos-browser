@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Several background layers on one box
+
+`background-image` takes a comma-separated list, and every other
+background longhand takes one too: the i-th value goes with the i-th
+image, and a list shorter than the images repeats from its start
+(Backgrounds and Borders 3 §3.10). The layers paint back to front in the
+**reverse** of the order they are written, so the first written is on
+top, and the colour goes underneath them all — clipped by the *last*
+layer's `background-clip`, which is what the standard says and what the
+one-layer code was already doing by accident.
+
+**The first layer stays in the fields it was always in.** Turning the
+eleven background fields of `Style` into arrays would allocate for every
+distinct style on every page, and almost every page has one background
+or none; instead `bgExtra` is a shared empty list until a page declares
+a second layer, and the painter reads one reusable `BgLayer` that is
+filled from the style or from the list. A box with no image of its own
+does not even pay for that fill.
+
+Layer 0 and the rest go through the same parsing functions, called with
+their own slice of each list, so the first layer and the others cannot
+drift apart — the failure that this file records for `styleDigest` and
+for `@supports`.
+
+**`background-position` had to learn about commas.** It is expanded into
+`background-position-x` and `background-position-y` where it is applied,
+so cascade order between shorthand and longhand can be honoured, and
+that expansion split on spaces: `0 0, 20px 0` became an x of `0` and a y
+of `0,`. It splits on layers first now and hands each longhand a list of
+its own.
+
+Two Festina traps on the way: assigning to a field of an array element
+writes to a copy, so the resolved url has to be written back into the
+list; and a local named `layers` resolved to a *test's* function of that
+name, because the namespace is global across every imported file
+(FINDINGS.md, finding 9) — the compiler's message was that `length` is
+not a field of `func[text]:void`.
+
+9,672 bytes. Paint is 8 ms either way on the benchmark page, which has
+no background image on it.
+
 ### `all`
 
 One declaration setting every property to a CSS-wide keyword (Cascade 4

@@ -157,7 +157,10 @@ halfway between them rather than leaving it in the middle. `background-image: ur
 paints a fetched image with `background-repeat`,
 `background-position` — or `background-position-x` and
 `background-position-y` separately — and `background-size`, which takes
-`cover`, `contain`, lengths, percentages and `auto` on either axis.
+`cover`, `contain`, lengths, percentages and `auto` on either axis. A
+box may have several background layers: every background longhand takes
+a comma-separated list, the i-th value going with the i-th image, and
+the layers paint back to front so the one written first is on top.
 Each corner takes its own `border-radius`, in a length or a percentage
 of the box, and may be an ellipse rather than a quarter circle — the
 `/` form gives the horizontal radii before the slash and the vertical

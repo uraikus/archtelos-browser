@@ -411,6 +411,27 @@ struct Shadow {
     inset:bool
 }
 
+// One background layer past the first (Backgrounds and Borders 3
+// §3.10). The first layer stays in the `background*` fields of `Style`,
+// unchanged, so a page with one background or none -- which is almost
+// every page -- allocates nothing and the painter's ordinary path is
+// untouched. The layers paint back to front in the reverse of the order
+// they are written, so the first one written is on top.
+struct BgLayer {
+    url:text
+    image:Gradient
+    repeatX:bool
+    repeatY:bool
+    posX:Len
+    posY:Len
+    sizeKind:int
+    sizeW:Len
+    sizeH:Len
+    clip:int
+    origin:int
+    fixed:bool
+}
+
 struct Gradient {
     present:bool
     repeating:bool
@@ -594,6 +615,9 @@ struct Style {
     // kept beside the pseudo-element's style, not here.
     contentUrl:text
     backgroundFixed:bool    // background-attachment: fixed
+    // The layers after the first, in the order they were written. The
+    // shared empty list until a page declares a second one.
+    bgExtra:arr[BgLayer]
     verticalAlign:int
     floatSide:int
     clearSide:int

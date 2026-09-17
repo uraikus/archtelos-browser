@@ -86,32 +86,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    which is exact; `tests/render/objectfit.f` derives every expectation
    from the intrinsic size and the box and states the derivation beside
    the check. A radial gradient can be graded the same way.
-5. **Backgrounds and Borders 3, completed**: more than one background
-   layer per box — the shape of that one is worth writing down, because
-   the obvious way to do it is the expensive way. The eleven background
-   fields on `Style` are scalars, and turning them into arrays would
-   allocate for every distinct style on every page, almost all of which
-   have one background or none. Keep the first layer in the fields it is
-   in and add `bgExtra:arr[BgLayer]`, a shared empty array unless a page
-   declares a second layer; the painter's ordinary path is then
-   untouched. Painting order is the reverse of the declaration order —
-   the first layer is on top — so it is the colour, then `bgExtra` from
-   last to first, then the fields. The painter's three functions take
-   the layer's own url, gradient, repeat, position, size, origin and
-   clip rather than reading them off the `Style`, with the first layer
-   filled into one reusable global so no box allocates. The `background`
-   shorthand already keeps only the colour and the image of what it is
-   given, so a comma list there needs the images joined and nothing
-   else; `background-image` splits on top-level commas, and each other
-   longhand's list is matched to the layers by index, cycling where it
-   is shorter.
-   Also `border-image-repeat`'s
+5. **Backgrounds and Borders 3, completed**: `border-image-repeat`'s
    `round` and `space`, which fit the last tile rather than cutting it;
    a blurred
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces. A
    single background image from `url()` with `repeat`,
-   `position`, `size`, `origin` and `clip` is done, and so is every border
+   `position`, `size`, `origin` and `clip` is done, as many layers deep as
+   a page asks for, and so is every border
    style, per side, and a radius on each corner separately — in lengths
    or percentages, with the elliptical `/` form that gives a corner two
    radii, and the standard's overlap scaling where two on an edge would

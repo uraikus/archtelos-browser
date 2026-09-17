@@ -850,6 +850,14 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+Several background layers cost **9,672 bytes** (2,768,672 → 2,778,344)
+and nothing measurable in time: paint is 8 ms on `generated.html` before
+and after, and its end-to-end best of five moved from 135 to 136 ms,
+which is the noise two builds of the same source show. The page has no
+background image on it, so what is being checked there is that the
+refactor did not cost the boxes that have only a colour: a box with no
+image of its own does not reach the layer machinery at all.
+
 `all` costs **48 bytes** (2,768,624 → 2,768,672), which is what a
 feature reached through one string comparison per declaration looks
 like. Nothing walks the property list unless a page says `all`.

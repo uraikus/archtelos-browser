@@ -360,6 +360,84 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
     }
 }
 
+// The layer being painted. A global rather than a parameter because the
+// three functions below read seven of its fields between them, and
+// because filling one reusable struct per layer costs no allocation --
+// which matters: this runs for every box on the page that has a
+// background.
+BgLayer bgPaint
+
+void func bgLayerOfStyle(s:Style) {
+    bgPaint.url = s.backgroundUrl
+    bgPaint.image = s.backgroundImage
+    bgPaint.repeatX = s.backgroundRepeatX
+    bgPaint.repeatY = s.backgroundRepeatY
+    bgPaint.posX = s.backgroundPosX
+    bgPaint.posY = s.backgroundPosY
+    bgPaint.sizeKind = s.backgroundSizeKind
+    bgPaint.sizeW = s.backgroundSizeW
+    bgPaint.sizeH = s.backgroundSizeH
+    bgPaint.clip = s.backgroundClip
+    bgPaint.origin = s.backgroundOrigin
+    bgPaint.fixed = s.backgroundFixed
+}
+
+void func bgLayerOf(l:BgLayer) {
+    bgPaint.url = l.url
+    bgPaint.image = l.image
+    bgPaint.repeatX = l.repeatX
+    bgPaint.repeatY = l.repeatY
+    bgPaint.posX = l.posX
+    bgPaint.posY = l.posY
+    bgPaint.sizeKind = l.sizeKind
+    bgPaint.sizeW = l.sizeW
+    bgPaint.sizeH = l.sizeH
+    bgPaint.clip = l.clip
+    bgPaint.origin = l.origin
+    bgPaint.fixed = l.fixed
+}
+
+// One layer's image, placed in its own origin area and clipped to its
+// own painting area. `bgPaint` says which layer.
+void func paintBackgroundLayer(x:int, y:int, w:int, h:int,
+                               bl:int, bt:int, br:int, bb:int,
+                               pl:int, pt:int, pr:int, pb:int, s:Style) {
+    bool hasImage = bgPaint.image.present || bgPaint.url != ''
+    if !hasImage { return }
+    int clipX = x
+    int clipY = y
+    int clipW = w
+    int clipH = h
+    if bgPaint.clip != BGCLIP_BORDER {
+        backgroundArea(bgPaint.clip, BGCLIP_BORDER, BGCLIP_CONTENT,
+                       x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+        clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
+        if clipW <= 0 || clipH <= 0 { return }
+    }
+    backgroundArea(bgPaint.origin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
+                   x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
+    int origX = bgAreaX
+    int origY = bgAreaY
+    int origW = bgAreaW
+    int origH = bgAreaH
+    if origW <= 0 || origH <= 0 { origX = clipX  origY = clipY  origW = clipW  origH = clipH }
+    // `background-attachment: fixed` positions the image against the
+    // viewport rather than the element, so it stays where it is while
+    // the page scrolls under it. The clip is still the element's own
+    // area, so the image shows only where the element is.
+    if bgPaint.fixed {
+        origX = 0
+        origY = paintScrollY
+        origW = clipW > 0 ? canvasViewWidth() : origW
+        origH = paintViewHeight > 0 ? paintViewHeight : origH
+    }
+    if bgPaint.image.present {
+        paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+    } else {
+        paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+    }
+}
+
 void func paintBackground(x:int, y:int, w:int, h:int,
                           bl:int, bt:int, br:int, bb:int,
                           pl:int, pt:int, pr:int, pb:int, s:Style) {
@@ -372,8 +450,13 @@ void func paintBackground(x:int, y:int, w:int, h:int,
     int clipY = y
     int clipW = w
     int clipH = h
-    if s.backgroundClip != BGCLIP_BORDER {
-        backgroundArea(s.backgroundClip, BGCLIP_BORDER, BGCLIP_CONTENT,
+    // The colour goes under every image, clipped by the LAST layer's
+    // `background-clip` (§3.5) -- which is the first layer's only when
+    // there is one.
+    int colourClip = s.bgExtra.length > 0
+        ? s.bgExtra[s.bgExtra.length - 1].clip : s.backgroundClip
+    if colourClip != BGCLIP_BORDER {
+        backgroundArea(colourClip, BGCLIP_BORDER, BGCLIP_CONTENT,
                        x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
         clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
         if clipW <= 0 || clipH <= 0 { return }
@@ -394,30 +477,19 @@ void func paintBackground(x:int, y:int, w:int, h:int,
         }
         fillAlpha(1.0)
     }
-    // the background image paints over the colour
-    bool hasImage = s.backgroundImage.present || s.backgroundUrl != ''
-    if !hasImage { return }
-    backgroundArea(s.backgroundOrigin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
-                   x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
-    int origX = bgAreaX
-    int origY = bgAreaY
-    int origW = bgAreaW
-    int origH = bgAreaH
-    if origW <= 0 || origH <= 0 { origX = clipX  origY = clipY  origW = clipW  origH = clipH }
-    // `background-attachment: fixed` positions the image against the
-    // viewport rather than the element, so it stays where it is while
-    // the page scrolls under it. The clip is still the element's own
-    // area, so the image shows only where the element is.
-    if s.backgroundFixed {
-        origX = 0
-        origY = paintScrollY
-        origW = clipW > 0 ? canvasViewWidth() : origW
-        origH = paintViewHeight > 0 ? paintViewHeight : origH
+    // The images paint over the colour, back to front: the layers are
+    // written front to back, so the last one goes down first and the
+    // first one written ends up on top.
+    for int k = 0, k < s.bgExtra.length, k++ {
+        bgLayerOf(s.bgExtra[s.bgExtra.length - 1 - k])
+        paintBackgroundLayer(x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb, s)
     }
-    if s.backgroundImage.present {
-        paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
-    } else {
-        paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+    // The first layer last, so it ends up on top. Asked before the
+    // twelve fields are copied, because this runs for every box on the
+    // page and most of them have no image at all.
+    if s.backgroundImage.present || s.backgroundUrl != '' {
+        bgLayerOfStyle(s)
+        paintBackgroundLayer(x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb, s)
     }
 }
 
@@ -429,12 +501,12 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
                                origX:int, origY:int, origW:int, origH:int, s:Style) {
     if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
-        if s.backgroundImage.conic {
-            paintConicGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
-        } else if s.backgroundImage.radial {
-            paintRadialGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        if bgPaint.image.conic {
+            paintConicGradient(clipX, clipY, clipW, clipH, bgPaint.image, s.effectiveOpacity)
+        } else if bgPaint.image.radial {
+            paintRadialGradient(clipX, clipY, clipW, clipH, bgPaint.image, s.effectiveOpacity)
         } else {
-            paintLinearGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+            paintLinearGradient(clipX, clipY, clipW, clipH, bgPaint.image, s.effectiveOpacity)
         }
         return
     }
@@ -444,12 +516,12 @@ void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
     // document coordinates
     layer.translate(0 - clipX, 0 - clipY)
     paintLayer = layer
-    if s.backgroundImage.conic {
-        paintConicGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
-    } else if s.backgroundImage.radial {
-        paintRadialGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    if bgPaint.image.conic {
+        paintConicGradient(origX, origY, origW, origH, bgPaint.image, s.effectiveOpacity)
+    } else if bgPaint.image.radial {
+        paintRadialGradient(origX, origY, origW, origH, bgPaint.image, s.effectiveOpacity)
     } else {
-        paintLinearGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+        paintLinearGradient(origX, origY, origW, origH, bgPaint.image, s.effectiveOpacity)
     }
     paintLayer = prev
     fillAlpha(s.effectiveOpacity)
@@ -485,22 +557,22 @@ int bgTileH = 0
 void func backgroundTileSize(s:Style, iw:int, ih:int, w:int, h:int) {
     bgTileW = iw
     bgTileH = ih
-    if s.backgroundSizeKind == BGSIZE_AUTO { return }
+    if bgPaint.sizeKind == BGSIZE_AUTO { return }
     float fw = w.toFloat() / iw.toFloat()
     float fh = h.toFloat() / ih.toFloat()
-    if s.backgroundSizeKind == BGSIZE_COVER || s.backgroundSizeKind == BGSIZE_CONTAIN {
-        float scale = s.backgroundSizeKind == BGSIZE_COVER
+    if bgPaint.sizeKind == BGSIZE_COVER || bgPaint.sizeKind == BGSIZE_CONTAIN {
+        float scale = bgPaint.sizeKind == BGSIZE_COVER
             ? (fw > fh ? fw : fh)
             : (fw < fh ? fw : fh)
         bgTileW = roundPx(iw.toFloat() * scale)
         bgTileH = roundPx(ih.toFloat() * scale)
         return
     }
-    bool autoW = s.backgroundSizeW.kind != LEN_PX && s.backgroundSizeW.kind != LEN_PERCENT
-    bool autoH = s.backgroundSizeH.kind != LEN_PX && s.backgroundSizeH.kind != LEN_PERCENT
+    bool autoW = bgPaint.sizeW.kind != LEN_PX && bgPaint.sizeW.kind != LEN_PERCENT
+    bool autoH = bgPaint.sizeH.kind != LEN_PX && bgPaint.sizeH.kind != LEN_PERCENT
     if autoW && autoH { return }
-    if !autoW { bgTileW = roundPx(lenToPx(s.backgroundSizeW, w, s.fontSize)) }
-    if !autoH { bgTileH = roundPx(lenToPx(s.backgroundSizeH, h, s.fontSize)) }
+    if !autoW { bgTileW = roundPx(lenToPx(bgPaint.sizeW, w, s.fontSize)) }
+    if !autoH { bgTileH = roundPx(lenToPx(bgPaint.sizeH, h, s.fontSize)) }
     if autoW { bgTileW = roundPx(iw.toFloat() * bgTileH.toFloat() / ih.toFloat()) }
     if autoH { bgTileH = roundPx(ih.toFloat() * bgTileW.toFloat() / iw.toFloat()) }
 }
@@ -508,7 +580,7 @@ void func backgroundTileSize(s:Style, iw:int, ih:int, w:int, h:int) {
 void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
                                x:int, y:int, w:int, h:int, s:Style) {
     if w <= 0 || h <= 0 || clipW <= 0 || clipH <= 0 { return }
-    img src = loadedImages[s.backgroundUrl]
+    img src = loadedImages[bgPaint.url]
     if src == null { return }
     int srcW = src.width
     int srcH = src.height
@@ -520,15 +592,15 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
     // The drawn size, not the intrinsic one, is what the position
     // distributes the leftover of and what the repeat steps by.
     bool scaled = iw != srcW || ih != srcH
-    int ox = resolvePositionAxis(s.backgroundPosX, w - iw, s.fontSize)
-    int oy = resolvePositionAxis(s.backgroundPosY, h - ih, s.fontSize)
+    int ox = resolvePositionAxis(bgPaint.posX, w - iw, s.fontSize)
+    int oy = resolvePositionAxis(bgPaint.posY, h - ih, s.fontSize)
 
     // Where the first tile starts. Repeating backwards from the
     // declared position keeps the tile grid anchored to it.
     int startX = ox
     int startY = oy
-    if s.backgroundRepeatX { while startX > 0 { startX = startX - iw } }
-    if s.backgroundRepeatY { while startY > 0 { startY = startY - ih } }
+    if bgPaint.repeatX { while startX > 0 { startX = startX - iw } }
+    if bgPaint.repeatY { while startY > 0 { startY = startY - ih } }
 
     // The tiles are laid out in the positioning area and painted into
     // an image the size of the painting area, so `background-clip` cuts
@@ -547,13 +619,13 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
             // is filtered, so the tile is only scaled when it has to be.
             if scaled { layer.drawImage(src, tx + shiftX, ty + shiftY, iw, ih) }
             else { layer.drawImage(src, tx + shiftX, ty + shiftY) }
-            if !s.backgroundRepeatX { moreX = false }
+            if !bgPaint.repeatX { moreX = false }
             else {
                 tx = tx + iw
                 if tx >= w { moreX = false }
             }
         }
-        if !s.backgroundRepeatY { moreY = false }
+        if !bgPaint.repeatY { moreY = false }
         else {
             ty = ty + ih
             if ty >= h { moreY = false }

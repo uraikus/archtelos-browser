@@ -432,4 +432,64 @@ checkEqInt(tileOrigin('background-position-x:99px;background-position:20px 30px'
            tileOrigin('background-position:20px 30px'),
            'and the shorthand after a longhand overrides it')
 
+// ---- more than one layer (Backgrounds and Borders 3 §3.10) -----------
+// `background-image` takes a comma-separated list, and every other
+// background longhand takes one too: the i-th value goes with the i-th
+// image, and a list shorter than the images repeats from its start.
+//
+// The layers paint back to front in the *reverse* of the order they are
+// written, so the first one written is on top — which is the whole of
+// what these checks are about, and which cannot be read off a single
+// layer however it is positioned.
+//
+// The fixtures are the 10x10 blue-and-green tile and a 10x10 flat red
+// square, so a pixel says which layer painted it.
+color red = 'red'
+
+void func layers(style:text) {
+    Page p = pageFromHtml(head + '<div style="width:100px;height:60px;background-color:#dddddd;'
+        + style + '"></div></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+// Two layers, side by side: each paints where its own position puts it.
+layers('background-image:url(red.png), url(tile.png);'
+     + 'background-repeat:no-repeat;background-position:0 0, 20px 0')
+check(getPixelColor(2, 2) == red, 'the first layer paints at its own position')
+check(getPixelColor(22, 2) == blue, 'and the second at its own, blue half first')
+check(getPixelColor(27, 2) == green, 'with its green half beside it')
+check(getPixelColor(12, 2) == grey, 'and the background colour between them')
+
+// The same two layers at the same place: the first one written wins.
+layers('background-image:url(red.png), url(tile.png);'
+     + 'background-repeat:no-repeat;background-position:0 0')
+check(getPixelColor(2, 2) == red, 'two layers at one position: the first is on top')
+check(getPixelColor(7, 2) == red, 'across the whole of it')
+
+// Written the other way round, the other one wins -- which is the check
+// that does not depend on either colour being the right answer.
+layers('background-image:url(tile.png), url(red.png);'
+     + 'background-repeat:no-repeat;background-position:0 0')
+check(getPixelColor(2, 2) == blue, 'and reversing the list reverses which is on top')
+check(getPixelColor(7, 2) == green, 'the whole tile over the red')
+
+// A repeat list shorter than the image list repeats from its start, so
+// one `no-repeat` covers both layers.
+layers('background-image:url(red.png), url(tile.png);'
+     + 'background-repeat:no-repeat;background-position:0 0, 20px 0')
+check(getPixelColor(22, 40) == grey, 'a single repeat value applies to every layer')
+
+// A gradient is a layer like any other, and one written first covers
+// the image under it.
+layers('background-image:linear-gradient(red, red), url(tile.png);'
+     + 'background-repeat:no-repeat')
+check(getPixelColor(2, 2) == red, 'a gradient layer paints over the image below it')
+check(getPixelColor(50, 40) == red, 'across the whole box, since a gradient has no tile')
+
+// One layer still behaves exactly as it did.
+layers('background-image:url(tile.png);background-repeat:no-repeat')
+check(getPixelColor(2, 2) == blue, 'a single layer is unchanged')
+check(getPixelColor(2, 40) == grey, 'and still leaves the colour below it')
+
 finish('background images')

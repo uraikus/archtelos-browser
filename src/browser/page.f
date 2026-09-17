@@ -156,6 +156,19 @@ void func gatherBackgroundImages(page:Page, n:Node) {
     if n.kind == NODE_ELEMENT && n.style.borderImageUrl != '' {
         n.style.borderImageUrl = fetchStyleImage(page, n.style.borderImageUrl)
     }
+    // Every layer past the first, which the style keeps in its own list.
+    if n.kind == NODE_ELEMENT && n.style.bgExtra.length > 0 {
+        for int i = 0, i < n.style.bgExtra.length, i++ {
+            // Read, resolve, write back: assigning to a field of an
+            // array element in place writes to a copy in Festina, and
+            // the layer's url would stay the unresolved one the
+            // stylesheet gave.
+            BgLayer l = n.style.bgExtra[i]
+            if l.url == '' { continue }
+            l.url = fetchStyleImage(page, l.url)
+            n.style.bgExtra[i] = l
+        }
+    }
     if n.kind == NODE_ELEMENT && n.style.backgroundUrl != '' {
         text raw = n.style.backgroundUrl
         ascii a = raw.toAscii()
