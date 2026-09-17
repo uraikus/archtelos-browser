@@ -124,12 +124,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rectangle, so the closed form `box-shadow` uses does not carry over:
    what would is blurring the glyphs' own coverage, which means reading
    a painted pixel back, and the language cannot (FINDINGS.md, "a
-   painted pixel can be compared but never read"). **And a shadow does
-   not follow a `border-radius`**: it is drawn as a rectangle whatever
-   the box's corners do, which a rounded card shows at each corner. The
-   Gaussian of a rounded rectangle has no closed form, but the corner
-   is a quarter of one and the difference between a square corner and a
-   rounded one is a shape the ramps could be built from.
+   painted pixel can be compared but never read"). **And an `inset`
+   shadow does not follow a `border-radius`** where an outer one now
+   does: it is drawn as a frame of strips whatever the box's corners do.
+   The shape is the complement of the outer one, so the sum over rows an
+   outer corner uses carries over, but the strips it would replace are
+   also what keeps an inset shadow inside the padding box, and that
+   clip has to be made to follow the inner curve at the same time.
 
    A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as

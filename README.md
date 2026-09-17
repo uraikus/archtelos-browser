@@ -153,7 +153,9 @@ with offset, blur, spread, `inset` and a list of shadows — the blur
 being the Gaussian the standard asks for, worked out from its closed
 form rather than filtered, so an outer shadow is half its colour
 against its own edge and a quarter of it past a corner, and an inset
-one is the same figures inverted —
+one is the same figures inverted, and cast from the box's own shape, so
+a rounded card's shadow is rounded and grows its corners with the
+spread —
 images,
 broken-image placeholders,
 a background image can be fixed to the viewport so it does not scroll,
@@ -392,11 +394,12 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, the preload scanner), sixteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, the preload scanner), seventeen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
-images, text decoration, transforms, right-to-left text and box shadows — three conformance
+images, text decoration, transforms, right-to-left text, box shadows and
+first lines — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

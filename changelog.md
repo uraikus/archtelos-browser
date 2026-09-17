@@ -5,6 +5,55 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A shadow follows the box's `border-radius`
+
+`box-shadow` was cast from a rectangle whatever the box's corners did,
+so a rounded card carried a square corner's shadow. It is cast from the
+box's own shape now, corner radii and all, grown by the spread -- a
+round corner grows with it, a square one stays square (Backgrounds and
+Borders 3 6.2) -- for a blurred shadow and for an unblurred one alike.
+
+A rounded rectangle's Gaussian does not separate, because the shape's
+width changes with the row. Its outer integral does: the value at a
+point is the sum, over the rows the shape covers, of that row's share of
+the vertical Gaussian times the horizontal Gaussian over that row's own
+span. With every radius zero that sum telescopes back into the product
+of the two axes, which is the closed form already there -- so the new
+path and the old one owe each other an answer wherever a radius cannot
+reach, and the suite collects the debt at the middle of an edge, out to
+the twelve pixels a blur of eight reaches.
+
+Only the corners need the sum. Past a corner's band every row of the
+shape is the full width again, so widening the bands to hold the radius
+as well as the blur's reach leaves the four edges and the middle the
+single fills they already were, and a box with no radius resolves no
+radii at all: `borderRadius`, the cascade's own answer to whether any
+corner is round, gates the whole of it.
+
+**Taking each row of the shape at its middle was wrong in a way only a
+circle shows.** The edge of a circle goes as the square root of the
+distance from the top of it, so the topmost row's midpoint is wider than
+the row's average, and the error lands on the axis the rows run across
+rather than the one they run along: the pixel above a circle came out
+darker than the pixel beside it, at the same distance. A circle's shadow
+is radially symmetric and nothing else in the fixture had to be known
+for the suite to say so. Rows an ellipse crosses are taken in eight
+slices now; measured against a reference of 64 slices, the worst case
+over a 40x40 circle at blurs of 4, 8 and 20, a 100x100 at 8, a 30x30 at
+2 and a 200x80 at 30 is 3.7 units of 255 at one slice to the row, 1.8 at
+four and 0.77 at eight.
+
+Chromium 141 on a 40x40 circle, reading the row three pixels above it
+outwards from its left edge, gives `dfdfdf dadada d5d5d5 d1d1d1 cdcdcd
+c9c9c9 c6c6c6 c4c4c4 c2c2c2 c1c1c1` against this engine's `e2e2e2
+dddddd d8d8d8 d4d4d4 cfcfcf cbcbcb c8c8c8 c6c6c6 c4c4c4 c3c3c3` -- the
+same profile two or three units lighter, which is the gap the square
+corners already carry between a true Gaussian and the three box blurs
+Skia approximates one with.
+
+An `inset` shadow still does not follow the radius; todo.md says what
+that needs.
+
 ### `revert-layer` rolls back a layer, not the origin
 
 `revert-layer` had been read as `revert`. It rolls back one step now:

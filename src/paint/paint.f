@@ -257,18 +257,42 @@ void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
     bgAreaH = h - bt - bb
 }
 
+// A shadow's corner, grown by the spread (Backgrounds and Borders 3
+// §6.2): a corner that is round stays round and grows with the shape,
+// and one that is square stays square however far the shape spreads.
+int func shadowRadius(r:int, spread:int) {
+    if r <= 0 { return 0 }
+    return maxInt(r + spread, 0)
+}
+
 // The box's shadows, painted beneath its own background (Backgrounds
 // and Borders 3 §6). Each is the border box offset by its two lengths
-// and grown by its spread.
+// and grown by its spread, with the box's own corner radii.
 //
 // The canvas has no blur, so the falloff is computed rather than
-// filtered -- which a rectangle allows, because a Gaussian blur of one
-// has a closed form. See gaussIntegral and paintBlurredRect below.
+// filtered -- which this shape allows, because a Gaussian blur of a
+// rectangle has a closed form and one of a rounded rectangle is a sum
+// over its rows of that form. See gaussIntegral and paintBlurredRect
+// below.
 //
 // `inset` shadows are painted by paintInsetShadows, after the
 // background rather than under it.
 void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
     if s.shadows.length == 0 { return }
+    // A box with no radius asks nothing of the shape below, and pays
+    // nothing for it: `borderRadius` is the cascade's own answer to
+    // whether any corner is round at all.
+    int tlx = 0  int tly = 0
+    int trx = 0  int trys = 0
+    int brx = 0  int brys = 0
+    int blx = 0  int blys = 0
+    if s.borderRadius > 0 {
+        resolveCornerRadii(s, w, h)
+        tlx = radTLX  tly = radTLY
+        trx = radTRX  trys = radTRY
+        brx = radBRX  brys = radBRY
+        blx = radBLX  blys = radBLY
+    }
     for int i = s.shadows.length - 1, i >= 0, i-- {
         Shadow sh = s.shadows[i]
         if sh.inset { continue }
@@ -278,13 +302,27 @@ void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
         int sw = w + sh.spread + sh.spread
         int sh2 = h + sh.spread + sh.spread
         if sw <= 0 || sh2 <= 0 { continue }
+        int ptlx = shadowRadius(tlx, sh.spread)
+        int ptly = shadowRadius(tly, sh.spread)
+        int ptrx = shadowRadius(trx, sh.spread)
+        int ptry = shadowRadius(trys, sh.spread)
+        int pbrx = shadowRadius(brx, sh.spread)
+        int pbry = shadowRadius(brys, sh.spread)
+        int pblx = shadowRadius(blx, sh.spread)
+        int pbly = shadowRadius(blys, sh.spread)
         if sh.blur <= 0 {
             paintFill(sh.color, s.effectiveOpacity)
-            pDrawRect(sx, sy, sw, sh2)
+            if ptlx + ptly + ptrx + ptry + pbrx + pbry + pblx + pbly > 0 {
+                pFillRoundedEllipses(sx, sy, sw, sh2, ptlx, ptly, ptrx, ptry,
+                                     pbrx, pbry, pblx, pbly)
+            } else {
+                pDrawRect(sx, sy, sw, sh2)
+            }
             fillAlpha(1.0)
             continue
         }
-        paintBlurredRect(sx, sy, sw, sh2, sh.color, s.effectiveOpacity, sh.blur)
+        paintBlurredRect(sx, sy, sw, sh2, sh.color, s.effectiveOpacity, sh.blur,
+                         ptlx, ptly, ptrx, ptry, pbrx, pbry, pblx, pbly)
     }
 }
 
@@ -314,12 +352,180 @@ float func blurAxis(p:float, lo:float, hi:float, sigma:float) {
     return gaussIntegral((p - lo) / sigma) - gaussIntegral((p - hi) / sigma)
 }
 
+// A row an ellipse crosses is not one span: at the very top of a circle
+// the edge goes as the square root of the distance from it, so taking
+// the row's middle for the whole of the row makes that row too wide.
+// The error lands on the axis the rows run across and not on the one
+// they run along, which comes out as a circle casting a darker shadow
+// above itself than beside itself -- a thing no circle does.
+//
+// Slicing the row divides that error, and how far it has to be divided
+// is a measurement rather than an opinion. Against a reference of 64
+// slices, the worst a circle is out across the shapes measured -- 40x40
+// at blurs of 4, 8 and 20, 100x100 at 8, 30x30 at 2, 200x80 at 30 -- is
+// 3.7 units of 255 at one slice to the row, 1.8 at four and 0.77 at
+// eight. Eight is the first count that holds it under the one unit a
+// painted pixel can show.
+int SHADOW_SLICES = 8
+
+// The shadow shape's horizontal span at one row, which is where a
+// rounded rectangle stops being a rectangle: inside a corner's band the
+// edge follows that corner's ellipse, and everywhere else it is the
+// shape's own side. Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+float shadowSpanLo = 0.0
+float shadowSpanHi = 0.0
+
+// How far a corner's ellipse holds the edge in, `dy` into its band:
+// nothing at the band's inner end, the whole radius past its outer one.
+float func cornerInset(rx:int, ry:int, dy:float) {
+    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
+    float fry = ry.toFloat()
+    if dy >= fry { return rx.toFloat() }
+    float t = dy / fry
+    return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
+}
+
+void func shadowSpanAt(vc:float, w:int, h:int,
+                       tlx:int, tly:int, trx:int, trys:int,
+                       brx:int, brys:int, blx:int, blys:int) {
+    shadowSpanLo = maxFloat(cornerInset(tlx, tly, tly.toFloat() - vc),
+                            cornerInset(blx, blys, vc - (h - blys).toFloat()))
+    shadowSpanHi = w.toFloat()
+        - maxFloat(cornerInset(trx, trys, trys.toFloat() - vc),
+                   cornerInset(brx, brys, vc - (h - brys).toFloat()))
+}
+
+// One corner of a rounded shadow, as an image carrying the blurred
+// shape's alpha, so a page whose cards share a shadow builds each
+// corner once and blits it four times over. (x0, y0) is the corner's
+// top left in the shape's own coordinates: the top left one starts at
+// (-reach, -reach), the bottom right one at (w - rxR, h - ryB).
+//
+// The sum is the outer integral of the blur: the value at a point is
+// the sum, over the rows the shape occupies, of that row's share of the
+// vertical Gaussian times the horizontal Gaussian over that row's own
+// span. Both factors are worked out once per (column, row) and once per
+// (line, row) rather than once per pixel, so the pixel loop is
+// multiply-adds over a table.
+map[img] shadowCorners = {}
+
+img func shadowCorner(key:text, x0:int, y0:int, cw:int, ch:int,
+                      w:int, h:int, sigma:float, reach:int, shade:int, own:float,
+                      tlx:int, tly:int, trx:int, trys:int,
+                      brx:int, brys:int, blx:int, blys:int) {
+    img hit = shadowCorners[key]
+    if hit != null { return hit }
+    img out = blankImage(cw, ch)
+    shadowCorners[key] = out
+    // Only the rows within the blur's reach of the corner can reach it.
+    int v0 = maxInt(y0 - reach, 0)
+    int v1 = minInt(y0 + ch + reach, h)
+    if v1 <= v0 { return out }
+
+    // The shape in slices, each one a stretch of rows and the span it
+    // holds. A row no ellipse crosses is the full width, and so is every
+    // other such row, so a whole run of them is one slice: the vertical
+    // Gaussian over a run of rows is the Gaussian over the run.
+    arr[float] segT0 = []
+    arr[float] segT1 = []
+    arr[float] segLo = []
+    arr[float] segHi = []
+    int topBand = maxInt(tly, trys)
+    int botBand = maxInt(brys, blys)
+    int runFrom = 0 - 1
+    float step = 1.0 / SHADOW_SLICES.toFloat()
+    for int v = v0, v < v1, v++ {
+        if v >= topBand && v + 1 <= h - botBand {
+            if runFrom < 0 { runFrom = v }
+            continue
+        }
+        if runFrom >= 0 {
+            shadowSpanAt((runFrom + v).toFloat() / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            segT0.push(runFrom.toFloat())
+            segT1.push(v.toFloat())
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+            runFrom = 0 - 1
+        }
+        for int k = 0, k < SHADOW_SLICES, k++ {
+            float t0 = v.toFloat() + step * k.toFloat()
+            float t1 = t0 + step
+            shadowSpanAt((t0 + t1) / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            if shadowSpanLo >= shadowSpanHi { continue }
+            segT0.push(t0)
+            segT1.push(t1)
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+        }
+    }
+    if runFrom >= 0 {
+        shadowSpanAt((runFrom + v1).toFloat() / 2.0, w, h,
+                     tlx, tly, trx, trys, brx, brys, blx, blys)
+        segT0.push(runFrom.toFloat())
+        segT1.push(v1.toFloat())
+        segLo.push(shadowSpanLo)
+        segHi.push(shadowSpanHi)
+    }
+    int nv = segT0.length
+    if nv == 0 { return out }
+
+    arr[float] hf = []
+    for int i = 0, i < cw, i++ {
+        float px = (x0 + i).toFloat() + 0.5
+        for int k = 0, k < nv, k++ {
+            hf.push(blurAxis(px, segLo[k], segHi[k], sigma))
+        }
+    }
+    // A slice three standard deviations from a line has 0.0013 of its
+    // weight left there, so each line remembers the first and last slice
+    // that can still reach it and the pixel loop stops at those.
+    arr[float] vw = []
+    arr[int] kLo = []
+    arr[int] kHi = []
+    for int j = 0, j < ch, j++ {
+        float py = (y0 + j).toFloat() + 0.5
+        int first = nv
+        int last = 0 - 1
+        for int k = 0, k < nv, k++ {
+            float a = blurAxis(py, segT0[k], segT1[k], sigma)
+            vw.push(a)
+            if a > 0.000001 {
+                if k < first { first = k }
+                last = k
+            }
+        }
+        kLo.push(first)
+        kHi.push(last)
+    }
+
+    fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
+    for int j = 0, j < ch, j++ {
+        int vb = j * nv
+        int k0 = kLo[j]
+        int k1 = kHi[j]
+        for int i = 0, i < cw, i++ {
+            int hb = i * nv
+            float a = 0.0
+            for int k = k0, k <= k1, k++ { a = a + hf[hb + k] * vw[vb + k] }
+            a = a * own
+            if a <= 0.002 { continue }
+            fillAlpha(a > 1.0 ? 1.0 : a)
+            out.drawPixel(i, j)
+        }
+    }
+    fillAlpha(1.0)
+    return out
+}
+
 // One axis's profile as a one pixel tall image, so a whole row of a
-// blurred corner can be drawn with one blit rather than a pixel at a
-// time: `drawImage` multiplies the image's own alpha by `fillAlpha`,
-// and a product of the two axes is exactly what a separable blur is.
-// The key is everything the answer depends on, so a page whose boxes
-// share a shadow builds each ramp once.
+// blurred square corner can be drawn with one blit rather than a pixel
+// at a time: `drawImage` multiplies the image's own alpha by
+// `fillAlpha`, and a product of the two axes is exactly what a separable
+// blur is. The key is everything the answer depends on, so a page whose
+// boxes share a shadow builds each ramp once.
 map[img] shadowRamps = {}
 
 img func shadowRamp(key:text, n:int, from:float, span:float, sigma:float, c:int) {
@@ -338,25 +544,53 @@ img func shadowRamp(key:text, n:int, from:float, span:float, sigma:float, c:int)
     return out
 }
 
-// A rectangle blurred by a Gaussian of standard deviation half the blur
-// radius, which is what Backgrounds and Borders 3 §7.1 asks a shadow's
-// blur to be.
+// A shadow shape blurred by a Gaussian of standard deviation half the
+// blur radius, which is what Backgrounds and Borders 3 §7.1 asks a
+// shadow's blur to be. The eight radii are the shape's own corners,
+// already grown by the spread.
 //
-// The blur is separable, so the rectangle divides into nine parts: four
+// The blur is separable, so the shape divides into nine parts: four
 // corners where both axes are still changing, four edges where only one
 // is, and the middle where neither is. Only the corners are worked out a
 // pixel at a time, and only once per distinct shadow; an edge is one
 // row or column per pixel of the reach, and the middle is a single fill.
-void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blur:int) {
+//
+// A rounded shape does not separate, because its horizontal span changes
+// with the row, so its corners are the sum over rows that shadowCorner
+// works out. Everything past a corner's band is the full width again, so
+// widening the bands to hold the radius as well as the reach leaves the
+// edges and the middle exactly the separable thing they were. With every
+// radius zero the sum telescopes back into the product of the two axes,
+// which is why the two paths have to agree where a radius cannot reach
+// -- and why the suite asks them to, at the middle of an edge.
+void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blur:int,
+                           tlx:int, tly:int, trx:int, trys:int,
+                           brx:int, brys:int, blx:int, blys:int) {
     if w <= 0 || h <= 0 { return }
     float sigma = blur.toFloat() / 2.0
     // Three standard deviations out the Gaussian has 0.0013 of its
     // weight left, which is a third of what a pixel can show.
     int reach = maxInt(roundPx(sigma * 3.0), 1)
+    bool rounded = tlx + tly + trx + trys + brx + brys + blx + blys > 0
     int rx = minInt(reach, Math.floorDiv(w, 2))
     int ry = minInt(reach, Math.floorDiv(h, 2))
-    int midW = w - rx - rx
-    int midH = h - ry - ry
+    int rxR = rx
+    int ryB = ry
+    if rounded {
+        // The bands have to hold the radius as well as the reach, or a
+        // row whose span the ellipse has narrowed would land in the part
+        // of the shape the separable path calls full width. Where the
+        // shape is too small to hold two such bands the corners meet in
+        // the middle instead, which is the whole of a circle's shadow.
+        int wantX = reach + maxInt(maxInt(tlx, trx), maxInt(brx, blx))
+        int wantY = reach + maxInt(maxInt(tly, trys), maxInt(brys, blys))
+        if wantX + wantX <= w { rx = wantX  rxR = wantX }
+        else { rx = Math.floorDiv(w, 2)  rxR = w - rx }
+        if wantY + wantY <= h { ry = wantY  ryB = wantY }
+        else { ry = Math.floorDiv(h, 2)  ryB = h - ry }
+    }
+    int midW = w - rx - rxR
+    int midH = h - ry - ryB
     float fw = w.toFloat()
     float fh = h.toFloat()
     int shade = colorWithOpacity(c, opacity)
@@ -386,6 +620,12 @@ void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blu
             if a <= 0.002 { continue }
             fillAlpha(a > 1.0 ? 1.0 : a)
             pDrawRect(x + rx, y - reach + j, midW, 1)
+        }
+        for int j = 0, j < reach + ryB, j++ {
+            float fy = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma)
+            float a = fxMid * fy * own
+            if a <= 0.002 { continue }
+            fillAlpha(a > 1.0 ? 1.0 : a)
             pDrawRect(x + rx, y + h + reach - 1 - j, midW, 1)
         }
     }
@@ -396,24 +636,56 @@ void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blu
             if a <= 0.002 { continue }
             fillAlpha(a > 1.0 ? 1.0 : a)
             pDrawRect(x - reach + i, y + ry, 1, midH)
+        }
+        for int i = 0, i < reach + rxR, i++ {
+            float fx = blurAxis((i - reach).toFloat() + 0.5, 0.0, fw, sigma)
+            float a = fx * fyMid * own
+            if a <= 0.002 { continue }
+            fillAlpha(a > 1.0 ? 1.0 : a)
             pDrawRect(x + w + reach - 1 - i, y + ry, 1, midH)
         }
     }
     fillAlpha(1.0)
 
-    // The four corners, where both axes are still changing. Each row of
-    // one is the horizontal profile at that row's own share of the
-    // vertical one, which is one blit of the ramp at that alpha: the
-    // whole shadow costs a row of work per pixel of the reach rather
-    // than a pixel of work per pixel of it.
+    // The four corners, where both axes are still changing.
     int cw = reach + rx
-    if cw <= 0 || reach + ry <= 0 { return }
+    int cwR = reach + rxR
+    int ch = reach + ry
+    int chB = reach + ryB
+    if cw <= 0 || ch <= 0 { return }
+    if rounded {
+        text ck = `${blur}|${shade}|${w}|${h}|${tlx},${tly},${trx},${trys}`
+            + `|${brx},${brys},${blx},${blys}|${rx},${rxR},${ry},${ryB}|${reach}`
+        img cTL = shadowCorner(ck + '|tl', 0 - reach, 0 - reach, cw, ch,
+                               w, h, sigma, reach, shade, own,
+                               tlx, tly, trx, trys, brx, brys, blx, blys)
+        img cTR = shadowCorner(ck + '|tr', w - rxR, 0 - reach, cwR, ch,
+                               w, h, sigma, reach, shade, own,
+                               tlx, tly, trx, trys, brx, brys, blx, blys)
+        img cBL = shadowCorner(ck + '|bl', 0 - reach, h - ryB, cw, chB,
+                               w, h, sigma, reach, shade, own,
+                               tlx, tly, trx, trys, brx, brys, blx, blys)
+        img cBR = shadowCorner(ck + '|br', w - rxR, h - ryB, cwR, chB,
+                               w, h, sigma, reach, shade, own,
+                               tlx, tly, trx, trys, brx, brys, blx, blys)
+        pDrawImage(cTL, x - reach, y - reach)
+        pDrawImage(cTR, x + w - rxR, y - reach)
+        pDrawImage(cBL, x - reach, y + h - ryB)
+        pDrawImage(cBR, x + w - rxR, y + h - ryB)
+        return
+    }
+
+    // A square corner separates, so each of its rows is the horizontal
+    // profile at that row's own share of the vertical one, which is one
+    // blit of the ramp at that alpha: the whole shadow costs a row of
+    // work per pixel of the reach rather than a pixel of work per pixel
+    // of it.
     text rampKey = `${blur}|${shade}|${cw}|${w}`
     img rampLeft = shadowRamp(rampKey + '|l', cw, (0 - reach).toFloat(),
                               fw, sigma, shade)
     img rampRight = shadowRamp(rampKey + '|r', cw, fw - rx.toFloat(),
                                fw, sigma, shade)
-    for int j = 0, j < reach + ry, j++ {
+    for int j = 0, j < ch, j++ {
         float a = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma) * own
         if a <= 0.002 { continue }
         fillAlpha(a > 1.0 ? 1.0 : a)

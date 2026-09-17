@@ -278,4 +278,135 @@ shot('inset 0 0 0 5px red, 15px 0 0 blue')
 check(getPixelColor(22, 40) == red, 'the inset shadow still bands the inside')
 check(getPixelColor(90, 40) == blue, 'while the outer one falls outside')
 
+// ---- a shadow follows the border-radius -------------------------------
+// The blur of a rectangle separates into two axes and has a closed form;
+// the blur of a rounded rectangle does not separate, because the shape's
+// width changes with the row. What does still hold is the outer
+// integral: the blurred value at a point is the sum, over the rows the
+// shape occupies, of that row's share of the vertical Gaussian times the
+// horizontal Gaussian over that row's own span.
+//
+// A 40x40 box with `box-shadow: 0 0 8px #000` and `border-radius: 20px`
+// is a circle, and Chromium 141 paints the row three pixels above it,
+// from its left edge outwards, as
+//
+//   dfdfdf dadada d5d5d5 d1d1d1 cdcdcd c9c9c9 c6c6c6 c4c4c4 c2c2c2 c1c1c1
+//
+// against this engine's
+//
+//   e2e2e2 dddddd d8d8d8 d4d4d4 cfcfcf cbcbcb c8c8c8 c6c6c6 c4c4c4 c3c3c3
+//
+// -- the same profile two or three units lighter throughout, which is
+// the difference between a true Gaussian and the three box blurs Skia
+// uses to approximate one, and is the same two or three units the square
+// corners are already out by. What the checks below ask for is therefore
+// the shape rather than the number: that a rounded corner is not a
+// square one, that the two agree where a radius cannot reach, and that a
+// circle's shadow is radially symmetric, which no rectangle's is.
+color shWhite = 'white'
+
+// The shadow under a 40x40 box at (40,40) of the given radius, painted
+// once so a whole profile can be read off it.
+void func shadowShot(radius:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;background:#ffffff">'
+        + '<div style="position:absolute;left:40px;top:40px;width:40px;height:40px;'
+        + 'background:#ffffff;box-shadow:0 0 8px #000000;' + radius
+        + '"></div></body>', 'test.html', 200)
+    clearCanvas()
+    paintPage(p, 0, 0, 160)
+}
+
+// The square box's own shadow, read once: a profile out to the twelve
+// pixels a blur of eight reaches, on all four sides of it.
+arr[color] sqN = []
+arr[color] sqS = []
+arr[color] sqW = []
+arr[color] sqE = []
+shadowShot('')
+color sqCorner = getPixelColor(38, 40)
+for int d = 1, d <= 12, d++ {
+    sqN.push(getPixelColor(60, 40 - d))
+    sqS.push(getPixelColor(60, 79 + d))
+    sqW.push(getPixelColor(40 - d, 60))
+    sqE.push(getPixelColor(79 + d, 60))
+}
+
+// The instrument first: the two shapes have to differ somewhere, or
+// every check below passes whatever the painter does.
+shadowShot('border-radius:20px')
+color rdCorner = getPixelColor(38, 40)
+check(!(sqCorner == rdCorner), 'a rounded corner casts a different shadow from a square one')
+
+// Two pixels left of the edge on the box's top row is deep inside a
+// square box's shadow and far outside a circle's, so the rounded one is
+// the paler of the two. `white` is the page, and neither reaches it.
+check(!(sqCorner == white), 'the square corner casts a shadow there')
+check(!(rdCorner == white), 'and the rounded one casts some shadow too')
+
+// A circle's shadow is radially symmetric, which is a property no
+// rectangle's has and which needs no number from anywhere: four points
+// the same distance from the centre have to carry the same alpha. The
+// box occupies 40..79 on both axes, so the mirror of a pixel three above
+// its top edge is three below its bottom one -- 37 and 82, not 83 -- and
+// the square box's own shadow being symmetric about those four is what
+// says they are the right points to ask about. The whole profile is
+// asked, because one distance can agree while the fall-off either side
+// of it does not: taking each row of the shape at its middle puts six of
+// the twelve distances out by a unit, halving the rows puts two out, and
+// the slicing the painter settles on puts none.
+int sqAsym = 0
+int rdAsym = 0
+int rdRadial = 0
+for int d = 1, d <= 12, d++ {
+    if !(sqN[d - 1] == sqS[d - 1]) { sqAsym++ }
+    if !(sqW[d - 1] == sqE[d - 1]) { sqAsym++ }
+    color north = getPixelColor(60, 40 - d)
+    color south = getPixelColor(60, 79 + d)
+    color west = getPixelColor(40 - d, 60)
+    color east = getPixelColor(79 + d, 60)
+    if !(north == south) { rdAsym++ }
+    if !(west == east) { rdAsym++ }
+    if !(north == west) { rdRadial++ }
+}
+checkEqInt(sqAsym, 0, 'the square box own shadow is symmetric on both axes')
+checkEqInt(rdAsym, 0, 'and so is a circle on both of its own')
+checkEqInt(rdRadial, 0, 'a circle casts the same shadow above it as beside it')
+
+// Where the radius cannot reach -- the middle of an edge -- the two
+// shapes are the same shape, so their shadows have to agree exactly.
+// This is the check that says the rounded path did not disturb what was
+// already right, and it is the one the two ways of computing a blur owe
+// each other: with every radius zero the sum over the rows telescopes
+// back into the product of the two axes.
+int edgeDiff = 0
+shadowShot('border-radius:6px')
+for int d = 1, d <= 12, d++ {
+    if !(getPixelColor(40 - d, 60) == sqW[d - 1]) { edgeDiff++ }
+    if !(getPixelColor(60, 40 - d) == sqN[d - 1]) { edgeDiff++ }
+}
+checkEqInt(edgeDiff, 0, 'a small radius changes nothing at the middle of an edge')
+
+// The spread grows a round corner and leaves a square one square
+// (Backgrounds and Borders 3 §6.2), so a spread shadow under a circle is
+// still round: the corner of its bounding box stays paler than the
+// square box's corner grown the same way.
+shadowShot('box-shadow:0 0 8px 6px #000000;border-radius:20px')
+color rdSpread = getPixelColor(33, 34)
+shadowShot('box-shadow:0 0 8px 6px #000000')
+color sqSpread = getPixelColor(33, 34)
+check(!(rdSpread == sqSpread), 'a spread shadow under a circle is still round')
+check(!(sqSpread == white), 'and the square one reaches that corner')
+
+// A shadow with no blur at all follows the radius too -- there is
+// nothing to fade, so a point is either inside the shape or outside it.
+// The far corner of the shifted shape is inside a square and outside
+// a circle.
+color black = 'black'
+shadowShot('box-shadow:12px 12px 0 #000000;border-radius:20px')
+color rdHard = getPixelColor(88, 88)
+shadowShot('box-shadow:12px 12px 0 #000000')
+color sqHard = getPixelColor(88, 88)
+check(sqHard == black, 'an unblurred square shadow fills its own corner')
+check(!(rdHard == black), 'and an unblurred round one does not')
+
 finish('box shadow')
