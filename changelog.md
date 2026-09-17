@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `overflow: scroll` and `auto`
+
+The two values that show a scrollbar. `overflow-x` and `overflow-y` are
+separate properties now rather than one boolean -- the cascade folded
+both into `overflow` and kept only whether it said `hidden` -- with the
+standard's rule that a `visible` beside a value that is not `visible`
+computes to `auto`, so a box cannot clip one axis and let the other
+spill.
+
+A scroll container's scrollbar is drawn inside its padding box and takes
+its room from the content, which is fifteen pixels here because that is
+what Chromium's classic scrollbar takes and it makes the geometry
+comparable: a 200px box shows its content 185 wide. `scroll` reserves it
+whether or not there is anything to scroll; `auto` reserves it only
+where the content overflows, which is not known until the content has
+been laid out, so those boxes lay their content out a second time.
+
+The bars are painted in Chromium's own colours -- a #fcfcfc track and a
+#8b8b8b thumb -- and the thumb is as long a share of the track as the
+box is of what it scrolls, with no thumb at all where there is nothing
+to scroll, which is what Chromium draws. Our row of pixels across the
+right edge reads content to 184, track to 188, thumb to 195 and track to
+199; Chromium's reads the same, with a #c3c3c3 pixel at each end of the
+thumb that is its rounded corner.
+
+Only a scroll container pays for any of it: the walk that measures what
+there is to scroll is behind the flag that says a bar was reserved.
+
+**A horizontal `auto` bar is raised by a child box reaching past the
+edge, not by a line of text doing it.** todo.md says so.
+
 ### A percentage height resolves against a definite containing block
 
 CSS2 §10.5: a percentage height is that share of the containing block's

@@ -103,6 +103,12 @@ struct Box {
     // cached intrinsic widths (-1 = not computed)
     minContent:int
     maxContent:int
+    // The scrollbars this box reserves room for, and the content they
+    // scroll, which is what sizes their thumbs.
+    sbW:int
+    sbH:int
+    scrollW:int
+    scrollH:int
     // The min-content width of the contents alone, before a declared
     // `width` replaces it. Flexible Box 1 §4.5 wants that one: an item's
     // automatic minimum is the smaller of what it declared and what its
@@ -1443,7 +1449,50 @@ void func applyContainerAspect(b:Box) {
 // The content height a declared `height` fixes, or -1 when it fixes
 // none. Only a box with one definite dimension takes the other from
 // the ratio, so this is the question the width code has to ask first.
-// The containing block's own content height while its children are
+// How thick a scrollbar is. The standard leaves it to the browser;
+// this one takes Chromium's classic fifteen pixels, so that a box's
+// content geometry can be compared with Chromium's directly.
+const int SCROLLBAR_PX = 15
+
+// One pass of a block's own content, which an `auto` scroll container
+// does twice: once to find out whether it overflows, and again with the
+// scrollbar's room taken out.
+int func layoutBlockContent(b:Box, innerX:int, innerY:int, width:int) {
+    // A multi-column container lays its content out once, at the column
+    // width, and then breaks that one flow into columns (CSS
+    // Multi-column 1 §3). Nothing there is laid out twice, so the cost
+    // is the walk that moves the content, not a second layout.
+    int usedColumns = usedColumnCount(b.style, width)
+    if usedColumns > 1 { return layoutColumns(b, innerX, innerY, width, usedColumns) }
+    if hasInlineContent(b) { return layoutInlineContent(b, innerX, innerY, width) }
+    return layoutBlockChildren(b, innerX, innerY, width)
+}
+
+// How far the children reach past a point, and how far they reach at
+// all -- the horizontal half of the scrollable overflow area. Only the
+// boxes are asked, not the lines inside them, which is why a single
+// unbreakable word wider than its box does not raise a scrollbar here.
+bool func childrenReachPast(b:Box, edge:int) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT { continue }
+        if c.x + c.w + c.mr > edge { return true }
+    }
+    return false
+}
+
+int func childrenReach(b:Box, innerX:int) {
+    int reach = 0
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT { continue }
+        int r = c.x + c.w + c.mr - innerX
+        if r > reach { reach = r }
+    }
+    return reach
+}
+
+// The containing block's own content height while its children are// The containing block's own content height while its children are
 // being laid out, or -1 where that height is not definite. A percentage
 // height is a percentage of this (CSS2 §10.5), and computes to `auto`
 // where there is nothing to take a percentage of -- which is what makes
@@ -1615,6 +1664,16 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         return
     }
 
+    // A scroll container's scrollbar is drawn inside the padding box and
+    // takes its room from the content, so a box that shows one has a
+    // narrower content box than the same box without (CSS Overflow 3
+    // §3.2). `scroll` shows one whether or not there is anything to
+    // scroll; `auto` shows it only where the content overflows, which
+    // is not known until the content has been laid out once.
+    b.sbW = s.overflowY == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
+    b.sbH = s.overflowX == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
+    width = maxInt(width - b.sbW, 0)
+
     // children, with this box standing as their containing block: a
     // percentage height among them is a percentage of the height
     // declared here, and `auto` where none is (CSS2 §10.5).
@@ -1622,19 +1681,35 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int innerY = contentY(b)
     int savedCB = layoutCBHeight
     int ownDefinite = definiteContentHeight(b)
+    if ownDefinite >= 0 { ownDefinite = maxInt(ownDefinite - b.sbH, 0) }
     layoutCBHeight = ownDefinite
-    int contentH = 0
-    // A multi-column container lays its content out once, at the column
-    // width, and then breaks that one flow into columns (CSS
-    // Multi-column 1 §3). Nothing here is laid out twice, so the cost
-    // is the walk that moves the content, not a second layout.
-    int usedColumns = usedColumnCount(s, width)
-    if usedColumns > 1 {
-        contentH = layoutColumns(b, innerX, innerY, width, usedColumns)
-    } else if hasInlineContent(b) {
-        contentH = layoutInlineContent(b, innerX, innerY, width)
-    } else {
-        contentH = layoutBlockChildren(b, innerX, innerY, width)
+    int contentH = layoutBlockContent(b, innerX, innerY, width)
+
+    // The second pass an `auto` axis needs. A vertical bar appears when
+    // the content is taller than the box; a horizontal one when a child
+    // reaches past its right edge, which is where this engine looks --
+    // a line of text too long to break is not counted, and todo.md says
+    // so.
+    if s.overflowY == OVERFLOW_AUTO && b.sbW == 0 && ownDefinite >= 0
+        && contentH > ownDefinite {
+        b.sbW = SCROLLBAR_PX
+        width = maxInt(width - SCROLLBAR_PX, 0)
+        contentH = layoutBlockContent(b, innerX, innerY, width)
+    }
+    if s.overflowX == OVERFLOW_AUTO && b.sbH == 0 && childrenReachPast(b, innerX + width) {
+        b.sbH = SCROLLBAR_PX
+        if ownDefinite >= 0 {
+            ownDefinite = maxInt(ownDefinite - SCROLLBAR_PX, 0)
+            layoutCBHeight = ownDefinite
+            contentH = layoutBlockContent(b, innerX, innerY, width)
+        }
+    }
+    // Only a scroll container needs to know what it scrolls, and the
+    // walk that measures the width is paid by nothing else: the flag is
+    // asked first and `&&` does not evaluate what follows it.
+    if b.sbW > 0 || b.sbH > 0 {
+        b.scrollH = contentH
+        b.scrollW = childrenReach(b, innerX)
     }
     layoutCBHeight = savedCB
     int h = contentH
@@ -1650,7 +1725,8 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int vEdges = b.pt + b.pb + b.bt + b.bb
     if ownDefinite >= 0 {
         // definiteContentHeight has already taken the padding and
-        // border out of a border-box height.
+        // border out of a border-box height, and the horizontal
+        // scrollbar's room out of what is left.
         h = ownDefinite
     } else if b.controlKind == CONTROL_CHECK && s.appearanceAuto {
         // and as tall as it is wide, which is what makes it a square
@@ -1671,7 +1747,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if minH >= 0 { h = maxInt(h, minH) }
     int maxH = heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
     if maxH >= 0 && h > maxH { h = maxH }
-    b.h = h + vEdges
+    b.h = h + vEdges + b.sbH
     if b.baseline == 0 { b.baseline = b.h }
 }
 

@@ -278,4 +278,47 @@ checkEqInt(pctChild('height:100px', 'height:80%;max-height:30%').h, 30,
 checkEqInt(pctChild('', 'min-height:40%').h, 20,
            'and both are ignored where the containing block has no definite height')
 
+// ---- `overflow: scroll` and `auto` reserve room for a scrollbar -------
+// A scroll container's scrollbar is drawn inside its padding box and
+// takes the room from the content, so a box that shows one has a
+// narrower content box than one that does not. `scroll` shows it
+// whether or not there is anything to scroll; `auto` shows it only when
+// the content overflows that axis; `hidden` and `clip` never do.
+//
+// The width of a scrollbar is the browser's to choose, and this one
+// chooses Chromium's classic 15 pixels so that the geometry can be
+// compared with it directly. Chromium 141 on a 200x100 box:
+//
+//   overflow: scroll, short content            content 185 wide, 85 tall
+//   overflow: auto, short content              200 x 100 -- no bar
+//   overflow: auto, content 300 tall           185 wide
+//   overflow: hidden, content 300 tall         200 wide -- clipped, no bar
+//   overflow-y: scroll; overflow-x: hidden     185 wide
+//   overflow-x: scroll; overflow-y: hidden     85 tall
+//   overflow: visible                          200 x 100
+text ovBox = '<body style="margin:0;font:16px/20px monospace">'
+
+Box func ovChild(style:text, inner:text) {
+    Box root = layoutHtml(ovBox + '<div style="width:200px;height:100px;' + style + '">'
+        + '<p style="margin:0;' + inner + '">x</p></div></body>', 400)
+    return findBox(root, 'p')
+}
+
+checkEqInt(ovChild('overflow:scroll', 'height:20px').w, 185,
+           '`overflow: scroll` takes the scrollbar out of the content box')
+checkEqInt(ovChild('overflow:auto', 'height:20px').w, 200,
+           '`overflow: auto` takes nothing while there is nothing to scroll')
+checkEqInt(ovChild('overflow:auto', 'height:300px').w, 185,
+           'and takes it once the content overflows')
+checkEqInt(ovChild('overflow:hidden', 'height:300px').w, 200,
+           '`overflow: hidden` clips without a scrollbar, so it takes nothing')
+checkEqInt(ovChild('overflow-y:scroll;overflow-x:hidden', 'height:20px').w, 185,
+           'the two axes are separate properties')
+checkEqInt(ovChild('overflow-x:scroll;overflow-y:hidden', 'height:100%').h, 85,
+           'and a horizontal scrollbar takes its room from the height')
+checkEqInt(ovChild('overflow:scroll', 'height:100%').h, 85,
+           '`overflow: scroll` shows both, so both take their room')
+checkEqInt(ovChild('overflow:visible', 'height:100%').h, 100,
+           'and `visible` is the initial value, which scrolls nothing')
+
 finish('layout')

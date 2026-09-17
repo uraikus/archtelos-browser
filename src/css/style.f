@@ -191,6 +191,15 @@ const int BORDERIMG_REPEAT = 1
 const int BORDERIMG_ROUND = 2
 const int BORDERIMG_SPACE = 3
 
+// overflow (CSS Overflow 3 §3). The two axes are separate properties,
+// and a `visible` beside a value that is not `visible` computes to
+// `auto`: a box cannot clip one axis and let the other spill.
+const int OVERFLOW_VISIBLE = 0
+const int OVERFLOW_HIDDEN = 1
+const int OVERFLOW_CLIP = 2
+const int OVERFLOW_SCROLL = 3
+const int OVERFLOW_AUTO = 4
+
 // pointer-events. Only `none` changes what this engine does, because
 // hit testing is the only interaction it has and a `visibility: hidden`
 // box is already never hit; the rest are kept apart so the computed
@@ -871,7 +880,11 @@ struct Style {
     textIndent:int
     letterSpacing:int
     hidden:bool             // visibility: hidden
+    // Whether the box clips its content at all, which every one of
+    // `hidden`, `clip`, `scroll` and `auto` does.
     overflowHidden:bool
+    overflowX:int
+    overflowY:int
     fontKey:text            // cache key for the text measurer
     customProps:map[text]   // custom properties in scope, inherited
 }

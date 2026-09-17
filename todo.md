@@ -41,10 +41,24 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **What is left of the CSS2 chapters**: `overflow: scroll` and
-   `auto`, which need a scrollable area rather than only a clip, and
-   paged media (§13). Positioning (§9.3), floats (§9.5), generated
-   content (§12) and `overflow: hidden` clipping (§11) are done.
+1. **What is left of the CSS2 chapters**: **scrolling a scroll
+   container**, and paged media (§13). `overflow: scroll` and `auto`
+   reserve a scrollbar and paint it, and the box clips as `hidden`
+   does, but nothing scrolls yet: the shell scrolls the page and not
+   the box under the pointer, and a scrollbar's thumb says where the
+   content is without being draggable. What that needs is a scroll
+   offset per box, the painter reading it, and hit testing asking which
+   scroll container the pointer is in.
+
+   **A horizontal `auto` bar is raised by a child box reaching past the
+   content edge, not by a line of text doing it**: the check walks the
+   children, not the lines inside them, so a single unbreakable word
+   wider than its box overflows without raising one. The lines are
+   there to be measured -- `paintLines` walks them -- so this is a walk
+   to write rather than anything missing.
+
+   Positioning (§9.3), floats (§9.5), generated content (§12) and
+   `overflow: hidden` clipping (§11) are done.
 2. **Flexible Box 1 is done**, as far as anything here measures it:
    the automatic minimum size of §4.5, §9.7's freeze-and-repeat, `order`
    and both reverse directions all answer what Chromium answers on the

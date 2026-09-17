@@ -181,6 +181,12 @@ those tiles fill the edge, with `stretch` pulling one across it,
 `repeat` centring whole tiles and cutting the two ends, `round`
 resizing the tile until a whole number fits, and `space` laying whole
 tiles with the leftover shared out around them.
+`overflow` clips what runs past a box in every value but `visible`, and
+`scroll` and `auto` reserve fifteen pixels inside the padding box for a
+scrollbar and paint one there — always for `scroll`, and for `auto` only
+where the content overflows, the thumb being as long a share of the
+track as the box is of what it scrolls.
+
 `background-origin` chooses the edge a background is placed from and
 `background-clip` the edge it is cut off at — border, padding or
 content — and a tile that runs past that edge is cut off there. `object-fit` and `object-position` size and place a replaced

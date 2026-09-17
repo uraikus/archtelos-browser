@@ -2443,6 +2443,54 @@ void func paintClipped(b:Box) {
     }
     paintLayer = null
     pDrawImage(layer, px, py)
+    paintScrollbars(b)
+}
+
+// The scrollbars a scroll container reserved room for, drawn inside its
+// padding box and over whatever is behind them (CSS Overflow 3 §3.2).
+// The thumb is as long a share of the track as the box is of the
+// content it scrolls, and never shorter than it can be seen at.
+const int SCROLLBAR_MIN_THUMB = 12
+
+void func paintScrollbars(b:Box) {
+    if b.sbW <= 0 && b.sbH <= 0 { return }
+    int px = b.x + b.bl
+    int py = b.y + b.bt
+    int pw = b.w - b.bl - b.br
+    int ph = b.h - b.bt - b.bb
+    if pw <= 0 || ph <= 0 { return }
+    // Chromium's classic scrollbar, so that the pixels can be compared
+    // with its own: a #fcfcfc track and a #8b8b8b thumb.
+    if b.sbW > 0 {
+        int trackH = ph - b.sbH
+        fillAlpha(1.0)
+        fillStyle(252, 252, 252)
+        pDrawRect(px + pw - b.sbW, py, b.sbW, trackH)
+        int visible = maxInt(ph - b.pt - b.pb - b.sbH, 1)
+        // A bar with nothing to scroll is an empty track, which is what
+        // Chromium draws and what says at a glance that there is
+        // nothing below the fold.
+        if b.scrollH > visible {
+            int thumbH = maxInt(Math.floorDiv(trackH * visible, b.scrollH), SCROLLBAR_MIN_THUMB)
+            if thumbH > trackH { thumbH = trackH }
+            fillStyle(139, 139, 139)
+            pDrawRect(px + pw - b.sbW + 4, py, b.sbW - 8, thumbH)
+        }
+    }
+    if b.sbH > 0 {
+        int trackW = pw - b.sbW
+        fillAlpha(1.0)
+        fillStyle(252, 252, 252)
+        pDrawRect(px, py + ph - b.sbH, trackW, b.sbH)
+        int visible = maxInt(pw - b.pl - b.pr - b.sbW, 1)
+        if b.scrollW > visible {
+            int thumbW = maxInt(Math.floorDiv(trackW * visible, b.scrollW), SCROLLBAR_MIN_THUMB)
+            if thumbW > trackW { thumbW = trackW }
+            fillStyle(139, 139, 139)
+            pDrawRect(px, py + ph - b.sbH + 4, thumbW, b.sbH - 8)
+        }
+    }
+    fillAlpha(1.0)
 }
 
 // A transform changes where a box and its descendants are painted and

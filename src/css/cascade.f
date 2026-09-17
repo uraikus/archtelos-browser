@@ -2974,6 +2974,16 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         }
         return
     }
+    // `overflow` is a shorthand for the two axes: one value says both,
+    // two say the horizontal and then the vertical (CSS Overflow 3 §3).
+    if name == 'overflow' {
+        arr[ascii] ot = cssTokens(value)
+        if ot.length > 0 {
+            setProp(props, 'overflow-x', ot[0])
+            setProp(props, 'overflow-y', ot.length > 1 ? ot[1] : ot[0])
+        }
+        return
+    }
     if name == 'border-image' {
         arr[ascii] slashed = splitTopLevelSlash(value)
         arr[ascii] first = cssTokens(slashed[0])
@@ -3058,7 +3068,6 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         }
         return
     }
-    if name == 'overflow-x' || name == 'overflow-y' { name = 'overflow' }
     if name == 'inline-size' { name = 'width' }
     if name == 'block-size' { name = 'height' }
     // The inline edges. `inline-start` is the left edge of a
@@ -3087,7 +3096,8 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'max-inline-size' { name = 'max-width' }
     if name == 'min-block-size' { name = 'min-height' }
     if name == 'max-block-size' { name = 'max-height' }
-    if name == 'overflow-block' || name == 'overflow-inline' { name = 'overflow' }
+    if name == 'overflow-block' { name = 'overflow-y' }
+    if name == 'overflow-inline' { name = 'overflow-x' }
     if name == 'border-start-start-radius' { name = cascadeApplyRtl ? 'border-top-right-radius' : 'border-top-left-radius' }
     if name == 'border-start-end-radius' { name = cascadeApplyRtl ? 'border-top-left-radius' : 'border-top-right-radius' }
     if name == 'border-end-start-radius' { name = cascadeApplyRtl ? 'border-bottom-right-radius' : 'border-bottom-left-radius' }
@@ -5283,8 +5293,20 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if t == 'left' { s.floatSide = FLOAT_LEFT }
         else if t == 'right' { s.floatSide = FLOAT_RIGHT }
     }
-    ascii ov = styleProp(props, 'overflow')
-    s.overflowHidden = ov != null && (asciiLower(ov) == 'hidden' || asciiLower(ov) == 'clip')
+    // The two axes, and the standard's rule that a `visible` beside
+    // anything else is really `auto`: a box cannot clip one axis and
+    // let the other spill, so the one that was left alone gains a
+    // scrollbar where it needs one.
+    s.overflowX = overflowKeyword(styleProp(props, 'overflow-x'))
+    s.overflowY = overflowKeyword(styleProp(props, 'overflow-y'))
+    if s.overflowX == OVERFLOW_VISIBLE && s.overflowY != OVERFLOW_VISIBLE {
+        s.overflowX = OVERFLOW_AUTO
+    }
+    if s.overflowY == OVERFLOW_VISIBLE && s.overflowX != OVERFLOW_VISIBLE {
+        s.overflowY = OVERFLOW_AUTO
+    }
+    // Every value but `visible` clips what runs past the box.
+    s.overflowHidden = s.overflowX != OVERFLOW_VISIBLE || s.overflowY != OVERFLOW_VISIBLE
     return s
 }
 
@@ -5346,4 +5368,16 @@ int func borderImageRepeatKeyword(t:ascii) {
     if t == 'round' { return BORDERIMG_ROUND }
     if t == 'space' { return BORDERIMG_SPACE }
     return BORDERIMG_STRETCH
+}
+
+
+// One `overflow-x` or `overflow-y` keyword.
+int func overflowKeyword(v:ascii) {
+    if v == null { return OVERFLOW_VISIBLE }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'hidden' { return OVERFLOW_HIDDEN }
+    if t == 'clip' { return OVERFLOW_CLIP }
+    if t == 'scroll' { return OVERFLOW_SCROLL }
+    if t == 'auto' { return OVERFLOW_AUTO }
+    return OVERFLOW_VISIBLE
 }

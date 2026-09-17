@@ -105,4 +105,51 @@ paintPage(pHidden, 0, 0, 300)
 check(getPixelColor(5, 5) == green, 'content-visibility:hidden still paints the box itself')
 check(getPixelColor(10, 10) != red, 'and does not paint what is inside it')
 
+// ---- `scroll` and `auto` draw a scrollbar in the room they took -------
+// A scroll container reserves fifteen pixels inside its padding box and
+// paints a scrollbar there: a track, and a thumb as long a share of it
+// as the box is of the content it scrolls. The colours are Chromium's
+// classic scrollbar -- a #fcfcfc track and a #8b8b8b thumb -- so that
+// the pixels can be compared with its own, which for the page below
+// reads #fcfcfc at the track's edge and #8b8b8b through the middle of
+// the thumb.
+//
+// The geometry is checked in tests/unit/test_layout.f; what these ask
+// is whether anything is drawn in the room it took, which the geometry
+// cannot tell.
+color track = '#fcfcfc'
+color thumb = '#8b8b8b'
+color pale = '#ddffdd'
+
+Page pscroll = pageFromHtml(head
+    + '<div style="width:200px;height:100px;overflow:scroll;background:#ddffdd">'
+    + '<div style="height:300px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(pscroll, 0, 0, 300)
+check(getPixelColor(100, 20) == pale, 'the content area keeps the box\'s own background')
+check(getPixelColor(186, 20) == track, 'the vertical scrollbar draws its track beside it')
+check(getPixelColor(192, 10) == thumb, 'with a thumb down the middle of the track')
+check(getPixelColor(192, 80) == track,
+      'which is only a share of it, because the content is three times the box')
+check(getPixelColor(20, 92) == track, 'and a horizontal track along the bottom')
+
+// `auto` with nothing to scroll draws neither, and leaves the whole
+// width to the content.
+Page pauto = pageFromHtml(head
+    + '<div style="width:200px;height:100px;overflow:auto;background:#ddffdd">'
+    + '<div style="height:20px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(pauto, 0, 0, 300)
+check(getPixelColor(186, 20) == pale, '`auto` draws no track while there is nothing to scroll')
+check(getPixelColor(196, 50) == pale, 'and the content keeps the width the bar would have taken')
+
+// `auto` with content past the bottom draws the vertical one only.
+Page pauto2 = pageFromHtml(head
+    + '<div style="width:200px;height:100px;overflow:auto;background:#ddffdd">'
+    + '<div style="height:300px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(pauto2, 0, 0, 300)
+check(getPixelColor(192, 10) == thumb, '`auto` draws the bar once the content overflows')
+check(getPixelColor(20, 92) == pale, 'and only the one axis that overflows')
+
 finish('overflow')
