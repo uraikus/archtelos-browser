@@ -93,6 +93,11 @@ map[Style] firstLineStyles = {}
 // user-agent origin's values are only kept where something asks to roll
 // back to them.
 bool anyRevert = false
+// Whether any declaration anywhere is a cross-fade(). Copying the second
+// image's url into the painter's layer struct is two text assignments,
+// and that struct is filled for every background layer on the page, so
+// a page with no cross-fade does not pay them.
+bool anyCrossFade = false
 // The user-agent origin's declarations for the element being computed,
 // which is what `revert` rolls back to. Rebuilt per element, and only
 // where a page says `revert` at all.
@@ -181,6 +186,7 @@ void func cascadeReset() {
     anyFirstLine = false
     firstLineStyles = {}
     anyRevert = false
+    anyCrossFade = false
     anyBackgroundUrl = false
     anyCounters = false
     anyQuotes = false
@@ -4046,6 +4052,179 @@ int func parentSerialOf(parent:Style) {
 
 // The URL inside a `url(...)`, unquoted. Returns '' for anything else,
 // which is how a gradient value falls through to the gradient parser.
+// How many device pixels this display puts in a CSS pixel. One: the
+// canvas is not scaled, and `resolution` in a media query answers 96dpi
+// for the same reason. `image-set()` chooses its candidate against it.
+const float CSS_DEVICE_DPPX = 1.0
+
+// A resolution, in device pixels per CSS pixel, or -1 for a token that
+// is not one. `x` and `dppx` are the same unit under two names; an inch
+// is 96 CSS pixels and a centimetre 96/2.54 of them, which is how
+// Chromium normalises `96dpi` to `1dppx`.
+float func parseResolutionValue(t:ascii) {
+    if t == null { return -1.0 }
+    parseNumberAt(t, 0)
+    if !numOk { return -1.0 }
+    float v = numValue
+    ascii unit = asciiLower(t.slice(numEnd, t.length))
+    if unit == 'x' || unit == 'dppx' { return v }
+    if unit == 'dpi' { return v / 96.0 }
+    if unit == 'dpcm' { return v / 37.795275590551 }
+    return -1.0
+}
+
+// The text of a quoted string token, or '' for anything else.
+// `image-set()` takes a bare string beside a `url()`, and they mean the
+// same thing.
+text func quotedTokenText(t:ascii) {
+    if t == null || t.length < 2 { return '' }
+    int q = t.charCodeAt(0)
+    if q != CH_QUOTE && q != CH_APOS { return '' }
+    if t.charCodeAt(t.length - 1) != q { return '' }
+    return t.slice(1, t.length - 1).toText()
+}
+
+// The candidate `image-set()` chooses for this display: the smallest
+// resolution at or above it, and the largest below it when there is
+// none, which is what a list of only 2x and 3x has to fall back to. A
+// candidate naming no resolution is 1x, and `type()` says what the file
+// is rather than how big, so it is skipped.
+text func imageSetUrl(inner:ascii) {
+    arr[ascii] cands = splitTopLevelCommas(inner)
+    text bestUrl = ''
+    float bestRes = 0.0
+    for int i = 0, i < cands.length, i++ {
+        ascii one = dup(asciiTrim(cands[i]))
+        arr[ascii] toks = cssTokens(one)
+        text u = ''
+        float res = 1.0
+        for int k = 0, k < toks.length, k++ {
+            if asciiStartsWithLower(toks[k], 'type('.toAscii(), 0) { continue }
+            text fromUrl = parseUrlValue(toks[k])
+            if fromUrl != '' { u = fromUrl  continue }
+            text fromString = quotedTokenText(toks[k])
+            if fromString != '' { u = fromString  continue }
+            float r = parseResolutionValue(toks[k])
+            if r > 0.0 { res = r }
+        }
+        if u == '' { continue }
+        bool better = bestUrl == ''
+        if !better && bestRes < CSS_DEVICE_DPPX && res > bestRes { better = true }
+        if !better && res >= CSS_DEVICE_DPPX
+            && (bestRes < CSS_DEVICE_DPPX || res < bestRes) { better = true }
+        if better {
+            bestUrl = u
+            bestRes = res
+        }
+    }
+    return bestUrl
+}
+
+// cross-fade() mixes two images: the second's share is `crossFadeAmount`
+// and the two urls are the globals below, which the caller copies out
+// before the next value is read. Globals rather than a struct because a
+// returned struct would be allocated per declaration, and this runs
+// where every background-image is parsed.
+text crossFadeA = ''
+text crossFadeB = ''
+float crossFadeAmount = -1.0
+
+// Reads `cross-fade(<image> <percentage>?, <image> <percentage>?)`
+// (CSS Images 4 §3). A percentage is that image's own share; where only
+// one is given the other image takes the remainder, and where neither
+// is the two are even. Answers whether the value was one at all.
+//
+// Chromium implements only `-webkit-cross-fade(A, B, p)`, whose pixels
+// say p of B over 1 - p of A, byte for byte in sRGB; that is the same
+// mix this reads, written the other way round.
+bool func parseCrossFade(v:ascii) {
+    crossFadeA = ''
+    crossFadeB = ''
+    crossFadeAmount = -1.0
+    if v == null { return false }
+    ascii t = asciiTrim(v)
+    int open = 0
+    if asciiStartsWithLower(t, 'cross-fade('.toAscii(), 0) { open = 11 }
+    else if asciiStartsWithLower(t, '-webkit-cross-fade('.toAscii(), 0) { open = 19 }
+    if open == 0 { return false }
+    if t.charCodeAt(t.length - 1) != CH_RPAREN { return false }
+    arr[ascii] args = splitTopLevelCommas(dup(t.slice(open, t.length - 1)))
+    if args.length < 2 { return false }
+    text urlA = ''
+    text urlB = ''
+    float shareA = -1.0
+    float shareB = -1.0
+    for int i = 0, i < 2, i++ {
+        arr[ascii] toks = cssTokens(dup(asciiTrim(args[i])))
+        text u = ''
+        float share = -1.0
+        for int k = 0, k < toks.length, k++ {
+            text fromUrl = imageUrlValue(toks[k])
+            if fromUrl != '' { u = fromUrl  continue }
+            text fromString = quotedTokenText(toks[k])
+            if fromString != '' { u = fromString  continue }
+            Len l = parseLength(toks[k], 16)
+            if l.kind == LEN_PERCENT { share = l.v / 100.0 }
+        }
+        if i == 0 { urlA = u  shareA = share }
+        else { urlB = u  shareB = share }
+    }
+    if urlA == '' || urlB == '' { return false }
+    // The second image's share is what the painter needs, because it is
+    // blitted over the first.
+    float b = shareB
+    if b < 0.0 { b = shareA >= 0.0 ? 1.0 - shareA : 0.5 }
+    // `-webkit-cross-fade` writes that share as a third argument rather
+    // than beside the image it belongs to.
+    if open == 19 && args.length > 2 {
+        Len l = parseLength(dup(asciiTrim(args[2])), 16)
+        if l.kind == LEN_PERCENT { b = l.v / 100.0 }
+        else if l.kind == LEN_PX { b = l.v }
+    }
+    if b < 0.0 { b = 0.0 }
+    if b > 1.0 { b = 1.0 }
+    crossFadeA = urlA
+    crossFadeB = urlB
+    crossFadeAmount = b
+    anyCrossFade = true
+    return true
+}
+
+// The url an image notation reduces to, or '' for a value that is not
+// one. `image()` names a source with an optional colour to fall back to
+// when it does not load; the colour alone would be a solid-colour image,
+// which nothing here can make, so only the source is read (css-2026.md).
+text func imageNotationUrl(v:ascii) {
+    if v == null { return '' }
+    ascii t = asciiTrim(v)
+    int open = 0
+    if asciiStartsWithLower(t, 'image-set('.toAscii(), 0) { open = 10 }
+    else if asciiStartsWithLower(t, '-webkit-image-set('.toAscii(), 0) { open = 18 }
+    else if asciiStartsWithLower(t, 'image('.toAscii(), 0) { open = 6 }
+    if open == 0 { return '' }
+    if t.charCodeAt(t.length - 1) != CH_RPAREN { return '' }
+    ascii inner = dup(t.slice(open, t.length - 1))
+    if open != 6 { return imageSetUrl(inner) }
+    // image(): the first argument that is a source.
+    arr[ascii] args = splitTopLevelCommas(inner)
+    for int i = 0, i < args.length, i++ {
+        ascii one = dup(asciiTrim(args[i]))
+        text fromUrl = parseUrlValue(one)
+        if fromUrl != '' { return fromUrl }
+        text fromString = quotedTokenText(one)
+        if fromString != '' { return fromString }
+    }
+    return ''
+}
+
+// Where an `<image>` is expected: a plain `url()`, or the url an image
+// notation reduces to.
+text func imageUrlValue(v:ascii) {
+    text u = parseUrlValue(v)
+    if u != '' { return u }
+    return imageNotationUrl(v)
+}
+
 text func parseUrlValue(v:ascii) {
     if v == null { return '' }
     // Worked out with indices and taken as ONE slice of the argument.
@@ -4530,7 +4709,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii t = asciiLower(asciiTrim(lsi))
         if t == 'none' { s.listImageUrl = '' }
         else {
-            text u = parseUrlValue(lsi)
+            text u = imageUrlValue(lsi)
             if u != '' { s.listImageUrl = u  anyBackgroundUrl = true }
         }
     }
@@ -4545,7 +4724,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.contentUrl = ''
     ascii ecu = styleProp(props, 'content')
     if ecu != null {
-        text cu = parseUrlValue(ecu)
+        text cu = imageUrlValue(ecu)
         if cu != '' { s.contentUrl = cu  anyContentUrl = true }
     }
     s.listStyle = isRoot ? LIST_DISC : parent.listStyle
@@ -4640,6 +4819,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // shared empty list until a page declares a second.
     s.backgroundImage = noGradient()
     s.backgroundUrl = ''
+    s.backgroundFadeUrl = ''
+    s.backgroundFade = -1.0
     s.bgExtra = bgNoLayers
     ascii bgimg = styleProp(props, 'background-image')
     int layerCount = 1
@@ -4649,7 +4830,12 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii first = layerCount > 1 ? dup(asciiTrim(imgParts[0])) : bgimg
         s.backgroundImage = parseGradient(first, s.color, s.fontSize)
         if !s.backgroundImage.present {
-            s.backgroundUrl = parseUrlValue(first)
+            s.backgroundUrl = imageUrlValue(first)
+            if s.backgroundUrl == '' && parseCrossFade(first) {
+                s.backgroundUrl = crossFadeA
+                s.backgroundFadeUrl = crossFadeB
+                s.backgroundFade = crossFadeAmount
+            }
             if s.backgroundUrl != '' { anyBackgroundUrl = true }
         }
         if layerCount > 1 {
@@ -4659,8 +4845,15 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
                 ascii one = dup(asciiTrim(imgParts[i]))
                 l.image = parseGradient(one, s.color, s.fontSize)
                 l.url = ''
+                l.fadeUrl = ''
+                l.fade = -1.0
                 if !l.image.present {
-                    l.url = parseUrlValue(one)
+                    l.url = imageUrlValue(one)
+                    if l.url == '' && parseCrossFade(one) {
+                        l.url = crossFadeA
+                        l.fadeUrl = crossFadeB
+                        l.fade = crossFadeAmount
+                    }
                     if l.url != '' { anyBackgroundUrl = true }
                 }
                 bgLayerProps(l, props, i, s.fontSize)
@@ -4674,7 +4867,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.borderImageUrl = ''
     ascii bimg = styleProp(props, 'border-image-source')
     if bimg != null {
-        s.borderImageUrl = parseUrlValue(bimg)
+        s.borderImageUrl = imageUrlValue(bimg)
         if s.borderImageUrl != '' { anyBackgroundUrl = true }
     }
     // The slices are four fractions of the source. A bare number is a

@@ -93,12 +93,19 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    pseudo-element half is measured by geometry and by the generated text
    and pixels, as tests/unit/test_counters.f, tests/unit/test_quotes.f
    and tests/render/content.f do.
-4. **CSS Images 3, completed**: `image()`, `image-set()` and
-   `cross-fade()`, which are notations for choosing between images
-   rather than for drawing one, and which no test here would exercise
-   until there is a second image to choose. Linear, radial and conic
-   gradients with interpolation hints and every degenerate case,
-   `object-fit` and `object-position` are done.
+4. **What is left of CSS Images.** The level itself is done -- linear,
+   radial and conic gradients with interpolation hints and every
+   degenerate case, `object-fit`, `object-position`, `object-view-box`,
+   `image()`, `image-set()` and `cross-fade()`. Two limits are worth
+   naming rather than leaving to be found. `image()`'s colour fallback
+   is read and dropped, because a solid colour is an image the runtime
+   cannot make, and the source it names always loads in the tests, so
+   the fallback has never had to show. And `cross-fade()` blits the
+   second image over the first, which is exactly the standard's mix for
+   two opaque images and an approximation where either has alpha of its
+   own: the correct form needs both mixed in premultiplied space before
+   either is composited, which needs an offscreen image per image
+   rather than per layer.
 
    **Chromium's pixels are ground truth again**, read by
    `tests/chromium.py pixels`. The full `chrome` binary in this

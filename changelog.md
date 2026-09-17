@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `image-set()`, `image()` and `cross-fade()`, closing CSS Images
+
+The three image notations the level defines beside its gradients.
+
+**`image-set()`** chooses among candidates by resolution: the smallest
+at or above this display's, and the largest below it when there is none,
+so a list of only 2x and 3x still paints. A candidate is a `url()` or a
+bare string, with a resolution in `x`, `dppx`, `dpi` or `dpcm` and an
+optional `type()`; one naming no resolution is 1x. Chromium 141 computes
+`image-set("tile.png" 1x, "red.png" 2x)` to a list whose candidates are
+`1dppx` and `2dppx` and picks the first at this display's ratio, and it
+normalises `96dpi` to `1dppx`, which is where that conversion comes
+from. Every check is the agreement rather than a colour: the same box
+with the `image-set()` and with the plain `url()` of the candidate it
+should choose has to paint the same pixels.
+
+**`image()`** takes its source the same two ways. The colour it may name
+to fall back on when the source does not load would be a solid-colour
+image, which nothing here can make, so it is read and dropped
+(todo.md).
+
+**`cross-fade()`** mixes two images by weight. The second is blitted
+over the first at its own share, which for two opaque images is exactly
+the standard's mix because the first is already down at full alpha.
+Chromium implements only `-webkit-cross-fade(A, B, p)`, and its pixels
+say (1 - p) of A plus p of B byte for byte: over the blue-and-green tile
+and the flat red square it renders #4000bf at a quarter and #800080 at a
+half. This engine agrees everywhere except where a channel lands on
+exactly half of 255, which Chromium rounds up and Cairo down -- the blue
+half at half and half is #80007f here against #800080 there, one unit in
+one channel, and the green half agrees exactly because half of 128 is
+64.
+
+**A background layer's second image cost the pages that have no
+cross-fade on them.** `cross-fade()` gives the layer two more fields,
+and the painter fills its layer struct for every background layer on the
+page; filling them unconditionally is two text assignments per layer.
+Eleven paired samples of `features.html` -- the benchmark page that has
+background images, where `generated.html` has none and could not have
+shown it -- gave a best of 89 ms against 91, with every new-side reading
+at or above the old side's median. Behind the per-document flag that
+says a page named a cross-fade at all, the two series interleave.
+benchmarks.md carries both.
+
+**Three of the notations' tests were wrong before the engine was.** A
+style attribute quoted with quotation marks ends at the first quotation
+mark inside it, and `image-set("tile.png" 1x)` carries two; the parser
+had been right about all three forms while the fixture was feeding it
+half a declaration. The attribute is quoted with an apostrophe now,
+written as its code point because a Festina string literal is delimited
+by one and has no escape for it.
+
 ### The `lh` and `rlh` units
 
 `lh` is the element's own computed line height and `rlh` the root

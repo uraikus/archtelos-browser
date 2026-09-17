@@ -535,4 +535,154 @@ for int x = 0, x < 300, x++ {
 }
 check(!seamShowsBack, 'and never lets the background colour through between two tiles')
 
+// ---- image-set() (CSS Images 4 §4) ------------------------------------
+// `image-set()` is a choice between images at different resolutions, not
+// a way of drawing one, so what it has to be checked against is the
+// candidate it should have chosen. Every check below is that agreement:
+// the same box with `image-set(...)` and with the plain `url()` of the
+// candidate for this display must paint the same pixels.
+//
+// This display is one device pixel per CSS pixel, and Chromium 141 at
+// the same ratio computes `image-set("tile.png" 1x, "red.png" 2x)` to a
+// list whose first candidate is `1dppx` and picks it. A bare number
+// with no unit is not a resolution and a candidate that names none is
+// `1x`, which is what makes the `type()` row below choose the tile.
+// The style attribute is quoted with apostrophes rather than quotation
+// marks, because `image-set("tile.png" 1x)` carries quotation marks of
+// its own and a double-quoted attribute ends at the first of them. The
+// apostrophe is written as its code point: a Festina string literal is
+// delimited by one and has no escape for it (FINDINGS.md, finding 34).
+text apos = 39.toChar()
+
+arr[color] func rowAfter(style:text, y:int) {
+    Page p = pageFromHtml(head + '<div style=' + apos
+        + 'width:100px;height:60px;background-color:#dddddd;'
+        + style + apos + '></div></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    arr[color] out = []
+    for int x = 0, x < 100, x++ { out.push(getPixelColor(x, y)) }
+    return out
+}
+
+int func rowDiff(a:arr[color], b:arr[color]) {
+    int n = 0
+    for int i = 0, i < a.length && i < b.length, i++ {
+        if !(a[i] == b[i]) { n++ }
+    }
+    return n
+}
+
+text noRepeat = ';background-repeat:no-repeat;background-position:0 0'
+arr[color] plainTile = rowAfter('background-image:url(tile.png)' + noRepeat, 2)
+arr[color] plainRed = rowAfter('background-image:url(red.png)' + noRepeat, 2)
+
+// The instrument first: the two candidates have to differ, or choosing
+// between them could not be measured at all.
+check(rowDiff(plainTile, plainRed) > 0, 'the two candidate images differ')
+
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(tile.png) 1x, url(red.png) 2x)'
+    + noRepeat, 2), plainTile), 0, 'image-set picks the 1x candidate on a 1x display')
+
+// Order must not decide it, which is the check that does not depend on
+// either candidate being the right answer.
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(red.png) 2x, url(tile.png) 1x)'
+    + noRepeat, 2), plainTile), 0, 'and picks it wherever in the list it is written')
+
+// The bare-string form the standard allows beside url().
+checkEqInt(rowDiff(rowAfter('background-image:image-set("tile.png" 1x, "red.png" 2x)'
+    + noRepeat, 2), plainTile), 0, 'a candidate may be a bare string rather than a url()')
+
+// A candidate with no resolution is 1x.
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(tile.png) type("image/png"), url(red.png) 2x)'
+    + noRepeat, 2), plainTile), 0, 'a candidate naming no resolution is 1x')
+
+// The three spellings of one resolution say the same thing, so all
+// three have to choose the same candidate.
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(tile.png) 1dppx, url(red.png) 2x)'
+    + noRepeat, 2), plainTile), 0, '1dppx is 1x')
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(tile.png) 96dpi, url(red.png) 2x)'
+    + noRepeat, 2), plainTile), 0, 'and 96dpi is 1x, as Chromium computes it')
+
+// Nothing at 1x: the nearest resolution above is taken rather than none
+// at all, so a list of 2x and 3x still paints.
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(tile.png) 2x, url(red.png) 3x)'
+    + noRepeat, 2), plainTile), 0, 'with no 1x candidate the nearest one is taken')
+
+// And it is a layer like any other: one written over another covers it.
+checkEqInt(rowDiff(rowAfter('background-image:image-set(url(red.png) 1x), url(tile.png)'
+    + noRepeat, 2), plainRed), 0, 'an image-set layer covers the layer under it')
+
+// ---- image() (CSS Images 4 §2) ----------------------------------------
+// `image()` names a source with an optional colour to fall back to. It
+// is graded against the specification rather than against Chromium,
+// which supports none of it -- `getComputedStyle` answers `none` for
+// every form below -- so what is checked is that it reaches the same
+// pixels the plain `url()` of its source does.
+checkEqInt(rowDiff(rowAfter('background-image:image(url(tile.png))' + noRepeat, 2), plainTile), 0,
+    'image() paints its source')
+checkEqInt(rowDiff(rowAfter('background-image:image("tile.png")' + noRepeat, 2), plainTile), 0,
+    'and takes a bare string for it as image-set does')
+checkEqInt(rowDiff(rowAfter('background-image:image(url(tile.png), blue)' + noRepeat, 2), plainTile), 0,
+    'a colour beside a source that loads changes nothing')
+
+// ---- cross-fade() (CSS Images 4 §3) -----------------------------------
+// Chromium supports only the `-webkit-cross-fade(A, B, p)` spelling, and
+// its pixels say exactly what that means: (1 - p) of A plus p of B, byte
+// for byte in sRGB. Over the blue-and-green tile and the flat red
+// square, at 10px each, Chromium 141 renders
+//
+//   p = 0     #0000ff / #008000   the tile untouched
+//   p = 25%   #4000bf / #406000
+//   p = 50%   #800080 / #804000
+//   p = 100%  #ff0000             the red untouched
+//
+// The standard's own spelling gives each image its weight, so
+// `cross-fade(A 75%, B 25%)` is that p = 25% row.
+color fade25 = '#4000bf'
+color fade25g = '#406000'
+// Chromium's blue half at half and half is #800080; this engine's is
+// #80007f. Half of 255 is 127.5 and the two round it the other way,
+// which is the whole of the difference: every other channel here, and
+// every other mix below, agrees to the byte, and the green half agrees
+// at half and half too because half of 128 is exactly 64.
+color fade50 = '#80007f'
+color fade50g = '#804000'
+color fadeRev = '#bf0040'
+color fadeRevG = '#bf2000'
+
+// The ends first, because they need no number at all: all of one image
+// and none of the other has to paint exactly what that image paints.
+checkEqInt(rowDiff(rowAfter('background-image:cross-fade(url(tile.png) 100%, url(red.png) 0%)'
+    + noRepeat, 2), plainTile), 0, 'all of the first image is the first image')
+checkEqInt(rowDiff(rowAfter('background-image:cross-fade(url(tile.png) 0%, url(red.png) 100%)'
+    + noRepeat, 2), plainRed), 0, 'and all of the second is the second')
+
+void func fadePage(style:text) {
+    Page p = pageFromHtml(head + '<div style=' + apos
+        + 'width:100px;height:60px;background-color:#dddddd;'
+        + style + apos + '></div></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+fadePage('background-image:cross-fade(url(tile.png) 50%, url(red.png) 50%)' + noRepeat)
+check(getPixelColor(2, 2) == fade50, 'half of each mixes the blue half with the red')
+check(getPixelColor(7, 2) == fade50g, 'and the green half with it too')
+
+fadePage('background-image:cross-fade(url(tile.png) 75%, url(red.png) 25%)' + noRepeat)
+check(getPixelColor(2, 2) == fade25, 'a quarter of the second image is a quarter of the way')
+check(getPixelColor(7, 2) == fade25g, 'on the green half as well')
+
+// One percentage is enough: the other image takes the remainder.
+fadePage('background-image:cross-fade(url(tile.png), url(red.png) 25%)' + noRepeat)
+check(getPixelColor(2, 2) == fade25, 'a single percentage leaves the rest to the other image')
+
+// Written the other way round the mix is the other way round: three
+// quarters red and a quarter tile, which is the complement of the row
+// above rather than a restatement of it.
+fadePage('background-image:cross-fade(url(red.png) 75%, url(tile.png) 25%)' + noRepeat)
+check(getPixelColor(2, 2) == fadeRev, 'reversing the two images reverses the mix')
+check(getPixelColor(7, 2) == fadeRevG, 'on the green half too')
+
 finish('background images')

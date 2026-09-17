@@ -166,24 +166,16 @@ void func gatherBackgroundImages(page:Page, n:Node) {
             BgLayer l = n.style.bgExtra[i]
             if l.url == '' { continue }
             l.url = fetchStyleImage(page, l.url)
+            if l.fadeUrl != '' { l.fadeUrl = fetchStyleImage(page, l.fadeUrl) }
             n.style.bgExtra[i] = l
         }
     }
     if n.kind == NODE_ELEMENT && n.style.backgroundUrl != '' {
-        text raw = n.style.backgroundUrl
-        ascii a = raw.toAscii()
-        if a != null && !asciiStartsWithLower(a, 'data:', 0) {
-            text target = resolveUrl(page.url, raw)
-            n.style.backgroundUrl = target
-            if loadedImages[target] == null {
-                Resource r = fetchUrl(target)
-                if r.ok {
-                    http holder = {'url': 'http://localhost/', 'body': r.data}
-                    img decoded = holder.toImg()
-                    if decoded != null { loadedImages[target] = decoded }
-                }
-            }
-        }
+        n.style.backgroundUrl = fetchStyleImage(page, n.style.backgroundUrl)
+    }
+    // cross-fade()'s second image, on the first layer.
+    if n.kind == NODE_ELEMENT && n.style.backgroundFadeUrl != '' {
+        n.style.backgroundFadeUrl = fetchStyleImage(page, n.style.backgroundFadeUrl)
     }
     for int i = 0, i < n.children.length, i++ { gatherBackgroundImages(page, n.children[i]) }
 }

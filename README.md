@@ -176,6 +176,11 @@ paints a fetched image with `background-repeat`,
 box may have several background layers: every background longhand takes
 a comma-separated list, the i-th value going with the i-th image, and
 the layers paint back to front so the one written first is on top.
+**`image-set()`** chooses among candidates by resolution — the smallest
+at or above this display's, and the largest below it when there is none
+— reading `x`, `dppx`, `dpi` and `dpcm`, a bare string as well as a
+`url()`, and a `type()` beside them. **`image()`** names a source the
+same two ways. **`cross-fade()`** mixes two images by weight.
 Each corner takes its own `border-radius`, in a length or a percentage
 of the box, and may be an ellipse rather than a quarter circle — the
 `/` form gives the horizontal radii before the slash and the vertical

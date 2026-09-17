@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,819,336 |
+| This browser, the whole program | 2,824,088 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1037,3 +1037,34 @@ after:  106 103 105 104 105 107 107 107 107 102 104 104 112 110 105
 — a best of 103 against 102, two series that interleave through their
 whole range, and the one reading near 150 on the side without the
 feature. Two ints where a struct was is the whole difference.
+
+The three image notations cost **4,752 bytes** (2,819,336 → 2,824,088),
+and the second attempt at `cross-fade()` costs nothing measurable where
+the first cost about two milliseconds. The measurement had to be taken
+on `features.html` rather than `generated.html` to see it at all:
+`generated.html` has no background image on it, so it never reaches the
+layer struct the cost was in.
+
+`cross-fade()` gives a background layer a second image, which means two
+more fields in the struct the painter fills **for every background layer
+on the page**. Filling them unconditionally is two text assignments per
+layer, and eleven paired samples of `features.html` said so:
+
+```
+before: 91 90 92 91 90 91 91 91 92 92 89
+after:  91 93 98 92 93 93 92 92 92 92 93
+```
+
+— a best of 89 against 91, and every reading on the new side at or above
+the old side's median. Behind the per-document flag that says a page
+named a cross-fade at all, thirteen paired samples give
+
+```
+before: 88 88 91 90 91 89 89 90 95 91 90 93 91
+after:  90 91 91 91 90 91 94 89 89 94 92 96 90
+```
+
+— 88 against 89 at the best, 90 against 91 at the median, two series
+that interleave, which is what two builds of the same source look like
+on this machine. What is left per layer is two boolean tests and a float
+comparison.

@@ -432,6 +432,11 @@ struct Shadow {
 // they are written, so the first one written is on top.
 struct BgLayer {
     url:text
+    // cross-fade(): the second image and how much of it shows. `fade`
+    // is -1 on every layer that is not one, which is what keeps the
+    // second pass off the pages that do not use it.
+    fadeUrl:text
+    fade:float
     image:Gradient
     repeatX:bool
     repeatY:bool
@@ -546,6 +551,8 @@ struct Style {
     // A background image from url(). The URL is resolved and fetched by
     // the page pipeline, which stores the decoded image under it.
     backgroundUrl:text
+    backgroundFadeUrl:text      // cross-fade()'s second image on the first layer
+    backgroundFade:float        // how much of it shows; -1 when there is none
     // border-image. The slices are fractions of the source, held as
     // Len so a number and a percentage keep their meaning; the widths
     // and outsets are px, with -1 meaning "the border's own width",

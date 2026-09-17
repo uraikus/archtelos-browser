@@ -531,8 +531,16 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
 // background.
 BgLayer bgPaint
 
+// How much of the layer's image shows. One for every layer that is not
+// the second image of a cross-fade, so nothing else pays for it.
+float bgFadeAlpha = 1.0
+
 void func bgLayerOfStyle(s:Style) {
     bgPaint.url = s.backgroundUrl
+    if anyCrossFade {
+        bgPaint.fadeUrl = s.backgroundFadeUrl
+        bgPaint.fade = s.backgroundFade
+    }
     bgPaint.image = s.backgroundImage
     bgPaint.repeatX = s.backgroundRepeatX
     bgPaint.repeatY = s.backgroundRepeatY
@@ -548,6 +556,10 @@ void func bgLayerOfStyle(s:Style) {
 
 void func bgLayerOf(l:BgLayer) {
     bgPaint.url = l.url
+    if anyCrossFade {
+        bgPaint.fadeUrl = l.fadeUrl
+        bgPaint.fade = l.fade
+    }
     bgPaint.image = l.image
     bgPaint.repeatX = l.repeatX
     bgPaint.repeatY = l.repeatY
@@ -599,6 +611,20 @@ void func paintBackgroundLayer(x:int, y:int, w:int, h:int,
         paintGradientClipped(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
     } else {
         paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+        // cross-fade(): the second image goes over the first at its own
+        // share, which for two opaque images is exactly the standard's
+        // mix -- the first is already down at full alpha, so the blit
+        // leaves (1 - p) of it. One field test per layer painted is what
+        // a page without one pays.
+        if anyCrossFade && bgPaint.fadeUrl != '' {
+            text second = bgPaint.fadeUrl
+            float share = bgPaint.fade
+            bgPaint.url = second
+            bgPaint.fadeUrl = ''
+            bgFadeAlpha = share
+            paintBackgroundImage(clipX, clipY, clipW, clipH, origX, origY, origW, origH, s)
+            bgFadeAlpha = 1.0
+        }
     }
 }
 
@@ -808,7 +834,7 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
     // would apply it twice -- once into the layer's own pixels and
     // again as the layer is composited -- and leaving it unset paints a
     // fully opaque image on a half-transparent box.
-    fillAlpha(s.effectiveOpacity)
+    fillAlpha(bgFadeAlpha == 1.0 ? s.effectiveOpacity : s.effectiveOpacity * bgFadeAlpha)
     pDrawImage(layer, clipX, clipY)
     fillAlpha(1.0)
 }
