@@ -608,6 +608,16 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
     // difference; it is zero unless the clip and the origin disagree.
     int shiftX = x - clipX
     int shiftY = y - clipY
+    // An unscaled blit is exact to the pixel and a scaled one is
+    // filtered, so the tile is only scaled when it has to be -- and
+    // then once, into an image every copy is blitted from, because a
+    // scaled blit fades at its own edges and a row of them would show
+    // the box through the seam between one tile and the next.
+    img tile = null
+    if scaled {
+        tile = scaledTile(paddedRegionEdges(src, bgPaint.repeatX, bgPaint.repeatY),
+                          srcW, srcH, iw, ih)
+    }
     img layer = blankImage(clipW, clipH)
     int ty = startY
     bool moreY = true
@@ -615,9 +625,7 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
         int tx = startX
         bool moreX = true
         while moreX {
-            // An unscaled blit is exact to the pixel and a scaled one
-            // is filtered, so the tile is only scaled when it has to be.
-            if scaled { layer.drawImage(src, tx + shiftX, ty + shiftY, iw, ih) }
+            if scaled { layer.drawImage(tile, tx + shiftX, ty + shiftY) }
             else { layer.drawImage(src, tx + shiftX, ty + shiftY) }
             if !bgPaint.repeatX { moreX = false }
             else {
@@ -1463,7 +1471,8 @@ void func layTiles(dstLen:int, tile:int, mode:int) {
     }
 }
 
-// A region with a one pixel border of its own edge pixels around it.
+// A region with a one pixel border around it, taken from its own edge
+// or from the edge opposite.
 //
 // A scaled blit samples half a source pixel beyond the rectangle it
 // fills, and with nothing there it fades to transparent: enlarging a
@@ -1471,20 +1480,34 @@ void func layTiles(dstLen:int, tile:int, mode:int) {
 // through between one tile and the next, and between the corner and
 // the edge beside it. The padding gives the sampler something to
 // reach, and is drawn outside the tile so none of it is seen.
-img func paddedRegion(region:img) {
+//
+// Which edge it copies is what the tile's neighbour will be. A border
+// image's regions each stand alone, so the padding repeats the edge
+// itself; a background tiled along an axis has its own opposite edge
+// next to it, so on that axis the padding comes from there and the two
+// tiles blend into each other exactly as one continuous tiling would.
+img func paddedRegionEdges(region:img, wrapX:bool, wrapY:bool) {
     int sw = region.width
     int sh = region.height
     img out = blankImage(sw + 2, sh + 2)
+    int left = wrapX ? sw - 1 : 0
+    int right = wrapX ? 0 : sw - 1
+    int top = wrapY ? sh - 1 : 0
+    int bottom = wrapY ? 0 : sh - 1
+    out.drawImage(cutRegion(region, 0, top, sw, 1), 1, 0)
+    out.drawImage(cutRegion(region, 0, bottom, sw, 1), 1, sh + 1)
+    out.drawImage(cutRegion(region, left, 0, 1, sh), 0, 1)
+    out.drawImage(cutRegion(region, right, 0, 1, sh), sw + 1, 1)
+    out.drawImage(cutRegion(region, left, top, 1, 1), 0, 0)
+    out.drawImage(cutRegion(region, right, top, 1, 1), sw + 1, 0)
+    out.drawImage(cutRegion(region, left, bottom, 1, 1), 0, sh + 1)
+    out.drawImage(cutRegion(region, right, bottom, 1, 1), sw + 1, sh + 1)
     out.drawImage(region, 1, 1)
-    out.drawImage(cutRegion(region, 0, 0, sw, 1), 1, 0)
-    out.drawImage(cutRegion(region, 0, sh - 1, sw, 1), 1, sh + 1)
-    out.drawImage(cutRegion(region, 0, 0, 1, sh), 0, 1)
-    out.drawImage(cutRegion(region, sw - 1, 0, 1, sh), sw + 1, 1)
-    out.drawImage(cutRegion(region, 0, 0, 1, 1), 0, 0)
-    out.drawImage(cutRegion(region, sw - 1, 0, 1, 1), sw + 1, 0)
-    out.drawImage(cutRegion(region, 0, sh - 1, 1, 1), 0, sh + 1)
-    out.drawImage(cutRegion(region, sw - 1, sh - 1, 1, 1), sw + 1, sh + 1)
     return out
+}
+
+img func paddedRegion(region:img) {
+    return paddedRegionEdges(region, false, false)
 }
 
 // One tile at its drawn size: the padded region scaled so that its

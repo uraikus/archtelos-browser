@@ -492,4 +492,47 @@ layers('background-image:url(tile.png);background-repeat:no-repeat')
 check(getPixelColor(2, 2) == blue, 'a single layer is unchanged')
 check(getPixelColor(2, 40) == grey, 'and still leaves the colour below it')
 
+// ---- a scaled tile has hard edges and no seam ----------------------------
+// A scaled blit samples half a source pixel past the rectangle it
+// fills, and with nothing there it fades to transparent: the tile's own
+// edge then blends into whatever is under it, and two scaled tiles side
+// by side show a band of it between them -- five pixels wide at a ten
+// times enlargement.
+//
+// Chromium 141 draws neither, and `tests/chromium.py pixels` says so on
+// these two pages. The 10x10 fixture at `background-size: 100px 100px`
+// over `#dddddd`, `no-repeat`: x = 0 is `#0000ff` and x = 99 is
+// `#008000`, both the fixture's own colours undiluted, and x = 100 is
+// the background exactly. Repeating: the row repeats exactly every 100
+// pixels, and the fixture's blue and green blend across each tile
+// boundary rather than into the background -- 99 is `#0006f2` where
+// 100 is `#0000ff`.
+Page pEdge = pageFromHtml(head + '<div style="width:300px;height:100px;'
+    + 'background-color:#dddddd;background-image:url(tile.png);'
+    + 'background-size:100px 100px;background-repeat:no-repeat"></div></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pEdge, 0, 0, 300)
+check(getPixelColor(0, 50) == blue, 'a scaled tile starts at its own colour, undiluted')
+check(getPixelColor(99, 50) == green, 'and ends at the other half of it')
+check(getPixelColor(100, 50) == grey, 'with the background beginning where the tile stops')
+
+Page pSeam = pageFromHtml(head + '<div style="width:300px;height:100px;'
+    + 'background-color:#dddddd;background-image:url(tile.png);'
+    + 'background-size:100px 100px"></div></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pSeam, 0, 0, 300)
+
+bool seamRepeats = true
+for int x = 0, x < 200, x++ {
+    if getPixelColor(x, 50) != getPixelColor(x + 100, 50) { seamRepeats = false }
+}
+check(seamRepeats, 'a background tiled at a scaled size repeats exactly, tile for tile')
+
+bool seamShowsBack = false
+for int x = 0, x < 300, x++ {
+    if getPixelColor(x, 50) == grey { seamShowsBack = true }
+}
+check(!seamShowsBack, 'and never lets the background colour through between two tiles')
+
 finish('background images')

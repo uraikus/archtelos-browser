@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A background tiled at a scaled size has hard edges and no seam
+
+A scaled blit samples half a source pixel past the rectangle it fills,
+and with nothing there it fades to transparent. `background-size` drew
+each tile as its own scaled blit, so the tile's edge blended into
+whatever was under it and two tiles side by side showed a band of the
+box's background between them -- five pixels of it at a ten times
+enlargement. The image is now padded and scaled once, and every tile is
+that one image blitted unscaled.
+
+Which edge the padding copies is what the next tile will be: an axis
+the background repeats on takes its padding from the opposite edge, so
+the tiles blend into each other exactly as one continuous tiling would,
+and an axis it does not repeat on takes its own edge, so the tile ends
+in its own colour. Against Chromium's pixels, read with
+`tests/chromium.py pixels`: a `no-repeat` tile of the 10x10 fixture
+scaled to 100px is `#0000ff` at its first pixel and `#008000` at its
+last, with the background beginning exactly at 100; repeating, the row
+repeats exactly every 100 pixels and the blend across the boundary is
+this engine's `#0007f1` against Chromium's `#0006f2`.
+
 ### border-image scales its edges to the border, and rounds and spaces them
 
 Backgrounds and Borders 3 §6.5 scales every edge image to the thickness

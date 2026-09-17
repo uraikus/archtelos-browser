@@ -87,24 +87,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    algorithms, which is exact where it applies; what the pixel mode adds
    is an answer for the questions no algorithm settles on its own, such
    as where a tiling starts.
-5. **Backgrounds and Borders 3, completed**:
-   **a background image tiled at a size other than its own has the seam
-   §6.5's tiles no longer have**. A scaled blit samples half a source
-   pixel past the rectangle it fills and fades to transparent where
-   there is nothing there, so two scaled tiles laid side by side show a
-   band of whatever is under them between the two: five pixels of it at
-   a ten times enlargement. `paintImageRegion` pads each region with a
-   copy of its own edge pixels and scales that with the padding falling
-   outside the tile, which is what closed the seam in a border image;
-   the background painter still draws `background-size`'s scaled tiles
-   one by one and has the same seam, and the same padding closes it.
-   The check is the one `tests/render/borderimage.f` uses: a tiling has
-   a period, and a row that repeats exactly at the tile's width has no
-   seam in it.
-
-   Also a blurred shadow whose falloff is a real Gaussian rather than
-   the accumulated alpha of nested rectangles the canvas's lack of a
-   blur forces, which `tests/chromium.py pixels` can now be asked for:
+5. **Backgrounds and Borders 3, completed**: a blurred shadow whose
+   falloff is a real Gaussian rather than the accumulated alpha of
+   nested rectangles the canvas's lack of a blur forces, which
+   `tests/chromium.py pixels` can now be asked for:
    Chromium's own profile under `box-shadow: 0 0 20px #000` ramps from
    nothing 25px out to `#858585` against the box's edge, half the
    shadow's alpha at the edge being what a Gaussian blurred step gives.
