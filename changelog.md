@@ -60,6 +60,17 @@ A page painted the whole of its area even when it ended at a break before
 the area was full, so the last sheet showed the first inch of the next
 one. A page carries the strip between its own two offsets.
 
+**The first version cost 2 ms to every page, and the rule that catches
+it was already written down.** The three `page-break-*` properties are
+renamed onto the modern ones where a declaration is applied, and that
+runs once per matched declaration -- 11,614 of them on the benchmark
+page. Moving the comparisons to the end of `applyDecl` looked like the
+fix and was not: the end is where most properties land, since only the
+shorthands return before it. A per-document flag, set while the
+stylesheet is read, is what removes it; twenty-five paired samples then
+give a median difference of −1 ms. benchmarks.md has the numbers, and
+the two suspects that were measured and cleared.
+
 Chromium 141 is the yardstick throughout, printed to PDF and read back:
 the `/MediaBox` gives the page box -- `size: A4` is 594.96 x 841.92pt,
 `size: 400px 600px` is 300 x 450pt exactly -- and counting `/Type /Page`

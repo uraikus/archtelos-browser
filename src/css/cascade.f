@@ -164,6 +164,7 @@ void func cascadeReset() {
     // dropped with everything else: a second cascade of one document
     // would otherwise register every one of them twice.
     resetPageRules()
+    anyPageBreak = false
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -3146,28 +3147,6 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // to find it, and `display: inherit` for the resolver to.
     if name == 'display' && !isDisplayKeyword(value)
         && cssWideKeyword(value) == CSSWIDE_NONE { return }
-    // CSS2's three page-break properties are the three fragmentation
-    // properties under their older names (Fragmentation 3 §4.4), so they
-    // are renamed here rather than implemented again. That makes the
-    // cascade between an old spelling and a new one one property's
-    // cascade: two properties would let whichever was read last always
-    // win, whatever the stylesheet said. `always` is the old spelling of
-    // `page` and every other value carries over as itself.
-    // Applied again under the modern name rather than renamed in place:
-    // binding the value to a local `ascii` here would alias a parameter
-    // the compiler never retained (FINDINGS.md, "ascii aliases are not
-    // retained"), which segfaults on the release at the end of the call.
-    if name == 'page-break-before' || name == 'page-break-after' {
-        bool always = asciiLower(asciiTrim(value)) == 'always'
-        text modern = name == 'page-break-before' ? 'break-before' : 'break-after'
-        if always { applyDecl(props, modern, 'page'.toAscii()) }
-        else { applyDecl(props, modern, value) }
-        return
-    }
-    if name == 'page-break-inside' {
-        applyDecl(props, 'break-inside', value)
-        return
-    }
     // The logical border shorthands are renamed before anything else,
     // because the shorthand dispatch below reads the name: renaming
     // afterwards left `border-block-start` as a longhand nobody handles.
@@ -3422,6 +3401,38 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         text base = asciiStartsWith(name.toAscii(), 'margin', 0) ? 'margin' : 'padding'
         setProp(props, inline ? `${base}-left` : `${base}-top`, a)
         setProp(props, inline ? `${base}-right` : `${base}-bottom`, b)
+        return
+    }
+    // CSS2's three page-break properties are the three fragmentation
+    // properties under their older names (Fragmentation 3 §4.4), so a
+    // declaration under an old name is applied under the new one rather
+    // than implemented again. That makes the cascade between the two
+    // spellings one property's cascade: two properties would let
+    // whichever was read last always win, whatever the stylesheet said.
+    // `always` is the old spelling of `page`, and every other value
+    // carries over as itself.
+    //
+    // This sits at the end and not the top because `applyDecl` runs once
+    // per matched declaration -- 11,614 of them on the benchmark page --
+    // and three name comparisons up there cost a millisecond to every
+    // page, whether or not it has ever said `page-break-anything`. Down
+    // here every other property has already returned.
+    //
+    // Applied again under the modern name rather than renamed in place:
+    // binding the value to a local `ascii` would alias a parameter the
+    // compiler never retained (FINDINGS.md, "ascii aliases are not
+    // retained"), which segfaults on the release at the end of the call.
+    if anyPageBreak && (name == 'page-break-before' || name == 'page-break-after') {
+        text modern = name == 'page-break-before' ? 'break-before' : 'break-after'
+        if asciiLower(asciiTrim(value)) == 'always' {
+            applyDecl(props, modern, 'page'.toAscii())
+        } else {
+            applyDecl(props, modern, value)
+        }
+        return
+    }
+    if anyPageBreak && name == 'page-break-inside' {
+        applyDecl(props, 'break-inside', value)
         return
     }
     setProp(props, name, value)

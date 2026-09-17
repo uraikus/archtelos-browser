@@ -569,6 +569,13 @@ Decl func parseOneDeclaration(piece:ascii) {
     if value.length == 0 { return null }
     Decl d
     d.name = name.toText()
+    // Whether this document has ever said one of CSS2's three page-break
+    // properties. `applyDecl` runs once per matched declaration -- 11,614
+    // of them on the benchmark page -- so the three name comparisons that
+    // rename them are worth a millisecond there, and a page that never
+    // says one pays a single boolean instead. See cascadeReset, which
+    // clears it with everything else the document put here.
+    if asciiStartsWith(name, 'page-break', 0) { anyPageBreak = true }
     d.value = value
     d.important = important
     d.serial = declSerialNext

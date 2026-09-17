@@ -1173,3 +1173,38 @@ to a corner here; a round one does not separate and is instead a single
 cached image, blitted once. The cache is keyed on everything the answer
 depends on, so 355 identical cards build four corners between them. The
 same trick would suit the square corners, and todo.md now says so.
+
+Paged media costs **18,856 bytes** (2,855,680 → 2,874,536) and, once the
+one thing in it that ran per declaration was put behind a flag, nothing
+to a page that does not paginate. Twenty-five paired samples of
+`generated.html` give a minimum of 103 ms against 102 and medians of 106
+against 105, the median paired difference −1; twenty-one of
+`features.html` give 88 against 89, medians 92 and 92, median paired
+difference 0.
+
+**The first version cost 2 ms on `generated.html`, and the rule that
+catches this was already written down.** CSS2's `page-break-before` and
+its two siblings are renamed onto the modern properties where a
+declaration is applied, and `applyDecl` runs once per matched
+declaration -- 11,614 of them on that page. Three name comparisons there,
+paid by every page whether or not it has ever said `page-break` anything,
+is exactly the "test inside a loop over every declaration" CLAUDE.md says
+to put a flag in front of before it lands.
+
+Moving the three comparisons to the end of `applyDecl` looked like the
+fix and was not: the fall-through at the end is where *most* properties
+land, since only the shorthands return before it, so nearly every
+declaration still paid them. Twenty-five paired samples said so -- the
+differences still clustered at +2 -- which is the whole reason to measure
+again after a fix instead of reasoning about it. A per-document flag set
+while the stylesheet is read, with `&&` in front of the comparisons, is
+what removes it.
+
+Two other suspects were measured and cleared on the way. The new `text`
+field on `Style` costs something, but not this: three *more* dummy text
+fields on top of it move the median 1 ms with the paired differences
+scattered from −6 to +10, where the real regression was a tight cluster
+at +2. And neither benchmark page paginates at all, so none of the
+pagination, the page-box resolution or the `@page` parsing is on their
+path -- which is why the only thing that could cost them anything was the
+one line that ran per declaration.

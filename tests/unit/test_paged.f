@@ -233,6 +233,26 @@ checkEqInt(styleOfId('#a { break-before: column }', 'a').breakBefore, BRK_COLUMN
 checkEqInt(styleOfId('#a { break-before: bogus }', 'a').breakBefore, BRK_AUTO,
            'and a word that is neither is auto')
 
+// The rename is guarded by a flag set while the stylesheet is read, so
+// it has to be set by every route a declaration can arrive by. An inline
+// style is the other one, and it is the one a guard set in the wrong
+// place would silently drop.
+Style func inlineStyleOf(decl:text) {
+    cascadeReset()
+    cssViewportWidth = 800
+    Node doc = parseHtmlText('<html><body><div id="a" style="' + decl
+        + '">x</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return nodeById(doc, 'a').style
+}
+checkEqInt(inlineStyleOf('page-break-before: always').breakBefore, BRK_PAGE,
+           'a page-break in a style attribute is renamed too')
+checkEqInt(inlineStyleOf('page-break-after: avoid').breakAfter, BRK_AVOID,
+           'and so is one after it')
+check(inlineStyleOf('page-break-inside: avoid').breakInsideAvoid,
+      'and one inside it')
+
 // One property under two spellings: the later declaration wins whichever
 // name it was written under. Two properties would let the legacy one
 // always lose, or always win, depending on which was read last.

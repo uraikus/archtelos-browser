@@ -20,6 +20,15 @@ import ../util/text.f
 // the `@page` rules almost always inside it -- reach its pages.
 bool cssMediaPrint = false
 
+// Whether this document has ever said one of CSS2's three page-break
+// properties. `applyDecl` runs once per matched declaration -- 11,614 of
+// them on the benchmark page -- so a page that never says one pays a
+// single boolean rather than three name comparisons. Set while a
+// stylesheet is read and cleared by cascadeReset, and declared here
+// rather than beside its use because a global is not hoisted
+// (FINDINGS.md, "one global namespace, and globals are not hoisted").
+bool anyPageBreak = false
+
 struct PageBox {
     width:int
     height:int
