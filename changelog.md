@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The units of Values and Units 4
+
+`q`, a quarter of a millimetre; `vi` and `vb`, the inline and block
+axes, which a horizontal writing mode makes the horizontal and the
+vertical; the small, large and dynamic viewport units, which are three
+names for this viewport because nothing here slides away to tell them
+apart; `ic`, an ideograph's advance, which is an em in every font this
+engine can load; and `cap`, taken as three quarters of an em, which is
+what Chromium measures for the monospace face here.
+
+`40q` is 38 pixels and `100q` is 94, both Chromium's own answers -- the
+first version of the conversion carried 0.945 rather than the exact
+0.94488, and `100q` came out a pixel wide of it.
+
+The checks for the units this browser can only answer one way ask the
+two spellings to agree rather than asking for a number, because what
+they are testing is that a page written in either gets the same box.
+
+**css-2026.md's units row was wrong about angles**: it called them all
+missing where `deg`, `grad`, `rad` and `turn` are read wherever an angle
+is taken. `lh` and `rlh` are the ones still missing, and they need the
+line height threaded into the length parser.
+
 ### A scroll container scrolls
 
 The wheel over a scroll container scrolls that container; over anything

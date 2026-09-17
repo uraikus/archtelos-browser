@@ -3388,6 +3388,31 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if unit == 'vh' { return lenPx(v * cssViewportHeight.toFloat() / 100.0) }
     if unit == 'vmin' { return lenPx(v * minInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0) }
     if unit == 'vmax' { return lenPx(v * maxInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0) }
+    // Values and Units 4. `q` is a quarter of a millimetre. The small,
+    // large and dynamic viewport units are three names for this
+    // viewport, which has no toolbar that slides away to tell them
+    // apart, and `vi` and `vb` are the inline and block axes, which in
+    // a horizontal writing mode are the horizontal and the vertical.
+    if unit == 'q' { return lenPx(v * 0.94488188976378) }
+    if unit == 'svw' || unit == 'lvw' || unit == 'dvw' || unit == 'vi' {
+        return lenPx(v * cssViewportWidth.toFloat() / 100.0)
+    }
+    if unit == 'svh' || unit == 'lvh' || unit == 'dvh' || unit == 'vb' {
+        return lenPx(v * cssViewportHeight.toFloat() / 100.0)
+    }
+    if unit == 'svmin' || unit == 'lvmin' || unit == 'dvmin' {
+        return lenPx(v * minInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0)
+    }
+    if unit == 'svmax' || unit == 'lvmax' || unit == 'dvmax' {
+        return lenPx(v * maxInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0)
+    }
+    // An ideograph's advance is an em in every font this engine can
+    // load, and a cap height is taken as three quarters of one, which is
+    // what Chromium measures for the monospace face here -- the runtime
+    // reports neither, as it reports neither an x-height for `ex` nor a
+    // zero's advance for `ch`.
+    if unit == 'ic' { return lenPx(v * fontSize.toFloat()) }
+    if unit == 'cap' { return lenPx(v * fontSize.toFloat() * 0.75) }
     return l
 }
 
