@@ -148,7 +148,10 @@ and the `<ol type>` attribute that asks for them, and opacity. `linear-gradient(
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle
 or an ellipse, sized by any of the four extent keywords or explicit
-radii and placed with `at`. `background-image: url()`
+radii and placed with `at`; and `conic-gradient()` and
+`repeating-conic-gradient()` sweep their stops around a centre instead,
+positioned by angle or by a percentage of the turn, starting where
+`from` says and centred where `at` does. `background-image: url()`
 paints a fetched image with `background-repeat`,
 `background-position` — or `background-position-x` and
 `background-position-y` separately — and `background-size`, which takes
@@ -320,10 +323,10 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, the preload scanner), fifteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, the preload scanner), sixteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
-generated content, object fitting, object view boxes, borders, border
+conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text and box shadows — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements

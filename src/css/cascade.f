@@ -1688,6 +1688,37 @@ int gradStopColor = COLOR_UNSET
 int gradStopKind = GSTOP_AUTO
 float gradStopVal = 0.0
 
+// A conic gradient's stop positions are angles rather than distances,
+// and a percentage there is a fraction of the whole turn. Both come out
+// as a fraction of the sweep, which is what the stop machinery already
+// means by GSTOP_PERCENT -- so the painter needs to know nothing about
+// the difference.
+void func parseConicStop(t:ascii, currentColor:int) {
+    gradStopColor = COLOR_UNSET
+    gradStopKind = GSTOP_AUTO
+    gradStopVal = 0.0
+    arr[ascii] parts = cssTokens(t)
+    if parts.length == 0 { return }
+    gradStopColor = parseCssColor(parts[0], currentColor)
+    if parts.length > 1 {
+        ascii p = asciiTrim(parts[1])
+        if p.length > 0 && p.charCodeAt(p.length - 1) == CH_PERCENT {
+            parseNumberAt(p, 0)
+            if numOk {
+                gradStopKind = GSTOP_PERCENT
+                gradStopVal = numValue / 100.0
+            }
+            return
+        }
+        arr[bool] ok = [false]
+        float deg = parseAngleDegrees(p, ok)
+        if ok[0] {
+            gradStopKind = GSTOP_PERCENT
+            gradStopVal = deg / 360.0
+        }
+    }
+}
+
 void func parseGradientStop(t:ascii, currentColor:int, fontSize:int) {
     gradStopColor = COLOR_UNSET
     gradStopKind = GSTOP_AUTO
@@ -1730,6 +1761,61 @@ Len radPreludeRx = lenAuto()
 Len radPreludeRy = lenAuto()
 Len radPreludePosX = lenPercent(50.0)
 Len radPreludePosY = lenPercent(50.0)
+
+// The `[ from <angle> ]? [ at <position> ]?` that may precede a conic
+// gradient's stops. Both are optional; what is absent keeps the initial
+// value -- a sweep starting straight up, centred. Returns false when the
+// component is not a prelude at all, which is how the caller learns the
+// first component was a colour stop.
+float conicPreludeFrom = 0.0
+Len conicPreludePosX = lenPercent(50.0)
+Len conicPreludePosY = lenPercent(50.0)
+
+bool func parseConicPrelude(t:ascii, fontSize:int) {
+    conicPreludeFrom = 0.0
+    conicPreludePosX = lenPercent(50.0)
+    conicPreludePosY = lenPercent(50.0)
+    ascii low = asciiLower(asciiTrim(t))
+    if low.length == 0 { return false }
+    arr[ascii] w = asciiSplitSpace(low)
+    if w.length == 0 { return false }
+    bool any = false
+    int i = 0
+    // The words are indexed rather than bound (FINDINGS.md, "ascii
+    // aliases are not retained").
+    while i < w.length {
+        if w[i] == 'from' {
+            i++
+            if i >= w.length { return false }
+            arr[bool] ok = [false]
+            float deg = parseAngleDegrees(w[i], ok)
+            if !ok[0] { return false }
+            conicPreludeFrom = deg
+            any = true
+            i++
+            continue
+        }
+        if w[i] == 'at' {
+            i++
+            arr[ascii] pos = []
+            while i < w.length { pos.push(w[i])  i++ }
+            if pos.length >= 2 {
+                conicPreludePosX = parsePositionAxis(pos[0], true, fontSize)
+                conicPreludePosY = parsePositionAxis(pos[1], false, fontSize)
+            } else if pos.length == 1 {
+                if pos[0] == 'top' { conicPreludePosY = lenPercent(0.0) }
+                else if pos[0] == 'bottom' { conicPreludePosY = lenPercent(100.0) }
+                else { conicPreludePosX = parsePositionAxis(pos[0], true, fontSize) }
+            } else {
+                return false
+            }
+            any = true
+            break
+        }
+        return false
+    }
+    return any
+}
 
 bool func parseRadialPrelude(t:ascii, fontSize:int) {
     radPreludeCircle = false
@@ -2454,9 +2540,13 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     bool plainLinear = asciiStartsWithLower(low, 'linear-gradient(', 0)
     bool repRadial = asciiStartsWithLower(low, 'repeating-radial-gradient(', 0)
     bool plainRadial = asciiStartsWithLower(low, 'radial-gradient(', 0)
-    if !repLinear && !plainLinear && !repRadial && !plainRadial { return g }
+    bool repConic = asciiStartsWithLower(low, 'repeating-conic-gradient(', 0)
+    bool plainConic = asciiStartsWithLower(low, 'conic-gradient(', 0)
+    if !repLinear && !plainLinear && !repRadial && !plainRadial
+        && !repConic && !plainConic { return g }
     bool radial = repRadial || plainRadial
-    bool repeating = repLinear || repRadial
+    bool conic = repConic || plainConic
+    bool repeating = repLinear || repRadial || repConic
     int open = asciiIndexOf(v, '('.toAscii(), 0)
     if open < 0 || v.charCodeAt(v.length - 1) != CH_RPAREN { return g }
     ascii inside = asciiTrim(v.slice(open + 1, v.length - 1))
@@ -2465,7 +2555,12 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
 
     int first = 0
     float angle = 180.0                 // `to bottom` when none is given
-    if radial {
+    if conic {
+        if parseConicPrelude(parts[0], fontSize) { first = 1 }
+        g.conicFrom = conicPreludeFrom
+        g.radialPosX = conicPreludePosX
+        g.radialPosY = conicPreludePosY
+    } else if radial {
         if parseRadialPrelude(parts[0], fontSize) { first = 1 }
         g.radialCircle = radPreludeCircle
         g.radialExtent = radPreludeExtent
@@ -2482,7 +2577,8 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     arr[int] kinds = []
     arr[float] vals = []
     for int i = first, i < parts.length, i++ {
-        parseGradientStop(parts[i], currentColor, fontSize)
+        if conic { parseConicStop(parts[i], currentColor) }
+        else { parseGradientStop(parts[i], currentColor, fontSize) }
         if gradStopColor == COLOR_UNSET { return noGradient() }
         colors.push(gradStopColor)
         kinds.push(gradStopKind)
@@ -2493,6 +2589,7 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     g.present = true
     g.repeating = repeating
     g.radial = radial
+    g.conic = conic
     g.angle = angle
     g.stops = colors
     g.posKind = kinds

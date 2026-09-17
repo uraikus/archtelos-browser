@@ -428,6 +428,12 @@ struct Gradient {
     radialRy:Len
     radialPosX:Len       // the centre, as a fraction of the box, not of any leftover
     radialPosY:Len
+    // A conic gradient sweeps around a centre instead of running out
+    // from one: a stop's position is an angle rather than a distance,
+    // so the stop list means a fraction of the turn. The centre is the
+    // radial pair above, which says the same thing.
+    conic:bool
+    conicFrom:float      // degrees, clockwise from pointing up
 }
 
 // The label a list marker shows for its position (CSS2 §12.6).

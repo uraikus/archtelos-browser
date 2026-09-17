@@ -353,7 +353,9 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
                                origX:int, origY:int, origW:int, origH:int, s:Style) {
     if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
-        if s.backgroundImage.radial {
+        if s.backgroundImage.conic {
+            paintConicGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
+        } else if s.backgroundImage.radial {
             paintRadialGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
         } else {
             paintLinearGradient(clipX, clipY, clipW, clipH, s.backgroundImage, s.effectiveOpacity)
@@ -366,7 +368,9 @@ void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
     // document coordinates
     layer.translate(0 - clipX, 0 - clipY)
     paintLayer = layer
-    if s.backgroundImage.radial {
+    if s.backgroundImage.conic {
+        paintConicGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
+    } else if s.backgroundImage.radial {
         paintRadialGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
     } else {
         paintLinearGradient(origX, origY, origW, origH, s.backgroundImage, s.effectiveOpacity)
@@ -601,6 +605,110 @@ int func lerpChannel(a:int, b:int, f:float) {
     if v < 0 { return 0 }
     if v > 255 { return 255 }
     return v
+}
+
+// ---- conic gradients (CSS Images 3 §3.4.3) ---------------------------
+//
+// A conic gradient gives every point the colour of its own angle about
+// a centre, measured clockwise from pointing up. The stop list means a
+// fraction of the turn instead of a fraction of a line, so the stop
+// machinery above is shared unchanged; what differs is the geometry.
+//
+// It is painted as wedges, for the same reason the linear one is
+// painted as bands: the canvas's own gradient fill takes only literal
+// colours (FINDINGS.md, "a gradient cannot be built at run time").
+//
+// A wedge is not a rectangle, so it is drawn a row at a time, and the
+// row's span is computed rather than searched for. A ray at angle `a`
+// from the centre meets the row `ry` where
+//
+//     x = cx - dy * tan(a),    dy = ry - cy
+//
+// and only when it points towards that row at all -- rays with
+// cos a > 0 reach the rows above the centre and rays with cos a < 0 the
+// rows below. So one tangent per wedge edge, computed once for the
+// whole box, gives every row's span by a multiply: no atan2 per pixel,
+// and every rectangle covers whole pixels exactly, which is what keeps
+// abutting wedges from being blended against each other into stipple.
+void func paintConicGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {
+    if g.stops.length < 2 || w <= 0 || h <= 0 { return }
+    float cxf = x.toFloat() + resolveLen(g.radialPosX, w, 0).toFloat()
+    float cyf = y.toFloat() + resolveLen(g.radialPosY, h, 0).toFloat()
+
+    // One wedge per pixel of the circumference, which is as fine as the
+    // result can show, bounded so a huge box does not pay for detail
+    // nobody sees and a tiny one still gets a smooth sweep.
+    float dxMax = maxFloat(absFloat(cxf - x.toFloat()), absFloat(x.toFloat() + w.toFloat() - cxf))
+    float dyMax = maxFloat(absFloat(cyf - y.toFloat()), absFloat(y.toFloat() + h.toFloat() - cyf))
+    float radius = Math.sqrt(dxMax * dxMax + dyMax * dyMax)
+    int wedges = roundPx(6.2831853071795864 * radius)
+    if wedges < 24 { wedges = 24 }
+    if wedges > 1440 { wedges = 1440 }
+
+    resolveGradientStops(g, 1.0)
+    arr[float] offsets = gradOffsets
+    fillAlpha(opacity)
+
+    float step = 360.0 / wedges.toFloat()
+    float rad = 3.14159265358979 / 180.0
+    // Where a ray at this angle crosses a row, and which rows it can
+    // reach at all, are fixed for the whole box: a ray with cos a > 0
+    // reaches the rows above the centre, one with cos a < 0 the rows
+    // below, and one within a millionth of horizontal reaches neither.
+    arr[float] tans = []
+    arr[float] sins = []
+    arr[int] reaches = []
+    for int k = 0, k <= wedges, k++ {
+        float a = (g.conicFrom + step * k.toFloat()) * rad
+        float ca = Math.cos(a)
+        float sa = Math.sin(a)
+        sins.push(sa)
+        if absFloat(ca) < 0.000001 {
+            tans.push(0.0)
+            reaches.push(0)
+        } else {
+            tans.push(sa / ca)
+            reaches.push(ca > 0.0 ? 1 : 0 - 1)
+        }
+    }
+
+    float big = 1000000.0
+    for int k = 0, k < wedges, k++ {
+        int c = gradientColorAt(g, offsets, (k.toFloat() + 0.5) / wedges.toFloat())
+        if colorAlpha(c) == 0 { continue }
+        applyFillColor(c)
+        for int row = y, row < y + h, row++ {
+            float dy = row.toFloat() + 0.5 - cyf
+            int want = dy < 0.0 ? 1 : 0 - 1
+            bool r0 = reaches[k] == want
+            bool r1 = reaches[k + 1] == want
+            // A wedge neither of whose edges points at this row does not
+            // cover any of it. Getting this wrong paints the whole row,
+            // which is how the first version of this came out uniformly
+            // the colour of its last wedge.
+            if !r0 && !r1 { continue }
+            float e0 = 0.0
+            float e1 = 0.0
+            if r0 && r1 {
+                e0 = cxf - dy * tans[k]
+                e1 = cxf - dy * tans[k + 1]
+            } else if r0 {
+                // The wedge straddles the horizontal, so its far edge is
+                // off the end of the row on the side it leans to: right
+                // where the edge ray points right, left where it points
+                // left.
+                e0 = cxf - dy * tans[k]
+                e1 = sins[k + 1] > 0.0 ? big : 0.0 - big
+            } else {
+                e0 = cxf - dy * tans[k + 1]
+                e1 = sins[k] > 0.0 ? big : 0.0 - big
+            }
+            int xa = maxInt(roundPx(minFloat(e0, e1)), x)
+            int xb = minInt(roundPx(maxFloat(e0, e1)), x + w)
+            if xb > xa { pDrawRect(xa, row, xb - xa, 1) }
+        }
+    }
+    fillAlpha(1.0)
 }
 
 void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:float) {

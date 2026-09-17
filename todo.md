@@ -57,12 +57,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    pseudo-element half is measured by geometry and by the generated text
    and pixels, as tests/unit/test_counters.f, tests/unit/test_quotes.f
    and tests/render/content.f do.
-4. **CSS Images 3, completed**: `conic-gradient()`, gradient
-   interpolation hints, and the one degenerate case left — an ellipse
-   with zero height and non-zero width, which the standard renders as a
-   mirrored linear gradient and this renders as the last stop, the same
-   as every other degenerate shape. Linear and radial gradients,
-   `object-fit` and `object-position` are done.
+4. **CSS Images 3, completed**: gradient interpolation hints, and the
+   one degenerate case left — an ellipse with zero height and non-zero
+   width, which the standard renders as a mirrored linear gradient and
+   this renders as the last stop, the same as every other degenerate
+   shape. Linear, radial and conic gradients, `object-fit` and
+   `object-position` are done.
 
    **Headless Chromium cannot supply pixel ground truth in this
    container**, which is what anything graded in pixels rather than

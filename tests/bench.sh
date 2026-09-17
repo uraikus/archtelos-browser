@@ -265,7 +265,7 @@ echo
 echo "## What painting a gradient costs (60 boxes of 760x60, best of $RUNS, ms)"
 echo
 printf "%-34s %12s %12s\n" "page" "paint" "end to end"
-for name in grad-flat grad-on grad-off; do
+for name in grad-flat grad-on grad-off grad-conic; do
     bp=999999
     be=999999
     for _ in $(seq "$RUNS"); do
@@ -282,6 +282,7 @@ for name in grad-flat grad-on grad-off; do
     [ "$name" = "grad-flat" ] && label="flat colours (the control)"
     [ "$name" = "grad-on" ] && label="gradients, along an axis"
     [ "$name" = "grad-off" ] && label="gradients, at 37 degrees"
+    [ "$name" = "grad-conic" ] && label="conic gradients"
     printf "%-34s %12s %12s\n" "$label" "$bp" "$be"
 done
 

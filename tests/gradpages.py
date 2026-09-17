@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Generates the three pages the gradient benchmark compares.
+"""Generates the four pages the gradient benchmark compares.
 
-Same markup and same layout in all three; only the background differs,
-so the difference between them is the cost of painting a gradient.
+Same markup and same layout in all four; only the background differs,
+so the difference between them is the cost of painting a gradient. The
+conic page ends on the colour it started with, because a sweep whose two
+ends differ has a seam, and a seam is a detail of the picture rather
+than of the cost.
 
     python3 tests/gradpages.py <output-directory>
 """
@@ -42,6 +45,8 @@ def main():
         'grad-flat.html': lambda i: '#%06x' % two_colors(i)[0],
         'grad-on.html': lambda i: 'linear-gradient(to right, #%06x, #%06x)' % two_colors(i),
         'grad-off.html': lambda i: 'linear-gradient(37deg, #%06x, #%06x)' % two_colors(i),
+        'grad-conic.html': lambda i: 'conic-gradient(#%06x, #%06x, #%06x)' % (
+            two_colors(i) + (two_colors(i)[0],)),
     }
     for name, bg in cases.items():
         with open(os.path.join(out, name), 'w') as fh:

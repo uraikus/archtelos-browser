@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `conic-gradient()` and `repeating-conic-gradient()`
+
+A conic gradient gives every point the colour of its own angle about a
+centre, clockwise from pointing up, whatever its distance. The stop list
+means a fraction of the turn rather than of a line, so the stop
+machinery is shared unchanged: a position may be an angle in any of the
+four units or a percentage, and `90deg` and `25%` are the same place —
+which is the check that depends on no number being known in advance.
+`from <angle>` turns the sweep and `at <position>` moves the centre.
+
+**A wedge is not a rectangle**, so it is drawn a row at a time, and the
+row's span is computed rather than searched for: a ray at angle `a` from
+the centre meets row `ry` at `x = cx - (ry - cy)·tan a`, and only when
+it points at that row at all. One tangent per wedge edge, taken once for
+the whole box, then gives every row's span by a multiply — no `atan2`
+per pixel, and every rectangle covers whole pixels, which is what keeps
+abutting wedges from being blended into stipple.
+
+**The first version painted every box the colour of its last wedge.** A
+wedge neither of whose edges points at a row does not cover any of it;
+that version gave it the whole row instead, and the last wedge painted
+over everything before it. The rule is that one edge reaching means the
+wedge straddles the horizontal and runs off the row on the side it leans
+to, and neither edge reaching means the wedge is not on this row.
+
+The gradient benchmark grew a fourth page for it. A conic sweep costs
+about what an off-axis linear gradient does — 12 ms of painting against
+14 for the same sixty 760x60 boxes — which is the answer the geometry
+predicts: both draw one rectangle per band per row. 8,632 bytes.
+
 ### `repeat(auto-fill)`, `repeat(auto-fit)` and dense packing
 
 How many times an auto-repeat group repeats depends on the space the

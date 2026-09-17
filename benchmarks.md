@@ -357,6 +357,7 @@ sixty boxes, same layout, only the painting differs.
 | flat colours (the control) | 0 ms | 25 ms |
 | gradients, along an axis | 1 ms | 27 ms |
 | gradients, at 37 degrees | **14 ms** | **60 ms** |
+| conic gradients | **12 ms** | **61 ms** |
 
 **An axis-aligned gradient is nearly free and an angled one is not**, and
 the difference is structural rather than incidental. Along an axis each
@@ -372,6 +373,13 @@ properly — a gradient fill that takes runtime colours, and a clip region
 — and it is written down here rather than discovered later. Rendering
 the gradient once into an offscreen image and drawing that image would
 collapse it back; todo.md carries the idea.
+
+A conic sweep costs about what the angled linear one does, and for the
+same reason: both draw one rectangle per band per row. Its wedges are
+found by arithmetic rather than by searching — a ray's crossing of a row
+is one multiply once its tangent is known — so the sweep is not paying
+for an `atan2` per pixel, which is what the obvious implementation
+costs.
 
 Both figures are measured at 800x600, which is the viewport, so most of
 the 4,080-pixel-tall page is culled. A page whose angled gradients are
@@ -841,6 +849,11 @@ they are different programs that happen to round to the same size. The
 benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
+
+`conic-gradient()` costs **8,632 bytes** (2,746,648 → 2,755,280) and
+nothing at all to a page without one: the painter is reached only
+through the gradient dispatch, which asks the style it is already
+holding.
 
 `repeat(auto-fill)`, `repeat(auto-fit)` and dense packing cost **4,656
 bytes** (2,741,992 → 2,746,648) and no measurable time: five alternating
