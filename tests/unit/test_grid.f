@@ -227,4 +227,48 @@ checkEqInt(gridHeightOf('grid-template-columns:100px;grid-template-rows:20px',
                         gridCell('a', 'height:90px')), 20,
            'a declared row keeps its height and lets the item overflow')
 
+// ---- an item placed past the explicit grid (Grid 1 §8.1, §8.5) --------
+// A line number beyond the explicit grid creates implicit tracks, and
+// the flow has to wrap at the whole grid rather than at its explicit
+// part. A one-column grid holding an item at `grid-column: 2` searched
+// a row one cell wide for a free cell at index 1, which no search can
+// find: the layout never returned. This is the check that it does.
+//
+// What the implicit tracks are *sized* to is the track sizing section
+// below; what is checked here is that the item lands in one of them and
+// that the layout returns at all.
+//
+// The cursor goes with it: an item that names a column moves the
+// auto-placement cursor there, so an automatically placed item after it
+// goes to the next row rather than back to the cell the named one
+// skipped over -- measured in Chromium 141, which puts the second item
+// at the start of the second row.
+
+Box gPast = gridOf('grid-template-columns:100px',
+                   gridCell('a', '') + gridCell('b', 'grid-column:2'))
+Box pastA = findById(gPast, 'a')
+Box pastB = findById(gPast, 'b')
+check(pastA != null && pastB != null, 'both items are laid out')
+checkEqInt(pastA.x, 0, 'the explicit column starts at the content edge')
+checkEqInt(pastA.w, 100, 'and keeps its length')
+checkEqInt(pastB.x, 100, 'the implicit column follows it')
+checkEqInt(pastB.y, pastA.y, 'both are in the first row')
+
+Box gPast3 = gridOf('grid-template-columns:100px',
+                    gridCell('a', '') + gridCell('b', 'grid-column:3'))
+check(findById(gPast3, 'b') != null, 'naming column 3 lays out too, two tracks past the explicit one')
+
+Box gInside = gridOf('grid-template-columns:100px 100px',
+                     gridCell('a', '') + gridCell('b', 'grid-column:2'))
+checkEqInt(findById(gInside, 'b').x, 100, 'a column inside the explicit grid makes no implicit track')
+checkEqInt(findById(gInside, 'b').w, 100, 'and keeps its declared length')
+
+Box gCursor = gridOf('grid-template-columns:100px',
+                     gridCell('a', 'grid-column:2') + gridCell('b', ''))
+Box curA = findById(gCursor, 'a')
+Box curB = findById(gCursor, 'b')
+checkEqInt(curA.x, 100, 'an item that names a column is placed there')
+checkEqInt(curB.x, 0, 'and the next item starts the row again')
+check(curB.y > curA.y, 'in the row below, because the cursor moved past the named column')
+
 finish('grid')

@@ -5,6 +5,28 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A grid item placed past the explicit grid hung the layout
+
+`<div style="display:grid;grid-template-columns:100px"><div></div>
+<div style="grid-column:2"></div></div>` never finished laying out. The
+auto-placement search wraps the flow at `flowLines`, which counted the
+explicit tracks only, so the second item's column — index 1 in a grid
+one column wide — was a cell `gridRunIsFree` calls occupied for every
+row there is, and the loop looking for a free one had no exit.
+
+A line named past the explicit grid creates implicit tracks (Grid 1
+§8.1), so the flow wraps at the whole grid: `flowLines` now takes the
+definite placements into account as well as the template. The fix was
+found writing the track-sizing tests, which put a probe item in a second
+track that some of the templates did not declare.
+
+**An item that names a column moves the cursor to it**, which came out
+of the same fixture. Chromium 141 on a one-column grid with the first
+item at `grid-column: 2` and the second placed automatically puts the
+second at the start of the *second row*, not in the cell the first
+skipped; the standard says so too (§8.5, step 4: an item naming a line
+sets the cursor to it). This engine went back for the skipped cell.
+
 ### `content: url()` on an ordinary element
 
 CSS Content 3 §2.1: a `content` naming an image replaces the element's

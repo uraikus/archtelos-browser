@@ -3368,6 +3368,18 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     int flowLines = columnFlow
         ? maxInt(explicitRows, 1)
         : maxInt(explicitCols, 1)
+    // A line named past the explicit grid creates implicit tracks (§8.1),
+    // and the flow wraps at the whole grid rather than at its explicit
+    // part. Without this a one-column grid holding an item at
+    // `grid-column: 2` searched a row one cell wide for a free cell at
+    // index 1, and gridRunIsFree calls any run reaching past the row
+    // occupied: the search below never ended and the layout never
+    // returned.
+    for int i = 0, i < areas.length, i++ {
+        int alongAt = columnFlow ? areas[i].row : areas[i].col
+        int alongBy = maxInt(columnFlow ? areas[i].rowSpan : areas[i].colSpan, 1)
+        if alongAt >= 0 { flowLines = maxInt(flowLines, alongAt + alongBy) }
+    }
     arr[bool] occupied = []
     int cursor = 0
     for int i = 0, i < areas.length, i++ {
@@ -3390,6 +3402,12 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
             int d = crossPos >= 0 ? crossPos : 0
             while !gridRunIsFree(occupied, flowLines, alongPos, alongSpan, d, crossSpan) { d++ }
             crossPos = d
+            // The cursor moves to where this item landed (§8.5, step 4:
+            // an item naming a line sets the cursor to it). An item
+            // placed automatically after one that named a column goes to
+            // the row below rather than back to the cells the named one
+            // skipped, which is what Chromium does.
+            cursor = maxInt(cursor, crossPos * flowLines + alongPos)
         } else {
             // walk the flow from the cursor until a free run fits
             int at = maxInt(cursor, crossPos >= 0 ? crossPos * flowLines : 0)
