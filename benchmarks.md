@@ -878,6 +878,14 @@ blitting one axis's profile at the other axis's alpha is what brought it
 down, because `drawImage` multiplies an image's own alpha by `fillAlpha`
 and that product is what a separable blur is.
 
+The flex automatic minimum size and §9.7's freeze-and-repeat cost
+**4,168 bytes** (2,791,512 → 2,795,680) and no measurable time.
+`computeIntrinsic` is on the hot path for every box that sizes to its
+content, and it gained one assignment; `generated.html`'s layout is 57,
+57, 57, 58, 64 ms before and 57, 57, 59, 57, 60 after, five samples each
+in the same minutes on the same machine. The freezing loop runs only
+where a line overflows, and then at most once per item.
+
 An `inset` shadow's Gaussian costs **40 bytes** (2,791,472 →
 2,791,512) and nothing measurable: sixty cards with
 `inset 0 0 12px rgba(0,0,0,.5)` paint in 2 ms against 1 to 2 ms for the
