@@ -132,6 +132,16 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    also what keeps an inset shadow inside the padding box, and that
    clip has to be made to follow the inner curve at the same time.
 
+   **A square shadow corner could be cached the way a round one is.**
+   A round corner is one image, built once per distinct shadow and
+   blitted; a square one is separable, so it is a one-pixel ramp blitted
+   once per row of the blur's reach -- thirty-six blits to a corner at a
+   blur of 12. On a page of 355 cards sharing a shadow the round path
+   measures 27-31 ms against the square path's 43-48, which is the
+   difference those blits make. The same 2D cache would suit the square
+   corners; what it costs is memory, one image per distinct shadow
+   rather than two ramps.
+
    A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as
    a page asks for, and so is every border

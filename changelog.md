@@ -51,6 +51,32 @@ same profile two or three units lighter, which is the gap the square
 corners already carry between a true Gaussian and the three box blurs
 Skia approximates one with.
 
+**The first version cost 2 to 3 ms on a page of square-cornered
+shadows, and neither benchmark page could have said so** -- neither of
+them casts a shadow at all. A page written for the question did: 2,000
+cards under `box-shadow: 0 4px 12px rgba(0,0,0,0.35)` on an 800x4000
+canvas, about 355 of them painted, with the same 2,000 cards and no
+shadow as the control. The control gave 10 ms on both sides on every
+sample, which is what said the cost was in the shadows.
+
+It was none of the four things that looked expensive. Five binaries
+each answered one: the eight extra arguments cost nothing, the guarded
+`resolveCornerRadii` cost nothing, growing the corners by the spread
+cost nothing, and 41 KB of never-called code compiled into the old
+revision -- shifting the layout of every function after it -- cost
+nothing either. What removed it was taking the radii out of
+`paintShadows` and into a function reached only through the
+`borderRadius` flag. Twenty-one paired samples now give the same 42 ms
+minimum on both sides, medians 45 and 44, the new binary faster on
+eleven of them and level on two.
+
+The rounded path turns out to be *cheaper* than the square one it
+replaces on a page whose cards share a shadow -- 27-31 ms against
+43-48 -- because a round corner is one cached image blitted once where
+a square corner, being separable, is one ramp blitted per row of the
+blur's reach. The same cache would suit the square corners; todo.md
+says so.
+
 An `inset` shadow still does not follow the radius; todo.md says what
 that needs.
 

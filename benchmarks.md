@@ -1133,3 +1133,43 @@ per-document flag, so a page with neither keyword runs the same apply
 loop it always ran. Eleven paired samples of `generated.html` give the
 same best of 104 ms on each side, the two series interleaving through
 their whole range.
+
+A shadow cast from the box's own shape costs **12,992 bytes**
+(2,842,688 → 2,855,680) and nothing to a box whose corners are square.
+**Neither benchmark page can say so, and that is the point of saying it
+here**: neither `generated.html` nor `features.html` casts a shadow at
+all, so the only number either of them could move is the binary's. The
+timing below comes from a page written for the question -- 2,000 cards
+under `box-shadow: 0 4px 12px rgba(0,0,0,0.35)`, painted onto an
+800x4000 canvas so about 355 of them are on it -- and from the same
+2,000 cards with no shadow on them at all, as the control.
+
+**The first version did cost something.** Twenty-one paired samples put
+it 2 to 3 ms above the old binary on a 45 ms paint, while the no-shadow
+control gave 10 ms on both sides on every sample: the cost was in the
+shadows, not in the build.
+
+Finding it took five binaries and it was none of the four things that
+looked expensive. The eight extra arguments cost nothing -- the old
+painter body behind the new fifteen-argument signature times the same as
+the old binary. `resolveCornerRadii` behind the `borderRadius` flag cost
+nothing. Growing the eight corners by the spread cost nothing. And
+**41 KB of never-called code compiled into the old revision**, to shift
+the layout of every function after it, cost nothing either, which is
+what ruled out the explanation that would have been easiest to believe.
+What removed it was taking the radii out of `paintShadows` altogether,
+into a function reached only through that flag. Twenty-one paired
+samples then give the same 42 ms minimum on both sides, medians 45 and
+44, the new binary faster on eleven of the twenty-one and level on two.
+
+**The rounded path is cheaper than the square one it replaces.**
+Fifteen paired samples of the same 2,000 cards with
+`border-radius: 10px` give 43-48 ms on the old binary against 27-31 on
+the new. The two are not doing the same work -- the old one paints a
+square shadow there, the new one a round shadow -- but the reason is
+worth writing down. A square corner separates, so it is drawn as one
+blit of a one-pixel ramp per row of the blur's reach, thirty-six blits
+to a corner here; a round one does not separate and is instead a single
+cached image, blitted once. The cache is keyed on everything the answer
+depends on, so 355 identical cards build four corners between them. The
+same trick would suit the square corners, and todo.md now says so.

@@ -257,12 +257,37 @@ void func backgroundArea(which:int, borderEdge:int, contentEdge:int,
     bgAreaH = h - bt - bb
 }
 
-// A shadow's corner, grown by the spread (Backgrounds and Borders 3
-// §6.2): a corner that is round stays round and grows with the shape,
-// and one that is square stays square however far the shape spreads.
+// The shadow shape's eight corners, the box's own grown by the spread
+// (Backgrounds and Borders 3 §6.2): a corner that is round stays round
+// and grows with the shape, one that is square stays square however far
+// the shape spreads. Eight values out of a function need globals
+// (FINDINGS.md, "one value out of a function"), and keeping the whole of
+// it out of paintShadows keeps that function the size it was for a box
+// with no radius at all.
+int shRadTLX = 0
+int shRadTLY = 0
+int shRadTRX = 0
+int shRadTRY = 0
+int shRadBRX = 0
+int shRadBRY = 0
+int shRadBLX = 0
+int shRadBLY = 0
+
 int func shadowRadius(r:int, spread:int) {
     if r <= 0 { return 0 }
     return maxInt(r + spread, 0)
+}
+
+void func shadowShapeRadii(s:Style, w:int, h:int, spread:int) {
+    resolveCornerRadii(s, w, h)
+    shRadTLX = shadowRadius(radTLX, spread)
+    shRadTLY = shadowRadius(radTLY, spread)
+    shRadTRX = shadowRadius(radTRX, spread)
+    shRadTRY = shadowRadius(radTRY, spread)
+    shRadBRX = shadowRadius(radBRX, spread)
+    shRadBRY = shadowRadius(radBRY, spread)
+    shRadBLX = shadowRadius(radBLX, spread)
+    shRadBLY = shadowRadius(radBLY, spread)
 }
 
 // The box's shadows, painted beneath its own background (Backgrounds
@@ -275,24 +300,15 @@ int func shadowRadius(r:int, spread:int) {
 // over its rows of that form. See gaussIntegral and paintBlurredRect
 // below.
 //
+// A box with no radius asks nothing of any of that and pays nothing for
+// it: `borderRadius` is the cascade's own answer to whether any corner
+// is round, and the whole of the shape's bookkeeping sits behind it.
+//
 // `inset` shadows are painted by paintInsetShadows, after the
 // background rather than under it.
 void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
     if s.shadows.length == 0 { return }
-    // A box with no radius asks nothing of the shape below, and pays
-    // nothing for it: `borderRadius` is the cascade's own answer to
-    // whether any corner is round at all.
-    int tlx = 0  int tly = 0
-    int trx = 0  int trys = 0
-    int brx = 0  int brys = 0
-    int blx = 0  int blys = 0
-    if s.borderRadius > 0 {
-        resolveCornerRadii(s, w, h)
-        tlx = radTLX  tly = radTLY
-        trx = radTRX  trys = radTRY
-        brx = radBRX  brys = radBRY
-        blx = radBLX  blys = radBLY
-    }
+    bool round = s.borderRadius > 0
     for int i = s.shadows.length - 1, i >= 0, i-- {
         Shadow sh = s.shadows[i]
         if sh.inset { continue }
@@ -302,27 +318,27 @@ void func paintShadows(x:int, y:int, w:int, h:int, s:Style) {
         int sw = w + sh.spread + sh.spread
         int sh2 = h + sh.spread + sh.spread
         if sw <= 0 || sh2 <= 0 { continue }
-        int ptlx = shadowRadius(tlx, sh.spread)
-        int ptly = shadowRadius(tly, sh.spread)
-        int ptrx = shadowRadius(trx, sh.spread)
-        int ptry = shadowRadius(trys, sh.spread)
-        int pbrx = shadowRadius(brx, sh.spread)
-        int pbry = shadowRadius(brys, sh.spread)
-        int pblx = shadowRadius(blx, sh.spread)
-        int pbly = shadowRadius(blys, sh.spread)
+        if round { shadowShapeRadii(s, w, h, sh.spread) }
         if sh.blur <= 0 {
             paintFill(sh.color, s.effectiveOpacity)
-            if ptlx + ptly + ptrx + ptry + pbrx + pbry + pblx + pbly > 0 {
-                pFillRoundedEllipses(sx, sy, sw, sh2, ptlx, ptly, ptrx, ptry,
-                                     pbrx, pbry, pblx, pbly)
+            if round {
+                pFillRoundedEllipses(sx, sy, sw, sh2, shRadTLX, shRadTLY,
+                                     shRadTRX, shRadTRY, shRadBRX, shRadBRY,
+                                     shRadBLX, shRadBLY)
             } else {
                 pDrawRect(sx, sy, sw, sh2)
             }
             fillAlpha(1.0)
             continue
         }
+        if !round {
+            paintBlurredRect(sx, sy, sw, sh2, sh.color, s.effectiveOpacity, sh.blur,
+                             0, 0, 0, 0, 0, 0, 0, 0)
+            continue
+        }
         paintBlurredRect(sx, sy, sw, sh2, sh.color, s.effectiveOpacity, sh.blur,
-                         ptlx, ptly, ptrx, ptry, pbrx, pbry, pblx, pbly)
+                         shRadTLX, shRadTLY, shRadTRX, shRadTRY,
+                         shRadBRX, shRadBRY, shRadBLX, shRadBLY)
     }
 }
 
@@ -613,45 +629,43 @@ void func paintBlurredRect(x:int, y:int, w:int, h:int, c:int, opacity:float, blu
 
     // The four edges: one row or column per pixel, from the reach
     // outside to the inner corner.
+    // One pass per axis, not one per side: the two sides of an axis are
+    // the same distance from their own edge and so share the Gaussian,
+    // and computing it twice costs a millisecond on a page of two
+    // hundred shadows. Where the two bands differ -- which only a shape
+    // too small to hold two of them does -- the shorter side simply
+    // stops drawing first.
+    int rowsT = reach + ry
+    int rowsB = reach + ryB
+    int colsL = reach + rx
+    int colsR = reach + rxR
     if midW > 0 {
-        for int j = 0, j < reach + ry, j++ {
+        for int j = 0, j < maxInt(rowsT, rowsB), j++ {
             float fy = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma)
             float a = fxMid * fy * own
             if a <= 0.002 { continue }
             fillAlpha(a > 1.0 ? 1.0 : a)
-            pDrawRect(x + rx, y - reach + j, midW, 1)
-        }
-        for int j = 0, j < reach + ryB, j++ {
-            float fy = blurAxis((j - reach).toFloat() + 0.5, 0.0, fh, sigma)
-            float a = fxMid * fy * own
-            if a <= 0.002 { continue }
-            fillAlpha(a > 1.0 ? 1.0 : a)
-            pDrawRect(x + rx, y + h + reach - 1 - j, midW, 1)
+            if j < rowsT { pDrawRect(x + rx, y - reach + j, midW, 1) }
+            if j < rowsB { pDrawRect(x + rx, y + h + reach - 1 - j, midW, 1) }
         }
     }
     if midH > 0 {
-        for int i = 0, i < reach + rx, i++ {
+        for int i = 0, i < maxInt(colsL, colsR), i++ {
             float fx = blurAxis((i - reach).toFloat() + 0.5, 0.0, fw, sigma)
             float a = fx * fyMid * own
             if a <= 0.002 { continue }
             fillAlpha(a > 1.0 ? 1.0 : a)
-            pDrawRect(x - reach + i, y + ry, 1, midH)
-        }
-        for int i = 0, i < reach + rxR, i++ {
-            float fx = blurAxis((i - reach).toFloat() + 0.5, 0.0, fw, sigma)
-            float a = fx * fyMid * own
-            if a <= 0.002 { continue }
-            fillAlpha(a > 1.0 ? 1.0 : a)
-            pDrawRect(x + w + reach - 1 - i, y + ry, 1, midH)
+            if i < colsL { pDrawRect(x - reach + i, y + ry, 1, midH) }
+            if i < colsR { pDrawRect(x + w + reach - 1 - i, y + ry, 1, midH) }
         }
     }
     fillAlpha(1.0)
 
     // The four corners, where both axes are still changing.
-    int cw = reach + rx
-    int cwR = reach + rxR
-    int ch = reach + ry
-    int chB = reach + ryB
+    int cw = colsL
+    int cwR = colsR
+    int ch = rowsT
+    int chB = rowsB
     if cw <= 0 || ch <= 0 { return }
     if rounded {
         text ck = `${blur}|${shade}|${w}|${h}|${tlx},${tly},${trx},${trys}`
