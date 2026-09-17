@@ -850,6 +850,10 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+`all` costs **48 bytes** (2,768,624 → 2,768,672), which is what a
+feature reached through one string comparison per declaration looks
+like. Nothing walks the property list unless a page says `all`.
+
 Percentage and elliptical `border-radius` costs **9,088 bytes**
 (2,759,536 → 2,768,624). The corners are resolved per painted box now
 rather than once per computed style, which is eight lengths and a

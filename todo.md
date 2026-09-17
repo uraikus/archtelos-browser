@@ -27,7 +27,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    are not kept apart once the cascade has run; doing it properly means
    keeping a per-origin computed value, or recomputing with the author
    declarations removed.
-2. **`all`**, which sets every property at once to a CSS-wide keyword.
+2. **`all: inherit`**. `all` itself is done — it drops every declaration
+   before it in the block and, for `initial`, computes the element as
+   though it had no parent, which is what every default in
+   `computeStyleValues` already means by "root"; `unset` and `revert`
+   need nothing beyond the dropping, because taking the parent's value
+   for an inherited property and the initial value for the rest is what
+   the ordinary cascade does. `inherit` is the one that does not fit:
+   giving a *non-inherited* property the parent's value means copying
+   the parent style field by field, and a hand-written list of a
+   struct's fields is exactly what rotted in `styleDigest`. It wants a
+   generated copy, or a language that can copy a struct by value.
 
 ### Then the official definition, largest holes first
 

@@ -1065,7 +1065,7 @@ arr[text] supportedProperties = [
     'text-emphasis-position', 'text-underline-position',
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
-    'word-break', 'line-break', 'overflow-wrap', 'tab-size',
+    'word-break', 'line-break', 'overflow-wrap', 'tab-size', 'all',
     'hyphens', 'hyphenate-character',
     'list-style', 'list-style-type', 'list-style-image', 'background-attachment',
     'position', 'top', 'right', 'bottom', 'left', 'z-index',

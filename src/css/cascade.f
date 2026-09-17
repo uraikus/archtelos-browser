@@ -2704,8 +2704,42 @@ bool func matchedDirectionRtl(matches:arr[Match], parentRtl:bool) {
     return rtl
 }
 
+const int CSSWIDE_NONE = 0
+const int CSSWIDE_INHERIT = 1
+const int CSSWIDE_INITIAL = 2
+const int CSSWIDE_UNSET = 3
+
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // `all` (Cascade 4 §3.2) sets every property at once to one
+    // CSS-wide keyword, and overrides every declaration before it in the
+    // block -- so those are dropped here and the ones after it are
+    // applied over the top as usual.
+    //
+    // `initial` is recorded for computeStyleValues, which then computes
+    // the element as though it had no parent. `unset` and `revert` need
+    // nothing beyond the dropping: taking the parent's value for an
+    // inherited property and the initial value for every other one is
+    // what the ordinary cascade already does, and `revert` behaves as
+    // `unset` here for the reason cssWideKeyword gives. `inherit` is not
+    // honoured -- giving a non-inherited property the parent's value
+    // needs a field-by-field copy of the parent style, and a
+    // hand-written list of fields is the thing that rotted in
+    // styleDigest (todo.md).
+    if name == 'all' {
+        int allKw = cssWideKeyword(value)
+        if allKw == CSSWIDE_NONE { return }
+        arr[text] had = props.keys()
+        for int i = 0, i < had.length, i++ {
+            // `direction` and `unicode-bidi` are the two the standard
+            // leaves alone, because they carry the document's meaning
+            // rather than its presentation.
+            if had[i] == 'direction' || had[i] == 'unicode-bidi' { continue }
+            delete props[had[i]]
+        }
+        if allKw == CSSWIDE_INITIAL { setProp(props, 'all', value) }
+        return
+    }
     // `display` is validated here rather than where it is read, because
     // by then the declaration it beat is gone. See isDisplayKeyword.
     if name == 'display' && !isDisplayKeyword(value) { return }
@@ -3216,11 +3250,6 @@ Len func parseLength(tok:ascii, fontSize:int) {
 // previous cascade origin gave, which needs the origins kept apart after
 // the cascade -- they are not, so it behaves as `unset` here
 // (css-2026.md, "CSS Cascade 4").
-const int CSSWIDE_NONE = 0
-const int CSSWIDE_INHERIT = 1
-const int CSSWIDE_INITIAL = 2
-const int CSSWIDE_UNSET = 3
-
 int func cssWideKeyword(v:ascii) {
     if v == null { return CSSWIDE_NONE }
     ascii t = asciiLower(asciiTrim(v))
@@ -3717,12 +3746,18 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     return got
 }
 
-Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]) {
+Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
     Style s
+    Style parent = parentIn
+    // `all: initial` computes the element as though it had no parent at
+    // all, which is what every default below already means by `isRoot`.
+    // A declaration after it -- including one saying `inherit` -- still
+    // resolves against the real parent, so only the defaults change.
+    bool isRoot = isRootIn || styleProp(props, 'all') != null
     s.serial = styleSerialNext
     styleSerialNext++
     cascadeParentStyle = parent
-    cascadeParentIsRoot = isRoot
+    cascadeParentIsRoot = isRootIn
 
     // Custom properties inherit. An element that declares none shares
     // its parent's map rather than copying it, which matters: on a real
@@ -3831,7 +3866,10 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     }
     // direction inherits, and text-align's `start` and `end` resolve
     // against it, so it is read before text-align rather than after.
-    s.directionRtl = isRoot ? false : parent.directionRtl
+    // `direction` is one of the two properties `all` does not reset
+    // (Cascade 4 §3.2), so it inherits from the real parent whatever
+    // `all` said -- which is why this asks isRootIn rather than isRoot.
+    s.directionRtl = isRootIn ? false : parent.directionRtl
     ascii dirv = styleProp(props, 'direction')
     if dirv != null {
         ascii t = asciiLower(asciiTrim(dirv))

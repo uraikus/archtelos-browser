@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `all`
+
+One declaration setting every property to a CSS-wide keyword (Cascade 4
+§3.2). It overrides everything written before it in the same block, so
+those declarations are dropped where it is expanded, and the ones after
+it are applied over the top — which is the whole of what makes
+`all: initial; color: red` red and `color: red; all: initial` black.
+
+`initial` computes the element as though it had no parent, which is what
+every default in `computeStyleValues` already means by "root"; the
+declaration is recorded and the `isRoot` it asks is widened. `unset` and
+`revert` need nothing beyond the dropping, because taking the parent's
+value for an inherited property and the initial value for every other
+one is what the ordinary cascade does. `direction` and `unicode-bidi`
+are left alone, as the standard requires: they carry the document's
+meaning rather than its presentation, so the reset asks `isRootIn`
+rather than the widened `isRoot`.
+
+**`all: inherit` is not honoured**, and the reason is worth recording:
+giving a *non-inherited* property the parent's value means copying the
+parent style field by field, and a hand-written list of a struct's
+fields is exactly what rotted in `styleDigest` — the list that scored
+`object-fit` as unimplemented while it worked. What it does instead is
+the half that costs nothing: the declarations before it are dropped, so
+an inherited property still arrives and a non-inherited one takes its
+initial value. todo.md carries what the other half needs.
+
 ### A `border-radius` in percentages, and corners that are ellipses
 
 `border-radius: 50%` rounded nothing: a percentage radius was parsed,

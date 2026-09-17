@@ -71,4 +71,65 @@ checkEqInt(pre.style.textWrapMode, WRAP_NOWRAP, 'and does not wrap')
 checkEq(pre.style.fontFamily, 'monospace', 'pre monospace')
 Node head = findElement(doc, 'head')
 checkEqInt(head.style.display, DISPLAY_NONE, 'head hidden')
+// ---- `all` (CSS Cascade 4 §3.2) ---------------------------------------
+// One declaration setting every property to a CSS-wide keyword. The
+// standard excludes `direction` and `unicode-bidi`, because they carry
+// the document's meaning rather than its presentation, and custom
+// properties, which are not properties in this sense.
+//
+// `all` is a shorthand, so it is expanded where it is written: a
+// longhand after it wins, one before it does not.
+
+Style func styleOf(markup:text, id:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>.p { color: #ff0000; border: 5px solid green; '
+        + 'direction: rtl }</style></head><body><div class="p">' + markup + '</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    arr[Node] found = []
+    collectElements(d, 'span', found)
+    for int i = 0, i < found.length, i++ {
+        if attrOf(found[i].id, 'id') == id { return found[i].style }
+    }
+    return null
+}
+
+Style allInit = styleOf('<span id="a" style="all:initial">x</span>', 'a')
+check(allInit != null, 'the element with `all: initial` is there')
+checkEqInt(allInit.color, COLOR_BLACK, '`all: initial` takes the initial colour, not the inherited one')
+checkEqInt(allInit.borderTop, 0, 'and the initial border width')
+
+// `all: inherit` is the one keyword this engine does not honour: giving
+// a non-inherited property the parent's value needs a field-by-field
+// copy of the parent style, and a hand-written list of fields is the
+// thing that rotted in styleDigest (todo.md). What it does instead is
+// drop the declarations before it, which is the half of the standard's
+// rule that costs nothing, so an inherited property still arrives and a
+// non-inherited one takes its initial value.
+Style allInherit = styleOf('<span id="a" style="border:9px solid;all:inherit">x</span>', 'a')
+checkEqInt(allInherit.color, packColor(255, 0, 0, 255), '`all: inherit` leaves an inherited property inherited')
+checkEqInt(allInherit.borderTop, 0, 'and drops the declarations before it')
+
+// `unset` is inherit for an inherited property and initial for the rest,
+// which is the one keyword that tells the two apart in a single
+// declaration.
+Style allUnset = styleOf('<span id="a" style="all:unset">x</span>', 'a')
+checkEqInt(allUnset.color, packColor(255, 0, 0, 255), '`all: unset` inherits an inherited property')
+checkEqInt(allUnset.borderTop, 0, 'and takes the initial value of one that does not inherit')
+
+// Order within the declaration block.
+Style afterAll = styleOf('<span id="a" style="all:initial;color:#0000ff">x</span>', 'a')
+checkEqInt(afterAll.color, packColor(0, 0, 255, 255), 'a longhand after `all` wins')
+Style beforeAll = styleOf('<span id="a" style="color:#0000ff;all:initial">x</span>', 'a')
+checkEqInt(beforeAll.color, COLOR_BLACK, 'and one before it does not')
+
+// The two properties the standard leaves alone.
+Style keepsDir = styleOf('<span id="a" style="all:initial">x</span>', 'a')
+check(keepsDir.directionRtl, '`all` does not touch `direction`')
+
+// An `all` whose value is not a CSS-wide keyword is not a declaration
+// at all, so it changes nothing.
+Style bogus = styleOf('<span id="a" style="all:red">x</span>', 'a')
+checkEqInt(bogus.color, packColor(255, 0, 0, 255), '`all: red` is invalid and leaves the inherited colour')
+
 finish('cascade')
