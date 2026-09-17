@@ -8,6 +8,9 @@
 // ARCHTELOS_TIMING=1 in the environment makes the pipeline log how
 // long each phase took, and layout its own hot spots.
 bool archtelosTiming = environment.ARCHTELOS_TIMING != null
+// Turns the preload scanner off, so the benchmark can measure the same
+// page with and without it rather than quoting one number.
+bool archtelosNoPreload = environment.ARCHTELOS_NO_PRELOAD != null
 
 const int CH_TAB = 9
 const int CH_LF = 10
@@ -26,6 +29,7 @@ const int CH_STAR = 42
 const int CH_PLUS = 43
 const int CH_COMMA = 44
 const int CH_MINUS = 45
+const int CH_N_LOWER = 110
 const int CH_DOT = 46
 const int CH_SLASH = 47
 const int CH_0 = 48
@@ -34,6 +38,7 @@ const int CH_COLON = 58
 const int CH_SEMI = 59
 const int CH_LT = 60
 const int CH_EQ = 61
+const int CH_PIPE = 124
 const int CH_GT = 62
 const int CH_QUESTION = 63
 const int CH_AT = 64
@@ -222,6 +227,16 @@ arr[ascii] func asciiSplitChar(s:ascii, sep:int) {
 }
 
 // Splits on runs of whitespace.
+// Whether every character is a full stop, which is how a grid template
+// writes a cell belonging to no area: `.` and `...` mean the same.
+bool func asciiIsAllDots(s:ascii) {
+    if s == null || s.length == 0 { return false }
+    for int i = 0, i < s.length, i++ {
+        if s.charCodeAt(i) != CH_DOT { return false }
+    }
+    return true
+}
+
 arr[ascii] func asciiSplitSpace(s:ascii) {
     arr[ascii] out = []
     int n = s.length

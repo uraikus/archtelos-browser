@@ -61,4 +61,226 @@ checkEq(resolveUrl(p4.url, 'https://other.org/p'), 'https://other.org/p', 'absol
 checkEq(resolveUrl('dir/page.html', 'img/a.png'), 'dir/img/a.png', 'relative file path')
 checkEq(resolveUrl('http://h.com', 'x'), 'http://h.com/x', 'host without path')
 check(linkAt(p4.root, 350, 8) == null, 'no link on empty space')
+
+// a flex row actually paints side by side, not stacked: geometry the
+// unit suite checks in numbers, checked here in pixels.
+Page p5 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px"><div style="width:60px;background:red"></div><div style="width:60px;background:blue"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p5, 0, 0, 300)
+check(getPixelColor(30, 20) == red, 'the first flex item paints at the start of the row')
+check(getPixelColor(90, 20) == blue, 'the second beside it, not below it')
+check(getPixelColor(30, 60) == white, 'and nothing is stacked underneath')
+
+// justify-content: flex-end moves the pair to the far edge
+Page p6 = pageFromHtml('<body style="margin:0"><div style="display:flex;height:40px;justify-content:flex-end"><div style="width:60px;background:red"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p6, 0, 0, 300)
+check(getPixelColor(370, 20) == red, 'flex-end paints the item against the far edge')
+check(getPixelColor(30, 20) == white, 'and nothing at the start')
+
+// an audio element with controls paints a bar; one without paints
+// nothing at all
+Page p7 = pageFromHtml('<body style="margin:0"><audio src="x.mp3" controls></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p7, 0, 0, 300)
+check(getPixelColor(150, 27) != white, 'the audio controls paint a bar')
+check(getPixelColor(150, 100) == white, 'and nothing below it')
+check(getPixelColor(350, 27) == white, 'and nothing past its 300px width')
+
+Page p8 = pageFromHtml('<body style="margin:0"><audio src="x.mp3"></audio></body>', 'test.html', 400)
+clearCanvas()
+paintPage(p8, 0, 0, 300)
+check(getPixelColor(150, 27) == white, 'an audio without controls paints nothing')
+
+// ---- list markers count in the system they were asked for ---------------
+// The exact labels are checked in tests/unit/test_markers.f, which can
+// compare strings; what these check is that the label reaches the
+// marker, by painting the same list item under different systems and
+// requiring the ink to differ. Two systems that agreed on every pixel
+// would mean the style never reached the painter, which is what used to
+// happen: every ordered list counted in arabic numerals.
+text listHead = '<!doctype html><body style="margin:0;font:16px/20px monospace">'
+
+arr[int] func markerInk(html:text, rowFrom:int, rowTo:int) {
+    Page p = pageFromHtml(listHead + html + '</body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    arr[int] out = []
+    for int y = rowFrom, y < rowTo, y++ {
+        int n = 0
+        for int x = 0, x < 40, x++ { if getPixelColor(x, y) != white { n++ } }
+        out.push(n)
+    }
+    return out
+}
+
+bool func sameInk(a:arr[int], b:arr[int]) {
+    if a.length != b.length { return false }
+    for int i = 0, i < a.length, i++ { if a[i] != b[i] { return false } }
+    return true
+}
+
+text fourItems = '<li>x</li><li>x</li><li>x</li><li>x</li>'
+arr[int] dec4 = markerInk('<ol style="list-style-type:decimal">' + fourItems + '</ol>', 60, 80)
+arr[int] rom4 = markerInk('<ol style="list-style-type:lower-roman">' + fourItems + '</ol>', 60, 80)
+arr[int] ROM4 = markerInk('<ol style="list-style-type:upper-roman">' + fourItems + '</ol>', 60, 80)
+check(!sameInk(dec4, rom4), 'the fourth marker differs between decimal and lower-roman')
+check(!sameInk(rom4, ROM4), 'and between lower-roman and upper-roman')
+
+arr[int] one1 = markerInk('<ol type="1"><li>x</li></ol>', 0, 20)
+arr[int] oneA = markerInk('<ol type="a"><li>x</li></ol>', 0, 20)
+arr[int] oneI = markerInk('<ol type="I"><li>x</li></ol>', 0, 20)
+check(!sameInk(one1, oneA), 'an ol type=a marker differs from type=1')
+check(!sameInk(one1, oneI), 'and type=I differs from both')
+check(!sameInk(oneA, oneI), 'as the attribute is meant to')
+
+// ---- empty-cells (CSS2 17.6.1.1) -----------------------------------------
+// In the separated borders model a cell with no content draws no
+// background and no border when `empty-cells: hide`. The initial value
+// is `show`, so the contrast is between the two.
+
+text emptyCellDoc = '<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="border-spacing:0;EC"><tr>'
+    + '<td style="width:40px;height:20px;background:red"></td>'
+    + '<td style="width:40px;height:20px;background:blue">x</td>'
+    + '</tr></table></body>'
+
+Page pShow = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:show'),
+                          'test.html', 400)
+clearCanvas()
+paintPage(pShow, 0, 0, 300)
+check(getPixelColor(10, 10) == red, 'empty-cells:show paints the empty cell')
+check(getPixelColor(60, 10) == blue, 'and the cell that has content')
+
+Page pHide = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:hide'),
+                          'test.html', 400)
+clearCanvas()
+paintPage(pHide, 0, 0, 300)
+check(getPixelColor(10, 10) == white, 'empty-cells:hide leaves the empty cell unpainted')
+check(getPixelColor(60, 10) == blue, 'and leaves the one with content alone')
+
+// A cell holding only collapsible whitespace is empty too.
+Page pBlank = pageFromHtml(emptyCellDoc.replace(regex('EC', 'g'), 'empty-cells:hide')
+                               .replace(regex('background:red"></td>', 'g'), 'background:red"> </td>'),
+                           'test.html', 400)
+clearCanvas()
+paintPage(pBlank, 0, 0, 300)
+check(getPixelColor(10, 10) == white, 'a cell holding only whitespace counts as empty')
+
+// ---- list-style-image ----------------------------------------------------
+// A fetched image stands in for the marker, at its own size.
+
+Page pMarkerPlain = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px"><li>x</li></ul></body>',
+    'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerPlain, 0, 0, 300)
+int plainMarkerInk = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) != white { plainMarkerInk++ } }
+}
+check(plainMarkerInk > 0, 'a list item has a marker of some kind to begin with')
+
+Page pMarkerImage = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px;list-style-image:url(red.png)">'
+    + '<li>x</li></ul></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerImage, 0, 0, 300)
+int imageMarkerRed = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) == red { imageMarkerRed++ } }
+}
+check(imageMarkerRed > 0, 'list-style-image draws the image as the marker')
+
+// `none` puts the bullet back, which is the check that the image is
+// what changed rather than the marker disappearing.
+Page pMarkerNone = pageFromHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding-left:30px;list-style-image:none">'
+    + '<li>x</li></ul></body>', 'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pMarkerNone, 0, 0, 300)
+int noneMarkerRed = 0
+for int y = 0, y < 24, y++ {
+    for int x = 0, x < 28, x++ { if getPixelColor(x, y) == red { noneMarkerRed++ } }
+}
+checkEqInt(noneMarkerRed, 0, 'and list-style-image:none leaves the bullet')
+
+// ---- background-attachment ------------------------------------------------
+// `fixed` anchors the background *image* to the viewport instead of the
+// element, so it stays put as the page scrolls. It says nothing about a
+// background colour, which is why the fixture uses an image: a colour
+// fills its box either way and the property would look implemented
+// whatever it did.
+
+text tallDoc = '<body style="margin:0"><div style="height:600px;'
+    + 'background-image:url(red.png);background-repeat:no-repeat;ATTACH">'
+    + '</div></body>'
+
+Page pScroll = pageFromHtml(tallDoc.replace(regex('ATTACH', 'g'), ''),
+                            'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pScroll, 0, 0, 100)
+check(getPixelColor(1, 1) == red, 'a scrolling background image starts at the element')
+clearCanvas()
+paintPage(pScroll, 0, 200, 100)
+check(getPixelColor(1, 1) != red, 'and scrolls away with it')
+
+Page pFixed = pageFromHtml(tallDoc.replace(regex('ATTACH', 'g'),
+                                           'background-attachment:fixed'),
+                           'tests/fixtures/page.html', 400)
+clearCanvas()
+paintPage(pFixed, 0, 0, 100)
+check(getPixelColor(1, 1) == red, 'a fixed background image starts there too')
+clearCanvas()
+paintPage(pFixed, 0, 200, 100)
+check(getPixelColor(1, 1) == red, 'and stays where it is when the page scrolls')
+
+// CSS Color 4's wider colour spaces, end to end. tests/unit/test_color4.f
+// proves the conversions; what is in question here is whether a value
+// the cascade has never seen before survives the declaration parser and
+// reaches the painter at all. Each colour below converts to one Festina
+// can name, so the check is an equality rather than a tolerance.
+color lime = 'lime'
+Page pColor4 = pageFromHtml('<body style="margin:0">'
+    + '<div style="width:50px;height:50px;background:oklch(0.628 0.2577 29.23)"></div>'
+    + '<div style="width:50px;height:50px;background:color(display-p3 0 1 0)"></div>'
+    + '<div style="width:50px;height:50px;background:lab(0 0 0);'
+    + 'border:10px solid hwb(240 0% 0%)"></div>'
+    + '</body>', 'test.html', 400)
+clearCanvas()
+paintPage(pColor4, 0, 0, 300)
+check(getPixelColor(25, 25) == red, 'oklch() paints through the cascade')
+check(getPixelColor(25, 75) == lime, 'color(display-p3) paints through the cascade')
+check(getPixelColor(25, 105) == blue, 'hwb() in the border shorthand')
+check(getPixelColor(35, 125) == black, 'lab() paints inside that border')
+
+// ---- ::marker reaches the painter -------------------------------------
+// The geometry ::marker changes is checked in tests/unit/test_pseudo.f
+// against Chromium's own numbers. What a pixel adds is the half it
+// cannot see: a colour changes no geometry at all, so a rule that never
+// reached the painter would pass every check there and none here.
+color func markerPixel(rules:text) {
+    Page p = pageFromHtml(listHead
+        + '<style>ul{margin:0;padding:0;list-style-position:inside}' + rules + '</style>'
+        + '<ul><li id="m">x</li></ul></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    // The disc sits at the start of the first line and spans x 3 to 8,
+    // its edge pixels anti-aliased; x=5 is inside it, so it carries the
+    // marker's own colour rather than a blend of it.
+    return getPixelColor(5, 10)
+}
+
+color markerRed = '#ff0000'
+color plainMarker = markerPixel('')
+check(!(plainMarker == markerRed), 'the marker is not red without a rule saying so')
+check(markerPixel('#m::marker { color: #ff0000 }') == markerRed,
+      'and `::marker { color }` paints it in that colour')
+
+// `:marker` with one colon is not a pseudo-element -- only the four the
+// standard gives a legacy spelling are -- so it matches nothing and the
+// marker keeps its own colour.
+check(markerPixel('#m:marker { color: #ff0000 }') == plainMarker,
+      'a one-colon `:marker` is not a pseudo-element and changes nothing')
+
 finish('render')

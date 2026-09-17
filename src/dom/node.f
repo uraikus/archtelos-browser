@@ -38,9 +38,27 @@ int nextNodeId = 1
 // several documents alive simply lets it grow.
 arr[Node] nodeRegistry = [null]
 
+// Whether any element in this registry is one the page pipeline would
+// otherwise have to go looking for. Each of those searches is a walk of
+// the whole document, and a page with no image and no frame -- which is
+// most pages -- should not pay for one: the walk for <img> alone is 2
+// ms of a 102 ms render on a page with no image in it. They are set in
+// `newElement`, the one place a tagged node is made, so no insertion
+// path can put an element into a tree without setting them, and they
+// are cleared with the registry the nodes belong to. A document loaded
+// into a frame shares that registry deliberately, so the answer is
+// "this registry has one somewhere" and never a claim about one
+// document: it can be true where a walk finds nothing, which costs a
+// walk, and cannot be false where a walk would have found something,
+// which would lose an image.
+bool sawImageElement = false
+bool sawFrameElement = false
+
 void func nodeRegistryReset() {
     nodeRegistry = [null]
     nextNodeId = 1
+    sawImageElement = false
+    sawFrameElement = false
 }
 
 void func registerNode(n:Node) {
@@ -57,6 +75,7 @@ struct Node {
                         // are one value in Festina, so presence needs
                         // its own record (FINDINGS.md, "empty text")
     children:arr[Node]
+    hasPresHint:bool    // carries at least one presentational attribute
     parentId:int        // 0 = no parent; see nodeRegistry
     childIndex:int      // position in the parent's children (set by appendChild)
     data:text           // text node contents, comment data, or doctype name
@@ -102,6 +121,8 @@ bool func hasClassOf(nid:int, cls:text) {
 }
 
 Node func newElement(tag:text) {
+    if tag == 'img' { sawImageElement = true }
+    else if tag == 'iframe' || tag == 'frame' { sawFrameElement = true }
     Node n
     n.id = nextNodeId
     nextNodeId++
@@ -259,9 +280,23 @@ bool func hasAttr(n:Node, name:text) {
     return n.present[name] == true
 }
 
+// The HTML attributes that map to a CSS declaration. Recording the fact
+// once, here, turns the cascade's presentational pass from a dozen map
+// lookups on every element into one boolean read: on a real page almost
+// nothing carries one of these.
+bool func isPresentationalAttr(name:text) {
+    return name == 'align' || name == 'bgcolor' || name == 'background'
+        || name == 'color' || name == 'face' || name == 'size'
+        || name == 'width' || name == 'height' || name == 'border'
+        || name == 'cellspacing' || name == 'cellpadding' || name == 'nowrap'
+        || name == 'noshade' || name == 'valign' || name == 'type'
+        || name == 'dir'
+}
+
 void func setAttr(n:Node, name:text, value:text) {
     n.attrs[name] = value
     n.present[name] = true
+    if isPresentationalAttr(name) { n.hasPresHint = true }
 }
 
 bool func hasParent(n:Node) {

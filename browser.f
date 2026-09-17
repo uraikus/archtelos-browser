@@ -189,10 +189,65 @@ bool func isNavigableHref(href:text) {
     return !asciiStartsWithLower(a, 'javascript:', 0) && !asciiStartsWithLower(a, 'mailto:', 0) && !asciiStartsWithLower(a, 'tel:', 0)
 }
 
-on mouseWheelUp(x:int, y:int) { scrollBy(-SCROLL_STEP) }
-on mouseWheelDown(x:int, y:int) { scrollBy(SCROLL_STEP) }
+// A wheel over a scroll container scrolls that container; over anything
+// else, or over one that has reached its end in the direction asked
+// for, the page takes it. That is what a browser does, and what makes a
+// scrollable box inside a page usable at all.
+void func wheelAt(x:int, y:int, dy:int) {
+    if page != null && page.root != null && y >= TOOLBAR_H {
+        Box inner = scrollContainerAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
+        if inner != null && boxScrollBy(inner, dy) {
+            repaint()
+            return
+        }
+    }
+    scrollBy(dy)
+}
+
+on mouseWheelUp(x:int, y:int) { wheelAt(x, y, -SCROLL_STEP) }
+on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
+
+// A wheel tilted sideways scrolls the container under it across. The
+// language has no horizontal wheel event and no event carries a
+// modifier, so neither a horizontal wheel nor shift-wheel is
+// expressible as such -- see FINDINGS.md, finding 38. What X11 does
+// send is a press of button 6 or 7, which `on mouseDown` below hands
+// here; a Windows build sends nothing at all, and scrolls across only
+// by the thumb.
+void func wheelAcrossAt(x:int, y:int, dx:int) {
+    if page == null || page.root == null || y < TOOLBAR_H { return }
+    Box inner = scrollContainerAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
+    if inner != null && boxScrollLeftBy(inner, dx) { repaint() }
+}
+
+// X11's own numbering: 6 is a tilt to the left and 7 to the right.
+const int BUTTON_WHEEL_LEFT = 6
+const int BUTTON_WHEEL_RIGHT = 7
+
+// The scroll container whose thumb the pointer took hold of, and how far
+// down the thumb it pressed, so the content does not jump on the first
+// pixel of the drag. The box is held by node id rather than by the Box
+// itself: a box tree lasts one layout and a drag outlives several.
+int dragThumbNode = 0
+int dragThumbGrab = 0
+// Which bar the drag is on: a box may have both, and the pointer took
+// hold of one of them.
+bool dragThumbAcross = false
+
+// The box a drag is on, found again in the tree laid out most recently.
+Box func dragThumbBox(b:Box) {
+    if b.node != null && b.node.id == dragThumbNode
+        && (dragThumbAcross ? b.sbH > 0 : b.sbW > 0) { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box found = dragThumbBox(b.children[i])
+        if found != null { return found }
+    }
+    return null
+}
 
 on mouseDown(x:int, y:int, button:int) {
+    if button == BUTTON_WHEEL_LEFT { wheelAcrossAt(x, y, -SCROLL_STEP)  return }
+    if button == BUTTON_WHEEL_RIGHT { wheelAcrossAt(x, y, SCROLL_STEP)  return }
     if button != 1 { return }
     if y < TOOLBAR_H {
         if x < 30 {
@@ -209,14 +264,49 @@ on mouseDown(x:int, y:int, button:int) {
         repaint()
     }
     if y >= clientHeight - STATUS_H || page.root == null { return }
+    // A press on a scrollbar's thumb takes hold of it, and nothing else
+    // happens with that press: it is not a click on what is behind it.
+    int docY = y - TOOLBAR_H + scrollY
+    Box thumb = scrollThumbAt(page.root, x, docY)
+    if thumb != null {
+        dragThumbNode = thumb.node.id
+        dragThumbAcross = false
+        dragThumbGrab = docY - scrollThumbTop(thumb)
+        return
+    }
+    Box hthumb = scrollHThumbAt(page.root, x, docY)
+    if hthumb != null {
+        dragThumbNode = hthumb.node.id
+        dragThumbAcross = true
+        dragThumbGrab = x - scrollHThumbLeft(hthumb)
+        return
+    }
     text href = linkAt(page.root, x, y - TOOLBAR_H + scrollY)
     if isNavigableHref(href) {
         navigate(resolveUrl(page.url, href))
     }
 }
 
+on mouseUp(x:int, y:int, button:int) {
+    if button == 1 { dragThumbNode = 0 }
+}
+
 on mouse(x:int, y:int) {
     if page.root == null { return }
+    // A drag in progress moves the thumb and nothing else: the pointer
+    // may leave the bar, and the thumb still follows it, which is what
+    // every scrollbar does.
+    if dragThumbNode != 0 {
+        Box held = dragThumbBox(page.root)
+        if held == null { dragThumbNode = 0 }
+        else {
+            bool moved = dragThumbAcross
+                ? scrollHThumbDragTo(held, x - dragThumbGrab)
+                : scrollThumbDragTo(held, y - TOOLBAR_H + scrollY - dragThumbGrab)
+            if moved { repaint() }
+            return
+        }
+    }
     text before = statusText
     text href = null
     if y >= TOOLBAR_H && y < clientHeight - STATUS_H {
@@ -272,6 +362,7 @@ on keyDown(key:text) {
 }
 
 on resize() {
+    setCssViewport(clientWidth, viewportHeight())
     if page.doc == null { return }
     layoutPage(page, clientWidth)
     clampScroll()
@@ -284,6 +375,7 @@ on close() { }
 
 text startUrl = ''
 text screenshotPath = ''
+text printPath = ''
 int requestedWidth = 1024
 int requestedHeight = 768
 bool screenshotHeightGiven = false
@@ -292,6 +384,9 @@ for int i = 1, i < argv.length, i++ {
     text arg = argv[i]
     if arg == '--screenshot' && i + 1 < argv.length {
         screenshotPath = argv[i + 1]
+        i++
+    } else if arg == '--print' && i + 1 < argv.length {
+        printPath = argv[i + 1]
         i++
     } else if arg == '--width' && i + 1 < argv.length {
         int w = argv[i + 1].toInt()
@@ -305,7 +400,8 @@ for int i = 1, i < argv.length, i++ {
         }
         i++
     } else if arg == '--help' || arg == '-h' {
-        log('usage: browser [url-or-file] [--screenshot out.png] [--width W] [--height H]')
+        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H]')
+        log('  --print paginates the document and writes out-1.png, out-2.png, ...')
         close(0)
     } else {
         startUrl = arg
@@ -314,6 +410,57 @@ for int i = 1, i < argv.length, i++ {
 
 setClientWidth(requestedWidth)
 setClientHeight(requestedHeight)
+// `vh` and the height media features resolve against this. A screenshot
+// has no window, so the requested height is the viewport; the canvas may
+// later be grown to the whole document, which is a canvas, not a
+// viewport.
+setCssViewport(requestedWidth, requestedHeight)
+
+// `out.png` page 3 is `out-3.png`: the number goes before the extension
+// so the files sort and open as the pictures they are.
+text func printPageName(path:text, n:int) {
+    ascii a = path.toAscii()
+    int dot = 0 - 1
+    for int i = 0, i < a.length, i++ {
+        if a.charCodeAt(i) == CH_DOT { dot = i }
+    }
+    if dot <= 0 { return `${path}-${n}` }
+    return `${a.slice(0, dot).toText()}-${n}${a.slice(dot, a.length).toText()}`
+}
+
+if printPath != '' {
+    // A paginated render is the print medium, so the document's print
+    // stylesheet is the one that applies -- and the `@page` rules almost
+    // always inside it.
+    cssMediaPrint = true
+    if startUrl == '' {
+        page = pageFromHtml(welcomeHtml, 'about:welcome', PAGE_DEFAULT_W)
+    } else {
+        page = loadPage(startUrl, PAGE_DEFAULT_W)
+    }
+    // The width to lay out at is the page area's, and the page box comes
+    // out of the document's own stylesheet, so it is not known until the
+    // document has been read once. It is laid out again at that width
+    // rather than guessed at.
+    PageBox firstBox = pageBoxFor('', 1)
+    int areaW = pageAreaWidth(firstBox)
+    setCssViewport(areaW, pageAreaHeight(firstBox))
+    preparePage(page, areaW)
+    paginateDocument(page.root)
+    int written = 0
+    for int i = 0, i < pageStartY.length, i++ {
+        PageBox pbox = pageBoxes[i]
+        setClientWidth(pbox.width)
+        setClientHeight(pbox.height)
+        clearCanvas()
+        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i])
+        text out = printPageName(printPath, i + 1)
+        if saveCanvas(out) { written++ } else { log(`could not write ${out}`) }
+    }
+    log(`wrote ${written} page(s) of ${pageStartY.length}, ${firstBox.width}x${firstBox.height}`)
+    if page.error != '' { log(`load error: ${page.error}`) }
+    close(written > 0 && written == pageStartY.length ? 0 : 1)
+}
 
 if screenshotPath != '' {
     // headless: lay out at the requested width, size the canvas to the
@@ -333,6 +480,7 @@ if screenshotPath != '' {
     close(ok ? 0 : 1)
 }
 
+setCssViewport(clientWidth, viewportHeight())
 if startUrl == '' {
     page = pageFromHtml(welcomeHtml, 'about:welcome', clientWidth)
     history.push('about:welcome')

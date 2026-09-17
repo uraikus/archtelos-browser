@@ -6,16 +6,31 @@ text uaStylesheetText = `
 html, body, div, p, h1, h2, h3, h4, h5, h6, ul, ol, dl, dt, dd, blockquote, pre,
 hr, table, form, fieldset, legend, address, article, aside, footer, header, main,
 nav, section, figure, figcaption, details, summary, center, menu, dir, hgroup,
-frameset, frame, iframe, optgroup, option, select { display: block }
-head, script, style, title, meta, link, template, base, area, param,
-datalist, [hidden], input[type=hidden] { display: none }
+frameset, optgroup, option, select { display: block }
+iframe { display: inline; border: 1px solid #808080 }
+frame { display: block; border: 1px solid #808080 }
+head, script, style, title, meta, link, template, base, param,
+datalist, dialog, rp, [hidden], input[type=hidden] { display: none }
+/* An audio element is invisible until it is asked for controls, which
+   is what Chromium's own user-agent sheet says. Expressing it needs an
+   attribute selector inside :not(), which this engine gained with
+   Selectors 3. */
+audio:not([controls]) { display: none }
+area, noscript { display: inline }
+marquee, meter, progress { display: inline-block }
+slot { display: contents }
+ruby { display: ruby }
+col { display: table-column }
+colgroup { display: table-column-group }
 li { display: list-item }
 table { display: table; border-spacing: 2px; border-collapse: separate; text-indent: 0 }
-thead, tbody, tfoot { display: table-row-group; vertical-align: middle }
+tbody { display: table-row-group; vertical-align: middle }
+thead { display: table-header-group; vertical-align: middle }
+tfoot { display: table-footer-group; vertical-align: middle }
 tr { display: table-row; vertical-align: middle }
 td, th { display: table-cell; padding: 1px; vertical-align: inherit }
 th { font-weight: bold; text-align: center }
-caption { display: block; text-align: center }
+caption { display: table-caption; text-align: center }
 body { margin: 8px }
 p, dl, blockquote, figure { margin: 1em 0 }
 pre { margin: 1em 0; white-space: pre; font-family: monospace }
@@ -49,11 +64,14 @@ sub { vertical-align: bottom; font-size: smaller }
 sup { vertical-align: top; font-size: smaller }
 center { text-align: center }
 mark { background-color: yellow; color: black }
-input, button, select, textarea { display: inline-block; border: 1px solid #767676; padding: 2px 6px; background-color: white; font-size: 13px; color: black }
+input, button, select, textarea { display: inline-block; border: 1px solid #767676; padding: 2px 6px; background-color: white; font-size: 13px; color: black; appearance: auto }
+input[type=checkbox], input[type=radio] { border: 0; padding: 0; background-color: transparent }
 button, input[type=submit], input[type=button], input[type=reset] { background-color: #efefef; padding: 2px 8px; text-align: center }
 textarea { white-space: pre-wrap; display: inline-block }
 img { display: inline }
-noscript { display: block }
 nobr { white-space: nowrap }
 abbr[title], acronym[title] { text-decoration: underline }
+q { quotes: '"' '"' "'" "'" }
+q::before { content: open-quote }
+q::after { content: close-quote }
 `

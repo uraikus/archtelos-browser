@@ -32,7 +32,11 @@ void func checkEqInt(actual:int, expected:int, label:text) {
     }
 }
 
+// Exits explicitly rather than falling off the end: the preload
+// workers are live threads, and a live thread keeps the program
+// running (specification 12.1). See FINDINGS.md, "a declared thread
+// makes the program non-terminating".
 void func finish(suite:text) {
     log(`${suite}: ${checksPassed} passed, ${checksFailed} failed`)
-    if checksFailed > 0 { close(1) }
+    close(checksFailed > 0 ? 1 : 0)
 }

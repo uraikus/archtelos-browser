@@ -13,6 +13,8 @@ kind of information lives.
   is in [festina.md](festina.md).
 - How fast it is, against other browsers, is in
   [benchmarks.md](benchmarks.md).
+- Where the style engine stands against the CSS snapshot,
+  specification by specification, is in [css-2026.md](css-2026.md).
 
 ## 1 Intent
 
@@ -34,7 +36,7 @@ kind of information lives.
 | Area | Standard | Status here |
 |---|---|---|
 | HTML parsing and the DOM tree it builds | [WHATWG HTML Living Standard](https://html.spec.whatwg.org/), §13 "Parsing HTML documents" | the normative reference; conformance measured against the WPT corpus below |
-| CSS | [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/) | the target; see todo.md for the gap |
+| CSS | [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/) | the target; the gap is measured per specification in css-2026.md and the work it implies is in todo.md. `www.w3.org` is refused by this network, so the snapshot must be supplied to a session rather than fetched |
 
 **HTML is the WHATWG Living Standard, not "HTML5" generally.** When the
 parser's behaviour and some other description of HTML disagree, the
@@ -101,6 +103,122 @@ browser — headless Chromium — on the same input, measuring the same
 phases, with the methodology written down beside the table. Report
 what the measurement says even when it is unflattering; a benchmark
 that only ever shows a win is not being run honestly.
+
+**A measurement made by subtracting two large numbers must report the
+spread of both.** benchmarks.md once reported that Chromium rendered the
+benchmark page "1.15 times faster". The number came of timing each whole
+command and subtracting each engine's start-up: two quantities near
+500 ms, subtracted to obtain one near 50. Chromium's start-up on one
+machine spans 436 to 542 ms, so the same method gave 1.15x on one run
+and 3.8x on the next, and the project carried one of them as a headline
+for weeks. Measure the thing itself — from inside both engines, as
+`tests/chromium.py render` and the phase timers now do — or, if a
+difference is genuinely the only way in, publish the spread of every
+term beside the answer and say what it implies. The same caution applies
+to comparing today's number against one written down earlier: rebuild
+the old revision and run it beside the new one, in the same minutes on
+the same machine, or the comparison is measuring the machine.
+
+**A feature must not cost anything to the pages that do not use it.**
+Positioning cost 18 ms on a page with no positioned box, because it
+added a walk of the box tree, a second painting pass and two predicates
+in the hot child loops. All of it came back by asking once per document
+whether the feature occurs at all. Anything that adds a pass over the
+tree, or a test inside a loop over every box or every declaration, gets
+that flag before it lands, not after a benchmark notices.
+
+**An instrument must be able to fail.** A property row reading `initial`
+computes to the initial value, so the property can never register as
+implemented however complete the implementation is. A selector that
+matches nothing in the fixture is graded the same way whether it is
+implemented or dropped. Both of those shipped here and had to be found.
+Before implementing something, check that the thing measuring it would
+notice — give the property's row in `tests/conformance/css-properties.txt`
+a real value, and the selector something to match — because the count in
+README.md and css-2026.md is the deliverable, and a measurement that
+cannot move is not one.
+
+Fixing the fixture is only half of it: check the instrument's own
+reading too. `object-fit` and `object-position` had real rows, put there
+a commit ahead of the work, and still could not register, because
+`styleDigest` in `tests/conformance/properties.f` compares a list of
+fields by name and nobody had added the two new ones. The feature
+worked; the count did not move. So the check is end to end — set the
+property, run the instrument, watch the number go up — and it is done
+when the implementation lands, not once the suite is green.
+
+**Audit the whole instrument, not one row at a time.** Checking the row
+in front of you leaves every other row unexamined, and they rot
+silently: 218 of the 373 rows in `css-properties.txt` declared
+`initial`, which computes to the initial value by definition, and 24
+more carried a value equal to the initial one — a border width with no
+border style beside it computes to zero, `text-decoration-style: solid`
+*is* the initial value. Two hundred and forty-two properties could have
+been implemented perfectly and the count would not have moved, and
+`--verbose` listed them among the properties still to do, which is
+where they hid. `tests/chromium.py properties-audit` now asks Chromium
+of every row whether it can register at all, and `tests/run.sh` runs it
+before grading the engine, so the question is asked of the whole file on
+every run rather than of whichever row someone remembered.
+
+**When two things must agree, test them against each other.** A check
+against a number you worked out yourself only catches the case you
+thought of. A check that two ways of saying the same thing land on the
+same pixel catches the case you did not, because it does not depend on
+either answer being known in advance. Every bug found here that the
+suite had already been given a chance to catch was of that shape:
+
+- `background-position: 50%` was a hundred times too far, because a
+  percentage `Len` holds a number out of a hundred and the position code
+  read it as a fraction. The keywords were written to match the wrong
+  convention, so keywords worked, pixel lengths worked, and only a real
+  percentage was broken. `50%` against `center` fails immediately.
+- A background image ignored `opacity` and `object-fit`'s clip layer
+  applied it twice. The same content painted through the clipped path
+  and the unclipped path, at the same opacity, must give the same pixel;
+  neither bug survives that.
+
+So when a feature adds a second way to reach an existing result — a
+keyword beside a length, a shorthand beside its longhands, a clipped
+path beside an unclipped one, a new syntax beside the old one — the test
+that earns its place asserts they agree, not that each one matches a
+number.
+
+**A count that goes up is not yet evidence the feature works.** A
+property can register because of a field belonging to a different
+property: declaring `border-top-style` gives that side the medium width,
+and the width alone moved the digest, so the instrument scored the
+property while the engine threw the declared keyword away. Declaring
+`outline-style` did the same and the engine has no outline style at all.
+So when a count moves, ask *which field moved* —
+`tests/conformance/properties.f --fields` prints it — and require one
+that means the property. Where a property genuinely cannot act alone, its
+row carries the declarations it needs as context and is graded against an
+element that already has them, so the context cannot do the work for it.
+
+**Run the benchmarks on an idle machine, and check a number you did not
+change.** "Best of N" does not rescue a contended run, because every one
+of the N runs is contended: a benchmark run here beside a valgrind job
+reported Chromium at 93 ms on the page where it takes 26, and the
+browser's own rows moved with it. Nothing in the output said so. So
+`tests/bench.sh` gets the machine to itself, and before any of its
+numbers are copied into benchmarks.md, at least one row that this change
+could not possibly have moved — Chromium's, usually — is checked against
+what it said last time. A row that shifted is the run disqualifying
+itself.
+
+That check is the script's now rather than the reader's: `tests/bench.sh`
+compares Chromium's render of the benchmark page against `CONTROL_MS`,
+says how far out it is, and exits non-zero when it is beyond
+`CONTROL_TOLERANCE`. Leaving it to be remembered was not enough — a run
+reporting Chromium at 30.4 ms where benchmarks.md records 26.0 printed
+without a word of complaint beside a table that looked ordinary. The
+tolerance is set from Chromium's measured spread on this machine, which
+benchmarks.md records beside the table, and not from an opinion about
+how much noise is acceptable: a band tight enough to fail honest runs is
+a band that gets ignored. A new reference browser is a new control, so
+raise `CONTROL_MS` and record the new spread; do not widen the
+tolerance to make a bad run pass.
 
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
@@ -191,15 +309,20 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/browser/page.f` | the page pipeline the shell and the tests share: fetch, parse, stylesheets, images, cascade, layout, paint |
 | `src/html/` | `decode.f` (bytes to an ASCII-safe form), `entities.f` (character references), `named_refs.f` (the standard's generated reference table), `tokenizer.f`, `parser.f` (tree construction) |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's tree serialization, which the conformance suite compares against) |
-| `src/css/` | `parser.f` (rules, selectors, `@media`), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values) |
+| `src/css/` | `parser.f` (rules, selectors, `@media`), `page.f` (`@page` and the page box), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values), `counterstyles.f` (`@counter-style` and the predefined list styles), `shapes.f` (a basic shape resolved against a box, which the painter and the layout engine both ask for) |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, intrinsic widths |
+| `src/layout/paginate.f` | the document broken into pages, which is the column algorithm over a different container |
 | `src/paint/paint.f` | painting and hit testing |
-| `src/net/fetch.f` | URL resolution, HTTP(S) with redirects, local files |
-| `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f` |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, layout geometry |
-| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor` |
-| `tests/conformance/` | the WPT tree-construction runner |
-| `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
+| `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and the worker threads that prefetch what it finds) |
+| `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f`, `bidi.f` (UAX #9) |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, paged media, the preload scanner |
+| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, conic gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, borders, border images, text decoration, transforms, right-to-left text, box shadows, first lines, printed pages |
+| `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
+| `tests/chromium.py` | drives headless Chromium, so conformance, speed and painting have a yardstick; its `pixels` mode rasterizes a page and prints a row of it |
+| `tests/featurepage.py` | the second benchmark page, its control and the image both use, and the `--verify` mode that requires the page to still exercise every feature it claims to |
+| `tests/gradpages.py` | the three pages the gradient benchmark compares |
+| `tests/latencyserver.py` | a local HTTP server that answers slowly, so the preload scanner has latency to hide |
+| `tests/maxrss.py` | peak resident set size of a command, for the memory benchmark |
 | `tests/run.sh`, `tests/bench.sh` | the test and benchmark runners |
 | `.github/workflows/tests.yml` | CI: the whole suite, natively and under valgrind, on every pull request |
 | `tools/festina-generic` | a Festina CLI wrapper that targets a generic CPU, for valgrind |
@@ -213,5 +336,15 @@ how a struct graph is shaped, gets a valgrind run.
   an id registry. This is load-bearing, not a style preference: a
   back-pointer makes every release of a live alias walk the whole
   document (FINDINGS.md, finding 1). Do not add one.
+- **`&&` and `||` short-circuit**, which is what makes the per-document
+  flags above cost what they claim to: `cascadeSawDirection && scan(...)`
+  does not call `scan` on a page that never said `direction`. Verified
+  rather than assumed — a flag guarding an expensive right-hand side is
+  worth nothing if both sides always run.
 - `ARCHTELOS_TIMING=1` makes the pipeline print per-phase timings.
+- `ARCHTELOS_NO_PRELOAD=1` turns the preload scanner off, so a benchmark
+  can measure one binary with and without it.
+- A program that declares a thread never exits on its own, so every
+  entry point ends in an explicit `close()` (FINDINGS.md, "a declared
+  thread makes the program non-terminating").
 - `WPT_HTML_TESTS` points the conformance suite at the corpus.

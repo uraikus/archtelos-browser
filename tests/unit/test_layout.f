@@ -9,7 +9,6 @@ Box func layoutHtml(html:text, width:int) {
     cascadeAddDocumentStyles(doc)
     computeStyles(doc)
     Box root = layoutDocument(doc, width)
-    numberListItems(root)
     return root
 }
 
@@ -125,4 +124,233 @@ checkEqInt(findBox(r11, 'p').lines.length, 2, 'br breaks; trailing br adds no li
 // width auto margins center
 Box r12 = layoutHtml('<body style="margin:0"><div style="width:100px;margin:0 auto;height:1px"></div></body>', 400)
 checkEqInt(findBox(r12, 'div').x, 150, 'auto margins center a fixed-width block')
+
+// A space between text and a following inline element is a space.
+// Shrink-to-fit width is what shows it: an inline-block sizes itself to
+// its content, so a lost space makes the box narrower. Chromium 141
+// measures all four of these at 29px -- three characters of 16px
+// monospace -- and this engine's own character is 10px, so all four
+// must come to the same width whatever that width is.
+Box ws1 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A B</span></body>', 600)
+Box ws2 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A <em>B</em></span></body>', 600)
+Box ws3 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block"><em>A</em> B</span></body>', 600)
+Box ws4 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block"><em>A</em> <em>B</em></span></body>', 600)
+int wsPlain = findBox(ws1, 'span').w
+check(wsPlain > 0, `the plain case has a width, got ${wsPlain}`)
+checkEqInt(findBox(ws2, 'span').w, wsPlain, 'a space before an inline element is kept')
+checkEqInt(findBox(ws3, 'span').w, wsPlain, 'a space after an inline element is kept')
+checkEqInt(findBox(ws4, 'span').w, wsPlain, 'a space between two inline elements is kept')
+
+// And it is one space, not two: a text box ending in a space followed
+// by one starting with a space still separates them by a single space.
+Box ws5 = layoutHtml('<body style="margin:0;font:16px/20px monospace"><span id="w" style="display:inline-block">A <em> B</em></span></body>', 600)
+checkEqInt(findBox(ws5, 'span').w, wsPlain, 'two collapsing spaces are still one space')
+
+// ---- table-layout: fixed (CSS2 17.5.2.1) ---------------------------------
+// The fixed algorithm takes its column widths from the first row alone
+// and ignores every cell's content, which is the whole reason it
+// exists: a table can be laid out without measuring what is in it. The
+// automatic algorithm widens a column to fit its widest cell.
+
+text twoCol = '<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;TL"><tr><td>a</td><td>b</td></tr>'
+    + '<tr><td>aaaaaaaaaaaaaaaaaaaaaaaa</td><td>b</td></tr></table></body>'
+
+Box tAuto = layoutHtml(twoCol.replace(regex('TL', 'g'), ''), 600)
+Box tFixed = layoutHtml(twoCol.replace(regex('TL', 'g'), 'table-layout:fixed'), 600)
+
+arr[Box] autoCells = []
+collectBoxesForTag(tAuto, 'td', autoCells)
+arr[Box] fixedCells = []
+collectBoxesForTag(tFixed, 'td', fixedCells)
+check(autoCells.length == 4 && fixedCells.length == 4, 'the fixture has four cells')
+check(autoCells[0].w > autoCells[1].w,
+      'the automatic algorithm widens the column holding the long cell')
+checkEqInt(fixedCells[0].w, fixedCells[1].w,
+           'the fixed algorithm shares the width equally, whatever the cells hold')
+checkEqInt(fixedCells[0].w + fixedCells[1].w, 300, 'and the columns fill the table')
+
+// A width on a first-row cell is honoured, and the rest share what is
+// left -- the part of the algorithm that makes it useful.
+Box tFixedW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;table-layout:fixed">'
+    + '<tr><td style="width:100px">a</td><td>b</td><td>c</td></tr>'
+    + '<tr><td>aaaaaaaaaaaaaaaaaaaaaaaa</td><td>b</td><td>c</td></tr></table></body>', 600)
+arr[Box] fwCells = []
+collectBoxesForTag(tFixedW, 'td', fwCells)
+checkEqInt(fwCells[0].w, 100, 'a width in the first row is honoured')
+checkEqInt(fwCells[1].w, fwCells[2].w, 'and the rest share what is left')
+checkEqInt(fwCells[1].w + fwCells[2].w, 200, 'which is all of it')
+
+// A width in a later row is ignored, which is what "first row" means.
+Box tLater = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<table style="width:300px;border-spacing:0;table-layout:fixed">'
+    + '<tr><td>a</td><td>b</td></tr>'
+    + '<tr><td style="width:250px">a</td><td>b</td></tr></table></body>', 600)
+arr[Box] laterCells = []
+collectBoxesForTag(tLater, 'td', laterCells)
+checkEqInt(laterCells[0].w, laterCells[1].w, 'a width in a later row is ignored')
+
+// ---- list-style-position: inside -----------------------------------------
+// An outside marker hangs in the margin and the text starts at the
+// content edge; an inside marker is part of the first line and pushes
+// the text along.
+
+Box liOutside = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding:0"><li>xx</li></ul></body>', 600)
+Box liInside = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<ul style="margin:0;padding:0"><li style="list-style-position:inside">xx</li></ul></body>', 600)
+Box loBox = findBox(liOutside, 'li')
+Box liBox = findBox(liInside, 'li')
+check(loBox.lines.length > 0 && liBox.lines.length > 0, 'both list items have a line')
+check(liBox.lines[0].frags[0].x > loBox.lines[0].frags[0].x,
+      'an inside marker pushes the first line along; an outside one does not')
+checkEqInt(loBox.w, liBox.w, 'and neither changes the item box itself')
+
+// ---- width does not apply to a non-replaced inline box -------------------
+// CSS2 §10.3.1: an inline box that is not replaced takes the width of
+// its content whatever `width` says. Inline layout already worked that
+// way; the intrinsic pass did not, so a shrink-to-fit box around such an
+// inline reserved the declared width and then drew the content width.
+// Chromium 141 gives the inline-block the same width either way.
+
+Box inlineW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span style="width:120px">b</span></div>'
+    + '</body>', 600)
+Box inlinePlain = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span>b</span></div>'
+    + '</body>', 600)
+Box wDiv = findBox(inlineW, 'div')
+Box pDiv = findBox(inlinePlain, 'div')
+check(wDiv != null && pDiv != null, 'both inline-blocks are in the box tree')
+checkEqInt(wDiv.w, pDiv.w, 'width on an inline span does not widen what contains it')
+
+// An inline-block in the same place does take the width, which is what
+// tells the check above from one that passes because nothing is applied.
+Box inlineBlockW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="display:inline-block" id="a">a<span style="display:inline-block;width:120px">b</span></div>'
+    + '</body>', 600)
+check(findBox(inlineBlockW, 'div').w > pDiv.w + 100,
+      'the same width on an inline-block does widen it')
+
+// ---- a percentage height resolves against a definite one (CSS2 §10.5) --
+// A percentage height is a percentage of the containing block's own
+// content height, and computes to `auto` where that height is not
+// itself definite -- which is what makes `height: 100%` do nothing
+// inside a box that is as tall as its content.
+//
+// Chromium 141 on these, all 200px wide:
+//
+//   parent 100 tall, child 50%                       50
+//   parent with no height, child 50%                 the content, 20
+//   parent 100, child 50%, grandchild 50%            50 then 25
+//   parent 100 with 10 of padding, child 50%         50 -- of the content
+//                                                    height, not the border box
+//   the same parent in `border-box`, child 50%       40, the content being 80
+//   parent 100, child 100% in `border-box` with
+//     5 of padding and a 2 border                    100
+Box func pctChild(parentStyle:text, childStyle:text) {
+    Box root = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+        + '<div style="width:200px;' + parentStyle + '">'
+        + '<p style="margin:0;' + childStyle + '">x</p></div></body>', 400)
+    return findBox(root, 'p')
+}
+
+checkEqInt(pctChild('height:100px', 'height:50%').h, 50,
+           'a percentage height is that share of the containing block')
+checkEqInt(pctChild('', 'height:50%').h, 20,
+           'and is `auto` where the containing block has no definite height')
+Box pctRoot = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="width:200px;height:100px"><div id="mid" style="height:50%">'
+    + '<p style="margin:0;height:50%">x</p></div></div></body>', 400)
+checkEqInt(findBox(pctRoot, 'p').h, 25,
+           'a percentage of a percentage resolves through the chain')
+checkEqInt(pctChild('height:100px;padding:10px', 'height:50%').h, 50,
+           'the share is of the content height, which padding does not change')
+checkEqInt(pctChild('height:100px;box-sizing:border-box;padding:10px', 'height:50%').h, 40,
+           'unless `border-box` puts the padding inside the declared height')
+checkEqInt(pctChild('height:100px', 'height:100%;box-sizing:border-box;padding:5px;border:2px solid').h,
+           100, 'and a border-box percentage is the border box, edges included')
+checkEqInt(pctChild('height:100px', 'min-height:40%').h, 40,
+           'a percentage minimum height is of the same containing block')
+checkEqInt(pctChild('height:100px', 'height:80%;max-height:30%').h, 30,
+           'and so is a percentage maximum, which a larger height gives way to')
+checkEqInt(pctChild('', 'min-height:40%').h, 20,
+           'and both are ignored where the containing block has no definite height')
+
+// ---- `overflow: scroll` and `auto` reserve room for a scrollbar -------
+// A scroll container's scrollbar is drawn inside its padding box and
+// takes the room from the content, so a box that shows one has a
+// narrower content box than one that does not. `scroll` shows it
+// whether or not there is anything to scroll; `auto` shows it only when
+// the content overflows that axis; `hidden` and `clip` never do.
+//
+// The width of a scrollbar is the browser's to choose, and this one
+// chooses Chromium's classic 15 pixels so that the geometry can be
+// compared with it directly. Chromium 141 on a 200x100 box:
+//
+//   overflow: scroll, short content            content 185 wide, 85 tall
+//   overflow: auto, short content              200 x 100 -- no bar
+//   overflow: auto, content 300 tall           185 wide
+//   overflow: hidden, content 300 tall         200 wide -- clipped, no bar
+//   overflow-y: scroll; overflow-x: hidden     185 wide
+//   overflow-x: scroll; overflow-y: hidden     85 tall
+//   overflow: visible                          200 x 100
+text ovBox = '<body style="margin:0;font:16px/20px monospace">'
+
+Box func ovChild(style:text, inner:text) {
+    Box root = layoutHtml(ovBox + '<div style="width:200px;height:100px;' + style + '">'
+        + '<p style="margin:0;' + inner + '">x</p></div></body>', 400)
+    return findBox(root, 'p')
+}
+
+checkEqInt(ovChild('overflow:scroll', 'height:20px').w, 185,
+           '`overflow: scroll` takes the scrollbar out of the content box')
+checkEqInt(ovChild('overflow:auto', 'height:20px').w, 200,
+           '`overflow: auto` takes nothing while there is nothing to scroll')
+checkEqInt(ovChild('overflow:auto', 'height:300px').w, 185,
+           'and takes it once the content overflows')
+checkEqInt(ovChild('overflow:hidden', 'height:300px').w, 200,
+           '`overflow: hidden` clips without a scrollbar, so it takes nothing')
+checkEqInt(ovChild('overflow-y:scroll;overflow-x:hidden', 'height:20px').w, 185,
+           'the two axes are separate properties')
+checkEqInt(ovChild('overflow-x:scroll;overflow-y:hidden', 'height:100%').h, 85,
+           'and a horizontal scrollbar takes its room from the height')
+checkEqInt(ovChild('overflow:scroll', 'height:100%').h, 85,
+           '`overflow: scroll` shows both, so both take their room')
+checkEqInt(ovChild('overflow:visible', 'height:100%').h, 100,
+           'and `visible` is the initial value, which scrolls nothing')
+
+// ---- a line too long to break raises the horizontal bar --------------
+// The overflow that raises an `auto` horizontal bar can come from a line
+// of text as well as from a child box: a word with nowhere to break is
+// wider than its container and there is nothing layout can do about it.
+// Chromium 141 on a 100x60 box of `overflow: auto` at 16px/20px
+// monospace:
+//
+//   Supercalifragilisticexpialidocious   clientHeight 45 -- a bar
+//   short words here ok                  clientHeight 60 -- none
+//   a 300px inline-block child           clientHeight 45 -- a bar
+//
+// The third is the case that already worked and is the reference the
+// first is read against: the same 15 pixels, taken for the same reason.
+Box func lineOverflowBox(inner:text) {
+    Box root = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+        + '<div id="s" style="width:100px;height:60px;overflow:auto">'
+        + inner + '</div></body>', 400)
+    return findBox(root, 'div')
+}
+
+Box longWord = lineOverflowBox('Supercalifragilisticexpialidocious')
+Box shortWords = lineOverflowBox('short words here ok')
+Box wideChild = lineOverflowBox('<span style="display:inline-block;width:300px;height:10px"></span>')
+
+// The instrument first: the case that already worked has to show the
+// bar, or the two below are being read against nothing.
+checkEqInt(wideChild.sbH, 15, 'a child reaching past the edge raises the horizontal bar')
+checkEqInt(shortWords.sbH, 0, 'and text that fits raises none')
+checkEqInt(longWord.sbH, 15, 'a word too long to break raises one as well')
+check(longWord.scrollW > 100, 'and the scrollable width is the word, not the box')
+checkEqInt(longWord.sbH, wideChild.sbH, 'the same bar, for the same reason')
+
 finish('layout')
