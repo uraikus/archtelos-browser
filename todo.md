@@ -100,11 +100,16 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    one by one and has the same seam, and the same padding closes it.
    The check is the one `tests/render/borderimage.f` uses: a tiling has
    a period, and a row that repeats exactly at the tile's width has no
-   seam in it. Also
-   a blurred
-   shadow whose falloff is a real Gaussian rather than the accumulated
-   alpha of nested rectangles the canvas's lack of a blur forces. A
-   single background image from `url()` with `repeat`,
+   seam in it.
+
+   Also a blurred shadow whose falloff is a real Gaussian rather than
+   the accumulated alpha of nested rectangles the canvas's lack of a
+   blur forces, which `tests/chromium.py pixels` can now be asked for:
+   Chromium's own profile under `box-shadow: 0 0 20px #000` ramps from
+   nothing 25px out to `#858585` against the box's edge, half the
+   shadow's alpha at the edge being what a Gaussian blurred step gives.
+
+   A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as
    a page asks for, and so is every border
    style, per side, and a radius on each corner separately — in lengths
