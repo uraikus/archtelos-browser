@@ -1103,6 +1103,7 @@ arr[text] supportedProperties = [
     'column-span', 'column-fill',
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
     'page', 'page-break-before', 'page-break-after', 'page-break-inside',
+    'scrollbar-width', 'scrollbar-color', 'scrollbar-gutter',
     'clip-path', 'clip', 'shape-outside', 'shape-margin',
     'grid-template-columns', 'grid-template-rows', 'grid-template-areas',
     'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow',

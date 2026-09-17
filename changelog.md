@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Scrollbars 1, and a stable gutter
+
+`scrollbar-width` and `scrollbar-color`, which is the whole of CSS
+Scrollbars 1, and `scrollbar-gutter: stable` from CSS Overflow 4. The
+browser paints its own scrollbars, so all three are acted on rather than
+stored: the width decides how much room the bar takes from the content,
+the colours decide what it is drawn in, and the gutter decides whether
+the room is taken before there is anything to scroll.
+
+Chromium 141 is the yardstick. A 200x100 `overflow: scroll` box has a
+client width of 185, 190 and 200 under `auto`, `thin` and `none`, so
+`thin` is ten pixels and `none` is none; an `overflow: auto` box with a
+10x10 child has a client width of 200, and 185 once it declares
+`scrollbar-gutter: stable`, with the client height 100 either way --
+the gutter is the inline axis's and the block axis keeps nothing.
+
+**A bar of no width is still a scroll container.** `scrollbar-width:
+none` hides the bar; it does not take the scrolling away. The box tree
+had been answering both questions with one number -- `sbW` was the room
+the bar took *and* the test for whether the box scrolled -- so the first
+version of `none` produced a box that could not be scrolled at all. The
+two are separate fields now: everything that draws a bar or is asked
+where one was clicked reads the room, and everything that scrolls reads
+the scrolling.
+
+`scrollbar-color` takes two colours, thumb then track, and inherits. A
+declaration naming one colour is dropped whole rather than colouring the
+thumb and guessing at the track, because the standard takes the pair or
+nothing.
+
+`scrollbar-width` does not inherit here. The standard makes it
+inherited; Chromium does not, answering `auto` on the child of an
+element that declared `thin`, and this follows the browser it is
+measured against and says so rather than leaving the disagreement
+unrecorded.
+
+The property instrument goes from 211 to 214 of 405, and `--fields`
+says each of the three moved its own field rather than a neighbour's.
+
 ### Paged media, and a browser that prints
 
 CSS2's last unimplemented chapter. `@page` declares the page box: `size`

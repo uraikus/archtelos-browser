@@ -2783,34 +2783,58 @@ void func paintClipped(b:Box) {
 // The thumb is as long a share of the track as the box is of the
 // content it scrolls, and never shorter than it can be seen at.
 
+// The two colours a scrollbar is drawn in: `scrollbar-color`'s pair
+// where a stylesheet gave one, and the browser's own otherwise (CSS
+// Scrollbars 1 §2). Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int sbTrackR = 252
+int sbTrackG = 252
+int sbTrackB = 252
+int sbThumbR = 139
+int sbThumbG = 139
+int sbThumbB = 139
+
+void func scrollbarColors(s:Style) {
+    // Chromium's classic scrollbar, so that the pixels can be compared
+    // with its own: a #fcfcfc track and a #8b8b8b thumb.
+    sbTrackR = 252  sbTrackG = 252  sbTrackB = 252
+    sbThumbR = 139  sbThumbG = 139  sbThumbB = 139
+    if s.scrollbarThumb == 0 { return }
+    sbThumbR = colorRed(s.scrollbarThumb)
+    sbThumbG = colorGreen(s.scrollbarThumb)
+    sbThumbB = colorBlue(s.scrollbarThumb)
+    sbTrackR = colorRed(s.scrollbarTrack)
+    sbTrackG = colorGreen(s.scrollbarTrack)
+    sbTrackB = colorBlue(s.scrollbarTrack)
+}
+
 void func paintScrollbars(b:Box) {
     if b.sbW <= 0 && b.sbH <= 0 { return }
+    scrollbarColors(b.style)
     int px = b.x + b.bl
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
     if pw <= 0 || ph <= 0 { return }
-    // Chromium's classic scrollbar, so that the pixels can be compared
-    // with its own: a #fcfcfc track and a #8b8b8b thumb.
     if b.sbW > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px + pw - b.sbW, py, b.sbW, scrollTrackHeight(b))
         // The thumb is drawn from the same four functions the pointer is
         // tested against, so what it looks like and what can be taken
         // hold of are one rectangle (layout.f).
         if scrollThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollThumbLeft(b), scrollThumbTop(b),
                       scrollThumbWidth(b), scrollThumbHeight(b))
         }
     }
     if b.sbH > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px, scrollHTrackTop(b), scrollHTrackWidth(b), b.sbH)
         if scrollHThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollHThumbLeft(b), scrollHThumbTop(b),
                       scrollHThumbWidth(b), scrollHThumbHeight(b))
         }

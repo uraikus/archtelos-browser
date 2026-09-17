@@ -254,6 +254,22 @@ const int OBJECTFIT_SCALE_DOWN = 4
 // is not, so `page` and its `left`/`right`/`recto`/`verso` variants ask
 // for something this engine never makes and change nothing -- which is
 // what Chromium does with them on screen too.
+// CSS Scrollbars 1 §3: how wide a scroll container's bars are. `auto`
+// is whatever the browser's own is, `thin` is narrower, and `none`
+// reserves nothing and paints nothing -- the box still scrolls, because
+// hiding the bar is not the same as taking the scrolling away.
+// Chromium 141 answers a 200x100 `overflow: scroll` box with a client
+// width of 185, 190 and 200 for the three, so `thin` is ten pixels.
+const int SCROLLBAR_AUTO = 0
+const int SCROLLBAR_THIN = 1
+const int SCROLLBAR_NONE = 2
+
+// CSS Overflow 4 §3.3: whether the inline-end gutter is reserved even
+// where nothing overflows. `stable` reserves it; `both-edges` reserves
+// the other side as well and is not implemented (todo.md).
+const int SCROLLBAR_GUTTER_AUTO = 0
+const int SCROLLBAR_GUTTER_STABLE = 1
+
 const int BRK_AUTO = 0
 const int BRK_COLUMN = 1
 const int BRK_AVOID = 2
@@ -746,6 +762,15 @@ struct Style {
     // child of an element that named a page -- so a named page is the
     // elements that asked for it and the ones laid out between them.
     pageName:text
+    // CSS Scrollbars 1. The width and the gutter do not inherit and the
+    // colours do, which is what Chromium answers -- the standard makes
+    // the width inherited too, and this follows the browser it is
+    // measured against. A colour of zero is `auto`: no declared colour,
+    // so the painter uses its own.
+    scrollbarWidth:int
+    scrollbarGutter:int
+    scrollbarThumb:int
+    scrollbarTrack:int
     orphans:int
     widows:int
     justifyItems:int

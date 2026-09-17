@@ -3947,6 +3947,55 @@ int func breakKeyword(v:ascii) {
     return BRK_AUTO
 }
 
+// CSS Scrollbars 1 §3: how wide a scroll container's bars are.
+int func scrollbarWidthKeyword(v:ascii) {
+    if v == null { return SCROLLBAR_AUTO }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'thin' { return SCROLLBAR_THIN }
+    if t == 'none' { return SCROLLBAR_NONE }
+    return SCROLLBAR_AUTO
+}
+
+// CSS Overflow 4 §3.3. `both-edges` is read and dropped to `stable`,
+// because reserving the other side means insetting the content box on
+// the side nothing else insets it from (todo.md).
+int func scrollbarGutterKeyword(v:ascii) {
+    if v == null { return SCROLLBAR_GUTTER_AUTO }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return SCROLLBAR_GUTTER_AUTO }
+    return asciiLower(t[0]) == 'stable' ? SCROLLBAR_GUTTER_STABLE : SCROLLBAR_GUTTER_AUTO
+}
+
+// `scrollbar-color` is one colour for the thumb and one for the track,
+// in that order, and `auto` -- or anything that is not two colours --
+// leaves the painter its own. Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int scrollbarThumbOut = 0
+int scrollbarTrackOut = 0
+
+void func scrollbarColorProp(props:map[text], inheritThumb:int, inheritTrack:int) {
+    scrollbarThumbOut = inheritThumb
+    scrollbarTrackOut = inheritTrack
+    ascii v = styleProp(props, 'scrollbar-color')
+    if v == null { return }
+    if cssWideKeyword(v) != CSSWIDE_NONE { return }
+    if asciiLower(asciiTrim(v)) == 'auto' {
+        scrollbarThumbOut = 0
+        scrollbarTrackOut = 0
+        return
+    }
+    arr[ascii] t = cssTokens(v)
+    // One colour is not two: the standard takes the pair or nothing, so
+    // a half-written declaration leaves the pair alone rather than
+    // colouring the thumb and guessing at the track.
+    if t.length != 2 { return }
+    int a = parseCssColor(t[0], COLOR_BLACK)
+    int b = parseCssColor(t[1], COLOR_BLACK)
+    if a == COLOR_UNSET || b == COLOR_UNSET { return }
+    scrollbarThumbOut = a
+    scrollbarTrackOut = b
+}
+
 // `page` names the page an element belongs on, or nothing for `auto`.
 // The name is an identifier, so its case is its own.
 text func pageNameProp(v:ascii) {
@@ -5378,6 +5427,12 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.breakAfter = breakKeyword(styleProp(props, 'break-after'))
     s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
     s.pageName = pageNameProp(styleProp(props, 'page'))
+    s.scrollbarWidth = scrollbarWidthKeyword(styleProp(props, 'scrollbar-width'))
+    s.scrollbarGutter = scrollbarGutterKeyword(styleProp(props, 'scrollbar-gutter'))
+    scrollbarColorProp(props, isRoot ? 0 : parent.scrollbarThumb,
+                       isRoot ? 0 : parent.scrollbarTrack)
+    s.scrollbarThumb = scrollbarThumbOut
+    s.scrollbarTrack = scrollbarTrackOut
     s.orphans = countProp(props, 'orphans', isRoot ? 2 : parent.orphans)
     s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
     ascii cspan = styleProp(props, 'column-span')

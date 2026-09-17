@@ -104,6 +104,14 @@ struct Box {
     maxContent:int
     // The scrollbars this box reserves room for, and the content they
     // scroll, which is what sizes their thumbs.
+    //
+    // Whether the box *scrolls* on an axis is a separate question from
+    // how much room its bar took, because `scrollbar-width: none` takes
+    // no room and still scrolls: it hides the bar rather than the
+    // scrolling. Everything that draws a bar or is asked where one was
+    // clicked reads `sbW` and `sbH`; everything that scrolls reads these.
+    scrollsX:bool
+    scrollsY:bool
     sbW:int
     sbH:int
     scrollW:int
@@ -1459,13 +1467,13 @@ void func boxScrollReset() {
 // How far a box can be scrolled: what its content comes to, less what
 // is visible of it.
 int func boxScrollRange(b:Box) {
-    if b.sbW <= 0 { return 0 }
+    if !b.scrollsY { return 0 }
     int visible = maxInt(b.h - b.bt - b.bb - b.pt - b.pb - b.sbH, 1)
     return maxInt(b.scrollH - visible, 0)
 }
 
 int func boxScrollTop(b:Box) {
-    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    if !b.scrollsY || b.node == null || b.node.id == 0 { return 0 }
     int v = boxScrollTops[b.node.id.toText()]
     if v == null { return 0 }
     return clampInt(v, 0, boxScrollRange(b))
@@ -1475,20 +1483,20 @@ int func boxScrollTop(b:Box) {
 // does not, and the two axes keep their offsets apart: a box may have
 // one bar, the other, or both.
 int func boxScrollLeftRange(b:Box) {
-    if b.sbH <= 0 { return 0 }
+    if !b.scrollsX { return 0 }
     int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW, 1)
     return maxInt(b.scrollW - visible, 0)
 }
 
 int func boxScrollLeft(b:Box) {
-    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    if !b.scrollsX || b.node == null || b.node.id == 0 { return 0 }
     int v = boxScrollLefts[b.node.id.toText()]
     if v == null { return 0 }
     return clampInt(v, 0, boxScrollLeftRange(b))
 }
 
 bool func boxScrollLeftBy(b:Box, dx:int) {
-    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return false }
+    if !b.scrollsX || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollLeft(b)
     int now = clampInt(was + dx, 0, boxScrollLeftRange(b))
     if now == was { return false }
@@ -1500,7 +1508,7 @@ bool func boxScrollLeftBy(b:Box, dx:int) {
 // wheel over a box that has reached its end from one that scrolled, so
 // the page can take the rest.
 bool func boxScrollBy(b:Box, dy:int) {
-    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return false }
+    if !b.scrollsY || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollTop(b)
     int now = clampInt(was + dy, 0, boxScrollRange(b))
     if now == was { return false }
@@ -1512,6 +1520,15 @@ bool func boxScrollBy(b:Box, dy:int) {
 // this one takes Chromium's classic fifteen pixels, so that a box's
 // content geometry can be compared with Chromium's directly.
 const int SCROLLBAR_PX = 15
+// `scrollbar-width: thin` is ten pixels and `none` is none at all,
+// which is what Chromium 141 reserves: a 200x100 `overflow: scroll` box
+// has a client width of 185, 190 and 200 for `auto`, `thin` and `none`.
+const int SCROLLBAR_THIN_PX = 10
+
+int func scrollbarPx(s:Style) {
+    if s.scrollbarWidth == SCROLLBAR_NONE { return 0 }
+    return s.scrollbarWidth == SCROLLBAR_THIN ? SCROLLBAR_THIN_PX : SCROLLBAR_PX
+}
 
 // The shortest a thumb gets, however long the content is, so that a very
 // long document still leaves something to take hold of.
@@ -1844,8 +1861,21 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // §3.2). `scroll` shows one whether or not there is anything to
     // scroll; `auto` shows it only where the content overflows, which
     // is not known until the content has been laid out once.
-    b.sbW = s.overflowY == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
-    b.sbH = s.overflowX == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
+    int sbPx = scrollbarPx(s)
+    b.scrollsY = s.overflowY == OVERFLOW_SCROLL
+    b.scrollsX = s.overflowX == OVERFLOW_SCROLL
+    b.sbW = b.scrollsY ? sbPx : 0
+    b.sbH = b.scrollsX ? sbPx : 0
+    // `scrollbar-gutter: stable` reserves the inline-end gutter on a
+    // scroll container whether or not anything overflows (CSS Overflow 4
+    // §3.3), so the content box does not change width when it starts to.
+    // It is the inline axis's gutter only: Chromium answers an
+    // `overflow: auto` box with a client width of 185 and a client
+    // height of 100, where without it both are the full box.
+    if b.sbW == 0 && s.scrollbarGutter == SCROLLBAR_GUTTER_STABLE
+        && s.overflowY == OVERFLOW_AUTO {
+        b.sbW = sbPx
+    }
     width = maxInt(width - b.sbW, 0)
 
     // children, with this box standing as their containing block: a
@@ -1862,24 +1892,33 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // The second pass an `auto` axis needs. A vertical bar appears when
     // the content is taller than the box; a horizontal one when a child
     // box or a line of text reaches past its right edge.
-    if s.overflowY == OVERFLOW_AUTO && b.sbW == 0 && ownDefinite >= 0
+    if s.overflowY == OVERFLOW_AUTO && !b.scrollsY && ownDefinite >= 0
         && contentH > ownDefinite {
-        b.sbW = SCROLLBAR_PX
-        width = maxInt(width - SCROLLBAR_PX, 0)
-        contentH = layoutBlockContent(b, innerX, innerY, width)
-    }
-    if s.overflowX == OVERFLOW_AUTO && b.sbH == 0 && childrenReachPast(b, innerX + width) {
-        b.sbH = SCROLLBAR_PX
-        if ownDefinite >= 0 {
-            ownDefinite = maxInt(ownDefinite - SCROLLBAR_PX, 0)
-            layoutCBHeight = ownDefinite
+        b.scrollsY = true
+        // A bar of no width takes no room, so there is nothing to lay
+        // out again for: the box scrolls and the content stays where it
+        // was.
+        if b.sbW == 0 && sbPx > 0 {
+            b.sbW = sbPx
+            width = maxInt(width - sbPx, 0)
             contentH = layoutBlockContent(b, innerX, innerY, width)
+        }
+    }
+    if s.overflowX == OVERFLOW_AUTO && !b.scrollsX && childrenReachPast(b, innerX + width) {
+        b.scrollsX = true
+        if sbPx > 0 {
+            b.sbH = sbPx
+            if ownDefinite >= 0 {
+                ownDefinite = maxInt(ownDefinite - sbPx, 0)
+                layoutCBHeight = ownDefinite
+                contentH = layoutBlockContent(b, innerX, innerY, width)
+            }
         }
     }
     // Only a scroll container needs to know what it scrolls, and the
     // walk that measures the width is paid by nothing else: the flag is
     // asked first and `&&` does not evaluate what follows it.
-    if b.sbW > 0 || b.sbH > 0 {
+    if b.scrollsY || b.scrollsX {
         b.scrollH = contentH
         b.scrollW = childrenReach(b, innerX)
     }
