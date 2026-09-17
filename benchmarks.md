@@ -1223,3 +1223,16 @@ than per distinct style -- 2,728 of them on this page against the 24
 styles they share. The measurement says those two booleans cost nothing
 that twenty-one samples can see, which is the answer, but the reason to
 take the samples was that this one could have gone the other way.
+
+CSS Scroll Snap 1 costs **5,056 bytes** (2,879,408 → 2,884,464) and
+nothing measurable. Twenty-one paired samples of `generated.html` give
+102 ms against the previous 104 as a minimum and 105 against 106 as a
+median, the median paired difference −1.
+
+It is free for a structural reason and not a lucky measurement: snapping
+runs from `boxScrollBy`, which a wheel or a dragged thumb calls and a
+layout never does. A page that is rendered and not scrolled -- every
+page the benchmark measures, and every page a screenshot takes -- does
+not reach the code at all. What it does pay for is the thirteen fields
+the snap properties put on `Style`, and those are read once per distinct
+computed style: 24 of them for this page's 2,728 elements.
