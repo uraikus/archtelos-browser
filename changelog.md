@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The `lh` and `rlh` units
+
+`lh` is the element's own computed line height and `rlh` the root
+element's (Values and Units 4 §6.1). Chromium 141 on a document whose
+root is 16px/20px: `line-height: 30px; width: 2lh` is 60px,
+`width: 2rlh` is 40px, `margin-left: 1.5lh` beside a 30px line height is
+45px, and `calc(1lh + 10px)` is 40px. This engine now answers each of
+them the same.
+
+**The unit is resolved where the length is parsed**, which works because
+the cascade computes `line-height` before every other length: the unit
+reads a global that is already set by then. The same global still holds
+the *parent's* line height while `line-height` itself is being computed,
+which is what the unit means there -- `line-height: 2lh` under a 20px
+parent is 40px in Chromium, the way `em` inside `font-size` means the
+parent's font size. A font size of the element's own does not change an
+inherited line height, so `font-size: 32px; width: 1lh` under an
+inherited `20px` is 20px, not 40.
+
+`line-height: normal` declares no length, so `lh` there is whatever a
+line box actually comes out at. That number lived in the layout engine
+and the cascade cannot reach it from where a unit is parsed, so
+`lineHeightOf` and the 1.2 it multiplies by moved to `style.f`, beside
+the Style they read -- one definition rather than two that must agree.
+`1lh` under `normal` at 16px is 19px here and 19px in Chromium.
+
+**The first version of it cost two milliseconds on a page with no `lh`
+on it**, and the rule that predicts why is already written down:
+`lineHeightOf` takes a `Style`, the cascade called it twice per computed
+style, and a forwarded struct parameter is released on exit with a
+collector walk of its subtree (FINDINGS.md, "cycle trials"). The
+function is now two: one over the two ints it actually reads, which is
+what the cascade calls, and the `Style` form that calls it, which is
+what the layout engine keeps. benchmarks.md carries both paired series.
+
 ### `revert`
 
 The keyword rolls a property back to the value the previous cascade

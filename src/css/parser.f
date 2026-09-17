@@ -438,6 +438,12 @@ bool cssAnsweringContainer = false
 // cascade assigns it when it computes the root; 16 is the initial value
 // and the right answer before then.
 int cssRootFontSize = 16
+// The root element's computed line height, which `rlh` multiplies, and
+// the line height of the element being computed, which `lh` does. Both
+// are assigned by the cascade; 19 is what `normal` comes to at the
+// initial 16px font size, and the right answer before then.
+int cssRootLineHeight = 19
+int cascadeLineHeight = 19
 
 void func setCssViewport(w:int, h:int) {
     cssViewportWidth = w

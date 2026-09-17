@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,815,120 |
+| This browser, the whole program | 2,819,336 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1010,3 +1010,30 @@ after:  106 109 105 109 107 106 106 108 113
 
 — a best of 104 against 105, one millisecond apart on two series that
 overlap through their whole range.
+
+`lh` and `rlh` cost **4,216 bytes** (2,815,120 → 2,819,336) and, at the
+second attempt, nothing measurable in time. The first attempt did cost
+something, and the rule that predicted it is already in CLAUDE.md: the
+cascade asked `lineHeightOf(parent)` and `lineHeightOf(s)` once per
+computed style, and **a forwarded struct parameter is released on exit
+with a collector walk of its subtree** (FINDINGS.md, "cycle trials").
+Fifteen paired samples of `generated.html` with the struct version gave
+
+```
+before: 118 104 106 111 107 105 106 107 105 104 105 108 105 106 104
+after:  111 111 107 112 109 106 107 108 109 106 106 107 107 109 107
+```
+
+— a best of 104 against 106, and every reading on the new side at or
+above the old one's median. Splitting the function so the cascade passes
+the two ints it needs, and the Style form calls that, removes the walk.
+The same fifteen paired samples then give
+
+```
+before: 149 105 106 105 107 108 107 108 108 106 104 103 113 107 107
+after:  106 103 105 104 105 107 107 107 107 102 104 104 112 110 105
+```
+
+— a best of 103 against 102, two series that interleave through their
+whole range, and the one reading near 150 on the side without the
+feature. Two ints where a struct was is the whole difference.

@@ -43,7 +43,6 @@ const int FRAG_INLINE_BG = 3
 // no ascent/descent API, only the inked height of a string.
 const float FONT_ASCENT = 0.93
 const float FONT_DESCENT = 0.24
-const float LINE_NORMAL = 1.2
 
 int nextBoxId = 1
 // every box of the current layout, indexed by id (parentBox looks parents up here)
@@ -255,11 +254,6 @@ int func fontAscent(s:Style) {
 
 int func fontDescent(s:Style) {
     return roundPx(s.fontSize.toFloat() * FONT_DESCENT)
-}
-
-int func lineHeightOf(s:Style) {
-    if s.lineHeight > 0 { return s.lineHeight }
-    return roundPx(s.fontSize.toFloat() * LINE_NORMAL)
 }
 
 // ---- box construction ----------------------------------------------------

@@ -102,8 +102,12 @@ for the rule it is in and a descendant `&` implied where the nested
 selector does not say; `@media`, `@supports` and `@layer` nest in both
 directions. `@container` asks about the size of an ancestor rather than
 the viewport, which costs the pages that use it a second layout and the
-pages that do not nothing at all. Other at-rules are skipped. Units: px, em, rem, %, pt, pc, in,
-cm, mm, ex, ch, vw, vh.
+pages that do not nothing at all. Other at-rules are skipped. Units: unitless, `px`, `%`, `em`, `rem`,
+`pt`, `pc`, `in`, `cm`, `mm`, `q`, `ex`, `ch`, `cap`, `ic`, `lh`, `rlh`,
+`vw`, `vh`, `vmin`, `vmax`, the `vi` and `vb` axes, and the small, large
+and dynamic viewport units. `lh` is the element's own computed line
+height and `rlh` the root element's; inside `line-height` itself `lh` is
+the parent's, the way `em` inside `font-size` is.
 Colors: all 148 names, `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
 `rgba()`, `hsl()`, `hsla()`, `hwb()`, `lab()`, `lch()`, `oklab()`,
 `oklch()`, `color()` over the eight predefined spaces, the nineteen

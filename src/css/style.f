@@ -984,3 +984,26 @@ bool func displayIsRowGroup(d:int) {
 bool func displayIsColumn(d:int) {
     return d == DISPLAY_TABLE_COLUMN || d == DISPLAY_TABLE_COLUMN_GROUP
 }
+
+// `line-height: normal` has no declared length, so the line box takes a
+// multiple of the font size. 1.2 is what the fonts fontconfig serves
+// here come out at, and it is what Chromium measures for them: `1lh`
+// under `normal` at 16px is 19px in both.
+//
+// This lives beside the Style rather than in the layout engine because
+// the cascade needs the same number: `lh` is a length unit, and a unit
+// is resolved where a length is parsed.
+const float LINE_NORMAL = 1.2
+
+// Taken as two ints rather than the Style they come from, because a
+// forwarded struct parameter is released on exit with a collector walk
+// of its subtree (FINDINGS.md, "cycle trials") -- and the cascade asks
+// this once per computed style, where the walk would be paid.
+int func lineHeightFor(declared:int, fontSize:int) {
+    if declared > 0 { return declared }
+    return roundPx(fontSize.toFloat() * LINE_NORMAL)
+}
+
+int func lineHeightOf(s:Style) {
+    return lineHeightFor(s.lineHeight, s.fontSize)
+}

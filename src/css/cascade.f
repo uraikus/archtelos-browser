@@ -3564,6 +3564,13 @@ Len func parseLength(tok:ascii, fontSize:int) {
     // apart, and `vi` and `vb` are the inline and block axes, which in
     // a horizontal writing mode are the horizontal and the vertical.
     if unit == 'q' { return lenPx(v * 0.94488188976378) }
+    // `lh` is the element's own computed line height and `rlh` the root
+    // element's. The cascade computes `line-height` before every other
+    // length, so the global below holds this element's by the time any
+    // of them is parsed -- and holds the parent's while `line-height`
+    // itself is being computed, which is what the unit means there.
+    if unit == 'lh' { return lenPx(v * cascadeLineHeight.toFloat()) }
+    if unit == 'rlh' { return lenPx(v * cssRootLineHeight.toFloat()) }
     if unit == 'svw' || unit == 'lvw' || unit == 'dvw' || unit == 'vi' {
         return lenPx(v * cssViewportWidth.toFloat() / 100.0)
     }
@@ -4189,6 +4196,13 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     s.color = colorProp(props, 'color', isRoot ? COLOR_BLACK : parent.color, isRoot ? COLOR_BLACK : parent.color)
     s.lineHeight = isRoot ? 0 : parent.lineHeight
+    // `lh` inside `line-height` itself is the parent's, the way `em`
+    // inside `font-size` is: the value being computed cannot be its own
+    // unit. So the global carries the inherited line height across the
+    // declaration below and is set to this element's own afterwards,
+    // where every other length will read it.
+    cascadeLineHeight = isRoot ? lineHeightFor(0, s.fontSize)
+                              : lineHeightFor(parent.lineHeight, parent.fontSize)
     ascii lh = styleProp(props, 'line-height')
     if lh != null {
         ascii t = asciiLower(asciiTrim(lh))
@@ -4206,6 +4220,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             }
         }
     }
+    cascadeLineHeight = lineHeightFor(s.lineHeight, s.fontSize)
+    if isRoot { cssRootLineHeight = cascadeLineHeight }
     // direction inherits, and text-align's `start` and `end` resolve
     // against it, so it is read before text-align rather than after.
     // `direction` is one of the two properties `all` does not reset
