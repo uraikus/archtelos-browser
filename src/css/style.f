@@ -182,10 +182,14 @@ const int BOXALIGN_SPACE_AROUND = 6
 const int BOXALIGN_SPACE_EVENLY = 7
 const int BOXALIGN_AUTO = 8
 
-// border-image-repeat. `round` and `space` differ from `repeat` only in
-// how the last tile is handled, which this engine does not distinguish.
+// border-image-repeat. The tile is the edge image scaled to the
+// border's thickness (Backgrounds and Borders 3 §6.5); the keyword says
+// how those tiles fill the edge, and the property takes two of them,
+// one for the horizontal edges and one for the vertical.
 const int BORDERIMG_STRETCH = 0
 const int BORDERIMG_REPEAT = 1
+const int BORDERIMG_ROUND = 2
+const int BORDERIMG_SPACE = 3
 
 // pointer-events. Only `none` changes what this engine does, because
 // hit testing is the only interaction it has and a `visibility: hidden`
@@ -549,6 +553,7 @@ struct Style {
     borderImageWidthLeft:int
     borderImageOutset:int
     borderImageRepeat:int
+    borderImageRepeatY:int
     backgroundRepeatX:bool
     backgroundRepeatY:bool
     backgroundPosX:Len

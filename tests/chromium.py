@@ -26,6 +26,16 @@ Two modes, both used by tests/bench.sh:
                get one near 50, and Chromium's start-up varies by over
                100 ms run to run, so the answer was mostly noise.
 
+  pixels       Rasterizes a page and prints a row of its pixels, so a
+               painting question -- where a tile lands, what a gradient
+               is at a point -- has a browser's own answer to be graded
+               against rather than a derivation. It needs the Playwright
+               `headless_shell` binary: the full `chrome` binary in this
+               container writes a screenshot whose first scanline is
+               correct and whose every other row is blank, whatever
+               `--virtual-time-budget`, `--run-all-compositor-stages-
+               before-draw` or a software rasterizer is asked of it.
+
 Chromium is found via CHROME, or the Playwright browser directory that
 ships in this container. Nothing here is part of the browser: it is
 benchmark tooling, and it only ever reads the corpus and the pages.
@@ -36,9 +46,11 @@ import glob
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
+import zlib
 
 
 def find_chrome():
@@ -55,6 +67,100 @@ def find_chrome():
         if hits:
             return hits[-1]
     return None
+
+
+def find_shell():
+    """The binary that rasterizes a whole page, for `pixels`.
+
+    `find_chrome` answers the binary the DOM-reading modes want, which
+    is whichever Chromium is installed. Only `headless_shell` paints
+    every scanline of a screenshot here, so the pixel mode asks for it
+    by name and says so rather than quietly grading against one row.
+    """
+    env = os.environ.get("CHROME_SHELL")
+    if env and os.path.exists(env):
+        return env
+    hits = sorted(glob.glob(
+        "/opt/pw-browsers/chromium_headless_shell-*/chrome-linux/headless_shell"))
+    return hits[-1] if hits else None
+
+
+def read_png(data):
+    """A PNG to rows of (r, g, b), with zlib and nothing else.
+
+    Chromium writes 8-bit RGB or RGBA here; the five filter types are
+    the whole of the format's own decoding, and unfiltering them is
+    shorter than reaching for a library this project is not allowed.
+    """
+    assert data[:8] == b"\x89PNG\r\n\x1a\n", "not a PNG"
+    pos, idat, width, height, depth, color_type = 8, b"", 0, 0, 0, 0
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        kind, chunk = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length]
+        if kind == b"IHDR":
+            width, height, depth, color_type = struct.unpack(">IIBB", chunk[:10])
+        elif kind == b"IDAT":
+            idat += chunk
+        pos += 12 + length
+    if depth != 8 or color_type not in (2, 6):
+        raise SystemExit("pixels: unsupported PNG (depth %d, colour type %d)"
+                         % (depth, color_type))
+    raw = zlib.decompress(idat)
+    bpp = 3 if color_type == 2 else 4
+    stride = width * bpp
+    rows, prev, at = [], bytearray(stride), 0
+    for _ in range(height):
+        filt, at = raw[at], at + 1
+        line, at = bytearray(raw[at:at + stride]), at + stride
+        for i in range(stride):
+            left = line[i - bpp] if i >= bpp else 0
+            up = prev[i]
+            upleft = prev[i - bpp] if i >= bpp else 0
+            if filt == 1:
+                line[i] = (line[i] + left) & 255
+            elif filt == 2:
+                line[i] = (line[i] + up) & 255
+            elif filt == 3:
+                line[i] = (line[i] + (left + up) // 2) & 255
+            elif filt == 4:
+                pa, pb, pc = (abs(up - upleft), abs(left - upleft),
+                              abs(left + up - 2 * upleft))
+                near = left if (pa <= pb and pa <= pc) else (up if pb <= pc else upleft)
+                line[i] = (line[i] + near) & 255
+        prev = line
+        rows.append([tuple(line[x * bpp:x * bpp + 3]) for x in range(width)])
+    return rows
+
+
+def pixels(path, size, y, x0, x1):
+    """Prints one row of a rendered page as `x:rrggbb`, one pixel a word."""
+    shell = find_shell()
+    if shell is None:
+        print("pixels: no headless_shell found", file=sys.stderr)
+        return 1
+    width, height = (int(n) for n in size.lower().split("x"))
+    out = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    out.close()
+    try:
+        subprocess.run(
+            [shell, "--headless", "--disable-gpu", "--no-sandbox",
+             "--screenshot=" + out.name,
+             "--window-size=%d,%d" % (width, height),
+             "file://" + os.path.abspath(path)],
+            capture_output=True, timeout=120,
+        )
+        with open(out.name, "rb") as fh:
+            rows = read_png(fh.read())
+    finally:
+        os.unlink(out.name)
+    if y >= len(rows):
+        print("pixels: row %d is past the %d the page has" % (y, len(rows)),
+              file=sys.stderr)
+        return 1
+    row = rows[y]
+    x1 = min(x1, len(row))
+    print(" ".join("%d:%02x%02x%02x" % ((x,) + row[x]) for x in range(x0, x1)))
+    return 0
 
 
 def encode_payload(obj):
@@ -526,6 +632,9 @@ def main():
         return render_timing(sys.argv[3:], int(sys.argv[2]))
     if sys.argv[1] == "selectors":
         return selector_matches(sys.argv[2], sys.argv[3])
+    if sys.argv[1] == "pixels":
+        return pixels(sys.argv[2], sys.argv[3], int(sys.argv[4]),
+                      int(sys.argv[5]), int(sys.argv[6]))
     if sys.argv[1] == "properties-audit":
         return properties_audit(sys.argv[2])
     if sys.argv[1] == "which":

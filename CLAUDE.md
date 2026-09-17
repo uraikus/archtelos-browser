@@ -317,7 +317,7 @@ how a struct graph is shaped, gets a valgrind run.
 | `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, the preload scanner |
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, conic gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, borders, border images, text decoration, transforms, right-to-left text, box shadows |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
-| `tests/chromium.py` | drives headless Chromium, so conformance and speed have a yardstick |
+| `tests/chromium.py` | drives headless Chromium, so conformance, speed and painting have a yardstick; its `pixels` mode rasterizes a page and prints a row of it |
 | `tests/featurepage.py` | the second benchmark page, its control and the image both use, and the `--verify` mode that requires the page to still exercise every feature it claims to |
 | `tests/gradpages.py` | the three pages the gradient benchmark compares |
 | `tests/latencyserver.py` | a local HTTP server that answers slowly, so the preload scanner has latency to hide |

@@ -1399,22 +1399,140 @@ img func cutRegion(src:img, sx:int, sy:int, sw:int, sh:int) {
     return out
 }
 
-// Draws one region into a box, stretched to fill it or tiled across it.
+// Where the tiles of one axis go, as a position and a length each.
+// Two arrays out of a function need globals (FINDINGS.md, "one value
+// out of a function"), and the caller copies them before laying out the
+// other axis.
+arr[int] tileAt = []
+arr[int] tileLen = []
+
+arr[int] func intsCopy(a:arr[int]) {
+    arr[int] out = []
+    for int i = 0, i < a.length, i++ { out.push(a[i]) }
+    return out
+}
+
+// The four keywords of border-image-repeat, along one axis of one
+// region (Backgrounds and Borders 3 §6.5). `tile` is the length the
+// edge image has once it is scaled to the border's thickness, which is
+// the size every keyword but `stretch` lays down.
+void func layTiles(dstLen:int, tile:int, mode:int) {
+    tileAt = []
+    tileLen = []
+    if dstLen <= 0 { return }
+    if mode == BORDERIMG_STRETCH || tile <= 0 {
+        tileAt.push(0)
+        tileLen.push(dstLen)
+        return
+    }
+    if mode == BORDERIMG_ROUND {
+        // Resized so a whole number of tiles fills the area, and never
+        // fewer than one: the boundaries are rounded rather than the
+        // lengths, so the tiles abut exactly and add up to the area.
+        int n = maxInt(roundPx(dstLen.toFloat() / tile.toFloat()), 1)
+        float step = dstLen.toFloat() / n.toFloat()
+        for int i = 0, i < n, i++ {
+            int from = roundPx(step * i.toFloat())
+            int to = roundPx(step * (i + 1).toFloat())
+            tileAt.push(from)
+            tileLen.push(to - from)
+        }
+        return
+    }
+    if mode == BORDERIMG_SPACE {
+        // Whole tiles only, with what is left over shared out around
+        // them -- a gap before the first and after the last as well as
+        // between them. Where not even one tile fits, nothing is drawn.
+        int n = Math.floorDiv(dstLen, tile)
+        if n < 1 { return }
+        float gap = (dstLen - n * tile).toFloat() / (n + 1).toFloat()
+        for int i = 0, i < n, i++ {
+            tileAt.push(roundPx(gap * (i + 1).toFloat()) + tile * i)
+            tileLen.push(tile)
+        }
+        return
+    }
+    // repeat: whole tiles with one of them centred on the area, so the
+    // two ends cut a tile each wherever the area is not a whole number
+    // of them.
+    int from = Math.floorDiv(dstLen - tile, 2)
+    while from > 0 { from = from - tile }
+    for int at = from, at < dstLen, at = at + tile {
+        tileAt.push(at)
+        tileLen.push(tile)
+    }
+}
+
+// A region with a one pixel border of its own edge pixels around it.
+//
+// A scaled blit samples half a source pixel beyond the rectangle it
+// fills, and with nothing there it fades to transparent: enlarging a
+// 3px slice into a 30px border left five pixels of the page showing
+// through between one tile and the next, and between the corner and
+// the edge beside it. The padding gives the sampler something to
+// reach, and is drawn outside the tile so none of it is seen.
+img func paddedRegion(region:img) {
+    int sw = region.width
+    int sh = region.height
+    img out = blankImage(sw + 2, sh + 2)
+    out.drawImage(region, 1, 1)
+    out.drawImage(cutRegion(region, 0, 0, sw, 1), 1, 0)
+    out.drawImage(cutRegion(region, 0, sh - 1, sw, 1), 1, sh + 1)
+    out.drawImage(cutRegion(region, 0, 0, 1, sh), 0, 1)
+    out.drawImage(cutRegion(region, sw - 1, 0, 1, sh), sw + 1, 1)
+    out.drawImage(cutRegion(region, 0, 0, 1, 1), 0, 0)
+    out.drawImage(cutRegion(region, sw - 1, 0, 1, 1), sw + 1, 0)
+    out.drawImage(cutRegion(region, 0, sh - 1, 1, 1), 0, sh + 1)
+    out.drawImage(cutRegion(region, sw - 1, sh - 1, 1, 1), sw + 1, sh + 1)
+    return out
+}
+
+// One tile at its drawn size: the padded region scaled so that its
+// border of copied edge pixels lands outside the tile, into an image
+// that is exactly the tile and so cuts that border off.
+img func scaledTile(padded:img, sw:int, sh:int, tw:int, th:int) {
+    img tile = blankImage(tw, th)
+    int padX = maxInt(roundPx(tw.toFloat() / sw.toFloat()), 1)
+    int padY = maxInt(roundPx(th.toFloat() / sh.toFloat()), 1)
+    tile.drawImage(padded, -padX, -padY, tw + padX + padX, th + padY + padY)
+    return tile
+}
+
+// Draws one region into a box: stretched to fill it, or laid down as
+// tiles of the size §6.5 scales the region to.
 void func paintImageRegion(src:img, sx:int, sy:int, sw:int, sh:int,
-                           dx:int, dy:int, dw:int, dh:int, repeat:bool) {
+                           dx:int, dy:int, dw:int, dh:int,
+                           modeX:int, tileW:int, modeY:int, tileH:int) {
     if sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0 { return }
     img region = cutRegion(src, sx, sy, sw, sh)
     if region == null { return }
-    if !repeat {
-        pDrawImageScaled(region, dx, dy, dw, dh)
+    img padded = paddedRegion(region)
+    if modeX == BORDERIMG_STRETCH && modeY == BORDERIMG_STRETCH {
+        pDrawImage(scaledTile(padded, sw, sh, dw, dh), dx, dy)
         return
     }
-    // Tiled at its own size, clipped to the box by a layer, since the
-    // canvas has no clip region.
+    layTiles(dw, tileW, modeX)
+    arr[int] xs = intsCopy(tileAt)
+    arr[int] ws = intsCopy(tileLen)
+    layTiles(dh, tileH, modeY)
+    arr[int] ys = intsCopy(tileAt)
+    arr[int] hs = intsCopy(tileLen)
+    if xs.length == 0 || ys.length == 0 { return }
+    // Into a layer, because a tile can hang over either end of the area
+    // and the canvas has no clip region. Every tile of one size is the
+    // same image, blitted unscaled, so the tiling repeats exactly.
     img layer = blankImage(dw, dh)
-    for int ty = 0, ty < dh, ty = ty + sh {
-        for int tx = 0, tx < dw, tx = tx + sw {
-            layer.drawImage(region, tx, ty)
+    int haveW = -1
+    int haveH = -1
+    img tile = null
+    for int j = 0, j < ys.length, j++ {
+        for int i = 0, i < xs.length, i++ {
+            if ws[i] != haveW || hs[j] != haveH {
+                tile = scaledTile(padded, sw, sh, ws[i], hs[j])
+                haveW = ws[i]
+                haveH = hs[j]
+            }
+            layer.drawImage(tile, xs[i], ys[j])
         }
     }
     pDrawImage(layer, dx, dy)
@@ -1426,6 +1544,16 @@ int func slicePx(l:Len, sourceSize:int) {
     if l.kind == LEN_PERCENT { return maxInt(roundPx(sourceSize.toFloat() * l.v / 100.0), 0) }
     if l.kind == LEN_PX { return maxInt(roundPx(l.v), 0) }
     return 0
+}
+
+// One region's length once it is scaled to the border's thickness:
+// the region is `srcLen` long and `srcThick` thick, and the border it
+// fills is `thick` thick, so the whole tile grows by the same factor in
+// both directions. A tile is never narrower than a pixel, because a
+// zero-length one has no whole number of copies that fills anything.
+int func tileLength(srcLen:int, thick:int, srcThick:int) {
+    if srcThick <= 0 || thick <= 0 { return maxInt(srcLen, 1) }
+    return maxInt(roundPx(srcLen.toFloat() * thick.toFloat() / srcThick.toFloat()), 1)
 }
 
 void func paintBorderImage(b:Box) {
@@ -1467,29 +1595,56 @@ void func paintBorderImage(b:Box) {
         wt = Math.floorDiv(wt * ah, total)
         wb = Math.floorDiv(wb * ah, total)
     }
-    bool rep = s.borderImageRepeat == BORDERIMG_REPEAT
+    int repX = s.borderImageRepeat
+    int repY = s.borderImageRepeatY
     int midW = aw - wl - wr
     int midH = ah - wt - wb
     int srcMidW = iw - sl - sr
     int srcMidH = ih - st - sb
 
+    // §6.5 scales every edge image to the thickness of the border it
+    // fills -- the top edge vertically to the top border width -- and
+    // scales the other dimension by the same factor. The tile a
+    // repeated edge lays down is that scaled size, not the region's own:
+    // a 3px slice in a 10px border tiles at 10px.
+    int topTile = tileLength(srcMidW, wt, st)
+    int bottomTile = tileLength(srcMidW, wb, sb)
+    int leftTile = tileLength(srcMidH, wl, sl)
+    int rightTile = tileLength(srcMidH, wr, sr)
+
     // the four corners, each at its own border size
-    paintImageRegion(src, 0, 0, sl, st, ax, ay, wl, wt, false)
-    paintImageRegion(src, iw - sr, 0, sr, st, ax + aw - wr, ay, wr, wt, false)
-    paintImageRegion(src, 0, ih - sb, sl, sb, ax, ay + ah - wb, wl, wb, false)
+    paintImageRegion(src, 0, 0, sl, st, ax, ay, wl, wt,
+                     BORDERIMG_STRETCH, 0, BORDERIMG_STRETCH, 0)
+    paintImageRegion(src, iw - sr, 0, sr, st, ax + aw - wr, ay, wr, wt,
+                     BORDERIMG_STRETCH, 0, BORDERIMG_STRETCH, 0)
+    paintImageRegion(src, 0, ih - sb, sl, sb, ax, ay + ah - wb, wl, wb,
+                     BORDERIMG_STRETCH, 0, BORDERIMG_STRETCH, 0)
     paintImageRegion(src, iw - sr, ih - sb, sr, sb,
-                     ax + aw - wr, ay + ah - wb, wr, wb, false)
-    // the four edges, filling what the corners leave
-    paintImageRegion(src, sl, 0, srcMidW, st, ax + wl, ay, midW, wt, rep)
+                     ax + aw - wr, ay + ah - wb, wr, wb,
+                     BORDERIMG_STRETCH, 0, BORDERIMG_STRETCH, 0)
+    // the four edges, filling what the corners leave: each tiles along
+    // its own length and is scaled to its thickness across it
+    paintImageRegion(src, sl, 0, srcMidW, st, ax + wl, ay, midW, wt,
+                     repX, topTile, BORDERIMG_STRETCH, 0)
     paintImageRegion(src, sl, ih - sb, srcMidW, sb,
-                     ax + wl, ay + ah - wb, midW, wb, rep)
-    paintImageRegion(src, 0, st, sl, srcMidH, ax, ay + wt, wl, midH, rep)
+                     ax + wl, ay + ah - wb, midW, wb,
+                     repX, bottomTile, BORDERIMG_STRETCH, 0)
+    paintImageRegion(src, 0, st, sl, srcMidH, ax, ay + wt, wl, midH,
+                     BORDERIMG_STRETCH, 0, repY, leftTile)
     paintImageRegion(src, iw - sr, st, sr, srcMidH,
-                     ax + aw - wr, ay + wt, wr, midH, rep)
-    // and the middle, only when `fill` asks for it
+                     ax + aw - wr, ay + wt, wr, midH,
+                     BORDERIMG_STRETCH, 0, repY, rightTile)
+    // and the middle, only when `fill` asks for it. It is scaled by the
+    // top edge's factor across and the left edge's down, falling back to
+    // the opposite edge's where one of them has nothing to scale by.
     if s.borderImageFill {
+        int midTileW = st > 0 && wt > 0 ? tileLength(srcMidW, wt, st)
+                                        : tileLength(srcMidW, wb, sb)
+        int midTileH = sl > 0 && wl > 0 ? tileLength(srcMidH, wl, sl)
+                                        : tileLength(srcMidH, wr, sr)
         paintImageRegion(src, sl, st, srcMidW, srcMidH,
-                         ax + wl, ay + wt, midW, midH, rep)
+                         ax + wl, ay + wt, midW, midH,
+                         repX, midTileW, repY, midTileH)
     }
 }
 

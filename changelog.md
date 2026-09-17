@@ -5,6 +5,59 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### border-image scales its edges to the border, and rounds and spaces them
+
+Backgrounds and Borders 3 §6.5 scales every edge image to the thickness
+of the border it fills before anything is tiled: the top edge's height
+becomes the top border width and its width is scaled by the same
+factor. This engine tiled each region at its own natural size, so
+`border-image: url(nine.png) 3 repeat` in a 30px border laid down ten
+3px tiles where the standard lays down exactly one 30px tile. The
+fixture hid it -- a 3px slice in a 10px border is the one case where
+the scaled tile fills the edge exactly -- and the test that was meant
+to catch it asked whether a repeated edge shows more of the source's
+white column than a stretched one, which was a statement about this
+engine rather than about the standard.
+
+With the tile the right size, `border-image-repeat`'s four values are
+what differ about filling the edge with it: `stretch` pulls one tile
+across, `repeat` centres whole tiles and lets the two ends cut a tile
+each, `round` resizes the tile until a whole number of them fits
+exactly, and `space` lays down only whole tiles and shares the leftover
+into gaps around them -- one before the first, one after the last, one
+between each pair -- drawing nothing where not even one tile fits. The
+property takes two of them, one for the horizontal edges and one for
+the vertical.
+
+**A scaled blit has a seam, and tiling made it visible.** Cairo samples
+half a source pixel past the rectangle it fills, and with nothing there
+it fades to transparent: at a ten times enlargement that is five pixels
+of the page showing through between one tile and the next, and between
+a corner and the edge beside it. Each region is now padded with a copy
+of its own edge pixels and scaled with that padding falling outside the
+tile, and every tile of one size is that one image blitted unscaled --
+so a tiled edge repeats exactly, which is what the test asks of it.
+
+**The expectations come from Chromium's own pixels.** `tests/chromium.py
+pixels` rasterizes a page and prints a row of it, and the runs of
+colour this engine paints along a tiled edge now match Chromium's
+exactly on every case in the test: the tile boundaries at 52.5 and 82.5
+where `repeat` centres three tiles in 75 pixels, the three 25px tiles
+`round` fits into the same edge, and `space`'s three five pixel gaps at
+30-34, 65-69 and 100-104.
+
+### Chromium's pixels are readable after all
+
+The full `chrome` binary in this container writes a screenshot whose
+first scanline is correct and whose every other row is blank, which is
+why everything graded in pixels here was graded against a
+specification's own algorithm instead. The Playwright `headless_shell`
+binary beside it rasterizes the whole page. `tests/chromium.py pixels`
+runs that one, decodes the PNG with zlib and the format's own five
+filter types -- no library this project is not allowed -- and prints a
+row as `x:rrggbb`, so a painting question has a browser's answer to be
+graded against.
+
 ### Several background layers on one box
 
 `background-image` takes a comma-separated list, and every other

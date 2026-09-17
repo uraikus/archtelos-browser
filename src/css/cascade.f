@@ -4501,11 +4501,18 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             if l.kind == LEN_PX { s.borderImageOutset = maxInt(roundPx(l.v), 0) }
         }
     }
+    // Two keywords, the first for the top and bottom edges and the
+    // second for the left and right; one keyword says both.
     s.borderImageRepeat = BORDERIMG_STRETCH
+    s.borderImageRepeatY = BORDERIMG_STRETCH
     ascii brep = styleProp(props, 'border-image-repeat')
     if brep != null {
-        ascii t = asciiLower(asciiTrim(brep))
-        if t != 'stretch' { s.borderImageRepeat = BORDERIMG_REPEAT }
+        arr[ascii] rt = cssTokens(brep)
+        if rt.length > 0 {
+            s.borderImageRepeat = borderImageRepeatKeyword(asciiLower(rt[0]))
+            s.borderImageRepeatY = rt.length > 1
+                ? borderImageRepeatKeyword(asciiLower(rt[1])) : s.borderImageRepeat
+        }
     }
     // background-attachment: fixed paints the background against the
     // viewport rather than the document, so it does not scroll.
@@ -5330,4 +5337,13 @@ void func computeStyles(doc:Node) {
 
 text func describeStyle(s:Style) {
     return `display=${s.display} color=${s.color} bg=${s.background} font=${s.fontKey} lh=${s.lineHeight} align=${s.textAlign} deco=${s.textDecoration} ws=${s.whiteSpaceCollapse}/${s.textWrapMode} list=${s.listStyle} m=${resolveLen(s.marginTop, 0, -1)}/${resolveLen(s.marginRight, 0, -1)}/${resolveLen(s.marginBottom, 0, -1)}/${resolveLen(s.marginLeft, 0, -1)} p=${resolveLen(s.paddingTop, 0, -1)}/${resolveLen(s.paddingRight, 0, -1)}/${resolveLen(s.paddingBottom, 0, -1)}/${resolveLen(s.paddingLeft, 0, -1)} b=${s.borderTop}/${s.borderRight}/${s.borderBottom}/${s.borderLeft} w=${s.width.kind}:${s.width.v} h=${s.height.kind}:${s.height.v}`
+}
+
+
+// One border-image-repeat keyword.
+int func borderImageRepeatKeyword(t:ascii) {
+    if t == 'repeat' { return BORDERIMG_REPEAT }
+    if t == 'round' { return BORDERIMG_ROUND }
+    if t == 'space' { return BORDERIMG_SPACE }
+    return BORDERIMG_STRETCH
 }

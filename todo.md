@@ -74,38 +74,33 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    gradients with interpolation hints and every degenerate case,
    `object-fit` and `object-position` are done.
 
-   **Headless Chromium cannot supply pixel ground truth in this
-   container**, which is what anything graded in pixels rather than
-   geometry has to work around: `--screenshot` paints only the first
-   scanline of the page. A plain 40x40 block of flat colour comes back
-   as one row of colour and 39 rows of white, with or without
-   `--virtual-time-budget`, so it is the screenshot pipeline rather than
-   anything about images. `tests/chromium.py` is unaffected because it
-   reads the DOM rather than pixels. `object-fit` and `object-position`
-   were graded against the specification's own sizing algorithm instead,
-   which is exact; `tests/render/objectfit.f` derives every expectation
-   from the intrinsic size and the box and states the derivation beside
-   the check. A radial gradient can be graded the same way.
-5. **Backgrounds and Borders 3, completed**: `border-image-repeat`'s
-   `round` and `space`, which fit the last tile rather than cutting it —
-   **and the scaling they are fitted into, which is a divergence nobody
-   had written down**. §6.5 scales each edge image to the border's
-   thickness before tiling it: the top edge is scaled vertically to the
-   top border width and horizontally by the same factor, and the tiles
-   are laid down at *that* size. This engine tiles the region at its own
-   natural size, so `border-image: url(nine.png) 3 repeat` on a 10px
-   border lays down three 3px tiles and a cut fourth where the standard
-   lays down exactly one 10px tile. The fixture hides it: a 3px region
-   in a 10px border is the one case where the scaled tile fills the edge
-   exactly, so the current test's premise — that a repeated edge shows
-   more of the white column than a stretched one — is a statement about
-   this engine rather than about the standard. Fixing the scaling comes
-   first, then `round` (rescale so a whole number fits) and `space`
-   (whole tiles, the leftover distributed around them) are arithmetic on
-   top of it. There is no Chromium pixel to check any of it against, so
-   the expectations have to be derived from §6.5's own algorithm and the
-   derivation written beside each check, as `tests/render/objectfit.f`
-   does;
+   **Chromium's pixels are ground truth again**, read by
+   `tests/chromium.py pixels`. The full `chrome` binary in this
+   container writes a screenshot whose first scanline is correct and
+   whose every other row is blank -- a 40x40 block of flat colour comes
+   back as one row of colour and 39 of white, whatever
+   `--virtual-time-budget`, `--run-all-compositor-stages-before-draw` or
+   a software rasterizer is asked of it -- but the Playwright
+   `headless_shell` binary beside it rasterizes the whole page, and that
+   is the one the pixel mode runs. `object-fit`, `object-position` and
+   the gradients are still graded against the specifications' own
+   algorithms, which is exact where it applies; what the pixel mode adds
+   is an answer for the questions no algorithm settles on its own, such
+   as where a tiling starts.
+5. **Backgrounds and Borders 3, completed**:
+   **a background image tiled at a size other than its own has the seam
+   §6.5's tiles no longer have**. A scaled blit samples half a source
+   pixel past the rectangle it fills and fades to transparent where
+   there is nothing there, so two scaled tiles laid side by side show a
+   band of whatever is under them between the two: five pixels of it at
+   a ten times enlargement. `paintImageRegion` pads each region with a
+   copy of its own edge pixels and scales that with the padding falling
+   outside the tile, which is what closed the seam in a border image;
+   the background painter still draws `background-size`'s scaled tiles
+   one by one and has the same seam, and the same padding closes it.
+   The check is the one `tests/render/borderimage.f` uses: a tiling has
+   a period, and a row that repeats exactly at the tile's width has no
+   seam in it. Also
    a blurred
    shadow whose falloff is a real Gaussian rather than the accumulated
    alpha of nested rectangles the canvas's lack of a blur forces. A

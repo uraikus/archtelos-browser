@@ -168,8 +168,14 @@ after. Two radii that would overlap on one edge are scaled back
 together, so the shape keeps its proportions.
 
 `border-image` cuts an image into nine regions and lays them round the
-border: the corners at their own size, the edges stretched or tiled
-between them, and the middle only if `fill` asks.
+border: the corners at their own size, the edges between them, and the
+middle only if `fill` asks. Each edge image is scaled to the thickness
+of the border it fills before anything is tiled, so a 3px slice in a
+30px border lays down 30px tiles; `border-image-repeat` then says how
+those tiles fill the edge, with `stretch` pulling one across it,
+`repeat` centring whole tiles and cutting the two ends, `round`
+resizing the tile until a whole number fits, and `space` laying whole
+tiles with the leftover shared out around them.
 `background-origin` chooses the edge a background is placed from and
 `background-clip` the edge it is cut off at — border, padding or
 content — and a tile that runs past that edge is cut off there. `object-fit` and `object-position` size and place a replaced
@@ -326,7 +332,7 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-four unit suites (utilities, HTML, CSS parser,
+The runner covers forty-five unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
