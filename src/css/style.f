@@ -265,10 +265,13 @@ const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
 
 // CSS Overflow 4 §3.3: whether the inline-end gutter is reserved even
-// where nothing overflows. `stable` reserves it; `both-edges` reserves
-// the other side as well and is not implemented (todo.md).
+// where nothing overflows. `stable` reserves it and `both-edges`
+// reserves the inline-start side as well, which is the one value that
+// moves a box's content to the right: nothing else here insets a box
+// from that side.
 const int SCROLLBAR_GUTTER_AUTO = 0
 const int SCROLLBAR_GUTTER_STABLE = 1
+const int SCROLLBAR_GUTTER_BOTH = 2
 
 const int BRK_AUTO = 0
 const int BRK_COLUMN = 1

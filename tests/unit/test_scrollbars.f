@@ -105,6 +105,30 @@ checkEqInt(thinGutter.sbW, 10, 'a stable gutter is as wide as the bar would be')
 Box noneGutter = scrollBox('overflow:auto;scrollbar-gutter:stable;scrollbar-width:none', SMALL)
 checkEqInt(noneGutter.sbW, 0, 'and a bar of no width leaves no gutter')
 
+// `both-edges` reserves the gutter on the other inline side as well, so
+// a 200px box keeps 170 of it rather than 185. Chromium says so, and it
+// is the one value of the three that moves the content's left edge --
+// nothing else in this engine insets a box from the left, which is what
+// made it worth a field of its own rather than a wider `sbW`.
+Box both = scrollBox('overflow:auto;scrollbar-gutter:stable both-edges', SMALL)
+checkEqInt(both.sbW, 15, 'both-edges keeps the inline-end gutter')
+checkEqInt(both.sbLeft, 15, 'and reserves the inline-start one too')
+checkEqInt(both.w - both.sbW - both.sbLeft, 170, 'leaving 170 of the 200')
+check(both.sbLeft != stable.sbLeft, 'which stable alone does not do')
+checkEqInt(stable.sbLeft, 0, 'stable reserves nothing on the near side')
+
+// The content starts after the gutter, which is the whole point of
+// reserving it: a child's left edge moves by exactly the gutter's width.
+Box bothInner = both.children[0]
+Box stableInner = stable.children[0]
+checkEqInt(bothInner.x - stableInner.x, 15, 'and the content begins after it')
+
+// A thin bar leaves two thin gutters, so the pair follows the width
+// rather than being fifteen twice.
+Box bothThin = scrollBox('overflow:auto;scrollbar-gutter:stable both-edges;scrollbar-width:thin', SMALL)
+checkEqInt(bothThin.sbLeft, 10, 'a thin bar leaves a thin near gutter')
+checkEqInt(bothThin.sbW, 10, 'and a thin far one')
+
 // A box that is not a scroll container at all has no gutter to be
 // stable about, which is what keeps the property off every other box.
 cascadeReset()

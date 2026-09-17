@@ -41,6 +41,14 @@ element that declared `thin`, and this follows the browser it is
 measured against and says so rather than leaving the disagreement
 unrecorded.
 
+`scrollbar-gutter: both-edges` reserves the same width again on the side
+no bar is ever drawn on, so the content sits between two equal gutters:
+Chromium answers a 200px box with a client width of 170 rather than 185.
+It is the one value here that moves a box's content to the right --
+nothing else in this engine insets a box from that side -- so it is a
+field of its own on the box rather than a wider bar, added in `contentX`,
+which is the single place a content box's left edge is decided.
+
 The property instrument goes from 211 to 214 of 405, and `--fields`
 says each of the three moved its own field rather than a neighbour's.
 

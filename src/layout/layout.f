@@ -114,6 +114,11 @@ struct Box {
     scrollsY:bool
     sbW:int
     sbH:int
+    // The gutter `scrollbar-gutter: stable both-edges` reserves on the
+    // inline-start side, which no bar is ever drawn in: it is there so
+    // the content sits centred between two equal gutters. contentX adds
+    // it, which is the one place a box's content left edge is decided.
+    sbLeft:int
     scrollW:int
     scrollH:int
     // The min-content width of the contents alone, before a declared
@@ -1207,7 +1212,7 @@ int func contentWidth(b:Box) {
 }
 
 int func contentX(b:Box) {
-    return b.x + b.bl + b.pl
+    return b.x + b.bl + b.pl + b.sbLeft
 }
 
 int func contentY(b:Box) {
@@ -1484,7 +1489,7 @@ int func boxScrollTop(b:Box) {
 // one bar, the other, or both.
 int func boxScrollLeftRange(b:Box) {
     if !b.scrollsX { return 0 }
-    int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW, 1)
+    int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW - b.sbLeft, 1)
     return maxInt(b.scrollW - visible, 0)
 }
 
@@ -1872,11 +1877,16 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // It is the inline axis's gutter only: Chromium answers an
     // `overflow: auto` box with a client width of 185 and a client
     // height of 100, where without it both are the full box.
-    if b.sbW == 0 && s.scrollbarGutter == SCROLLBAR_GUTTER_STABLE
+    if b.sbW == 0 && s.scrollbarGutter != SCROLLBAR_GUTTER_AUTO
         && s.overflowY == OVERFLOW_AUTO {
         b.sbW = sbPx
     }
-    width = maxInt(width - b.sbW, 0)
+    // `both-edges` reserves the same width again on the side no bar is
+    // drawn on, so the content sits between two equal gutters: Chromium
+    // answers a 200px box with a client width of 170 rather than 185.
+    bool scrollsOnY = s.overflowY == OVERFLOW_SCROLL || s.overflowY == OVERFLOW_AUTO
+    b.sbLeft = s.scrollbarGutter == SCROLLBAR_GUTTER_BOTH && scrollsOnY ? sbPx : 0
+    width = maxInt(width - b.sbW - b.sbLeft, 0)
 
     // children, with this box standing as their containing block: a
     // percentage height among them is a percentage of the height

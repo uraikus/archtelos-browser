@@ -3956,14 +3956,15 @@ int func scrollbarWidthKeyword(v:ascii) {
     return SCROLLBAR_AUTO
 }
 
-// CSS Overflow 4 §3.3. `both-edges` is read and dropped to `stable`,
-// because reserving the other side means insetting the content box on
-// the side nothing else insets it from (todo.md).
+// CSS Overflow 4 §3.3. `both-edges` is only meaningful beside `stable`,
+// which is what the grammar says: the keyword on its own is not a value.
 int func scrollbarGutterKeyword(v:ascii) {
     if v == null { return SCROLLBAR_GUTTER_AUTO }
     arr[ascii] t = cssTokens(v)
     if t.length == 0 { return SCROLLBAR_GUTTER_AUTO }
-    return asciiLower(t[0]) == 'stable' ? SCROLLBAR_GUTTER_STABLE : SCROLLBAR_GUTTER_AUTO
+    if asciiLower(t[0]) != 'stable' { return SCROLLBAR_GUTTER_AUTO }
+    if t.length > 1 && asciiLower(t[1]) == 'both-edges' { return SCROLLBAR_GUTTER_BOTH }
+    return SCROLLBAR_GUTTER_STABLE
 }
 
 // `scrollbar-color` is one colour for the thumb and one for the track,

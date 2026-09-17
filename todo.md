@@ -153,15 +153,6 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    corners; what it costs is memory, one image per distinct shadow
    rather than two ramps.
 
-   **`scrollbar-gutter: both-edges`** reserves the gutter on both
-   inline sides, and only `stable` is implemented. The other side means
-   insetting the content box from the left, which nothing else does:
-   `contentX` is `b.x + b.bl + b.pl` everywhere, and a left gutter would
-   have to be added there and taken out of the width, in both of the
-   places the width is settled. Chromium answers `stable both-edges` on
-   a 200px box with a client width of 170, so the check is already
-   written down.
-
    A single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, as many layers deep as
    a page asks for, and so is every border
