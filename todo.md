@@ -67,12 +67,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    items against the near edge where the standard packs them against the
    far one. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
-3. **`::first-line`**. `::first-letter` is done, and `::before` and
-   `::after` generate boxes from strings, `attr()`, `counter()`,
-   `counters()`, the four quote keywords and `url()`. `::first-line` is
-   the harder one: the line it names does not exist until line breaking
-   has run, so restyling it means breaking the line twice or
-   re-breaking after the style changes the metrics.
+3. **The pseudo-elements this does not have.** `::before`, `::after`,
+   `::first-letter` and `::first-line` are done; `::marker`,
+   `::selection`, `::placeholder`, `::backdrop` and `::target-text` are
+   not. Two limits of `::first-line` are worth naming rather than
+   leaving to be discovered: the restricted property set the standard
+   defines for it is not enforced, so a declaration the standard would
+   ignore there is applied instead (none of the ones that would matter
+   reach a text box, but the engine does not know that), and a rule that
+   changes the line's metrics re-measures the words on the line rather
+   than re-running the line breaker, so a word that no longer fits moves
+   to the second line without the first line being broken again.
 
    None of this is gradeable by the selector instrument -- a
    pseudo-element selects part of an element rather than an element, so

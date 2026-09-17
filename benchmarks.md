@@ -69,7 +69,7 @@ encoding. `tests/bench.sh` gives both engines 800x600.
 Chromium takes **471 ms** to screenshot a one-line page at 800x600, and
 this browser takes **38 ms**. That difference is process start-up — a
 browser engine bringing up a multi-process architecture, a JavaScript
-engine, a compositor and a network stack, against a 2.6 MB native binary
+engine, a compositor and a network stack, against a 2.8 MB native binary
 that opens a Cairo surface. It is real if what you want is a screenshot
 from a shell script, and it says nothing about rendering speed.
 
@@ -655,29 +655,29 @@ It is not a claim that the engine is frugal with what it does build.
 
 | | |
 |---|---|
-| Source | 23,281 lines of Festina across `browser.f` and `src/` |
-| Compile | 11.6 s, whole program, no incremental build |
-| Binary | 2.6 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
+| Source | 26,586 lines of Festina across `browser.f` and `src/` |
+| Compile | 14.2 s, whole program, no incremental build |
+| Binary | 2.8 MB, linking Cairo, X11, libjpeg, mbedTLS and libc |
 
 Against Chromium, whose binary this browser is compared with everywhere
 else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,737,648 |
-| This browser, all `.f` source | 899,340 |
+| This browser, the whole program | 2,814,744 |
+| This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
 
-**The binary is about 171 times smaller than Chromium's executable
-alone**, and 233 times smaller than the tree it ships in. The comparison
+**The binary is about 165 times smaller than Chromium's executable
+alone**, and 222 times smaller than the tree it ships in. The comparison
 flatters this browser and should be read with that in mind: what is
-absent from the 2.6 MB — a JavaScript engine, a compositor, a sandbox,
+absent from the 2.8 MB — a JavaScript engine, a compositor, a sandbox,
 a network stack, an extension system, ICU — is most of what is in the
 463 MB. The figure is a fair measure of *this* program's size and a poor
 measure of how much cheaper a browser could be.
 
-Of that 11.6 s, **3.4 s is the single generated map literal** holding the
+Of that 14.2 s, **3.4 s is the single generated map literal** holding the
 standard's 2,231 named character references: a one-line program compiles
 in 0.55 s, and the same program importing only that table takes 3.96 s.
 The table is the right data structure — it looks up in constant time and
@@ -971,3 +971,27 @@ with this one in the same minutes, gives 100, 102, 102 and 112 ms
 against this one's 99, 101, 101 and 103 — two series that overlap, with
 the higher reading on the side that does not have the feature.
 
+
+`::first-line` costs **5,336 bytes** (2,809,408 → 2,814,744) and nothing
+measurable to a page that does not name it. The two places it could have
+cost something are the hottest in the engine — `appendWord`, once per
+word on every line, and `computeStylesFrom`, once per element — and both
+reach it through a boolean that is false unless a rule somewhere said
+`::first-line`.
+
+Rebuilt and sampled alternately with the revision before it, in the same
+minutes on the same machine, fifteen paired samples of `generated.html`
+give
+
+```
+before: 108 104 104 105 106 104 106 112 129 109 140 106 105 109 105
+after:  106 104 105 105 107 106 108 110 106 108 107 106 107 111 105
+```
+
+— the same best of 104 on each side, and the two readings over 120 both
+on the side that does not have the feature. An earlier pair of best-of-7
+runs read 102 against 104 and would have been reported as a 2 ms
+regression; the wider sample is what shows that to be the machine.
+
+The run's own control qualified at 7.7%: Chromium renders
+`generated.html` in 24.0 ms against the 26.0 recorded here.

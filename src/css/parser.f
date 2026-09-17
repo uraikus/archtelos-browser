@@ -60,7 +60,7 @@ struct Compound {
     classes:arr[text]
     attrs:arr[AttrSel]
     pseudos:arr[text]       // e.g. 'first-child', 'nth-child:2:1'
-    pseudoElement:text      // '' = none; 'before' or 'after'
+    pseudoElement:text      // '' = none; 'before', 'after', 'first-letter', 'first-line'
     // The functional pseudo-classes that take a selector list of their
     // own: `:not()`, `:is()`, `:where()` and `:has()`. One list serves
     // all four because they differ only in how a match is read, which
@@ -723,16 +723,13 @@ Compound func parseCompound() {
             int end = scanIdent(start)
             ascii name = asciiLower(selSrc.slice(start, end))
             selPos = end
-            // `::before`, `::after` and `::first-letter`, and the
-            // one-colon spellings CSS2 used, name a box other than this
-            // element's own. `::first-line` still makes the rule
-            // unusable rather than silently matching the element,
-            // because restyling a line that only exists after line
-            // breaking is not something this engine can do yet.
+            // `::before`, `::after`, `::first-letter` and
+            // `::first-line`, and the one-colon spellings CSS2 used,
+            // name a box other than this element's own.
             bool isElementPseudo = name == 'before' || name == 'after'
                 || name == 'first-line' || name == 'first-letter'
             if doubleColon || isElementPseudo {
-                if name == 'before' || name == 'after' || name == 'first-letter' {
+                if isElementPseudo {
                     comp.pseudoElement = name.toText()
                 } else {
                     comp.unsupported = true

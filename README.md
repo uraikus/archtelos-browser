@@ -7,7 +7,7 @@ The project has two purposes, equally weighted: render real pages
 correctly, and keep finding the places where Festina is insufficient.
 The renderer is real — its own HTML tokenizer and tree builder, a CSS
 parser and cascade, block, inline and table layout, painting on
-Festina's canvas, and an HTTP(S) client — all in one 2.6 MB native
+Festina's canvas, and an HTTP(S) client — all in one 2.8 MB native
 binary that links nothing Festina does not already link. What building
 it reveals about the language is in [FINDINGS.md](FINDINGS.md), and what
 Festina should gain as a result is in [festina.md](festina.md).
@@ -266,8 +266,18 @@ its quotation marks.
 block on its own, taking any punctuation in front of it along, skipping
 leading whitespace, and finding the letter inside a nested inline. Only
 the first of the block, not the first of every descendant.
-`::first-line` still makes its rule unusable rather than matching the
-element, and a counter always renders in decimal.
+
+**`::first-line`** styles whichever characters end up on the first line,
+which is not known until the line has been broken. The standard
+describes it as a fictional element wrapped around them, and that is
+what the cascade computes: each inline inside the block gets the style
+it would have with that element as its parent, so a bold span on a red
+first line is bold and red and stays bold and black on the second. It
+changes the line's own metrics as well as its colours — a first line
+with a bigger font is taller and holds fewer words — and where a block's
+inline content sits in an anonymous box, beside block-level siblings,
+the rule belongs to the first of those boxes and to no other. A counter
+always renders in decimal.
 
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
@@ -335,7 +345,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-23,281 lines of Festina in `src/` and `browser.f`.
+26,586 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -395,7 +405,7 @@ Against headless Chromium on the same pages —
 | Parse, style and lay out 51 KB | 101 ms | 26.0 ms |
 | Parse 51 KB of HTML | 8 ms | 2.0–3.9 ms |
 | Peak memory, 51 KB page | 18.0 MB | 194.5 MB |
-| Binary | 2.6 MB | 463 MB |
+| Binary | 2.8 MB | 463 MB |
 | Screenshot a one-line page | 38 ms | 471 ms |
 
 **Chromium renders about four times faster.** The first row is

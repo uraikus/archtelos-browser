@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `::first-line`
+
+The pseudo-element restyles whichever characters end up on the first
+line of a block (CSS Pseudo-Elements 4 §3.2), metrics included: on a
+200px paragraph of ten words at 16px/20px monospace,
+`font-size: 40px; line-height: 50px` gives Chromium a paragraph 90px
+tall -- a 50px first line and two 20px ones -- against 60 for the same
+paragraph with no rule, and this engine now agrees.
+
+The standard describes the rule as a fictional element wrapped around
+the line's characters, and taking that literally is what made the
+descendants work: after the subtree has its ordinary styles, the cascade
+walks it a second time with that fictional element as the root's parent,
+so a bold span on a red first line computes to bold and red and the same
+span on the second line stays bold and black. The style cache keys on
+the parent's serial, so the second walk shares nothing with the first by
+accident.
+
+**The line's fragments carry the style by pointing at a stand-in box.**
+The alternative was a style field on `Fragment` and a test at each of
+the eight places that ask a fragment for its box's style -- three in the
+line metrics, three in hit testing, two in the painter. A stand-in box
+built once per text box, holding the first-line style and the same node,
+needed none of those: every reader already asks the box. What it does
+need is that measurement follow the line, because a word measured in the
+first line's font may not fit and then belongs to the second in the
+element's own -- so the word is measured again after the break.
+
+Where a block has both inline and block-level children its inline runs
+sit in anonymous boxes, and the rule belongs to the first of them and to
+no other. Chromium gives such a div 110px -- 50 for the styled first
+line, then 20, 20 and 20 -- and 80 with no rule.
+
+`::first-line` had been making its whole rule unusable in the selector
+parser, which is where this started.
+
 ### Subgrid
 
 A grid item that is itself a grid can take its tracks from the lines of

@@ -130,4 +130,135 @@ checkEqInt(texts[0].x, 0, 'the generated text starts the line')
 check(texts[1].x > 0, 'and the element text follows it')
 checkEqInt(texts[1].x, texts[0].x + texts[0].w, 'exactly where the generated text ends')
 
+// ---- ::first-line -----------------------------------------------------
+// ::first-line restyles whichever characters end up on the first line
+// of a block, which is not known until the line has been broken
+// (CSS Pseudo-Elements 4 §3.2). Chromium's numbers for a 200px
+// paragraph of ten words at 16px/20px monospace:
+//
+//   p, no pseudo                                  h 60   three lines
+//   p, ::first-line font-size:40px line-height:50px  h 90   50 + 20 + 20
+//   p, ::first-line color:#ff0000                 h 60   unchanged
+//
+// The line counts below are this engine's own metrics rather than
+// Chromium's, so what is checked is the first line's height, the styles
+// the fragments wear, and that a colour-only rule leaves the geometry
+// exactly as the plain paragraph's.
+text flStyles = '<style>p{width:200px;margin:0}'
+    + '#f1::first-line { font-size: 40px; line-height: 50px }'
+    + '#f2::first-line { color: #ff0000 }'
+    + '</style>'
+text flText = 'one two three four five six seven eight nine ten'
+Page pf = pageFromHtml(head + flStyles
+    + `<p id="f1">${flText}</p><p id="f0">${flText}</p><p id="f2">${flText}</p></body>`,
+    'about:blank', 400)
+Box f0 = pById(pf.root, 'f0')
+Box f1 = pById(pf.root, 'f1')
+Box f2 = pById(pf.root, 'f2')
+check(f0 != null && f1 != null && f2 != null, 'the three paragraphs have boxes')
+
+// The first text fragment of a line, which is what ::first-line dresses.
+Fragment func firstText(b:Box, line:int) {
+    if b == null || b.lines.length <= line { return null }
+    Line l = b.lines[line]
+    for int i = 0, i < l.frags.length, i++ {
+        if l.frags[i].kind == FRAG_TEXT { return l.frags[i] }
+    }
+    return null
+}
+
+checkEqInt(f0.lines[0].h, 20, 'the plain paragraph takes its own line-height')
+check(f0.lines.length >= 3, 'and wraps onto three lines')
+checkEqInt(f0.h, f0.lines.length * 20, 'its height is that many lines')
+
+// The metric case: the first line is as tall as ::first-line asked.
+checkEqInt(f1.lines[0].h, 50, 'the first line takes the pseudo-element line-height')
+check(f1.lines.length >= 2, 'the paragraph still wraps')
+checkEqInt(f1.lines[1].h, 20, 'and the second line is back to the element line-height')
+checkEqInt(f1.h, 50 + (f1.lines.length - 1) * 20, 'the height is the first line plus the rest')
+check(f1.h > f0.h, 'a bigger first line makes a taller paragraph')
+
+Fragment t10 = firstText(f1, 0)
+Fragment t11 = firstText(f1, 1)
+check(t10 != null && t11 != null, 'both lines carry text')
+checkEqInt(t10.box.style.fontSize, 40, 'the first line is set in the pseudo-element font size')
+checkEqInt(t11.box.style.fontSize, 16, 'the second line is set in the element font size')
+check(t10.w < f0.lines[0].w, 'fewer characters fit on the bigger first line')
+
+// The paint-only case: a colour changes nothing about the geometry.
+checkEqInt(f2.h, f0.h, 'a colour-only ::first-line leaves the height alone')
+checkEqInt(f2.lines.length, f0.lines.length, 'and the line count')
+Fragment t20 = firstText(f2, 0)
+Fragment t21 = firstText(f2, 1)
+check(t20 != null && t21 != null, 'both lines carry text')
+checkEqInt(t20.box.style.color, packColor(255, 0, 0, 255), 'the first line takes the colour')
+checkEqInt(t21.box.style.color, packColor(0, 0, 0, 255), 'the second line does not')
+checkEq(t20.content, firstText(f0, 0).content, 'and the same words fall on it')
+checkEqInt(t20.w, firstText(f0, 0).w, 'at the same width')
+
+// The characters that move to the second line move with it: the first
+// line holds strictly less text than the paragraph does.
+check(t10.content != t20.content, 'the bigger first line breaks in a different place')
+
+// ---- ::first-line reaches into the inline boxes on the line ----------
+// The standard describes the rule as a fictional element wrapped around
+// the line's characters, so an inline inside inherits from it and still
+// wins with its own declarations. A bold span on a red first line is
+// bold and red; on the second line it is bold and black.
+Page pn = pageFromHtml(head
+    + '<style>p{width:200px;margin:0}'
+    + '#n1::first-line { color: #ff0000; font-size: 24px }'
+    + '#n1 b { font-weight: bold }</style>'
+    + '<p id="n1">one two <b>three four five six seven eight nine ten</b></p></body>',
+    'about:blank', 400)
+Box n1 = pById(pn.root, 'n1')
+check(n1 != null && n1.lines.length >= 2, 'the paragraph wraps')
+// The bold run's fragments on each line, which is what the rule dresses.
+Fragment b0 = null
+for int i = 0, i < n1.lines[0].frags.length, i++ {
+    Fragment f = n1.lines[0].frags[i]
+    if f.kind == FRAG_TEXT && f.box.style.fontBold { b0 = f }
+}
+Fragment b1 = null
+for int i = 0, i < n1.lines[1].frags.length, i++ {
+    Fragment f = n1.lines[1].frags[i]
+    if f.kind == FRAG_TEXT && f.box.style.fontBold { b1 = f }
+}
+check(b0 != null, 'the bold run reaches the first line')
+check(b1 != null, 'and continues onto the second')
+checkEqInt(b0.box.style.color, packColor(255, 0, 0, 255), 'the bold run takes the first line colour')
+checkEqInt(b0.box.style.fontSize, 24, 'and the first line font size')
+checkEqInt(b1.box.style.color, packColor(0, 0, 0, 255), 'the second line keeps the element colour')
+checkEqInt(b1.box.style.fontSize, 16, 'and the element font size')
+checkEqInt(b0.box.node.id, b1.box.node.id, 'both are the same element')
+
+// ---- the first line of a block whose inline content is anonymous -----
+// A block with both inline and block-level children holds its inline
+// runs in anonymous boxes. The rule belongs to the first of them and to
+// no other: Chromium gives this div h=110 -- 50 for the styled first
+// line, 20 for the rest of the run before the paragraph, 20 for the
+// paragraph and 20 for the run after it -- against h=80 for the same
+// markup with no rule, where the second run is not restyled either.
+Page pa = pageFromHtml(head
+    + '<style>div{width:200px;margin:0}p{margin:0}'
+    + '#a1::first-line { font-size: 40px; line-height: 50px }</style>'
+    + '<div id="a1">one two three four five six<p>block</p>seven eight nine ten</div>'
+    + '<div id="a0">one two three four five six<p>block</p>seven eight nine ten</div></body>',
+    'about:blank', 400)
+arr[Box] divs = []
+collectBoxesForTag(pa.root, 'div', divs)
+Box a1 = null
+Box a0 = null
+for int i = 0, i < divs.length, i++ {
+    if getAttr(divs[i].node, 'id') == 'a1' { a1 = divs[i] }
+    if getAttr(divs[i].node, 'id') == 'a0' { a0 = divs[i] }
+}
+check(a1 != null && a0 != null, 'both divs have boxes')
+checkEqInt(a1.h, a0.h + 30, 'only the first line grows, by the 50px line less the 20px one')
+// The anonymous runs themselves: the first carries the rule, the second
+// does not.
+check(a1.children.length >= 3, 'the div has two anonymous runs and the paragraph')
+checkEqInt(a1.children[0].lines[0].h, 50, 'the first run takes the pseudo-element line-height')
+checkEqInt(a1.children[2].lines[0].h, 20, 'the run after the paragraph does not')
+
 finish('pseudo')

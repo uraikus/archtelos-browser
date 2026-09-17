@@ -2194,6 +2194,60 @@ int ifcLineCount = 0
 arr[Box] ifcOpenInlines = []
 arr[Fragment] ifcOpenBg = []      // the current line's background fragment of each open inline
 bool ifcHardBreak = false         // the line being closed ends at a break the content asked for
+// Whether the block being laid out has a ::first-line rule. False on
+// every page that names no such rule, which is what keeps the lookup
+// below off the hot path.
+bool ifcFirstLine = false
+// The element whose ::first-line rule is in force. It is the block
+// being laid out, except where that block's inline content sits in an
+// anonymous box -- a block with both inline and block-level children --
+// and the rule belongs to the element the anonymous box stands in for.
+Box ifcFirstLineBlock = null
+// The stand-in boxes the first line's fragments point at, by the id of
+// the box they stand for. A fragment carries a Box and every reader --
+// the line metrics, the painter, hit testing -- asks it for a style, so
+// giving the first line its own boxes restyles it everywhere at once
+// without a second field on Fragment or a test in any of those loops.
+map[Box] firstLineBoxes = {}
+
+// The style this box wears right now: the ::first-line variant while
+// the first line of such a block is being filled, and its own style
+// otherwise. One boolean rules the whole thing out on a page that names
+// no ::first-line.
+Style func firstLineStyleFor(b:Box) {
+    if !ifcFirstLine || ifcLineCount != 0 { return b.style }
+    if b.node == null || b.node.id <= 0 { return b.style }
+    Style fls = firstLineStyles[`${b.node.id}`]
+    return fls == null ? b.style : fls
+}
+
+// The style the line box itself takes: the ::first-line rule sets the
+// strut of the first line, so a rule that only shrinks the line height
+// is obeyed as well as one that grows it.
+Style func firstLineStrutStyle() {
+    if !ifcFirstLine || ifcLineCount != 0 { return ifcBox.style }
+    Style fls = firstLineStyles[`${ifcFirstLineBlock.node.id}`]
+    return fls == null ? ifcBox.style : fls
+}
+
+// The box a fragment placed right now should point at: a stand-in
+// carrying the first-line style, or the box itself.
+Box func firstLineBoxFor(b:Box) {
+    Style fls = firstLineStyleFor(b)
+    // Two Styles are compared by serial: one struct value against
+    // another does not compile (FINDINGS.md, finding 37), and every
+    // computed style carries a serial for exactly this.
+    if fls.serial == b.style.serial { return b }
+    text key = `${b.id}`
+    Box cached = firstLineBoxes[key]
+    if cached != null { return cached }
+    Box fb = newBox(b.kind, b.node, fls)
+    fb.content = b.content
+    fb.parentId = b.parentId
+    fb.depth = b.depth
+    firstLineBoxes[key] = fb
+    return fb
+}
 
 int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     Box savedBox = ifcBox
@@ -2207,6 +2261,20 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     int savedCount = ifcLineCount
     arr[Box] savedOpen = ifcOpenInlines
     arr[Fragment] savedOpenBg = ifcOpenBg
+    bool savedFirstLine = ifcFirstLine
+    Box savedFirstLineBlock = ifcFirstLineBlock
+
+    // An anonymous box holds the inline content of a block that also
+    // has block-level children, and the first of those anonymous boxes
+    // carries that block's first line.
+    ifcFirstLineBlock = b
+    if anyFirstLine && b.kind == BOX_ANON && b.parentId > 0 {
+        Box par = parentBox(b)
+        if par.children.length > 0 && par.children[0].id == b.id { ifcFirstLineBlock = par }
+    }
+    ifcFirstLine = anyFirstLine && ifcFirstLineBlock.node != null
+        && ifcFirstLineBlock.node.id > 0
+        && pseudoHasFirstLine[pseudoKey(ifcFirstLineBlock.node.id, 'first-line')] != null
 
     ifcBox = b
     b.lines = []
@@ -2240,6 +2308,8 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     ifcLineCount = savedCount
     ifcOpenInlines = savedOpen
     ifcOpenBg = savedOpenBg
+    ifcFirstLine = savedFirstLine
+    ifcFirstLineBlock = savedFirstLineBlock
     return h
 }
 
@@ -2393,10 +2463,14 @@ void func finishLineUncounted(forced:bool) {
     int strutAbove = 0
     int strutBelow = 0
     {
-        int lh = lineHeightOf(bs)
-        int content = fontAscent(bs) + fontDescent(bs)
+        // The strut of the first line is the ::first-line style's, so a
+        // rule that only shrinks the line height is obeyed as well as
+        // one that grows it.
+        Style ss = firstLineStrutStyle()
+        int lh = lineHeightOf(ss)
+        int content = fontAscent(ss) + fontDescent(ss)
         int half = Math.floorDiv(lh - content, 2)
-        strutAbove = half + fontAscent(bs)
+        strutAbove = half + fontAscent(ss)
         strutBelow = lh - strutAbove
     }
     if any || forced {
@@ -2654,7 +2728,7 @@ void func placeText(b:Box) {
 }
 
 void func placeTextUncounted(b:Box) {
-    Style s = b.style
+    Style s = firstLineStyleFor(b)
     text t = b.content
     if t == null || t == '' { return }
     bool keepBreaks = wsKeepsBreaks(s)
@@ -2695,6 +2769,14 @@ void func placeTextUncounted(b:Box) {
         if ifcLineHasContent && ifcX + needed > ifcLineRight && !nowrap {
             breakLine()
             spaceBefore = false
+            // The word has left the first line, so it is no longer
+            // wearing ::first-line's font: measure it again in the one
+            // it will actually be set in.
+            if ifcFirstLine {
+                s = firstLineStyleFor(b)
+                sw = spaceWidth(s)
+                ww = measureWidth(s, w)
+            }
         }
         if spaceBefore { ifcX = ifcX + spaceW }
         ifcPendingSpace = false
@@ -2714,14 +2796,20 @@ void func placeTextUncounted(b:Box) {
     }
 }
 
-void func placeWrappedWords(b:Box, words:arr[text], sw:int) {
-    Style s = b.style
+void func placeWrappedWords(b:Box, words:arr[text], swIn:int) {
+    Style s = firstLineStyleFor(b)
+    int sw = swIn
     for int i = 0, i < words.length, i++ {
         text w = words[i]
         int ww = w == '' ? 0 : measureWidth(s, w)
         int needed = ww + (i > 0 ? sw : 0)
         if ifcLineHasContent && ifcX + needed > ifcLineRight {
             breakLine()
+            if ifcFirstLine {
+                s = firstLineStyleFor(b)
+                sw = spaceWidth(s)
+                ww = w == '' ? 0 : measureWidth(s, w)
+            }
             needed = ww
         } else if i > 0 {
             ifcX = ifcX + sw
@@ -2774,9 +2862,10 @@ text func hyphenStringOf(s:Style) {
 }
 
 void func placeSoftHyphenated(b:Box, w:text) {
-    Style s = b.style
+    Style s = firstLineStyleFor(b)
     text pending = w
     while true {
+        if ifcFirstLine { s = firstLineStyleFor(b) }
         text plain = stripSoftHyphens(pending)
         int plainW = measureWidth(s, plain)
         if ifcX + plainW <= ifcLineRight || s.hyphensNone {
@@ -2827,18 +2916,27 @@ bool func wordMustBreak(s:Style, ww:int) {
 // run back into one fragment per line, so only the break position is
 // affected.
 void func placeWordInPieces(b:Box, w:text) {
-    Style s = b.style
+    Style s = firstLineStyleFor(b)
     arr[text] chars = w.split('')
     for int i = 0, i < chars.length, i++ {
         int cw = measureWidth(s, chars[i])
-        if ifcLineHasContent && ifcX + cw > ifcLineRight { breakLine() }
+        if ifcLineHasContent && ifcX + cw > ifcLineRight {
+            breakLine()
+            if ifcFirstLine {
+                s = firstLineStyleFor(b)
+                cw = measureWidth(s, chars[i])
+            }
+        }
         appendWord(b, chars[i], cw)
     }
 }
 
 // Adds a word to the line, merging with a preceding run of the same
 // text box (separated by the space already advanced over).
-void func appendWord(b:Box, w:text, ww:int) {
+void func appendWord(bIn:Box, w:text, ww:int) {
+    // One boolean on the hottest path in inline layout: a page that
+    // names no ::first-line never reaches the lookup.
+    Box b = ifcFirstLine ? firstLineBoxFor(bIn) : bIn
     if ifcFrags.length > 0 {
         Fragment last = ifcFrags[ifcFrags.length - 1]
         if last.kind == FRAG_TEXT && last.box.id == b.id && last.x + last.w <= ifcX {
@@ -4888,6 +4986,8 @@ Box func layoutDocument(doc:Node, width:int) {
 Box func layoutDocumentOnce(doc:Node, width:int) {
     nextBoxId = 1
     boxRegistry = [null]
+    // The stand-in boxes are keyed by box id, which starts again here.
+    firstLineBoxes = {}
     // One float list for the document. Properly a float belongs to its
     // block formatting context and cannot escape it, but nothing here
     // establishes one yet (todo.md); what matters for now is that a

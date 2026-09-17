@@ -74,10 +74,20 @@ bool anyPseudoRules = false
 // measured at 8 ms on the 51 KB benchmark page, which has no <q>.
 map[bool] pseudoTagSet = {}
 bool pseudoNonTag = false
-// Which elements have a ::first-letter style, and whether any rule
-// anywhere asks for one at all.
+// Which elements have a ::first-letter or a ::first-line style, and
+// whether any rule anywhere asks for one at all.
 map[bool] pseudoHasFirstLetter = {}
+map[bool] pseudoHasFirstLine = {}
 bool anyFirstLetter = false
+// Whether any rule on the page names ::first-line. A page that does not
+// pays one boolean per element and nothing else.
+bool anyFirstLine = false
+// The style each node in a ::first-line block's inline subtree wears
+// while it is on the first line, keyed by node id. The standard
+// describes ::first-line as a fictional tag wrapped around the line's
+// characters, so a descendant's first-line style is what it computes to
+// with that fictional element as its parent -- which is this walk.
+map[Style] firstLineStyles = {}
 // Whether any computed style anywhere asked for a background image by
 // url(). A page with none never walks the document looking for them.
 bool anyBackgroundUrl = false
@@ -156,7 +166,10 @@ void func cascadeReset() {
     pseudoTagSet = {}
     pseudoNonTag = false
     pseudoHasFirstLetter = {}
+    pseudoHasFirstLine = {}
     anyFirstLetter = false
+    anyFirstLine = false
+    firstLineStyles = {}
     anyBackgroundUrl = false
     anyCounters = false
     anyQuotes = false
@@ -213,6 +226,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                 anyPseudoRules = true
                 text pk = selectorKey(sel)
                 if sel.pseudoElement == 'first-letter' { anyFirstLetter = true }
+                if sel.pseudoElement == 'first-line' { anyFirstLine = true }
                 if pk == '*' || pk.charCodeAt(0) == CH_HASH || pk.charCodeAt(0) == CH_DOT {
                     pseudoNonTag = true
                 } else {
@@ -1382,6 +1396,62 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
 }
 
+// ::first-line restyles the characters that fall on the first line,
+// which is not known until the line has been broken -- so what is kept
+// here is the style, and the layout decides who wears it.
+void func computeFirstLineFor(n:Node, own:Style) {
+    arr[Match] matches = collectPseudoMatches(n, 'first-line')
+    if matches.length == 0 { return }
+    map[text] props = {}
+    cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    for int i = 0, i < matches.length, i++ {
+        applyDecl(props, matches[i].decl.name, matches[i].decl.value)
+    }
+    pseudoStyles[pseudoKey(n.id, 'first-line')] = computeStyleValues(n, own, false, props)
+    pseudoHasFirstLine[pseudoKey(n.id, 'first-line')] = true
+}
+
+// Gives every node in `n`'s inline subtree the style it wears while it
+// is on the first line: what it computes to under the fictional
+// ::first-line element, which is `parent` here. A block-level
+// descendant starts a first line of its own, so the walk stops there
+// rather than dressing its content in this block's rule.
+//
+// Runs after the subtree has its ordinary styles, because the stop
+// condition is a computed display. The style cache keys on the parent's
+// serial, so the second walk shares nothing with the first by accident
+// and computes each descendant once.
+void func computeFirstLineSubtree(n:Node, parent:Style) {
+    for int i = 0, i < n.children.length, i++ {
+        Node c = n.children[i]
+        if c.kind == NODE_TEXT {
+            firstLineStyles[`${c.id}`] = parent
+            continue
+        }
+        if c.kind != NODE_ELEMENT || c.style == null { continue }
+        // Only a non-replaced inline is part of the line. A block-level
+        // child begins a first line of its own, and an atomic inline --
+        // an inline-block, say -- lays its content out on its own lines,
+        // which this rule does not reach either.
+        int d = c.style.display
+        if d != DISPLAY_INLINE && d != DISPLAY_CONTENTS { continue }
+        Style s = computeStyle(c, parent, false)
+        firstLineStyles[`${c.id}`] = s
+        computeFirstLineSubtree(c, s)
+    }
+}
+
+void func computeFirstLineStyles(n:Node) {
+    if !anyFirstLine { return }
+    if n.id <= 0 { return }
+    if pseudoHasFirstLine[pseudoKey(n.id, 'first-line')] == null { return }
+    Style ps = pseudoStyleOf(n.id, 'first-line')
+    // The block itself wears it too, which is what gives the first line
+    // its strut when the rule only sets a line height.
+    firstLineStyles[`${n.id}`] = ps
+    computeFirstLineSubtree(n, ps)
+}
+
 void func computePseudoElements(n:Node, own:Style) {
     if !anyPseudoRules { return }
     // One map lookup rules out every element no pseudo rule names,
@@ -1391,6 +1461,7 @@ void func computePseudoElements(n:Node, own:Style) {
     computePseudoFor(n, own, 'before')
     computePseudoFor(n, own, 'after')
     if anyFirstLetter { computeFirstLetterFor(n, own) }
+    if anyFirstLine { computeFirstLineFor(n, own) }
 }
 
 // A style attribute holding non-ASCII (a font name, say): rewrite the
@@ -5377,6 +5448,10 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
         computeStylesFrom(n.children[i], s, false)
     }
     styleDepth--
+    // The first-line variants need the subtree's ordinary styles, so
+    // they are computed on the way back up. A page with no ::first-line
+    // rule pays one boolean here.
+    if anyFirstLine { computeFirstLineStyles(n) }
     // An instance created by a child is in scope for that child's
     // following siblings, so it lives until the children are done.
     if anyCounters {
