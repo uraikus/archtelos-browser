@@ -233,4 +233,49 @@ Box inlineBlockW = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
 check(findBox(inlineBlockW, 'div').w > pDiv.w + 100,
       'the same width on an inline-block does widen it')
 
+// ---- a percentage height resolves against a definite one (CSS2 §10.5) --
+// A percentage height is a percentage of the containing block's own
+// content height, and computes to `auto` where that height is not
+// itself definite -- which is what makes `height: 100%` do nothing
+// inside a box that is as tall as its content.
+//
+// Chromium 141 on these, all 200px wide:
+//
+//   parent 100 tall, child 50%                       50
+//   parent with no height, child 50%                 the content, 20
+//   parent 100, child 50%, grandchild 50%            50 then 25
+//   parent 100 with 10 of padding, child 50%         50 -- of the content
+//                                                    height, not the border box
+//   the same parent in `border-box`, child 50%       40, the content being 80
+//   parent 100, child 100% in `border-box` with
+//     5 of padding and a 2 border                    100
+Box func pctChild(parentStyle:text, childStyle:text) {
+    Box root = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+        + '<div style="width:200px;' + parentStyle + '">'
+        + '<p style="margin:0;' + childStyle + '">x</p></div></body>', 400)
+    return findBox(root, 'p')
+}
+
+checkEqInt(pctChild('height:100px', 'height:50%').h, 50,
+           'a percentage height is that share of the containing block')
+checkEqInt(pctChild('', 'height:50%').h, 20,
+           'and is `auto` where the containing block has no definite height')
+Box pctRoot = layoutHtml('<body style="margin:0;font:16px/20px monospace">'
+    + '<div style="width:200px;height:100px"><div id="mid" style="height:50%">'
+    + '<p style="margin:0;height:50%">x</p></div></div></body>', 400)
+checkEqInt(findBox(pctRoot, 'p').h, 25,
+           'a percentage of a percentage resolves through the chain')
+checkEqInt(pctChild('height:100px;padding:10px', 'height:50%').h, 50,
+           'the share is of the content height, which padding does not change')
+checkEqInt(pctChild('height:100px;box-sizing:border-box;padding:10px', 'height:50%').h, 40,
+           'unless `border-box` puts the padding inside the declared height')
+checkEqInt(pctChild('height:100px', 'height:100%;box-sizing:border-box;padding:5px;border:2px solid').h,
+           100, 'and a border-box percentage is the border box, edges included')
+checkEqInt(pctChild('height:100px', 'min-height:40%').h, 40,
+           'a percentage minimum height is of the same containing block')
+checkEqInt(pctChild('height:100px', 'height:80%;max-height:30%').h, 30,
+           'and so is a percentage maximum, which a larger height gives way to')
+checkEqInt(pctChild('', 'min-height:40%').h, 20,
+           'and both are ignored where the containing block has no definite height')
+
 finish('layout')

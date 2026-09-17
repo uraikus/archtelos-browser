@@ -5,6 +5,32 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A percentage height resolves against a definite containing block
+
+CSS2 §10.5: a percentage height is that share of the containing block's
+own content height, and computes to `auto` where that height is not
+itself definite. This engine ignored percentage heights altogether --
+`height: 50%` inside a 100px box laid out as tall as its content -- while
+percentage widths had always worked. `min-height` and `max-height` take
+percentages the same way and were the same: lengths only.
+
+The containing block's definite content height is a global the layout
+saves and puts back as it recurses, rather than a parameter every one of
+the dozen calls that lay out children would have to carry. A box whose
+own height is definite -- a length, or a percentage of a containing
+block that is itself definite -- stands as that block for its children,
+so the chain resolves: 50% of 50% of 100px is 25.
+
+Against Chromium on the same markup: 50 for half of a 100px box, the
+content's own height where the parent has none, 50 and 25 down a chain
+of two, 50 where the parent's padding sits outside its declared height
+and 40 where `border-box` puts it inside, and 100 for a `height: 100%`
+child that is itself `border-box` with padding and a border.
+
+It was found writing the tests for `overflow: scroll`, where the
+scrollbar's effect on a `height: 100%` child is how Chromium shows the
+content box shrinking.
+
 ### A reverse flex direction packs against the far edge
 
 `row-reverse` and `column-reverse` run the main axis the other way, so

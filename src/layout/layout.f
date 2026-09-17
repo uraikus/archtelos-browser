@@ -1443,12 +1443,48 @@ void func applyContainerAspect(b:Box) {
 // The content height a declared `height` fixes, or -1 when it fixes
 // none. Only a box with one definite dimension takes the other from
 // the ratio, so this is the question the width code has to ask first.
+// The containing block's own content height while its children are
+// being laid out, or -1 where that height is not definite. A percentage
+// height is a percentage of this (CSS2 §10.5), and computes to `auto`
+// where there is nothing to take a percentage of -- which is what makes
+// `height: 100%` do nothing inside a box that is as tall as its
+// content. A global rather than a parameter because every one of the
+// dozen calls that lay out children would otherwise carry it; each
+// caller saves it and puts it back, as the layout recurses.
+int layoutCBHeight = -1
+
+// The box's own content height where that is definite: a length, or a
+// percentage of a containing block that is itself definite.
 int func definiteContentHeight(b:Box) {
     Style s = b.style
-    if s.height.kind != LEN_PX { return -1 }
-    int h = maxInt(roundPx(s.height.v), 0)
+    int h = 0
+    if s.height.kind == LEN_PX { h = maxInt(roundPx(s.height.v), 0) }
+    else if s.height.kind == LEN_PERCENT && layoutCBHeight >= 0 {
+        h = maxInt(roundPx(layoutCBHeight.toFloat() * s.height.v / 100.0), 0)
+    } else { return -1 }
     if s.boxSizing == BOX_BORDER { h = maxInt(h - (b.pt + b.pb + b.bt + b.bb), 0) }
     return h
+}
+
+// One of `min-height` and `max-height` as a number of content pixels,
+// or -1 where it says nothing this engine can resolve.
+int func heightLimitPx(l:Len, vEdges:int, boxSizing:int) {
+    int v = 0
+    if l.kind == LEN_PX { v = roundPx(l.v) }
+    else if l.kind == LEN_PERCENT && layoutCBHeight >= 0 {
+        v = maxInt(roundPx(layoutCBHeight.toFloat() * l.v / 100.0), 0)
+    } else { return -1 }
+    if boxSizing == BOX_BORDER { v = maxInt(v - vEdges, 0) }
+    return maxInt(v, 0)
+}
+
+// Whether the box's height is one of those definite heights at all,
+// which is the question every place that used to ask whether the
+// declared height was a length.
+bool func hasDefiniteHeight(b:Box) {
+    Style s = b.style
+    return s.height.kind == LEN_PX
+        || (s.height.kind == LEN_PERCENT && layoutCBHeight >= 0)
 }
 
 void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
@@ -1557,12 +1593,12 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if b.kind == BOX_FLEX {
         int flexEdges = b.pt + b.pb + b.bt + b.bb
         b.h = flexEdges
-        if s.height.kind == LEN_PX {
-            int fh = maxInt(roundPx(s.height.v), 0)
-            if s.boxSizing == BOX_BORDER { fh = maxInt(fh - flexEdges, 0) }
-            b.h = fh + flexEdges
-        }
+        int fh = definiteContentHeight(b)
+        if fh >= 0 { b.h = fh + flexEdges }
+        int savedFlexCB = layoutCBHeight
+        layoutCBHeight = fh
         layoutFlex(b, cx, y, cw)
+        layoutCBHeight = savedFlexCB
         return
     }
     // A grid container sizes its tracks and places its items into them
@@ -1570,18 +1606,23 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if b.kind == BOX_GRID {
         int gridEdges = b.pt + b.pb + b.bt + b.bb
         b.h = gridEdges
-        if s.height.kind == LEN_PX {
-            int gh = maxInt(roundPx(s.height.v), 0)
-            if s.boxSizing == BOX_BORDER { gh = maxInt(gh - gridEdges, 0) }
-            b.h = gh + gridEdges
-        }
+        int gh = definiteContentHeight(b)
+        if gh >= 0 { b.h = gh + gridEdges }
+        int savedGridCB = layoutCBHeight
+        layoutCBHeight = gh
         layoutGrid(b, cx, y, cw, width)
+        layoutCBHeight = savedGridCB
         return
     }
 
-    // children
+    // children, with this box standing as their containing block: a
+    // percentage height among them is a percentage of the height
+    // declared here, and `auto` where none is (CSS2 §10.5).
     int innerX = contentX(b)
     int innerY = contentY(b)
+    int savedCB = layoutCBHeight
+    int ownDefinite = definiteContentHeight(b)
+    layoutCBHeight = ownDefinite
     int contentH = 0
     // A multi-column container lays its content out once, at the column
     // width, and then breaks that one flow into columns (CSS
@@ -1595,6 +1636,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     } else {
         contentH = layoutBlockChildren(b, innerX, innerY, width)
     }
+    layoutCBHeight = savedCB
     int h = contentH
     // Size containment: the box is sized as if it had no content, so
     // the height its children came to is discarded and
@@ -1606,11 +1648,10 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         h = s.intrinsicHeight.kind == LEN_PX ? maxInt(roundPx(s.intrinsicHeight.v), 0) : 0
     }
     int vEdges = b.pt + b.pb + b.bt + b.bb
-    if !lenIsAuto(s.height) && s.height.kind == LEN_PX {
-        h = maxInt(roundPx(s.height.v), 0)
-        // as with the width, a border-box height already includes the
-        // padding and border
-        if s.boxSizing == BOX_BORDER { h = maxInt(h - vEdges, 0) }
+    if ownDefinite >= 0 {
+        // definiteContentHeight has already taken the padding and
+        // border out of a border-box height.
+        h = ownDefinite
     } else if b.controlKind == CONTROL_CHECK && s.appearanceAuto {
         // and as tall as it is wide, which is what makes it a square
         h = CHECK_CONTROL_PX
@@ -1622,16 +1663,14 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // the ratio says 50, and 50 once `overflow: hidden` is added.
         h = s.overflowHidden ? arh : maxInt(arh, h)
     }
-    if s.minHeight.kind == LEN_PX {
-        int mn = roundPx(s.minHeight.v)
-        if s.boxSizing == BOX_BORDER { mn = maxInt(mn - vEdges, 0) }
-        h = maxInt(h, mn)
-    }
-    if s.maxHeight.kind == LEN_PX {
-        int mx = roundPx(s.maxHeight.v)
-        if s.boxSizing == BOX_BORDER { mx = maxInt(mx - vEdges, 0) }
-        if h > mx { h = mx }
-    }
+    // A percentage minimum or maximum height is of the same containing
+    // block a percentage height would be of, and is ignored where that
+    // is not definite -- `layoutCBHeight` is the parent's again by this
+    // point, the children having been laid out and put it back.
+    int minH = heightLimitPx(s.minHeight, vEdges, s.boxSizing)
+    if minH >= 0 { h = maxInt(h, minH) }
+    int maxH = heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
+    if maxH >= 0 && h > maxH { h = maxH }
     b.h = h + vEdges
     if b.baseline == 0 { b.baseline = b.h }
 }
