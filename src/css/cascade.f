@@ -3161,6 +3161,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         applyBorderShorthand(props, ['left', 'right'], value)
         return
     }
+    if name == 'scroll-padding' || name == 'scroll-margin' {
+        applyFourSides(props, name, '', value)
+        return
+    }
     if name == 'margin' || name == 'padding' {
         applyFourSides(props, name, '', value)
         return
@@ -3945,6 +3949,54 @@ int func breakKeyword(v:ascii) {
     }
     if t == 'avoid' || t == 'avoid-column' || t == 'avoid-page' { return BRK_AVOID }
     return BRK_AUTO
+}
+
+// CSS Scroll Snap 1 §5. `scroll-snap-type` names an axis and, after it,
+// how strictly the container snaps; the standard's initial strictness is
+// `proximity`, so a bare axis is that. Three answers out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+bool snapAxisXOut = false
+bool snapAxisYOut = false
+int snapStrictOut = SNAP_NONE
+
+void func snapTypeProp(v:ascii) {
+    snapAxisXOut = false
+    snapAxisYOut = false
+    snapStrictOut = SNAP_NONE
+    if v == null { return }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return }
+    text axis = asciiLower(t[0]).toText()
+    // The logical axes are the physical ones in a horizontal writing
+    // mode, which is the only one this engine lays out in.
+    if axis == 'x' || axis == 'inline' { snapAxisXOut = true }
+    else if axis == 'y' || axis == 'block' { snapAxisYOut = true }
+    else if axis == 'both' { snapAxisXOut = true  snapAxisYOut = true }
+    else { return }
+    snapStrictOut = SNAP_PROXIMITY
+    if t.length > 1 && asciiLower(t[1]) == 'mandatory' { snapStrictOut = SNAP_MANDATORY }
+}
+
+int func snapAlignKeyword(t:ascii) {
+    if t == 'start' { return SNAPALIGN_START }
+    if t == 'center' { return SNAPALIGN_CENTER }
+    if t == 'end' { return SNAPALIGN_END }
+    return SNAPALIGN_NONE
+}
+
+// `scroll-snap-align` takes one value for both axes or two, the block
+// axis first (§4.1). Two answers out of a function need globals.
+int snapAlignBlockOut = SNAPALIGN_NONE
+int snapAlignInlineOut = SNAPALIGN_NONE
+
+void func snapAlignProp(v:ascii) {
+    snapAlignBlockOut = SNAPALIGN_NONE
+    snapAlignInlineOut = SNAPALIGN_NONE
+    if v == null { return }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return }
+    snapAlignBlockOut = snapAlignKeyword(asciiLower(t[0]))
+    snapAlignInlineOut = t.length > 1 ? snapAlignKeyword(asciiLower(t[1])) : snapAlignBlockOut
 }
 
 // CSS Scrollbars 1 §3: how wide a scroll container's bars are.
@@ -5428,6 +5480,21 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.breakAfter = breakKeyword(styleProp(props, 'break-after'))
     s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
     s.pageName = pageNameProp(styleProp(props, 'page'))
+    snapTypeProp(styleProp(props, 'scroll-snap-type'))
+    s.snapX = snapAxisXOut
+    s.snapY = snapAxisYOut
+    s.snapStrict = snapStrictOut
+    snapAlignProp(styleProp(props, 'scroll-snap-align'))
+    s.snapAlignBlock = snapAlignBlockOut
+    s.snapAlignInline = snapAlignInlineOut
+    s.scrollPaddingTop = parseLength(styleProp(props, 'scroll-padding-top'), s.fontSize)
+    s.scrollPaddingRight = parseLength(styleProp(props, 'scroll-padding-right'), s.fontSize)
+    s.scrollPaddingBottom = parseLength(styleProp(props, 'scroll-padding-bottom'), s.fontSize)
+    s.scrollPaddingLeft = parseLength(styleProp(props, 'scroll-padding-left'), s.fontSize)
+    s.scrollMarginTop = parseLength(styleProp(props, 'scroll-margin-top'), s.fontSize)
+    s.scrollMarginRight = parseLength(styleProp(props, 'scroll-margin-right'), s.fontSize)
+    s.scrollMarginBottom = parseLength(styleProp(props, 'scroll-margin-bottom'), s.fontSize)
+    s.scrollMarginLeft = parseLength(styleProp(props, 'scroll-margin-left'), s.fontSize)
     s.scrollbarWidth = scrollbarWidthKeyword(styleProp(props, 'scrollbar-width'))
     s.scrollbarGutter = scrollbarGutterKeyword(styleProp(props, 'scrollbar-gutter'))
     scrollbarColorProp(props, isRoot ? 0 : parent.scrollbarThumb,

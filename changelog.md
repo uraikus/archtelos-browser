@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Scroll Snap 1
+
+A scroll container with `scroll-snap-type` comes to rest on one of the
+positions its children's `scroll-snap-align` declares, rather than
+wherever the scroll left it. `x`, `y`, `both` and the two logical axes,
+each `mandatory` or `proximity`, against `start`, `center` and `end`,
+with `scroll-padding` insetting the snapport and `scroll-margin`
+outsetting a child's snap area, all four sides of each.
+
+A snap position is one subtraction: the child's edge less the snapport's,
+per alignment. The nearest wins and a tie goes to the lower.
+
+**Chromium was measured before any of it was written**, which is why the
+implementation passed its suite on the first run. Four probes settled it:
+the subtraction each alignment is; that a tie goes to the lower, pinned
+by the `end` alignment at 35 where 20 and 50 are both fifteen away; that
+`proximity` is a third of the snapport rather than a fixed distance,
+which took snap points 500 apart to see at all and two snapport sizes to
+tell apart; and that a snap area larger than the snapport is a *range*
+rather than a point (§6.1), so a scroll already inside a tall child stays
+where it is instead of jumping to that child's top.
+
+That last one is the case a nearest-point implementation gets wrong, and
+the reason to measure first rather than write first: with four 100px
+children in an 85px snapport, Chromium leaves 10 at 10, pulls 40 back to
+15 -- the first child's own end -- and sends 60 on to 100.
+
+The property instrument goes from 214 to 224 of 405, and `--fields` says
+each of the ten moved its own field. All ten change where a scroll comes
+to rest, so none of them is a count that moved without anything else
+moving.
+
 ### CSS Scrollbars 1, and a stable gutter
 
 `scrollbar-width` and `scrollbar-color`, which is the whole of CSS

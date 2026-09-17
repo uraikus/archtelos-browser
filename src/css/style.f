@@ -260,6 +260,20 @@ const int OBJECTFIT_SCALE_DOWN = 4
 // hiding the bar is not the same as taking the scrolling away.
 // Chromium 141 answers a 200x100 `overflow: scroll` box with a client
 // width of 185, 190 and 200 for the three, so `thin` is ten pixels.
+// CSS Scroll Snap 1 §5: how strictly a scroll container comes to rest on
+// one of its snap positions, and §4: which edge of a child a position
+// lines up with. `proximity` snaps only when a position is near enough,
+// and near enough is a third of the snapport -- measured against
+// Chromium rather than chosen (todo.md).
+const int SNAP_NONE = 0
+const int SNAP_MANDATORY = 1
+const int SNAP_PROXIMITY = 2
+
+const int SNAPALIGN_NONE = 0
+const int SNAPALIGN_START = 1
+const int SNAPALIGN_CENTER = 2
+const int SNAPALIGN_END = 3
+
 const int SCROLLBAR_AUTO = 0
 const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
@@ -770,6 +784,21 @@ struct Style {
     // the width inherited too, and this follows the browser it is
     // measured against. A colour of zero is `auto`: no declared colour,
     // so the painter uses its own.
+    // CSS Scroll Snap 1. The type and the padding belong to the scroll
+    // container; the align and the margin to the children it snaps to.
+    snapX:bool
+    snapY:bool
+    snapStrict:int
+    snapAlignBlock:int
+    snapAlignInline:int
+    scrollPaddingTop:Len
+    scrollPaddingRight:Len
+    scrollPaddingBottom:Len
+    scrollPaddingLeft:Len
+    scrollMarginTop:Len
+    scrollMarginRight:Len
+    scrollMarginBottom:Len
+    scrollMarginLeft:Len
     scrollbarWidth:int
     scrollbarGutter:int
     scrollbarThumb:int

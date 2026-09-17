@@ -1503,7 +1503,7 @@ int func boxScrollLeft(b:Box) {
 bool func boxScrollLeftBy(b:Box, dx:int) {
     if !b.scrollsX || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollLeft(b)
-    int now = clampInt(was + dx, 0, boxScrollLeftRange(b))
+    int now = snapPosition(b, clampInt(was + dx, 0, boxScrollLeftRange(b)), false)
     if now == was { return false }
     boxScrollLefts[b.node.id.toText()] = now
     return true
@@ -1512,10 +1512,110 @@ bool func boxScrollLeftBy(b:Box, dx:int) {
 // Scrolls a box, and answers whether it moved -- which is what tells a
 // wheel over a box that has reached its end from one that scrolled, so
 // the page can take the rest.
+// ---- scroll snapping (CSS Scroll Snap 1) -------------------------------
+//
+// A scroll container with `scroll-snap-type` comes to rest on one of the
+// positions its children's `scroll-snap-align` declares, rather than
+// wherever the scroll left it. A position is one subtraction -- the
+// child's edge less the snapport's, per alignment -- with
+// `scroll-padding` insetting the snapport and `scroll-margin` outsetting
+// the child's snap area.
+//
+// The children looked at are the container's own, which is the depth
+// everything else here fragments and measures at.
+//
+// Where a child's snap area is larger than the snapport it is a *range*
+// of valid positions rather than a point (§6.1): a position inside it is
+// already showing that child and is left alone, and one past it is
+// pulled only as far as the child's own end. Chromium does this, and a
+// nearest-point implementation that did not would jump a tall child's
+// middle to its top.
+int snapBest = 0
+bool snapFound = false
+
+int func absInt(v:int) { return v < 0 ? 0 - v : v }
+
+// Keeps the nearer of the candidate and what is held, with a tie going
+// to the lower -- which Chromium does, and which the `end` alignment of
+// the suite's fixture pins at 35, where 20 and 50 are both fifteen away.
+void func snapConsider(want:int, pos:int) {
+    if !snapFound { snapBest = pos  snapFound = true  return }
+    int dNew = absInt(pos - want)
+    int dOld = absInt(snapBest - want)
+    if dNew < dOld || dNew == dOld && pos < snapBest { snapBest = pos }
+}
+
+int func snapAlignedPosition(align:int, areaStart:int, areaEnd:int,
+                             portStart:int, portEnd:int) {
+    if align == SNAPALIGN_START { return areaStart - portStart }
+    if align == SNAPALIGN_END { return areaEnd - portEnd }
+    // The two centres, which is the two midpoints subtracted. Doubling
+    // before halving keeps the odd case off the floor twice.
+    return Math.floorDiv(areaStart + areaEnd, 2) - Math.floorDiv(portStart + portEnd, 2)
+}
+
+// Where a scroll of this container should come to rest on one axis.
+// `want` is the position the scroll asked for, already clamped.
+int func snapPosition(b:Box, want:int, vertical:bool) {
+    Style s = b.style
+    if s.snapStrict == SNAP_NONE { return want }
+    if vertical ? !s.snapY : !s.snapX { return want }
+    int range = vertical ? boxScrollRange(b) : boxScrollLeftRange(b)
+    if range <= 0 { return want }
+
+    // The snapport: the container's content box, inset by scroll-padding.
+    int portStart = vertical ? contentY(b) : contentX(b)
+    int portSize = vertical ? scrollVisibleHeight(b) : scrollHVisibleWidth(b)
+    int padNear = vertical ? resolveLen(s.scrollPaddingTop, portSize, 0)
+                           : resolveLen(s.scrollPaddingLeft, portSize, 0)
+    int padFar = vertical ? resolveLen(s.scrollPaddingBottom, portSize, 0)
+                          : resolveLen(s.scrollPaddingRight, portSize, 0)
+    portStart = portStart + padNear
+    int portEnd = portStart + portSize - padNear - padFar
+    if portEnd <= portStart { return want }
+
+    snapFound = false
+    snapBest = 0
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        int align = vertical ? c.style.snapAlignBlock : c.style.snapAlignInline
+        if align == SNAPALIGN_NONE { continue }
+        int mNear = vertical ? resolveLen(c.style.scrollMarginTop, 0, 0)
+                             : resolveLen(c.style.scrollMarginLeft, 0, 0)
+        int mFar = vertical ? resolveLen(c.style.scrollMarginBottom, 0, 0)
+                            : resolveLen(c.style.scrollMarginRight, 0, 0)
+        int areaStart = (vertical ? c.y : c.x) - mNear
+        int areaEnd = (vertical ? c.y + c.h : c.x + c.w) + mFar
+        int pos = snapAlignedPosition(align, areaStart, areaEnd, portStart, portEnd)
+        if areaEnd - areaStart > portEnd - portStart {
+            // A snap area larger than the snapport is a range: anywhere
+            // that keeps the snapport inside it will do, so a position
+            // already inside asks for nothing.
+            int lo = clampInt(areaStart - portStart, 0, range)
+            int hi = clampInt(areaEnd - portEnd, 0, range)
+            if lo > hi { int t = lo  lo = hi  hi = t }
+            if want >= lo && want <= hi { return want }
+            snapConsider(want, want < lo ? lo : hi)
+            continue
+        }
+        snapConsider(want, clampInt(pos, 0, range))
+    }
+    if !snapFound { return want }
+    // `proximity` snaps only what is near, and near is a third of the
+    // snapport: Chromium snaps from 32 and not 34 in a hundred pixels,
+    // and from 66 and not 68 in two hundred (todo.md).
+    if s.snapStrict == SNAP_PROXIMITY
+        && absInt(snapBest - want) > Math.floorDiv(portEnd - portStart, 3) {
+        return want
+    }
+    return snapBest
+}
+
 bool func boxScrollBy(b:Box, dy:int) {
     if !b.scrollsY || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollTop(b)
-    int now = clampInt(was + dy, 0, boxScrollRange(b))
+    int now = snapPosition(b, clampInt(was + dy, 0, boxScrollRange(b)), true)
     if now == was { return false }
     boxScrollTops[b.node.id.toText()] = now
     return true

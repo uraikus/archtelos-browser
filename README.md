@@ -216,7 +216,11 @@ pixels with `thin` and none at all with `none`, which hides the bar and
 leaves the box scrolling; `scrollbar-color` paints the thumb and the
 track in two colours of the page's choosing; and `scrollbar-gutter:
 stable` takes the room before there is anything to scroll, so a box's
-content does not change width the moment there is. **The wheel over such a box
+content does not change width the moment there is. A container that
+declares `scroll-snap-type` comes to rest on one of the positions its
+children's `scroll-snap-align` asks for rather than wherever the scroll
+left it, with `scroll-padding` and `scroll-margin` moving those
+positions and `proximity` snapping only what is already near. **The wheel over such a box
 scrolls it down**, and the page only once it has reached its end; a
 wheel tilted sideways scrolls it across, where the window system says
 one was tilted — X11 does, and Windows does not (FINDINGS.md, finding
@@ -389,7 +393,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-28,519 lines of Festina in `src/` and `browser.f`.
+28,732 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -399,7 +403,7 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-seven unit suites (utilities, HTML, CSS parser,
+The runner covers forty-eight unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
@@ -407,7 +411,7 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, scrollbars, the preload scanner), eighteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, the preload scanner), eighteen offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
