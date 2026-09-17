@@ -292,4 +292,70 @@ checkEqInt(scrollThumbTop(drag) + scrollThumbHeight(drag),
            'and a box scrolled to its end puts the thumb at the end of its track')
 boxScrollReset()
 
+// ---- the horizontal axis scrolls too ----------------------------------
+// A box whose content is wider than it is scrolls across as well as
+// down. Chromium 141 on a 200x100 `overflow: auto` box holding a 500x50
+// child: clientWidth 200, clientHeight 85 -- the horizontal bar took
+// its fifteen -- scrollWidth 500, and `scrollLeft` clamps to 300, which
+// is 500 less the 200 that is visible.
+Page pacross = pageFromHtml(head
+    + '<div id="a" style="width:200px;height:100px;overflow:auto;background:#ddffdd">'
+    + '<div style="width:500px;height:50px">'
+    + '<div style="width:40px;height:20px;margin-left:220px;background:#ff0000"></div>'
+    + '</div></div></body>', 'test.html', 400)
+arr[Box] aboxes = []
+collectBoxesForTag(pacross.root, 'div', aboxes)
+Box across = aboxes[0]
+boxScrollReset()
+check(across != null && across.sbH == 15, 'the wide content raised a horizontal bar')
+checkEqInt(across.sbW, 0, 'and the short content raised no vertical one')
+checkEqInt(across.scrollW, 500, 'the scrollable width is the content')
+checkEqInt(boxScrollLeftRange(across), 300,
+           'and it scrolls across by what the content exceeds the box by')
+
+// It clamps at both ends, as `scrollLeft` does.
+check(boxScrollLeftBy(across, 10000), 'scrolling far to the right moves it')
+checkEqInt(boxScrollLeft(across), 300, 'and stops at the end rather than past it')
+check(boxScrollLeftBy(across, 0 - 10000), 'scrolling back moves it again')
+checkEqInt(boxScrollLeft(across), 0, 'and stops at the start')
+
+// The content moves under the box: a block 220px along the content is
+// off the right of a 200px box until the box is scrolled to it.
+color redMark = '#ff0000'
+boxScrollReset()
+clearCanvas()
+paintPage(pacross, 0, 0, 300)
+check(!(getPixelColor(100, 10) == redMark), 'the mark past the right edge is not painted')
+boxScrollLeftBy(across, 150)
+clearCanvas()
+paintPage(pacross, 0, 0, 300)
+check(getPixelColor(100, 10) == redMark, 'and scrolling across brings it into the box')
+boxScrollReset()
+
+// The horizontal thumb is found and dragged the same way the vertical
+// one is, from the same shared geometry the painter draws it with.
+int hLeft = scrollHThumbLeft(across)
+int hTop = scrollHTrackTop(across)
+int hRun = scrollHTrackWidth(across) - scrollHThumbWidth(across)
+int hMidY = hTop + Math.floorDiv(across.sbH, 2)
+check(scrollHThumbAt(pacross.root, hLeft + 2, hMidY) != null, 'the pointer finds the thumb on it')
+check(scrollHThumbAt(pacross.root, hLeft + scrollHTrackWidth(across) - 2, hMidY) == null,
+      'and finds nothing on the empty part of the track')
+check(scrollHThumbAt(pacross.root, hLeft + 2, 10) == null, 'nor above the bar')
+
+check(scrollHThumbDragTo(across, scrollHTrackLeft(across) + hRun),
+      'dragging the thumb to the end scrolls the box')
+checkEqInt(boxScrollLeft(across), boxScrollLeftRange(across), 'all the way across')
+check(scrollHThumbDragTo(across, scrollHTrackLeft(across)), 'and dragging it back')
+checkEqInt(boxScrollLeft(across), 0, 'brings it back to the start')
+
+// The thumb moves with the content, which is the agreement that matters.
+boxScrollLeftBy(across, 1000)
+check(scrollHThumbAt(pacross.root, scrollHThumbLeft(across) + 2, hMidY) != null,
+      'after scrolling, the thumb is found where it is now drawn')
+checkEqInt(scrollHThumbLeft(across) + scrollHThumbWidth(across),
+           scrollHTrackLeft(across) + scrollHTrackWidth(across),
+           'and a box scrolled to its end puts the thumb at the end of its track')
+boxScrollReset()
+
 finish('overflow')

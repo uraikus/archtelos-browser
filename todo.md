@@ -49,9 +49,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    can be taken hold of and dragged. What is still missing around it is
    `scroll-behavior`, a keyboard scroll of the focused container, and a
    click on the empty part of a track, which every browser treats as a
-   page up or down. **Only the vertical thumb drags**: a horizontal one
-   is painted and is not yet hit tested, which is the same three
-   functions over the other axis.
+   page up or down. Both axes scroll and both thumbs
+   drag. What is left around them is the wheel, which scrolls a
+   container down but never across -- a shift-wheel or a horizontal
+   wheel would, and this reads neither.
 
    Positioning (§9.3), floats (§9.5), generated content (§12) and
    `overflow: hidden` clipping (§11) are done.

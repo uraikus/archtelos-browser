@@ -213,10 +213,14 @@ on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 // itself: a box tree lasts one layout and a drag outlives several.
 int dragThumbNode = 0
 int dragThumbGrab = 0
+// Which bar the drag is on: a box may have both, and the pointer took
+// hold of one of them.
+bool dragThumbAcross = false
 
 // The box a drag is on, found again in the tree laid out most recently.
 Box func dragThumbBox(b:Box) {
-    if b.node != null && b.node.id == dragThumbNode && b.sbW > 0 { return b }
+    if b.node != null && b.node.id == dragThumbNode
+        && (dragThumbAcross ? b.sbH > 0 : b.sbW > 0) { return b }
     for int i = 0, i < b.children.length, i++ {
         Box found = dragThumbBox(b.children[i])
         if found != null { return found }
@@ -243,10 +247,19 @@ on mouseDown(x:int, y:int, button:int) {
     if y >= clientHeight - STATUS_H || page.root == null { return }
     // A press on a scrollbar's thumb takes hold of it, and nothing else
     // happens with that press: it is not a click on what is behind it.
-    Box thumb = scrollThumbAt(page.root, x, y - TOOLBAR_H + scrollY)
+    int docY = y - TOOLBAR_H + scrollY
+    Box thumb = scrollThumbAt(page.root, x, docY)
     if thumb != null {
         dragThumbNode = thumb.node.id
-        dragThumbGrab = (y - TOOLBAR_H + scrollY) - scrollThumbTop(thumb)
+        dragThumbAcross = false
+        dragThumbGrab = docY - scrollThumbTop(thumb)
+        return
+    }
+    Box hthumb = scrollHThumbAt(page.root, x, docY)
+    if hthumb != null {
+        dragThumbNode = hthumb.node.id
+        dragThumbAcross = true
+        dragThumbGrab = x - scrollHThumbLeft(hthumb)
         return
     }
     text href = linkAt(page.root, x, y - TOOLBAR_H + scrollY)
@@ -268,7 +281,10 @@ on mouse(x:int, y:int) {
         Box held = dragThumbBox(page.root)
         if held == null { dragThumbNode = 0 }
         else {
-            if scrollThumbDragTo(held, y - TOOLBAR_H + scrollY - dragThumbGrab) { repaint() }
+            bool moved = dragThumbAcross
+                ? scrollHThumbDragTo(held, x - dragThumbGrab)
+                : scrollThumbDragTo(held, y - TOOLBAR_H + scrollY - dragThumbGrab)
+            if moved { repaint() }
             return
         }
     }

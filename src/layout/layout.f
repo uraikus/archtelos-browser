@@ -1448,9 +1448,12 @@ void func applyContainerAspect(b:Box) {
 // the offset has to outlive it; the node registry is what does. A page
 // that scrolls nothing never touches the map.
 map[int] boxScrollTops = {}
+// And how far across, for the axis a horizontal bar scrolls.
+map[int] boxScrollLefts = {}
 
 void func boxScrollReset() {
     boxScrollTops = {}
+    boxScrollLefts = {}
 }
 
 // How far a box can be scrolled: what its content comes to, less what
@@ -1466,6 +1469,31 @@ int func boxScrollTop(b:Box) {
     int v = boxScrollTops[b.node.id.toText()]
     if v == null { return 0 }
     return clampInt(v, 0, boxScrollRange(b))
+}
+
+// The same three, across. A horizontal bar scrolls what a vertical one
+// does not, and the two axes keep their offsets apart: a box may have
+// one bar, the other, or both.
+int func boxScrollLeftRange(b:Box) {
+    if b.sbH <= 0 { return 0 }
+    int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW, 1)
+    return maxInt(b.scrollW - visible, 0)
+}
+
+int func boxScrollLeft(b:Box) {
+    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    int v = boxScrollLefts[b.node.id.toText()]
+    if v == null { return 0 }
+    return clampInt(v, 0, boxScrollLeftRange(b))
+}
+
+bool func boxScrollLeftBy(b:Box, dx:int) {
+    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return false }
+    int was = boxScrollLeft(b)
+    int now = clampInt(was + dx, 0, boxScrollLeftRange(b))
+    if now == was { return false }
+    boxScrollLefts[b.node.id.toText()] = now
+    return true
 }
 
 // Scrolls a box, and answers whether it moved -- which is what tells a
@@ -1531,6 +1559,40 @@ int func scrollThumbLeft(b:Box) {
 }
 
 int func scrollThumbWidth(b:Box) { return b.sbW - 2 * SCROLLBAR_THUMB_INSET }
+
+// The horizontal thumb, the same eight answers over the other axis.
+int func scrollHTrackLeft(b:Box) { return b.x + b.bl }
+
+int func scrollHTrackWidth(b:Box) { return b.w - b.bl - b.br - b.sbW }
+
+int func scrollHVisibleWidth(b:Box) {
+    return maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW, 1)
+}
+
+bool func scrollHThumbShown(b:Box) {
+    return b.sbH > 0 && b.scrollW > scrollHVisibleWidth(b)
+}
+
+int func scrollHThumbWidth(b:Box) {
+    int trackW = scrollHTrackWidth(b)
+    int thumbW = maxInt(Math.floorDiv(trackW * scrollHVisibleWidth(b), maxInt(b.scrollW, 1)),
+                        SCROLLBAR_MIN_THUMB)
+    return thumbW > trackW ? trackW : thumbW
+}
+
+int func scrollHThumbLeft(b:Box) {
+    int run = scrollHTrackWidth(b) - scrollHThumbWidth(b)
+    int range = maxInt(boxScrollLeftRange(b), 1)
+    return scrollHTrackLeft(b) + Math.floorDiv(run * boxScrollLeft(b), range)
+}
+
+int func scrollHTrackTop(b:Box) {
+    return b.y + b.bt + (b.h - b.bt - b.bb) - b.sbH
+}
+
+int func scrollHThumbTop(b:Box) { return scrollHTrackTop(b) + SCROLLBAR_THUMB_INSET }
+
+int func scrollHThumbHeight(b:Box) { return b.sbH - 2 * SCROLLBAR_THUMB_INSET }
 
 // One pass of a block's own content, which an `auto` scroll container
 // does twice: once to find out whether it overflows, and again with the

@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,828,832 |
+| This browser, the whole program | 2,833,664 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1091,3 +1091,15 @@ the second, which is the two rounds disagreeing about the sign of a
 difference they both put at one or two milliseconds. That is what the
 binary's own layout looks like on this machine, and it is why a single
 round of eleven is not enough to claim one.
+
+The horizontal scroll axis costs **4,832 bytes** (2,828,832 →
+2,833,664). What it adds to a page that scrolls nothing is one function
+call per clipped box painted, which answers zero on the first line
+without looking anything up; neither benchmark page has a scroll
+container, so neither can say more than that nothing else got slower.
+Twenty-six paired samples of `generated.html`, in two rounds, give bests
+of 104 against 104 and then 106 against 105, with the medians a
+millisecond apart in opposite directions -- two rounds that do not agree
+on a sign, which is this machine rather than the feature. One round had
+a reading of 157 on the new side, and a single round is exactly what
+such a reading would have been allowed to decide.

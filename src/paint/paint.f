@@ -2462,7 +2462,7 @@ void func paintClipped(b:Box) {
     // the box's scroll position with it, which is what moves the
     // content while the box, its background and its scrollbars stay
     // where they are.
-    layer.translate(0 - px, 0 - py - boxScrollTop(b))
+    layer.translate(0 - px - boxScrollLeft(b), 0 - py - boxScrollTop(b))
     paintLayer = layer
     paintLines(b)
     for int i = 0, i < b.children.length, i++ {
@@ -2503,17 +2503,13 @@ void func paintScrollbars(b:Box) {
         }
     }
     if b.sbH > 0 {
-        int trackW = pw - b.sbW
         fillAlpha(1.0)
         fillStyle(252, 252, 252)
-        pDrawRect(px, py + ph - b.sbH, trackW, b.sbH)
-        int visible = maxInt(pw - b.pl - b.pr - b.sbW, 1)
-        if b.scrollW > visible {
-            int thumbW = maxInt(Math.floorDiv(trackW * visible, b.scrollW), SCROLLBAR_MIN_THUMB)
-            if thumbW > trackW { thumbW = trackW }
+        pDrawRect(px, scrollHTrackTop(b), scrollHTrackWidth(b), b.sbH)
+        if scrollHThumbShown(b) {
             fillStyle(139, 139, 139)
-            pDrawRect(px, py + ph - b.sbH + SCROLLBAR_THUMB_INSET,
-                      thumbW, b.sbH - 2 * SCROLLBAR_THUMB_INSET)
+            pDrawRect(scrollHThumbLeft(b), scrollHThumbTop(b),
+                      scrollHThumbWidth(b), scrollHThumbHeight(b))
         }
     }
     fillAlpha(1.0)
@@ -2749,6 +2745,8 @@ Box func hitTest(b:Box, x:int, y:int) {
     // without looking anything up.
     int scrolled = boxScrollTop(b)
     if scrolled > 0 { y = y + scrolled }
+    int across = boxScrollLeft(b)
+    if across > 0 { x = x + across }
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
         if y < ln.y || y >= ln.y + ln.h { continue }
@@ -2845,6 +2843,37 @@ bool func scrollThumbDragTo(b:Box, top:int) {
     int range = boxScrollRange(b)
     int to = clampInt(Math.floorDiv(want * range, run), 0, range)
     return boxScrollBy(b, to - boxScrollTop(b))
+}
+
+// The same two, across.
+Box func scrollHThumbAt(b:Box, x:int, y:int) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    int inner = boxScrollTop(b) > 0 ? y + boxScrollTop(b) : y
+    int innerX = boxScrollLeft(b) > 0 ? x + boxScrollLeft(b) : x
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if innerX >= c.x && innerX < c.x + c.w && inner >= c.y && inner < c.y + c.h {
+            Box found = scrollHThumbAt(c, innerX, inner)
+            if found != null { return found }
+        }
+    }
+    if !scrollHThumbShown(b) { return null }
+    int tx = scrollHThumbLeft(b)
+    int ty = scrollHTrackTop(b)
+    if x < tx || x >= tx + scrollHThumbWidth(b) { return null }
+    if y < ty || y >= ty + b.sbH { return null }
+    return b
+}
+
+bool func scrollHThumbDragTo(b:Box, left:int) {
+    if !scrollHThumbShown(b) { return false }
+    int run = scrollHTrackWidth(b) - scrollHThumbWidth(b)
+    if run <= 0 { return false }
+    int want = left - scrollHTrackLeft(b)
+    int range = boxScrollLeftRange(b)
+    int to = clampInt(Math.floorDiv(want * range, run), 0, range)
+    return boxScrollLeftBy(b, to - boxScrollLeft(b))
 }
 
 // The href of the nearest enclosing link of a box, or null.

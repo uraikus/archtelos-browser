@@ -5,6 +5,31 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The horizontal axis scrolls too
+
+The entry above left the horizontal thumb undragged and called it "the
+same three functions over the other axis". Reading the code said
+otherwise, and todo.md was corrected before the work started: there was
+no horizontal offset at all behind that bar. The painter translated its
+clip layer by the vertical offset only, hit testing added back only
+that, and nothing moved the content across -- so the bar was painted,
+correctly, over an axis that did not move.
+
+It moves now. The offset is kept beside the vertical one, by element id
+for the same reason; the painter translates by both; hit testing adds
+both back, so a link inside a box scrolled across is clickable where it
+looks; and the horizontal thumb is found and dragged from the same
+shared geometry the painter draws it with.
+
+Chromium 141 on a 200x100 `overflow: auto` box holding a 500x50 child:
+clientWidth 200, clientHeight 85 -- the horizontal bar took its fifteen
+-- scrollWidth 500, and `scrollLeft` clamps to 300, which is 500 less
+the 200 that is visible. This engine answers each the same.
+
+The wheel still only scrolls a container down; a shift-wheel or a
+horizontal wheel would scroll it across, and this reads neither
+(todo.md).
+
 ### A draggable scrollbar thumb, and a horizontal bar for a long line
 
 Two things todo.md named around scroll containers.
@@ -36,9 +61,6 @@ looks and where it can be grabbed are the same rectangle by construction
 rather than by two formulas that agree. The pixel checks that already
 say the thumb is drawn in the right place pass unchanged through that
 refactor, which is what says the move was faithful.
-
-Only the vertical thumb drags; the horizontal one is painted and not yet
-hit tested (todo.md).
 
 ### `image-set()`, `image()` and `cross-fade()`, closing CSS Images
 
