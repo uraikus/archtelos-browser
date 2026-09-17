@@ -426,4 +426,109 @@ checkEqInt(rowHeight('fit-content(25px)', 'a'), 40,
 checkEqInt(rowHeight('auto auto', 'a'), 40, 'the first of two auto rows is its item')
 checkEqInt(rowHeight('auto auto', 'b'), 0, 'and an empty one is nothing')
 
+// ---- repeat(auto-fill) and repeat(auto-fit) (Grid 1 §7.2.3.2) ---------
+// How many times the group repeats is decided by the space available
+// rather than written down, so it cannot be expanded when the template
+// is parsed. The count is the largest N that does not overflow:
+//
+//   N = floor((S - F - (K-1)*gap) / (G + L*gap))
+//
+// for a container of S, K fixed tracks outside the repeat totalling F,
+// and a group of L tracks totalling G. Chromium 141 in a 300px grid:
+//
+//   repeat(auto-fill, 100px)               100px 100px 100px
+//   repeat(auto-fill, 90px)                 90px  90px  90px   30 left over
+//   repeat(auto-fill, 100px), gap 10px     100px 100px
+//   repeat(auto-fill, 90px), gap 20px       90px  90px
+//   repeat(auto-fill, 70px) 100px           70px  70px 100px
+//   repeat(auto-fill, minmax(90px, 1fr))   100px 100px 100px
+//
+// A probe item names the last track, because the count is only visible
+// in where a named column lands.
+
+int func fillTrack(cols:text, extra:text, col:text, id:text) {
+    Box g = gridOf('grid-template-columns:' + cols + ';' + extra,
+                   gridCell('a', '') + '<div id="b" style="grid-column:' + col + '"></div>')
+    Box c = findById(g, id)
+    return c == null ? -1 : c.w
+}
+int func fillTrackX(cols:text, extra:text, col:text, id:text) {
+    Box g = gridOf('grid-template-columns:' + cols + ';' + extra,
+                   gridCell('a', '') + '<div id="b" style="grid-column:' + col + '"></div>')
+    Box c = findById(g, id)
+    return c == null ? -1 : c.x
+}
+
+checkEqInt(fillTrackX('repeat(auto-fill, 100px)', '', '3', 'b'), 200,
+           'auto-fill repeats a 100px track three times in 300')
+checkEqInt(fillTrack('repeat(auto-fill, 100px)', '', '3', 'b'), 100, 'each of them its own length')
+checkEqInt(fillTrackX('repeat(auto-fill, 90px)', '', '3', 'b'), 180,
+           'and a 90px track three times, leaving 30 over')
+checkEqInt(fillTrack('repeat(auto-fill, 90px)', '', '3', 'b'), 90, 'without stretching any of them')
+checkEqInt(fillTrackX('repeat(auto-fill, 100px)', 'column-gap:10px', '2', 'b'), 110,
+           'a gap counts against the space, so 100px repeats twice')
+checkEqInt(fillTrackX('repeat(auto-fill, 90px)', 'column-gap:20px', '2', 'b'), 110,
+           'and so does 90px with a 20px gap')
+checkEqInt(fillTrackX('repeat(auto-fill, 70px) 100px', '', '3', 'b'), 140,
+           'a track outside the repeat is subtracted first')
+checkEqInt(fillTrack('repeat(auto-fill, 70px) 100px', '', '3', 'b'), 100,
+           'and keeps its own length at the end')
+checkEqInt(fillTrack('repeat(auto-fill, minmax(90px, 1fr))', '', '3', 'b'), 100,
+           'the count uses the minimum, and the fr maximum then shares the space')
+checkEqInt(fillTrackX('repeat(auto-fill, minmax(90px, 1fr))', '', '3', 'b'), 200,
+           'three tracks of a hundred')
+
+// `auto-fit` counts the same way and then collapses every track no item
+// occupies, along with the gutters beside it. Chromium 141, 300px wide
+// with a 20px column gap and `repeat(auto-fit, 60px)`: four tracks, of
+// which the second and third are empty, reads `60px 0px 0px 60px` and
+// puts the item in the fourth track at x = 80 -- one gutter past the
+// first, not three.
+Box gFit = gridOf('grid-template-columns:repeat(auto-fit, 60px);column-gap:20px',
+                  gridCell('a', '') + gridCell('b', 'grid-column:4'))
+checkEqInt(findById(gFit, 'a').w, 60, 'an occupied auto-fit track keeps its size')
+checkEqInt(findById(gFit, 'b').w, 60, 'and so does the one further along')
+checkEqInt(findById(gFit, 'b').x, 80,
+           'the collapsed tracks between them, and their gutters, take no space')
+
+// With every track occupied nothing collapses.
+Box gFitFull = gridOf('grid-template-columns:repeat(auto-fit, 100px)',
+                      gridCell('a', '') + gridCell('b', '') + gridCell('c', ''))
+checkEqInt(findById(gFitFull, 'b').x, 100, 'three items fill three auto-fit tracks')
+checkEqInt(findById(gFitFull, 'c').x, 200, 'and none of them collapses')
+
+// An fr maximum inside auto-fit gives the whole width to the tracks that
+// survive: Chromium reads `300px 0px 0px` for one item and
+// `150px 150px 0px` for two.
+Box gFitFr = gridOf('grid-template-columns:repeat(auto-fit, minmax(90px, 1fr))', gridCell('a', ''))
+checkEqInt(findById(gFitFr, 'a').w, 300, 'one item in an auto-fit fr repeat takes the width')
+Box gFitFr2 = gridOf('grid-template-columns:repeat(auto-fit, minmax(90px, 1fr))',
+                     gridCell('a', '') + gridCell('b', ''))
+checkEqInt(findById(gFitFr2, 'a').w, 150, 'two items halve it')
+checkEqInt(findById(gFitFr2, 'b').x, 150, 'the second starting where the first ends')
+
+// ---- grid-auto-flow: dense (Grid 1 §8.5) ------------------------------
+// Sparse packing never moves the cursor backwards, so a hole left by an
+// item too wide to fit stays a hole. Dense packing starts each item's
+// search at the beginning again and fills it. Chromium 141 on a
+// two-column grid holding a single cell, a cell spanning both columns,
+// and another single cell, with rows ten pixels tall:
+//
+//   row        a (0,0)   b (0,10)   c (0,20)
+//   row dense  a (0,0)   b (0,10)   c (100,0)
+
+text denseItems = gridCell('a', 'height:10px')
+                + '<div id="b" style="grid-column:span 2;height:10px">b</div>'
+                + gridCell('c', 'height:10px')
+
+Box gSparse = gridOf('grid-template-columns:100px 100px', denseItems)
+checkEqInt(findById(gSparse, 'b').y, 10, 'an item too wide for the rest of the row starts a new one')
+checkEqInt(findById(gSparse, 'c').x, 0, 'and the next item follows it')
+checkEqInt(findById(gSparse, 'c').y, 20, 'in a row of its own, leaving the hole beside a')
+
+Box gDense = gridOf('grid-template-columns:100px 100px;grid-auto-flow:row dense', denseItems)
+checkEqInt(findById(gDense, 'b').y, 10, 'dense packing places the wide item in the same place')
+checkEqInt(findById(gDense, 'c').x, 100, 'but fills the hole beside a with what follows')
+checkEqInt(findById(gDense, 'c').y, 0, 'in the first row')
+
 finish('grid')

@@ -125,10 +125,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
    everywhere with no call to change it. Cairo has every Porter-Duff
    and separable blend operator; the entry point is what is missing.
-11. **Grid, completed**: `auto-fill` and `auto-fit`, dense packing, and
-    subgrid. Named lines, `grid-template-areas` and the track sizing
-    functions — `minmax()`, `min-content`, `max-content`,
-    `fit-content()` — are done. Three divergences are left in what is
+11. **Grid, completed**: subgrid. Named lines,
+    `grid-template-areas`, the track sizing functions — `minmax()`,
+    `min-content`, `max-content`, `fit-content()` — `repeat()` with
+    `auto-fill` and `auto-fit`, and dense packing are done. Three divergences are left in what is
     done. A placement naming a line the template does not know leaves
     that edge automatic, where the standard creates an implicit line of
     that name after the explicit grid — Chromium puts `grid-area: zz` on

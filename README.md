@@ -190,7 +190,11 @@ by `grid-auto-columns` and `grid-auto-rows`.
 A track is a pair of sizing functions, a minimum and a maximum: lengths
 and percentages, `auto`, `min-content`, `max-content`, `fr` shares of
 what is left, `minmax()` of any two of those, `fit-content()` of a
-length, and `repeat()` of a whole list. Free space is handed out in the
+length, and `repeat()` of a whole list — `auto-fill` and `auto-fit`
+included, which repeat their group as many times as the container has
+room for, `auto-fit` then collapsing the tracks no item occupies.
+`grid-auto-flow: dense` fills the holes a wide item left behind. Free
+space is handed out in the
 standard's order — every track grows towards its maximum in equal
 shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is

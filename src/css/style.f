@@ -690,6 +690,22 @@ struct Style {
     // and a template is a rectangle, so one flat array and a width is
     // the whole of it. An empty name is a cell belonging to no area.
     gridAreaNames:arr[text]
+    // repeat(auto-fill | auto-fit, <list>) cannot be expanded when the
+    // template is parsed, because how many times it repeats depends on
+    // the space the container turns out to have. The track list holds
+    // ONE copy of the repeated group; these say where that copy sits,
+    // how long it is, and whether the empty tracks collapse. A length
+    // of zero means there is no auto-repeat, which is what a style
+    // nobody filled in reads as.
+    gridColsAutoAt:int
+    gridColsAutoLen:int
+    gridColsAutoFit:bool
+    gridRowsAutoAt:int
+    gridRowsAutoLen:int
+    gridRowsAutoFit:bool
+    // grid-auto-flow: dense. Sparse packing never moves the cursor
+    // backwards; dense starts each item's search over.
+    gridAutoFlowDense:bool
     gridAreaCols:int
     // The names a track list writes in brackets: name i sits at line
     // number `gridColLineAt[i]`. Two arrays rather than a map, because

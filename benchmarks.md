@@ -842,6 +842,14 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+`repeat(auto-fill)`, `repeat(auto-fit)` and dense packing cost **4,656
+bytes** (2,741,992 → 2,746,648) and no measurable time: five alternating
+best-of-3 samples of `features.html` give 121 to 124 ms before and 121
+to 123 after, the same best on each side. Nothing new runs on a grid
+that does not use them — the expansion returns the template's own list
+untouched when it holds no auto-repeat, and the collapse array is a
+shared empty one.
+
 The grid track sizing functions cost **4,264 bytes** (2,737,728 →
 2,741,992). What they cost in time this file cannot say at this size,
 and the reason is worth the line: `features.html`, which has 48 grid

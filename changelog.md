@@ -5,6 +5,34 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `repeat(auto-fill)`, `repeat(auto-fit)` and dense packing
+
+How many times an auto-repeat group repeats depends on the space the
+container turns out to have, so it cannot be expanded when the template
+is parsed. The track list keeps one copy of the group and where it sits;
+layout expands it, with the count the standard's largest N that does not
+overflow — `N = floor((S - F - (K-1)·gap) / (G + L·gap))`, never less
+than one, and one where the axis has no definite size at all.
+
+`auto-fit` counts the same way and then collapses every track of the
+repeat that no item occupies. **The gutters go with them**: Chromium 141
+on a 300px grid with a 20px gap and `repeat(auto-fit, 60px)`, holding an
+item in the first track and one at `grid-column: 4`, reads
+`60px 0px 0px 60px` and puts the second item at x = 80 — one gutter past
+the first, not three. A run of collapsed tracks and the gutters between
+them comes to one gutter.
+
+`grid-auto-flow: dense` starts each item's search at the beginning of
+the grid instead of at the cursor, so a hole an item too wide for the
+rest of its row left behind is filled by a later one. Sparse packing,
+which never moves the cursor backwards, leaves it: measured both ways
+against Chromium on a two-column grid holding a cell, a cell spanning
+both columns, and a cell.
+
+4,656 bytes, and no measurable time: five alternating best-of-3 samples
+of the feature page give 121 to 124 ms before and 121 to 123 after, the
+same best on each side.
+
 ### The grid track sizing functions
 
 A track is a pair of sizing functions, a minimum and a maximum (Grid 1

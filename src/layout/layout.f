@@ -3326,6 +3326,88 @@ bool func trackIsIntrinsic(t:Track) {
     return t.kind != TRACK_LEN || t.minKind != TRACK_LEN
 }
 
+// The size a track counts as while the repetitions of an auto-repeat
+// are being counted (§7.2.3.2): its maximum where that is a definite
+// length, otherwise its minimum. A track that is neither counts as
+// nothing, which makes the repeat one copy.
+int func trackFixedSize(t:Track, axisSize:int) {
+    if t.kind == TRACK_LEN { return maxInt(resolveLen(t.size, axisSize, 0), 0) }
+    if t.minKind == TRACK_LEN { return maxInt(resolveLen(t.minSize, axisSize, 0), 0) }
+    return 0
+}
+
+// How many times an auto-repeat group fits: the largest N with
+// F + N*G + (K + N*L - 1)*gap <= S, and never less than one. With no
+// definite size to fill -- the block axis of a grid with no height --
+// the standard makes it one repetition.
+int func gridAutoRepeatCount(list:arr[Track], at:int, len:int, axisSize:int, gap:int) {
+    if axisSize < 0 { return 1 }
+    int outside = 0
+    int others = 0
+    for int i = 0, i < list.length, i++ {
+        if i >= at && i < at + len { continue }
+        others++
+        outside = outside + trackFixedSize(list[i], axisSize)
+    }
+    int group = 0
+    for int k = 0, k < len, k++ { group = group + trackFixedSize(list[at + k], axisSize) }
+    int per = group + len * gap
+    if group <= 0 || per <= 0 { return 1 }
+    int room = axisSize - outside - (others - 1) * gap
+    return maxInt(Math.floorDiv(room, per), 1)
+}
+
+// How many tracks the expanded repeat occupies, which the auto-fit
+// collapse needs and a function cannot return beside the list
+// (FINDINGS.md, "one value out of a function"). Zero where there is no
+// auto-repeat.
+int gridRepeatSpan = 0
+
+// The track list with its auto-repeat expanded. A list without one is
+// handed straight back, so a page whose grids do not use it allocates
+// nothing.
+arr[Track] func gridExpandRepeat(list:arr[Track], at:int, len:int, axisSize:int, gap:int) {
+    gridRepeatSpan = 0
+    if at < 0 || len <= 0 || at + len > list.length { return list }
+    int n = gridAutoRepeatCount(list, at, len, axisSize, gap)
+    gridRepeatSpan = n * len
+    if n == 1 { return list }
+    arr[Track] out = []
+    for int i = 0, i < at, i++ { out.push(list[i]) }
+    for int r = 0, r < n, r++ {
+        for int k = 0, k < len, k++ { out.push(list[at + k]) }
+    }
+    for int i = at + len, i < list.length, i++ { out.push(list[i]) }
+    return out
+}
+
+// The shared empty answer: almost every grid has no collapsed track, and
+// nothing writes to this.
+arr[bool] gridNoCollapse = []
+
+bool func gridCollapsedAt(collapsed:arr[bool], i:int) {
+    if i < 0 || i >= collapsed.length { return false }
+    return collapsed[i]
+}
+
+// `auto-fit` collapses every track of its repeat that no item occupies
+// (§7.2.3.2). A collapsed track is a 0px track whose gutters go with it.
+arr[bool] func gridCollapsedTracks(areas:arr[GridArea], count:int, from:int, span:int,
+                                   inline:bool) {
+    if span <= 0 || from < 0 { return gridNoCollapse }
+    arr[bool] out = []
+    for int i = 0, i < count, i++ { out.push(i >= from && i < from + span) }
+    for int i = 0, i < areas.length, i++ {
+        int at = inline ? areas[i].col : areas[i].row
+        int sp = maxInt(inline ? areas[i].colSpan : areas[i].rowSpan, 1)
+        for int k = 0, k < sp, k++ {
+            int t = at + k
+            if t >= 0 && t < count { out[t] = false }
+        }
+    }
+    return out
+}
+
 void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     Style s = b.style
     b.x = cx + b.ml
@@ -3341,8 +3423,19 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     // not a template names their sizes.
     int areaRows = s.gridAreaCols > 0
         ? Math.floorDiv(s.gridAreaNames.length, s.gridAreaCols) : 0
-    int explicitCols = maxInt(s.gridCols.length, s.gridAreaCols)
-    int explicitRows = maxInt(s.gridRows.length, areaRows)
+    // `repeat(auto-fill | auto-fit, ...)` repeats as many times as this
+    // container has room for, so the template becomes a real track list
+    // here rather than in the cascade. A template without one is handed
+    // back unchanged and nothing is allocated.
+    int innerW = b.w - b.pl - b.pr - b.bl - b.br
+    arr[Track] colTracks = gridExpandRepeat(s.gridCols, s.gridColsAutoAt, s.gridColsAutoLen,
+                                            innerW, colGap)
+    int colRepeatSpan = gridRepeatSpan
+    arr[Track] rowTracks = gridExpandRepeat(s.gridRows, s.gridRowsAutoAt, s.gridRowsAutoLen,
+                                            -1, rowGap)
+    int rowRepeatSpan = gridRepeatSpan
+    int explicitCols = maxInt(colTracks.length, s.gridAreaCols)
+    int explicitRows = maxInt(rowTracks.length, areaRows)
     arr[GridArea] areas = []
     arr[Box] autoItems = []
     for int i = 0, i < b.children.length, i++ {
@@ -3417,10 +3510,13 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
             // placed automatically after one that named a column goes to
             // the row below rather than back to the cells the named one
             // skipped, which is what Chromium does.
-            cursor = maxInt(cursor, crossPos * flowLines + alongPos)
+            if !s.gridAutoFlowDense { cursor = maxInt(cursor, crossPos * flowLines + alongPos) }
         } else {
-            // walk the flow from the cursor until a free run fits
-            int at = maxInt(cursor, crossPos >= 0 ? crossPos * flowLines : 0)
+            // walk the flow from the cursor until a free run fits.
+            // `dense` starts every item's search over instead, which is
+            // what fills a hole an earlier item was too wide for.
+            int from = s.gridAutoFlowDense ? 0 : cursor
+            int at = maxInt(from, crossPos >= 0 ? crossPos * flowLines : 0)
             while true {
                 int cAt = Math.floorDiv(at, flowLines)
                 int aAt = at % flowLines
@@ -3434,7 +3530,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
                     alongPos = aAt
                     crossPos = cAt
                     if crossPos < 0 { crossPos = cAt }
-                    cursor = at
+                    if !s.gridAutoFlowDense { cursor = at }
                     break
                 }
                 at++
@@ -3454,8 +3550,16 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         colCount = maxInt(colCount, areas[i].col + areas[i].colSpan)
         rowCount = maxInt(rowCount, areas[i].row + areas[i].rowSpan)
     }
-    arr[int] colSizes = gridSizeAxis(b, areas, s.gridCols, s.gridAutoCols, colCount,
-                                     width, colGap, true)
+    // `auto-fit` collapses the tracks of its repeat that hold no item,
+    // which can only be known once the items are placed.
+    arr[bool] colCollapsed = s.gridColsAutoFit
+        ? gridCollapsedTracks(areas, colCount, s.gridColsAutoAt, colRepeatSpan, true)
+        : gridNoCollapse
+    arr[bool] rowCollapsed = s.gridRowsAutoFit
+        ? gridCollapsedTracks(areas, rowCount, s.gridRowsAutoAt, rowRepeatSpan, false)
+        : gridNoCollapse
+    arr[int] colSizes = gridSizeAxis(b, areas, colTracks, s.gridAutoCols, colCount,
+                                     width, colGap, true, colCollapsed)
     // The rows are sized after the columns, because an auto row's
     // height is the height of items laid out at their column widths --
     // and an item has no height until something lays it out, so the
@@ -3470,25 +3574,25 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
         if a.rowSpan != 1 || a.row < 0 || a.row >= rowCount { continue }
-        if !trackIsIntrinsic(trackAt(s.gridRows, s.gridAutoRows, a.row)) { continue }
-        int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan)
+        if !trackIsIntrinsic(trackAt(rowTracks, s.gridAutoRows, a.row)) { continue }
+        int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan, colCollapsed)
         Box c = a.box
         c.forcedWidthPx = lenIsAuto(c.style.width) ? measureW : -1
         layoutBlock(c, 0, 0, measureW, false)
         c.forcedWidthPx = -1
     }
-    arr[int] rowSizes = gridSizeAxis(b, areas, s.gridRows, s.gridAutoRows, rowCount,
-                                     -1, rowGap, false)
+    arr[int] rowSizes = gridSizeAxis(b, areas, rowTracks, s.gridAutoRows, rowCount,
+                                     -1, rowGap, false, rowCollapsed)
 
     // ---- pass 3: place the items in their areas --------------------
-    arr[int] colPos = gridTrackPositions(colSizes, colGap)
-    arr[int] rowPos = gridTrackPositions(rowSizes, rowGap)
+    arr[int] colPos = gridTrackPositions(colSizes, colGap, colCollapsed)
+    arr[int] rowPos = gridTrackPositions(rowSizes, rowGap, rowCollapsed)
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
         int ax = innerX + colPos[a.col]
         int ay = innerY + rowPos[a.row]
-        int aw = gridSpanSize(colSizes, colGap, a.col, a.colSpan)
-        int ah = gridSpanSize(rowSizes, rowGap, a.row, a.rowSpan)
+        int aw = gridSpanSize(colSizes, colGap, a.col, a.colSpan, colCollapsed)
+        int ah = gridSpanSize(rowSizes, rowGap, a.row, a.rowSpan, rowCollapsed)
         Box c = a.box
         c.forcedWidthPx = lenIsAuto(c.style.width) ? aw : -1
         layoutBlock(c, ax, ay, aw, false)
@@ -3540,12 +3644,16 @@ void func gridMarkOccupied(occupied:arr[bool], a:GridArea, flowLines:int, column
 }
 
 // The start offset of each track, from the content edge.
-arr[int] func gridTrackPositions(sizes:arr[int], gap:int) {
+arr[int] func gridTrackPositions(sizes:arr[int], gap:int, collapsed:arr[bool]) {
     arr[int] pos = []
     int at = 0
     for int i = 0, i < sizes.length, i++ {
         pos.push(at)
-        at = at + sizes[i] + gap
+        // A collapsed track takes no space and neither does the gutter
+        // after it, so a run of them plus their gutters comes to one
+        // gutter -- measured against Chromium 141, which puts the item
+        // after two collapsed tracks one gap along, not three.
+        at = at + sizes[i] + (gridCollapsedAt(collapsed, i) ? 0 : gap)
     }
     pos.push(at)
     return pos
@@ -3553,10 +3661,11 @@ arr[int] func gridTrackPositions(sizes:arr[int], gap:int) {
 
 // The size an item spanning `span` tracks from `at` occupies, gaps
 // between them included.
-int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int) {
+int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int, collapsed:arr[bool]) {
     int total = 0
     for int i = at, i < at + span && i < sizes.length, i++ {
-        total = total + sizes[i] + (i > at ? gap : 0)
+        total = total + sizes[i]
+                + (i > at && !gridCollapsedAt(collapsed, i - 1) ? gap : 0)
     }
     return total
 }
@@ -3577,7 +3686,7 @@ int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int) {
 // apart yet -- todo.md carries it.
 arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
                            auto:arr[Track], count:int, axisSize:int,
-                           gap:int, inline:bool) {
+                           gap:int, inline:bool, collapsed:arr[bool]) {
     int pct = axisSize < 0 ? 0 : axisSize
     // What each track has to hold: the largest contribution of the
     // single-span items in it. An item spanning several tracks
@@ -3649,7 +3758,7 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
         }
         if limit < base { limit = base }
         float fr = 0.0
-        if t.kind == TRACK_FR && axisSize >= 0 {
+        if t.kind == TRACK_FR && axisSize >= 0 && !gridCollapsedAt(collapsed, i) {
             fr = t.fr
             totalFr = totalFr + t.fr
         }
@@ -3659,13 +3768,26 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
         // `minmax(80px, 120px)` row is 120 tall in a container with no
         // height of its own.
         if axisSize < 0 && definiteLimit && limit > size { size = limit }
+        // A collapsed auto-fit track is a 0px track: no base, no limit,
+        // no share of anything.
+        bool gone = gridCollapsedAt(collapsed, i)
+        if gone {
+            size = 0
+            limit = 0
+            fr = 0.0
+        }
         sizes.push(size)
         limits.push(limit)
         frs.push(fr)
-        stretchy.push(t.kind == TRACK_AUTO)
+        stretchy.push(t.kind == TRACK_AUTO && !gone)
     }
 
-    int gaps = count > 1 ? gap * (count - 1) : 0
+    // A collapsed track's gutter goes with it, so the gaps are counted
+    // one by one rather than as (count - 1) of them.
+    int gaps = 0
+    for int i = 0, i + 1 < count, i++ {
+        if !gridCollapsedAt(collapsed, i) { gaps = gaps + gap }
+    }
     // §12.5 maximize tracks: equal shares, each track freezing as it
     // reaches its growth limit and the rest going to those still growable.
     if axisSize >= 0 {

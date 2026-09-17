@@ -2215,11 +2215,22 @@ arr[int] trackLineAt = []
 arr[text] trackNoNames = []
 arr[int] trackNoLines = []
 bool trackLinesOwned = false
+// Where a `repeat(auto-fill | auto-fit, ...)` group ended up in the
+// list, how long it is, and which of the two it was. Out-parameters for
+// the same reason the line names are: a Festina function returns one
+// value (FINDINGS.md, "one value out of a function"). A length of zero
+// means the list has no auto-repeat in it.
+int trackAutoRepeatAt = -1
+int trackAutoRepeatLen = 0
+bool trackAutoRepeatFit = false
 
 arr[Track] func parseTrackList(v:ascii, fontSize:int) {
     trackLineNames = trackNoNames
     trackLineAt = trackNoLines
     trackLinesOwned = false
+    trackAutoRepeatAt = -1
+    trackAutoRepeatLen = 0
+    trackAutoRepeatFit = false
     arr[Track] out = []
     if v == null { return out }
     ascii t = asciiTrim(v)
@@ -2263,6 +2274,22 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
             && toks[i].charCodeAt(toks[i].length - 1) == CH_RPAREN {
             arr[ascii] args = splitTopLevelCommas(toks[i].slice(7, toks[i].length - 1))
             if args.length < 2 { continue }
+            // `auto-fill` and `auto-fit` repeat as many times as the
+            // container turns out to have room for, which is not known
+            // here. One copy of the group goes in and where it sits is
+            // recorded; layout expands it. The standard allows one such
+            // repeat in a list, so a second is ignored.
+            ascii how = asciiLower(asciiTrim(args[0]))
+            if how == 'auto-fill' || how == 'auto-fit' {
+                if trackAutoRepeatLen > 0 { continue }
+                arr[ascii] once = cssTokens(asciiTrim(args[1]))
+                if once.length == 0 { continue }
+                trackAutoRepeatAt = out.length
+                trackAutoRepeatLen = once.length
+                trackAutoRepeatFit = how == 'auto-fit'
+                for int k = 0, k < once.length, k++ { out.push(parseTrack(once[k], fontSize)) }
+                continue
+            }
             parseNumberAt(asciiTrim(args[0]), 0)
             if !numOk { continue }
             int n = minInt(maxInt(roundPx(numValue), 0), 1000)
@@ -4444,9 +4471,15 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.gridCols = parseTrackList(styleProp(props, 'grid-template-columns'), s.fontSize)
     s.gridColLineNames = trackLineNames
     s.gridColLineAt = trackLineAt
+    s.gridColsAutoAt = trackAutoRepeatAt
+    s.gridColsAutoLen = trackAutoRepeatLen
+    s.gridColsAutoFit = trackAutoRepeatFit
     s.gridRows = parseTrackList(styleProp(props, 'grid-template-rows'), s.fontSize)
     s.gridRowLineNames = trackLineNames
     s.gridRowLineAt = trackLineAt
+    s.gridRowsAutoAt = trackAutoRepeatAt
+    s.gridRowsAutoLen = trackAutoRepeatLen
+    s.gridRowsAutoFit = trackAutoRepeatFit
     parseGridAreas(styleProp(props, 'grid-template-areas'))
     s.gridAreaNames = areaTemplateNames
     s.gridAreaCols = areaTemplateCols
@@ -4454,6 +4487,7 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.gridAutoRows = parseTrackList(styleProp(props, 'grid-auto-rows'), s.fontSize)
     ascii gaf = styleProp(props, 'grid-auto-flow')
     s.gridAutoFlowColumn = gaf != null && asciiIndexOf(asciiLower(gaf), 'column'.toAscii(), 0) >= 0
+    s.gridAutoFlowDense = gaf != null && asciiIndexOf(asciiLower(gaf), 'dense'.toAscii(), 0) >= 0
     s.gridColStart = parseGridLine(styleProp(props, 'grid-column-start'))
     s.gridColEnd = parseGridLine(styleProp(props, 'grid-column-end'))
     s.gridRowStart = parseGridLine(styleProp(props, 'grid-row-start'))
