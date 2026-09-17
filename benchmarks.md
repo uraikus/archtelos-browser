@@ -850,6 +850,12 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+Percentage and elliptical `border-radius` costs **9,088 bytes**
+(2,759,536 → 2,768,624). The corners are resolved per painted box now
+rather than once per computed style, which is eight lengths and a
+comparison for a box that has a radius and one boolean for a box that
+does not.
+
 Interpolation hints and the mirrored degenerate ellipse cost **4,256
 bytes** (2,755,280 → 2,759,536). A gradient with no hint in it pays one
 comparison per band against a resolved offset of -1.

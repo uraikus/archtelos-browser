@@ -3350,14 +3350,58 @@ Len func intrinsicSizeProp(props:map[text], name:text, fontSize:int, dflt:Len) {
 }
 
 // One corner's radius, or the value the shorthand already gave it.
-int func cornerRadiusProp(props:map[text], name:text, fontSize:int, dflt:int) {
+// One corner longhand, which takes one radius or two: `20px` is a
+// quarter circle, `20px 5px` an ellipse a fifth as tall as it is wide.
+// Two values out of a function need globals (FINDINGS.md, "one value
+// out of a function").
+Len cornerRadiusX = lenPx(0.0)
+Len cornerRadiusY = lenPx(0.0)
+
+bool func cornerRadiusProp(props:map[text], name:text, fontSize:int) {
     ascii v = styleProp(props, name)
-    if v == null { return dflt }
+    if v == null { return false }
     arr[ascii] t = cssTokens(v)
-    if t.length == 0 { return dflt }
-    Len l = parseLength(t[0], fontSize)
-    if l.kind != LEN_PX { return dflt }
-    return maxInt(roundPx(l.v), 0)
+    if t.length == 0 { return false }
+    Len rx = parseRadiusLen(t[0], fontSize)
+    if rx.kind != LEN_PX && rx.kind != LEN_PERCENT { return false }
+    cornerRadiusX = rx
+    cornerRadiusY = rx
+    if t.length > 1 {
+        Len ry = parseRadiusLen(t[1], fontSize)
+        if ry.kind == LEN_PX || ry.kind == LEN_PERCENT { cornerRadiusY = ry }
+    }
+    return true
+}
+
+// The shorthand's slots: one value is every corner, two are the two
+// diagonals, three leave the fourth to mirror the second, four are
+// clockwise from the top left.
+Len func radiusSlot(list:arr[Len], at:int) {
+    if list.length == 0 { return lenPx(0.0) }
+    if at == 0 { return list[0] }
+    if at == 1 { return list.length > 1 ? list[1] : list[0] }
+    if at == 2 { return list.length > 2 ? list[2] : list[0] }
+    if list.length > 3 { return list[3] }
+    return list.length > 1 ? list[1] : list[0]
+}
+
+// Whether any corner of this style is rounded at all.
+bool func radiusAny(s:Style) {
+    return lenIsPositive(s.radiusTopLeftX) || lenIsPositive(s.radiusTopRightX)
+        || lenIsPositive(s.radiusBottomRightX) || lenIsPositive(s.radiusBottomLeftX)
+}
+
+bool func lenIsPositive(l:Len) {
+    return (l.kind == LEN_PX || l.kind == LEN_PERCENT) && l.v > 0.0
+}
+
+// A radius is never negative, and a percentage is kept for the painter
+// to resolve against the box.
+Len func parseRadiusLen(tok:ascii, fontSize:int) {
+    Len l = parseLength(tok, fontSize)
+    if l.kind == LEN_PX && l.v < 0.0 { return lenPx(0.0) }
+    if l.kind == LEN_PERCENT && l.v < 0.0 { return lenPercent(0.0) }
+    return l
 }
 
 // One side's border-style. Anything the painter does not know paints
@@ -4430,35 +4474,60 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
     s.borderLeftStyle = borderStyleProp(props, 'left')
     // border-radius: the shorthand's one-to-four values run top-left,
     // top-right, bottom-right, bottom-left, each missing one taking the
-    // value of the corner opposite it. The elliptical `/` form is cut at
-    // the slash and only its horizontal radii are read, which css-2026.md
-    // records.
-    s.radiusTopLeft = 0
-    s.radiusTopRight = 0
-    s.radiusBottomRight = 0
-    s.radiusBottomLeft = 0
+    // value of the corner opposite it. A `/` splits the horizontal radii
+    // from the vertical ones, each side read the same way; with no slash
+    // the vertical radii are the horizontal ones and every corner is a
+    // quarter circle.
+    Len zeroRadius = lenPx(0.0)
+    s.radiusTopLeftX = zeroRadius
+    s.radiusTopLeftY = zeroRadius
+    s.radiusTopRightX = zeroRadius
+    s.radiusTopRightY = zeroRadius
+    s.radiusBottomRightX = zeroRadius
+    s.radiusBottomRightY = zeroRadius
+    s.radiusBottomLeftX = zeroRadius
+    s.radiusBottomLeftY = zeroRadius
     ascii br = styleProp(props, 'border-radius')
     if br != null {
+        arr[Len] across = []
+        arr[Len] down = []
+        bool afterSlash = false
         arr[ascii] t = cssTokens(br)
-        arr[int] corner = []
         for int i = 0, i < t.length, i++ {
-            if t[i] == '/' { break }
-            Len l = parseLength(t[i], s.fontSize)
-            corner.push(l.kind == LEN_PX ? maxInt(roundPx(l.v), 0) : 0)
+            if t[i] == '/' { afterSlash = true  continue }
+            Len l = parseRadiusLen(t[i], s.fontSize)
+            if l.kind != LEN_PX && l.kind != LEN_PERCENT { continue }
+            if afterSlash { down.push(l) } else { across.push(l) }
         }
-        if corner.length > 0 {
-            s.radiusTopLeft = corner[0]
-            s.radiusTopRight = corner.length > 1 ? corner[1] : corner[0]
-            s.radiusBottomRight = corner.length > 2 ? corner[2] : corner[0]
-            s.radiusBottomLeft = corner.length > 3 ? corner[3] : s.radiusTopRight
+        if across.length > 0 {
+            if down.length == 0 { down = across }
+            s.radiusTopLeftX = radiusSlot(across, 0)
+            s.radiusTopRightX = radiusSlot(across, 1)
+            s.radiusBottomRightX = radiusSlot(across, 2)
+            s.radiusBottomLeftX = radiusSlot(across, 3)
+            s.radiusTopLeftY = radiusSlot(down, 0)
+            s.radiusTopRightY = radiusSlot(down, 1)
+            s.radiusBottomRightY = radiusSlot(down, 2)
+            s.radiusBottomLeftY = radiusSlot(down, 3)
         }
     }
-    s.radiusTopLeft = cornerRadiusProp(props, 'border-top-left-radius', s.fontSize, s.radiusTopLeft)
-    s.radiusTopRight = cornerRadiusProp(props, 'border-top-right-radius', s.fontSize, s.radiusTopRight)
-    s.radiusBottomRight = cornerRadiusProp(props, 'border-bottom-right-radius', s.fontSize, s.radiusBottomRight)
-    s.radiusBottomLeft = cornerRadiusProp(props, 'border-bottom-left-radius', s.fontSize, s.radiusBottomLeft)
-    s.borderRadius = maxInt(maxInt(s.radiusTopLeft, s.radiusTopRight),
-                            maxInt(s.radiusBottomRight, s.radiusBottomLeft))
+    if cornerRadiusProp(props, 'border-top-left-radius', s.fontSize) {
+        s.radiusTopLeftX = cornerRadiusX
+        s.radiusTopLeftY = cornerRadiusY
+    }
+    if cornerRadiusProp(props, 'border-top-right-radius', s.fontSize) {
+        s.radiusTopRightX = cornerRadiusX
+        s.radiusTopRightY = cornerRadiusY
+    }
+    if cornerRadiusProp(props, 'border-bottom-right-radius', s.fontSize) {
+        s.radiusBottomRightX = cornerRadiusX
+        s.radiusBottomRightY = cornerRadiusY
+    }
+    if cornerRadiusProp(props, 'border-bottom-left-radius', s.fontSize) {
+        s.radiusBottomLeftX = cornerRadiusX
+        s.radiusBottomLeftY = cornerRadiusY
+    }
+    s.borderRadius = radiusAny(s) ? 1 : 0
     s.borderSpacing = 0
     ascii bs = styleProp(props, 'border-spacing')
     if bs != null {

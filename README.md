@@ -158,6 +158,12 @@ paints a fetched image with `background-repeat`,
 `background-position` — or `background-position-x` and
 `background-position-y` separately — and `background-size`, which takes
 `cover`, `contain`, lengths, percentages and `auto` on either axis.
+Each corner takes its own `border-radius`, in a length or a percentage
+of the box, and may be an ellipse rather than a quarter circle — the
+`/` form gives the horizontal radii before the slash and the vertical
+after. Two radii that would overlap on one edge are scaled back
+together, so the shape keeps its proportions.
+
 `border-image` cuts an image into nine regions and lays them round the
 border: the corners at their own size, the edges stretched or tiled
 between them, and the middle only if `fill` asks.

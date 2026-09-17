@@ -822,14 +822,21 @@ struct Style {
     borderRightStyle:int
     borderBottomStyle:int
     borderLeftStyle:int
-    // The largest of the four corner radii, kept as the one test the
-    // painter makes before deciding whether a box needs a curved path at
-    // all; the corners themselves are below.
+    // Whether any corner is rounded at all: the one test the painter
+    // makes before deciding whether a box needs a curved path. The
+    // corners themselves are below, and they are kept unresolved
+    // because a percentage radius is of the box -- the horizontal of
+    // its width, the vertical of its height (Backgrounds and Borders 3
+    // §5.1) -- and the box is not known until paint time.
     borderRadius:int
-    radiusTopLeft:int
-    radiusTopRight:int
-    radiusBottomRight:int
-    radiusBottomLeft:int
+    radiusTopLeftX:Len
+    radiusTopLeftY:Len
+    radiusTopRightX:Len
+    radiusTopRightY:Len
+    radiusBottomRightX:Len
+    radiusBottomRightY:Len
+    radiusBottomLeftX:Len
+    radiusBottomLeftY:Len
     borderSpacing:int
     borderCollapse:bool
     textIndent:int

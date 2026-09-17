@@ -84,11 +84,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    alpha of nested rectangles the canvas's lack of a blur forces. A
    single background image from `url()` with `repeat`,
    `position`, `size`, `origin` and `clip` is done, and so is every border
-   style, per side, and a radius on each corner separately. A
-   `border-radius` in a percentage, and the elliptical `/` form that
-   gives a corner two radii, are still to do: both need the painter's
-   corner arc to take a pair of radii rather than one. A background
-   clipped to the padding or
+   style, per side, and a radius on each corner separately — in lengths
+   or percentages, with the elliptical `/` form that gives a corner two
+   radii, and the standard's overlap scaling where two on an edge would
+   meet. A background clipped to the padding or
    content edge still uses the border box's `border-radius` rather than
    the smaller inner curve, which needs the rounded-rectangle path that
    an image layer does not have (FINDINGS.md, "an image is a drawable

@@ -57,10 +57,15 @@ void func checkSameLen(logical:text, physical:text, read:text, label:text) {
     else if read == 'width' { va = resolveLen(a.width, 0, -1)  vb = resolveLen(b.width, 0, -1) }
     else if read == 'height' { va = resolveLen(a.height, 0, -1)  vb = resolveLen(b.height, 0, -1) }
     else if read == 'overflowHidden' { va = a.overflowHidden ? 1 : 0  vb = b.overflowHidden ? 1 : 0 }
-    else if read == 'radiusTopLeft' { va = a.radiusTopLeft  vb = b.radiusTopLeft }
-    else if read == 'radiusTopRight' { va = a.radiusTopRight  vb = b.radiusTopRight }
-    else if read == 'radiusBottomLeft' { va = a.radiusBottomLeft  vb = b.radiusBottomLeft }
-    else if read == 'radiusBottomRight' { va = a.radiusBottomRight  vb = b.radiusBottomRight }
+    else if read == 'radiusTopLeft' {
+        va = resolveLen(a.radiusTopLeftX, 0, -1)  vb = resolveLen(b.radiusTopLeftX, 0, -1)
+    } else if read == 'radiusTopRight' {
+        va = resolveLen(a.radiusTopRightX, 0, -1)  vb = resolveLen(b.radiusTopRightX, 0, -1)
+    } else if read == 'radiusBottomLeft' {
+        va = resolveLen(a.radiusBottomLeftX, 0, -1)  vb = resolveLen(b.radiusBottomLeftX, 0, -1)
+    } else if read == 'radiusBottomRight' {
+        va = resolveLen(a.radiusBottomRightX, 0, -1)  vb = resolveLen(b.radiusBottomRightX, 0, -1)
+    }
     checkEqInt(va, vb, label)
     check(va != 0, label + ' (and is not simply the initial value on both)')
 }

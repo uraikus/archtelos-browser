@@ -220,6 +220,60 @@ check(getPixelColor(1, 1) != red, 'two values round the first diagonal, top-left
 check(getPixelColor(38, 38) != red, 'and bottom-right')
 check(getPixelColor(38, 1) == red, 'leaving the other diagonal square')
 
+// ---- a radius in percent, and the elliptical form ------------------------
+// A percentage radius is of the box: the horizontal one of its width,
+// the vertical one of its height (Backgrounds and Borders 3 §5.1). On a
+// 40x40 box `50%` is 20px, so the two spellings must paint the same
+// pixels -- which is the check that depends on no number of its own.
+//
+// The `/` form gives a corner two radii, the horizontal ones before the
+// slash and the vertical ones after, so `20px / 5px` cuts a wide
+// shallow curve where `20px` cuts a quarter circle. The point (1, 10)
+// tells them apart: it is outside a 20px quarter circle and inside the
+// shallow one, because the corner's vertical reach is only 5.
+
+int func redPixels() {
+    int n = 0
+    for int y = 0, y < 40, y++ {
+        for int x = 0, x < 40, x++ {
+            if getPixelColor(x, y) == red { n++ }
+        }
+    }
+    return n
+}
+
+shotFill('border-radius:20px')
+int circleInk = redPixels()
+check(getPixelColor(1, 1) != red, 'a 20px radius on a 40px box rounds every corner')
+check(getPixelColor(20, 20) == red, 'and leaves the middle')
+
+shotFill('border-radius:50%')
+checkEqInt(redPixels(), circleInk, '`50%` on a 40px box is the same shape as 20px')
+check(getPixelColor(1, 1) != red, 'with the corners gone')
+check(getPixelColor(20, 1) == red, 'and the top edge still met at its middle')
+
+// Larger than half the box: the standard scales every radius down until
+// no two on an edge overlap (§5.5), which brings 60px back to 20.
+shotFill('border-radius:60px')
+checkEqInt(redPixels(), circleInk, 'a radius past half the box is scaled back to half')
+
+// The elliptical form.
+shotFill('border-radius:20px / 5px')
+check(getPixelColor(1, 10) == red, 'a shallow corner leaves the pixel a round one cuts')
+check(getPixelColor(1, 1) != red, 'while still cutting the corner itself')
+int shallowInk = redPixels()
+check(shallowInk > circleInk, 'and takes less away than the round one')
+
+// The same corner, written as one longhand with two values.
+shotFill('border-top-left-radius:20px 5px;border-top-right-radius:20px 5px;'
+         + 'border-bottom-right-radius:20px 5px;border-bottom-left-radius:20px 5px')
+checkEqInt(redPixels(), shallowInk, 'the longhands two-value form says the same thing')
+
+// A slash with one value after it applies that value to every corner,
+// and `20px / 20px` is the plain `20px`.
+shotFill('border-radius:20px / 20px')
+checkEqInt(redPixels(), circleInk, 'equal radii either side of the slash are the round corner')
+
 
 
 // ---- outline styles ------------------------------------------------------

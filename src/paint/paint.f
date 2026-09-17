@@ -99,10 +99,65 @@ void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
 // layer there is no path API, so the corners are square. The shape is
 // wrong by a few pixels at each corner and the box is still there,
 // which is the better of the two failures available.
+// The four corners resolved against a box, in pixels, and scaled back
+// where two on one edge would overlap (Backgrounds and Borders 3 §5.5:
+// every radius is divided by the same factor, so the shape keeps its
+// proportions). Eight numbers out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int radTLX = 0
+int radTLY = 0
+int radTRX = 0
+int radTRY = 0
+int radBRX = 0
+int radBRY = 0
+int radBLX = 0
+int radBLY = 0
+
+int func radiusPx(l:Len, against:int) {
+    if l.kind == LEN_PERCENT { return maxInt(roundPx(l.v * against.toFloat() / 100.0), 0) }
+    if l.kind == LEN_PX { return maxInt(roundPx(l.v), 0) }
+    return 0
+}
+
+float func radiusShrink(sum:int, side:int) {
+    if sum <= side || sum <= 0 { return 1.0 }
+    return side.toFloat() / sum.toFloat()
+}
+
+void func resolveCornerRadii(s:Style, w:int, h:int) {
+    radTLX = radiusPx(s.radiusTopLeftX, w)
+    radTLY = radiusPx(s.radiusTopLeftY, h)
+    radTRX = radiusPx(s.radiusTopRightX, w)
+    radTRY = radiusPx(s.radiusTopRightY, h)
+    radBRX = radiusPx(s.radiusBottomRightX, w)
+    radBRY = radiusPx(s.radiusBottomRightY, h)
+    radBLX = radiusPx(s.radiusBottomLeftX, w)
+    radBLY = radiusPx(s.radiusBottomLeftY, h)
+    float f = minFloat(minFloat(radiusShrink(radTLX + radTRX, w),
+                                radiusShrink(radBLX + radBRX, w)),
+                       minFloat(radiusShrink(radTLY + radBLY, h),
+                                radiusShrink(radTRY + radBRY, h)))
+    if f >= 1.0 { return }
+    radTLX = roundPx(radTLX.toFloat() * f)
+    radTLY = roundPx(radTLY.toFloat() * f)
+    radTRX = roundPx(radTRX.toFloat() * f)
+    radTRY = roundPx(radTRY.toFloat() * f)
+    radBRX = roundPx(radBRX.toFloat() * f)
+    radBRY = roundPx(radBRY.toFloat() * f)
+    radBLX = roundPx(radBLX.toFloat() * f)
+    radBLY = roundPx(radBLY.toFloat() * f)
+}
+
 void func pFillRoundedCorners(x:int, y:int, w:int, h:int,
                               tl:int, tr:int, brc:int, bl:int) {
+    pFillRoundedEllipses(x, y, w, h, tl, tl, tr, tr, brc, brc, bl, bl)
+}
+
+void func pFillRoundedEllipses(x:int, y:int, w:int, h:int,
+                               tlx:int, tly:int, trx:int, trry:int,
+                               brx:int, bry:int, blx:int, bly:int) {
     if paintLayer == null {
-        roundedRectPathCorners(x, y, w, h, tl, tr, brc, bl)
+        roundedRectPathEllipses(x, y, w, h, tlx, tly, trx, trry, brx, bry, blx, bly)
         fillPath()
     } else {
         // no path API on a layer, so the corners come out square
@@ -126,25 +181,43 @@ void func paintFill(c:int, opacity:float) {
 // on one edge cannot overlap into each other.
 void func roundedRectPathCorners(x:int, y:int, w:int, h:int,
                                  tl:int, tr:int, brc:int, bl:int) {
-    int cap = Math.floorDiv(minInt(w, h), 2)
-    int a = minInt(tl, cap)
-    int b = minInt(tr, cap)
-    int c = minInt(brc, cap)
-    int d = minInt(bl, cap)
-    int ka = roundPx(a.toFloat() * KAPPA)
-    int kb = roundPx(b.toFloat() * KAPPA)
-    int kc = roundPx(c.toFloat() * KAPPA)
-    int kd = roundPx(d.toFloat() * KAPPA)
+    roundedRectPathEllipses(x, y, w, h, tl, tl, tr, tr, brc, brc, bl, bl)
+}
+
+// A corner may be an ellipse rather than a quarter circle, so each takes
+// a horizontal and a vertical radius. The control points are the same
+// kappa approximation either way: it is the two radii that differ.
+void func roundedRectPathEllipses(x:int, y:int, w:int, h:int,
+                                  tlx:int, tly:int, trx:int, trry:int,
+                                  brx:int, bry:int, blx:int, bly:int) {
+    int capX = Math.floorDiv(w, 2)
+    int capY = Math.floorDiv(h, 2)
+    int ax = minInt(tlx, capX)
+    int ay = minInt(tly, capY)
+    int bx = minInt(trx, capX)
+    int by = minInt(trry, capY)
+    int cx = minInt(brx, capX)
+    int cy = minInt(bry, capY)
+    int dx = minInt(blx, capX)
+    int dy = minInt(bly, capY)
+    int kax = roundPx(ax.toFloat() * KAPPA)
+    int kay = roundPx(ay.toFloat() * KAPPA)
+    int kbx = roundPx(bx.toFloat() * KAPPA)
+    int kby = roundPx(by.toFloat() * KAPPA)
+    int kcx = roundPx(cx.toFloat() * KAPPA)
+    int kcy = roundPx(cy.toFloat() * KAPPA)
+    int kdx = roundPx(dx.toFloat() * KAPPA)
+    int kdy = roundPx(dy.toFloat() * KAPPA)
     beginPath()
-    moveTo(x + a, y)
-    lineTo(x + w - b, y)
-    curveTo(x + w - b + kb, y, x + w, y + b - kb, x + w, y + b)
-    lineTo(x + w, y + h - c)
-    curveTo(x + w, y + h - c + kc, x + w - c + kc, y + h, x + w - c, y + h)
-    lineTo(x + d, y + h)
-    curveTo(x + d - kd, y + h, x, y + h - d + kd, x, y + h - d)
-    lineTo(x, y + a)
-    curveTo(x, y + a - ka, x + a - ka, y, x + a, y)
+    moveTo(x + ax, y)
+    lineTo(x + w - bx, y)
+    curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    lineTo(x + w, y + h - cy)
+    curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    lineTo(x + dx, y + h)
+    curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    lineTo(x, y + ay)
+    curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
     closePath()
 }
 
@@ -309,10 +382,13 @@ void func paintBackground(x:int, y:int, w:int, h:int,
     if colorIsPaintable(s.background) {
         paintFill(s.background, s.effectiveOpacity)
         if s.borderRadius > 0 {
-            // The radius is the border box's; a clipped background keeps
-            // it rather than deriving the smaller inner curve.
-            pFillRoundedCorners(clipX, clipY, clipW, clipH, s.radiusTopLeft,
-                                s.radiusTopRight, s.radiusBottomRight, s.radiusBottomLeft)
+            // The radii are the border box's, and a percentage is of it:
+            // a clipped background keeps that curve rather than deriving
+            // the smaller inner one.
+            resolveCornerRadii(s, w, h)
+            pFillRoundedEllipses(clipX, clipY, clipW, clipH,
+                                 radTLX, radTLY, radTRX, radTRY,
+                                 radBRX, radBRY, radBLX, radBLY)
         } else {
             pDrawRect(clipX, clipY, clipW, clipH)
         }
@@ -1137,9 +1213,12 @@ void func paintBorders(b:Box) {
         lineWidth(b.bt)
         int half = Math.floorDiv(b.bt, 2)
         if paintLayer == null {
-            roundedRectPathCorners(x + half, y + half, w - b.bt, h - b.bt,
-                                   maxInt(s.radiusTopLeft - half, 1), maxInt(s.radiusTopRight - half, 1),
-                                   maxInt(s.radiusBottomRight - half, 1), maxInt(s.radiusBottomLeft - half, 1))
+            resolveCornerRadii(s, w, h)
+            roundedRectPathEllipses(x + half, y + half, w - b.bt, h - b.bt,
+                                    maxInt(radTLX - half, 1), maxInt(radTLY - half, 1),
+                                    maxInt(radTRX - half, 1), maxInt(radTRY - half, 1),
+                                    maxInt(radBRX - half, 1), maxInt(radBRY - half, 1),
+                                    maxInt(radBLX - half, 1), maxInt(radBLY - half, 1))
             strokePath()
         } else {
             // no path API on a layer: the border is drawn as four sides

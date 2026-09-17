@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `border-radius` in percentages, and corners that are ellipses
+
+`border-radius: 50%` rounded nothing: a percentage radius was parsed,
+found not to be a length, and dropped. It is the common spelling — a
+pill, a circular avatar — and it needed the radii to stop being pixels
+in the computed style, because a percentage is of the box and the box is
+not known until paint time. The four ints are now eight `Len`s, resolved
+against the border box when it is painted: the horizontal radius against
+its width, the vertical against its height (Backgrounds and Borders 3
+§5.1).
+
+With both axes in hand the elliptical form follows. `border-radius:
+20px / 5px` gives every corner a wide shallow curve rather than a
+quarter circle; the horizontal radii are written before the slash and
+the vertical after, and a longhand takes the pair directly
+(`border-top-left-radius: 20px 5px`). The path was already Bézier
+curves with the kappa approximation, so an ellipse is the same control
+points with two radii instead of one.
+
+**Overlapping radii are scaled, not clipped** (§5.5). Where two on one
+edge add up to more than the edge, every radius is divided by the same
+factor until they fit, so the shape keeps its proportions — which is why
+`border-radius: 60px` on a 40px box is exactly `border-radius: 20px`,
+and the test says so by painting both and counting.
+
+9,088 bytes.
+
 ### `line-break: anywhere`, and `image-rendering` declined
 
 `line-break` (CSS Text 4 §5.2) says how strictly a break may fall around
