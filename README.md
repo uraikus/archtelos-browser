@@ -204,8 +204,15 @@ says what they are about, and the individual `translate`, `rotate` and
 translate, rotate and scale and has no call that takes one.
 
 **`::before` and `::after`** generate boxes from `content`, which takes
-quoted strings, `attr()`, `counter()`, `counters()` and the four quote
-keywords. `counter-reset` and `counter-increment` maintain counters with
+quoted strings, `attr()`, `counter()`, `counters()`, the four quote
+keywords and `url()` — an image, which generates a replaced box at its
+natural size in the order it was written among the strings beside it,
+and nothing at all when it fails to load. On an **ordinary element** a
+`content` naming an image replaces the element's contents with it: the
+element becomes a replaced element sized from the image's natural size,
+keeping its own background, border and declared width and height, and
+its children are not rendered. A `content` holding anything else
+replaces nothing there. `counter-reset` and `counter-increment` maintain counters with
 the standard's scoping, and `quotes` gives `open-quote` and
 `close-quote` their strings at a depth that runs over the document in
 document order rather than following element nesting — so `<q>` renders
@@ -216,8 +223,7 @@ block on its own, taking any punctuation in front of it along, skipping
 leading whitespace, and finding the letter inside a nested inline. Only
 the first of the block, not the first of every descendant.
 `::first-line` still makes its rule unusable rather than matching the
-element. `url()` in `content` is not implemented, and a counter always
-renders in decimal.
+element, and a counter always renders in decimal.
 
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
@@ -297,7 +303,7 @@ FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chrom
 
 The runner covers forty-four unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
-aspect ratio, grid areas, form controls,
+aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
 counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter

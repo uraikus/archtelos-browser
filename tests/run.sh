@@ -68,7 +68,7 @@ fi
 # computed style, which omits 120 properties it computes perfectly well,
 # and 33 of those are ordinary longhands. Seven were already
 # implemented here and had never been counted.
-PROPERTIES_MIN=208
+PROPERTIES_MIN=209
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1

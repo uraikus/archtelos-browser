@@ -842,6 +842,16 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+`content: url()` on an ordinary element costs **no bytes the linker
+records**: 2,737,728 with it and without. The two binaries hash
+differently (`756c6fe5` against `e2a09826`), so that is two programs
+rounding to the same size rather than a stale build. Its cost at run
+time is one map read per *distinct* computed style — 24 on the benchmark
+page, not 2,728 — and six alternating best-of-3 samples give 130 to
+133 ms against 130 to 134 for the revision before it: two series that
+overlap almost entirely, which is what a feature nothing on the page
+uses should look like.
+
 `appearance`, `accent-color` and `field-sizing` cost **4,408 bytes**
 (2,733,240 → 2,737,648) between them. The benchmark page carries no form
 control, so none of it is reached there: eight alternating samples give

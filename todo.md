@@ -51,11 +51,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `querySelectorAll` has no answer to compare against -- nor by the
    property instrument, which cannot see `counter-reset`,
    `counter-increment` or `quotes` because Chromium does not enumerate
-   them on a computed style, and grades `content` on an ordinary
-   element, where it does nothing whatever it holds. It is measured by
-   geometry and by the generated text and pixels, as
-   tests/unit/test_counters.f, tests/unit/test_quotes.f and
-   tests/render/content.f do.
+   them on a computed style. It grades `content` on an ordinary
+   element, which is a different feature of the same property and is
+   done: `content: url()` there replaces the element's contents. The
+   pseudo-element half is measured by geometry and by the generated text
+   and pixels, as tests/unit/test_counters.f, tests/unit/test_quotes.f
+   and tests/render/content.f do.
 4. **CSS Images 3, completed**: `conic-gradient()`, gradient
    interpolation hints, and the one degenerate case left — an ellipse
    with zero height and non-zero width, which the standard renders as a

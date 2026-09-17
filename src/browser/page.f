@@ -144,6 +144,12 @@ void func gatherBackgroundImages(page:Page, n:Node) {
         gatherContentImages(page, n.id, 'before')
         gatherContentImages(page, n.id, 'after')
     }
+    // CSS Content 3 §2.1: the image an ordinary element's `content`
+    // names, loaded under the same key as any other so the box built
+    // for it can find it.
+    if n.kind == NODE_ELEMENT && n.style.contentUrl != '' {
+        n.style.contentUrl = fetchStyleImage(page, n.style.contentUrl)
+    }
     if n.kind == NODE_ELEMENT && n.style.listImageUrl != '' {
         n.style.listImageUrl = fetchStyleImage(page, n.style.listImageUrl)
     }

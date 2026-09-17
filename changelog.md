@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `content: url()` on an ordinary element
+
+CSS Content 3 §2.1: a `content` naming an image replaces the element's
+contents with it, which makes the element a replaced element. Its own
+box properties still apply — the background, the border, a declared
+width and height — and its children are not rendered, the same rule an
+`<iframe>`'s children already followed. The count goes from 208 to 209,
+and `--fields` says the field that moved is `content -> contentUrl`.
+
+Chromium 141 on `fit.png`, which is 20x10, in a block 300 pixels wide:
+`content: url(fit.png)` gives 300x150, the image's 2:1 ratio, exactly as
+an `<img>` of that width would; with a declared 50px square it is 50x50;
+on an inline element it is 20x10, the natural size. **A string replaces
+nothing there** — `content: "just a string"` on a div renders the div's
+own text — so only a `url()` fills the new field, and `none` and
+`normal` leave it empty.
+
+The pair of checks worth having is the one that does not depend on a
+number: a string and no `content` at all must land on the same geometry,
+because neither replaces anything.
+
+It costs nothing to a page that does not use it. The lookup is one map
+read per *distinct* computed style — 24 of them on the benchmark page,
+not 2,728 — and six alternating best-of-3 samples give 130 to 133 ms
+against 130 to 134 for the revision before it. The binary is the same
+size to the byte, 2,737,728, which was checked rather than assumed: the
+two hash differently (`756c6fe5` against `e2a09826`), so they are
+different programs that round to the same size.
+
 ### Looking for an image cost the pages that have none
 
 The first thing the second benchmark page measured was not a feature.

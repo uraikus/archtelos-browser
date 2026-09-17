@@ -3883,6 +3883,20 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
             if u != '' { s.listImageUrl = u  anyBackgroundUrl = true }
         }
     }
+    // CSS Content 3 §2.1: `content` on an ordinary element replaces its
+    // contents. `content` does not inherit, so this starts empty and is
+    // filled only by a declaration on this element, and only a `url()`
+    // fills it -- `content: "a string"` on an element renders the
+    // element's own text in Chromium 141, and `none` and `normal` are
+    // both "no replacement". The lookup is one map read per DISTINCT
+    // style rather than per element (24 of them on the benchmark page),
+    // which is why it needs no flag of its own.
+    s.contentUrl = ''
+    ascii ecu = styleProp(props, 'content')
+    if ecu != null {
+        text cu = parseUrlValue(ecu)
+        if cu != '' { s.contentUrl = cu  anyContentUrl = true }
+    }
     s.listStyle = isRoot ? LIST_DISC : parent.listStyle
     // list-style-type inherits, and so does the name it was given:
     // an <li> takes its marker from the <ol> around it.

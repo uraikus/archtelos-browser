@@ -462,6 +462,25 @@ Box func buildBox(n:Node, parentStyle:Style) {
     // A column or column group generates no box; a table reads the
     // width off the element itself.
     if displayIsColumn(d) { return null }
+    // CSS Content 3 §2.1: an element whose `content` names an image is
+    // a replaced element showing that image. Its own box properties
+    // still apply -- this is the element's box, with the element's
+    // background, border and declared size -- and its children are not
+    // rendered, the same rule as an <iframe>'s. The box is built even
+    // when the image did not load, because what the standard replaces
+    // is the contents, not the pixels: Chromium 141 gives a block with
+    // a failed `content` image no content and no line box either.
+    if s.contentUrl != '' {
+        Box cb = newBox(BOX_IMAGE, n, s)
+        img shown = loadedImages[s.contentUrl]
+        if shown != null {
+            cb.image = shown
+            cb.imgW = shown.width
+            cb.imgH = shown.height
+        }
+        cb.blockLevel = displayIsBlockLevel(d)
+        return cb
+    }
     text tag = n.tag
     if tag == 'br' {
         return newBox(BOX_BR, n, s)

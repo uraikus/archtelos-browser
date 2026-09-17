@@ -140,4 +140,85 @@ clearCanvas()
 paintPage(pn, 0, 0, 300)
 checkEqInt(firstXOf(blue, 0, 100, 0, 20), -1, 'a failed image paints nothing')
 
+// ---- `content` on an ordinary element (CSS Content 3 §2.1) ------------
+// A `content` naming an image replaces the element's contents with it,
+// which makes the element a replaced element: its own box properties
+// still apply, its children are not rendered, and it is sized by the
+// ordinary replaced-element rules from the image's natural size.
+//
+// Measured in Chromium 141 on `fit.png`, which is 20x10, in a block
+// 300 pixels wide:
+//
+//   content: url(fit.png)                       300 x 150   the 2:1 ratio
+//   content: url(fit.png); width/height 50px     50 x  50   both declared
+//   content: "just a string"                    300 x  19   the text, unchanged
+//   content: none                               300 x  19   the same
+//   on an inline <span>                          20 x  10   the natural size
+//
+// The two that read 19 are the check that does not depend on a number:
+// a string and no `content` at all must land on the same geometry,
+// because neither replaces anything.
+
+Box func idBox(root:Box, tag:text, id:text) {
+    arr[Box] all = []
+    collectBoxesForTag(root, tag, all)
+    for int i = 0, i < all.length, i++ {
+        if all[i].node != null && getAttr(all[i].node, 'id') == id { return all[i] }
+    }
+    return null
+}
+
+text wide = ' id="d" style="width:300px"'
+
+Page ce = pageFromHtml(head + '<div' + wide + ' style2="" >SOME TEXT HERE</div></body>', base, 400)
+Box ceBox = idBox(ce.root, 'div', 'd')
+check(ceBox != null, 'the plain block is laid out')
+int plainH = ceBox.h
+
+Page ci = pageFromHtml(head
+    + '<style>#d { content: url(fit.png) }</style>'
+    + '<div' + wide + '>SOME TEXT HERE</div></body>', base, 400)
+Box ciBox = idBox(ci.root, 'div', 'd')
+check(ciBox != null, 'an element with `content: url()` still has its own box')
+checkEqInt(ciBox.w, 300, 'the declared width is the box width')
+checkEqInt(ciBox.h, 150, 'and the height comes from the image ratio, as for any replaced element')
+checkEqInt(ciBox.children.length, 0, 'the element has no child boxes')
+check(!boxTreeHasText(ci.root, 'SOME TEXT HERE'), 'its text is replaced rather than rendered')
+
+clearCanvas()
+paintPage(ci, 0, 0, 300)
+check(getPixelColor(40, 70) == blue, 'the image paints across the box, left half blue')
+check(getPixelColor(260, 70) == green, 'and right half green')
+
+// Declared width and height are the box, as for any replaced element.
+Page cw = pageFromHtml(head
+    + '<style>#d { content: url(fit.png); height: 50px }</style>'
+    + '<div id="d" style="width:50px">SOME TEXT HERE</div></body>', base, 400)
+Box cwBox = idBox(cw.root, 'div', 'd')
+checkEqInt(cwBox.w, 50, 'a declared width wins over the natural one')
+checkEqInt(cwBox.h, 50, 'and so does a declared height')
+
+// An inline element takes the image's natural size.
+Page cs = pageFromHtml(head
+    + '<style>#s { content: url(fit.png) }</style>'
+    + '<span id="s">X</span></body>', base, 400)
+Box csBox = idBox(cs.root, 'span', 's')
+check(csBox != null, 'an inline element with `content: url()` has a box')
+checkEqInt(csBox.w, 20, 'at the image natural width')
+checkEqInt(csBox.h, 10, 'and its natural height')
+
+// A string replaces nothing, and neither does `none`: both must land
+// where no `content` at all lands.
+Page ct = pageFromHtml(head
+    + '<style>#d { content: "just a string" }</style>'
+    + '<div' + wide + '>SOME TEXT HERE</div></body>', base, 400)
+checkEqInt(idBox(ct.root, 'div', 'd').h, plainH, 'a string on an element changes no geometry')
+check(boxTreeHasText(ct.root, 'SOME TEXT HERE'), 'and leaves the text where it was')
+
+Page cn = pageFromHtml(head
+    + '<style>#d { content: none }</style>'
+    + '<div' + wide + '>SOME TEXT HERE</div></body>', base, 400)
+checkEqInt(idBox(cn.root, 'div', 'd').h, plainH, '`content: none` on an element changes no geometry either')
+check(boxTreeHasText(cn.root, 'SOME TEXT HERE'), 'and leaves its text too')
+
 finish('content-url')

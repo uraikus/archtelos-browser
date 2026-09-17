@@ -555,6 +555,15 @@ struct Style {
     // listStyle constant names.
     listStyleName:text
     listImageUrl:text       // list-style-image; empty = the marker the type names
+    // CSS Content 3 §2.1: a `content` on an ordinary element that
+    // names an image replaces the element's contents with it, which
+    // makes the element a replaced element. Empty for every other
+    // value, because a string replaces nothing -- measured against
+    // Chromium 141, which renders the element's own text for
+    // `content: "a string"` and replaces it for `content: url()`.
+    // `content` on ::before and ::after is a different thing and is
+    // kept beside the pseudo-element's style, not here.
+    contentUrl:text
     backgroundFixed:bool    // background-attachment: fixed
     verticalAlign:int
     floatSide:int
