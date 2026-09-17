@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `line-break: anywhere`, and `image-rendering` declined
+
+`line-break` (CSS Text 4 §5.2) says how strictly a break may fall around
+punctuation. Three of its four values — `loose`, `normal`, `strict` —
+differ only in the CJK rules they loosen or tighten, and this engine has
+none of those, so they leave the line where it was. `anywhere` is the
+one that says something here: a break may fall between any two
+characters, which is the permission `word-break: break-all` already
+carries. The two must therefore break a long word in the same number of
+lines, which is the check, and neither of the numbers in it has to be
+known in advance. 209 to 210 properties, `line-break -> wordBreaking`,
+and `supportedProperties` learned the name so `@supports` agrees.
+
+**`image-rendering` is declined, and the reason is a new finding.**
+`drawImage` scales bilinearly and nothing can ask for anything else: a
+32x upscale of a two-pixel image puts a blend in 32 of the 64 pixels
+across the seam, and no argument, image field or canvas state changes
+it. Cairo has the control (`cairo_pattern_set_filter`); the runtime does
+not expose it. FINDINGS.md finding 36 has the reproduction and
+festina.md §3q the proposal. Storing the keyword would move the count
+and change no pixel, which is the `outline-style` mistake this project
+has already made once.
+
 ### Interpolation hints, and the degenerate ellipse the standard mirrors
 
 A bare position between two colour stops is not a stop: it is an

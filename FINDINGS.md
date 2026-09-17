@@ -1090,3 +1090,52 @@ colour", which is enough for a test and useless for a filter.
 accessor on the image (`img.getPackedPixel(x, y)`), or both. The
 browser already carries its own packed-integer colour model in
 `src/util/color.f` and would use the second directly.
+
+---
+
+## 36 An image is always scaled smoothly
+
+`drawImage(img, x, y, w, h)` scales its source into the destination box,
+and the scaling is bilinear. There is no way to ask for anything else:
+
+```festina
+setClientWidth(200)
+setClientHeight(200)
+img tile = blankImage(2, 1)
+fillStyle(0, 0, 0)
+tile.drawRect(0, 0, 1, 1)
+fillStyle(255, 255, 255)
+tile.drawRect(1, 0, 1, 1)
+clearCanvas()
+drawImage(tile, 0, 0, 64, 64)        // a 32x upscale of two pixels
+
+color black = '#000000'
+color white = '#ffffff'
+int neither = 0
+for int x = 0, x < 64, x++ {
+    color c = getPixelColor(x, 32)
+    if c != black && c != white { neither++ }
+}
+log(`across the seam, neither black nor white: ${neither} of 64 pixels`)
+// across the seam, neither black nor white: 32 of 64 pixels
+```
+
+Half the row is a blend of the two source pixels. That is the right
+default and the only one available: no argument to `drawImage`, no
+setting on the image, no canvas state chooses the filter.
+
+**What this closes.** CSS Images 3's `image-rendering`, whose whole
+purpose is to choose between them: `pixelated` and `crisp-edges` ask for
+nearest-neighbour, which is what a magnified sprite, a QR code or a
+pixel-art asset needs, and `smooth` asks for what this always does. The
+property is storable and would change no pixel, so it is not
+implemented here — a property that computes and renders nothing is the
+`outline-style` mistake this project has already made once.
+
+**Workaround.** None worth having. Nearest-neighbour could be done by
+hand, one `drawRect` per source pixel, which turns a 64x64 blit into
+4,096 calls and is slower than the image it replaces.
+
+**Proposal.** See festina.md §3q. Cairo already has the control
+(`cairo_pattern_set_filter`, with `CAIRO_FILTER_NEAREST` and
+`CAIRO_FILTER_BILINEAR`); what is missing is a way to reach it.

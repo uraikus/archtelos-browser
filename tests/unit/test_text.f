@@ -168,6 +168,23 @@ check(usedLineWidth(findBox(rBreakWord, 'div'), 0) <= 60,
 Box rBreakAll = layoutHtml(`<body><div style="width:60px;word-break:break-all">${longWord}</div></body>`, 400)
 check(findBox(rBreakAll, 'div').lines.length > 1, 'word-break:break-all breaks it too')
 
+// `line-break: anywhere` (CSS Text 4 §5.2) says a break may fall
+// between any two characters, which is the same permission `break-all`
+// gives a word here -- so the two must agree on where the word breaks,
+// and both must differ from the default that lets it overflow.
+Box rLineBreak = layoutHtml(`<body><div style="width:60px;line-break:anywhere">${longWord}</div></body>`, 400)
+check(findBox(rLineBreak, 'div').lines.length > 1, '`line-break: anywhere` breaks the word too')
+checkEqInt(findBox(rLineBreak, 'div').lines.length, findBox(rBreakAll, 'div').lines.length,
+           'in the same number of lines as break-all')
+check(usedLineWidth(findBox(rLineBreak, 'div'), 0) <= 60, 'and inside the box')
+
+// The values that describe how strictly punctuation may be broken
+// around -- `loose`, `normal`, `strict` -- leave the line where
+// `normal` puts it, because this engine has none of the CJK rules they
+// loosen or tighten.
+Box rLineStrict = layoutHtml(`<body><div style="width:60px;line-break:strict">${longWord}</div></body>`, 400)
+checkEqInt(findBox(rLineStrict, 'div').lines.length, 1, '`line-break: strict` leaves the word overflowing')
+
 // The difference between the two: break-all breaks a word that would
 // have fitted on the next line, break-word does not.
 Box rFitsBreakWord = layoutHtml('<body><div style="width:60px;overflow-wrap:break-word">xx wwwwwwww</div></body>', 400)

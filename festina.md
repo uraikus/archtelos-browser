@@ -704,3 +704,33 @@ writes the result back. The pass over the pixels is a dozen lines. It is
 one accessor away, and it is the only specification in the CSS snapshot
 that this browser is prevented from implementing by the language rather
 than by the work.
+
+## 3q Let a program choose how an image is scaled
+
+`drawImage` scales bilinearly and nothing can change that (FINDINGS.md,
+finding 36). The runtime already sets a Cairo pattern to do the blit,
+and Cairo's filters are one call away:
+
+```c
+cairo_pattern_set_filter(pattern, CAIRO_FILTER_NEAREST);
+```
+
+What a program needs is a way to say which. Either a canvas-state call,
+matching how `fillStyle` and `fillAlpha` already work —
+
+```festina
+imageFilter('nearest')      // or 'smooth', the default
+drawImage(sprite, 0, 0, 64, 64)
+imageFilter('smooth')
+```
+
+— or a trailing argument on `drawImage`, matching how `drawRect` takes
+an optional border colour. The state call is the better fit for this
+browser, which paints many images in one pass and would set it once per
+box from the computed style.
+
+**What it unlocks.** `image-rendering`, whose three values are exactly
+this choice, and any program that magnifies a small image on purpose:
+sprite sheets, tile maps, pixel art, a zoomed screenshot. A blurred
+32x upscale of a 2x2 image is not a stylistic preference, it is the
+wrong picture.

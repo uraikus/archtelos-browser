@@ -4025,6 +4025,17 @@ Style func computeStyleValues(n:Node, parent:Style, isRoot:bool, props:map[text]
         else if t == 'break-all' { s.wordBreaking = BREAK_ALL }
         else if t == 'break-word' { s.wordBreaking = BREAK_WORD }
     }
+    // line-break (CSS Text 4 §5.2) says how strictly a break may fall
+    // around punctuation. `loose`, `normal` and `strict` differ only in
+    // the CJK rules they loosen or tighten, and this engine has none of
+    // them, so all three leave the line where it was. `anywhere` is the
+    // one that says something here: a break may fall between any two
+    // characters, which is the permission `break-all` already carries.
+    ascii lbk = styleProp(props, 'line-break')
+    if lbk != null {
+        ascii t = asciiLower(asciiTrim(lbk))
+        if t == 'anywhere' { s.wordBreaking = BREAK_ALL }
+    }
     // hyphens. `manual` -- the initial value -- honours a soft hyphen
     // as a break opportunity; `none` suppresses it. `auto` needs a
     // dictionary per language and behaves as `manual`, which css-2026.md

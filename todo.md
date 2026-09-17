@@ -248,6 +248,16 @@ would be `outline-style` again — a property the instrument scores while
 the engine does nothing with it. They stay unimplemented and counted as
 such until there is something for them to adjust.
 
+**`image-rendering` is blocked on Festina rather than on effort.** Its
+three values choose how a scaled image is filtered, and `drawImage`
+scales bilinearly with no way to ask for anything else: a 32x upscale of
+a two-pixel image puts a blend in 32 of the 64 pixels across the seam,
+and nothing in the canvas state, the image, or `drawImage`'s arguments
+changes it. Cairo has the control the runtime does not expose
+(FINDINGS.md, finding 36; festina.md §3q). Storing the keyword would
+move the count and change no pixel, which is the `outline-style` mistake
+again.
+
 **`overflow-clip-margin` needs its meaning pinned down before it is
 worth implementing.** It was written far enough to register on the
 property instrument and then removed: on a box 60px wide with a 10px
@@ -266,7 +276,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(196; Chromium answers for 406, and one of them -- `overlay` -- only the
+(210; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
