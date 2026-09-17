@@ -185,7 +185,9 @@ tiles with the leftover shared out around them.
 `scroll` and `auto` reserve fifteen pixels inside the padding box for a
 scrollbar and paint one there — always for `scroll`, and for `auto` only
 where the content overflows, the thumb being as long a share of the
-track as the box is of what it scrolls.
+track as the box is of what it scrolls. **The wheel over such a box
+scrolls it**, and the page only once it has reached its end; a link
+inside one is clickable where it looks.
 
 `background-origin` chooses the edge a background is placed from and
 `background-clip` the edge it is cut off at — border, padding or

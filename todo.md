@@ -41,14 +41,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 ### Then the official definition, largest holes first
 
-1. **What is left of the CSS2 chapters**: **scrolling a scroll
-   container**, and paged media (§13). `overflow: scroll` and `auto`
-   reserve a scrollbar and paint it, and the box clips as `hidden`
-   does, but nothing scrolls yet: the shell scrolls the page and not
-   the box under the pointer, and a scrollbar's thumb says where the
-   content is without being draggable. What that needs is a scroll
-   offset per box, the painter reading it, and hit testing asking which
-   scroll container the pointer is in.
+1. **What is left of the CSS2 chapters**: **a draggable scrollbar**,
+   and paged media (§13). A wheel over a scroll container scrolls it and
+   the thumb follows, but the thumb cannot be taken hold of: that needs
+   the pointer's press and release tracked against the track it is in,
+   which is interaction rather than layout. Neither is `scroll-behavior`
+   or a keyboard scroll of the focused container.
 
    **A horizontal `auto` bar is raised by a child box reaching past the
    content edge, not by a line of text doing it**: the check walks the

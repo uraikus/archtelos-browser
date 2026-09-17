@@ -189,8 +189,23 @@ bool func isNavigableHref(href:text) {
     return !asciiStartsWithLower(a, 'javascript:', 0) && !asciiStartsWithLower(a, 'mailto:', 0) && !asciiStartsWithLower(a, 'tel:', 0)
 }
 
-on mouseWheelUp(x:int, y:int) { scrollBy(-SCROLL_STEP) }
-on mouseWheelDown(x:int, y:int) { scrollBy(SCROLL_STEP) }
+// A wheel over a scroll container scrolls that container; over anything
+// else, or over one that has reached its end in the direction asked
+// for, the page takes it. That is what a browser does, and what makes a
+// scrollable box inside a page usable at all.
+void func wheelAt(x:int, y:int, dy:int) {
+    if page != null && page.root != null && y >= TOOLBAR_H {
+        Box inner = scrollContainerAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
+        if inner != null && boxScrollBy(inner, dy) {
+            repaint()
+            return
+        }
+    }
+    scrollBy(dy)
+}
+
+on mouseWheelUp(x:int, y:int) { wheelAt(x, y, -SCROLL_STEP) }
+on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 
 on mouseDown(x:int, y:int, button:int) {
     if button != 1 { return }

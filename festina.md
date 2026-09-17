@@ -734,3 +734,34 @@ this choice, and any program that magnifies a small image on purpose:
 sprite sheets, tile maps, pixel art, a zoomed screenshot. A blurred
 32x upscale of a 2x2 image is not a stylistic preference, it is the
 wrong picture.
+
+## 3r Let two struct values be compared
+
+`a == null` compiles and `a == b` does not (FINDINGS.md, finding 37):
+the null comparison is special-cased, and the general one reaches the
+integer path, which is handed a pointer and emits LLVM IR that will not
+parse. The error a program sees is not about its own code at all:
+
+```
+LLVM IR parse error: '%t22' defined with type 'ptr' but expected 'i64'
+```
+
+A struct value is a pointer at runtime, so identity is what `icmp eq` on
+the two pointers already answers. What is missing is the type check that
+routes a struct-to-struct comparison there rather than to the integer
+one — the same dispatch the null case already has, with the other
+operand a struct instead of a literal.
+
+**Two things would make this whole.** Identity, which is the cheap one
+above; and the loud failure in its absence, because a comparison the
+language does not support should say so where it is written rather than
+in the backend's own parser. An unsupported comparison is a semantic
+error with a line number, not IR that fails to load.
+
+**What it unlocks.** Every "is this the same object" question: a hit
+test answering which box was found, a cache answering whether it handed
+back the value it was given, a test asserting that a lookup returned the
+node it was looking for. This browser asks all three through an id field
+and calls that a proxy, because a box without an element behind it has
+no id and two boxes generated for one element share one.
+

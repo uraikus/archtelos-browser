@@ -1449,6 +1449,43 @@ void func applyContainerAspect(b:Box) {
 // The content height a declared `height` fixes, or -1 when it fixes
 // none. Only a box with one definite dimension takes the other from
 // the ratio, so this is the question the width code has to ask first.
+// How far each scroll container has been scrolled, by the id of the
+// element it belongs to. The box tree is rebuilt on every layout and
+// the offset has to outlive it; the node registry is what does. A page
+// that scrolls nothing never touches the map.
+map[int] boxScrollTops = {}
+
+void func boxScrollReset() {
+    boxScrollTops = {}
+}
+
+// How far a box can be scrolled: what its content comes to, less what
+// is visible of it.
+int func boxScrollRange(b:Box) {
+    if b.sbW <= 0 { return 0 }
+    int visible = maxInt(b.h - b.bt - b.bb - b.pt - b.pb - b.sbH, 1)
+    return maxInt(b.scrollH - visible, 0)
+}
+
+int func boxScrollTop(b:Box) {
+    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    int v = boxScrollTops[b.node.id.toText()]
+    if v == null { return 0 }
+    return clampInt(v, 0, boxScrollRange(b))
+}
+
+// Scrolls a box, and answers whether it moved -- which is what tells a
+// wheel over a box that has reached its end from one that scrolled, so
+// the page can take the rest.
+bool func boxScrollBy(b:Box, dy:int) {
+    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return false }
+    int was = boxScrollTop(b)
+    int now = clampInt(was + dy, 0, boxScrollRange(b))
+    if now == was { return false }
+    boxScrollTops[b.node.id.toText()] = now
+    return true
+}
+
 // How thick a scrollbar is. The standard leaves it to the browser;
 // this one takes Chromium's classic fifteen pixels, so that a box's
 // content geometry can be compared with Chromium's directly.

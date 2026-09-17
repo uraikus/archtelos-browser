@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A scroll container scrolls
+
+The wheel over a scroll container scrolls that container; over anything
+else, or over one that has reached its end in the direction asked for,
+the page takes it, which is what makes a scrollable box inside a page
+usable at all.
+
+The offset is kept by the id of the element rather than on the box,
+because a box tree lasts one layout and a scroll position has to outlive
+several. The painter carries it in the clip layer's own transform, so
+the content moves and the box, its background and its scrollbars stay
+where they are; the thumb sits as far down its track as the content is
+through what there is of it; and hit testing adds the offset back, so a
+link inside a scrolled box is clickable where it looks rather than where
+it was laid out.
+
+**Two struct values cannot be compared with `==` in Festina** -- the
+comparison against `null` is special-cased and the general one emits
+LLVM IR that will not parse. FINDINGS.md finding 37 has the six-line
+reproduction and festina.md §3r the proposal; the test that
+`scrollContainerAt` answers the right box compares the element behind it
+instead, and says so.
+
 ### `overflow: scroll` and `auto`
 
 The two values that show a scrollbar. `overflow-x` and `overflow-y` are

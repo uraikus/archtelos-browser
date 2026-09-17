@@ -1139,3 +1139,45 @@ hand, one `drawRect` per source pixel, which turns a 64x64 blit into
 **Proposal.** See festina.md §3q. Cairo already has the control
 (`cairo_pattern_set_filter`, with `CAIRO_FILTER_NEAREST` and
 `CAIRO_FILTER_BILINEAR`); what is missing is a way to reach it.
+
+## 37 Two struct values cannot be compared with `==`
+
+A struct value can be compared against `null` and against nothing else.
+Asking whether two names refer to the same struct is a compile error,
+and not one the compiler words as such -- it emits LLVM IR that fails to
+parse:
+
+```festina
+struct P { v:int }
+P func mk(v:int) { P p  p.v = v  return p }
+P a = mk(1)
+P b = a
+log(`nullcmp=${a == null}`)      // fine: false
+log(`same=${a == b}`)            // LLVM IR parse error
+```
+
+```
+LLVM IR parse error: eqs.f:446:22: error: '%t22' defined with type
+'ptr' but expected 'i64'
+  %t25 = icmp eq i64 %t22, %t23
+```
+
+The comparison against `null` is special-cased and compiles; the general
+one falls through to the integer path, which is handed a pointer. A
+struct is a pointer at runtime, so identity is exactly what `icmp eq` on
+the two pointers would answer -- the code to do it is there, one type
+check away from being reached.
+
+**What this costs here.** Every "is this the same box" question is asked
+through a field instead. `scrollContainerAt` answers which scroll
+container is under the pointer, and the test that it answers *the right
+one* compares `found.node.id` against the box's own, which is a proxy: a
+box with no element behind it has no id to compare, and two boxes
+generated for one element share one. Hit testing, the box registry and
+the flex item sort would each be plainer with identity.
+
+**Workaround.** Compare a field that stands in for identity -- an id
+where the value has one -- and name this finding beside it.
+
+**Proposal.** See festina.md §3r.
+

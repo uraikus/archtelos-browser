@@ -2432,8 +2432,11 @@ void func paintClipped(b:Box) {
 
     img layer = blankImage(pw, ph)
     // the layer's own transform carries the offset, so everything
-    // painted into it still speaks document coordinates
-    layer.translate(0 - px, 0 - py)
+    // painted into it still speaks document coordinates -- and carries
+    // the box's scroll position with it, which is what moves the
+    // content while the box, its background and its scrollbars stay
+    // where they are.
+    layer.translate(0 - px, 0 - py - boxScrollTop(b))
     paintLayer = layer
     paintLines(b)
     for int i = 0, i < b.children.length, i++ {
@@ -2473,8 +2476,13 @@ void func paintScrollbars(b:Box) {
         if b.scrollH > visible {
             int thumbH = maxInt(Math.floorDiv(trackH * visible, b.scrollH), SCROLLBAR_MIN_THUMB)
             if thumbH > trackH { thumbH = trackH }
+            // The thumb sits as far down its own run as the content is
+            // through what there is of it, so it reaches the bottom
+            // exactly when the content does.
+            int range = maxInt(boxScrollRange(b), 1)
+            int thumbY = Math.floorDiv((trackH - thumbH) * boxScrollTop(b), range)
             fillStyle(139, 139, 139)
-            pDrawRect(px + pw - b.sbW + 4, py, b.sbW - 8, thumbH)
+            pDrawRect(px + pw - b.sbW + 4, py + thumbY, b.sbW - 8, thumbH)
         }
     }
     if b.sbH > 0 {
@@ -2717,6 +2725,12 @@ void func paintDocument(root:Box, viewTop:int, viewBottom:int) {
 // links resolve to the element the text belongs to.
 Box func hitTest(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    // Inside a scrolled box the content is drawn that much higher than
+    // it was laid out, so a point on the screen is that much further
+    // down the content. Every box that scrolls nothing answers zero
+    // without looking anything up.
+    int scrolled = boxScrollTop(b)
+    if scrolled > 0 { y = y + scrolled }
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
         if y < ln.y || y >= ln.y + ln.h { continue }
@@ -2749,6 +2763,29 @@ Box func hitTest(b:Box, x:int, y:int) {
         }
     }
     return null
+}
+
+// The innermost scroll container under a point that has anything left
+// to scroll in the direction asked for, or null where there is none --
+// which is what hands the wheel back to the page.
+Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    int scrolled = boxScrollTop(b)
+    int inner = scrolled > 0 ? y + scrolled : y
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
+            Box found = scrollContainerAt(c, x, inner, dy)
+            if found != null { return found }
+        }
+    }
+    if b.sbW <= 0 { return null }
+    int range = boxScrollRange(b)
+    if range <= 0 { return null }
+    if dy > 0 && scrolled >= range { return null }
+    if dy < 0 && scrolled <= 0 { return null }
+    return b
 }
 
 // The href of the nearest enclosing link of a box, or null.

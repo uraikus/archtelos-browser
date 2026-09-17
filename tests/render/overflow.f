@@ -152,4 +152,93 @@ paintPage(pauto2, 0, 0, 300)
 check(getPixelColor(192, 10) == thumb, '`auto` draws the bar once the content overflows')
 check(getPixelColor(20, 92) == pale, 'and only the one axis that overflows')
 
+// ---- and what it scrolls ----------------------------------------------
+// Scrolling moves the content and leaves the box, its background and
+// its scrollbars where they are. The offset is kept by the id of the
+// element rather than on the box, because a box tree lasts one layout
+// and a scroll position has to outlive several.
+color band1 = '#ff0000'
+color band2 = '#0000ff'
+
+Box func scrollBoxOf(p:Page) {
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if all[i].node != null && getAttr(all[i].node, 'id') == 'sc' { return all[i] }
+    }
+    return null
+}
+
+boxScrollReset()
+Page pmove = pageFromHtml(head
+    + '<div id="sc" style="width:200px;height:100px;overflow:scroll;background:#ddffdd">'
+    + '<div style="height:50px;background:#ff0000"></div>'
+    + '<div style="height:50px;background:#0000ff"></div>'
+    + '<div style="height:300px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(pmove, 0, 0, 300)
+check(getPixelColor(50, 10) == band1, 'the first band paints at the top of the box')
+check(getPixelColor(50, 60) == band2, 'and the second below it')
+
+Box sc = scrollBoxOf(pmove)
+check(sc != null, 'the scroll container is in the box tree')
+check(boxScrollRange(sc) == 315,
+      'which can scroll its content less what is visible of it: 400 against 85')
+check(boxScrollBy(sc, 50), 'scrolling it by fifty moves it')
+clearCanvas()
+paintPage(pmove, 0, 0, 300)
+check(getPixelColor(50, 10) == band2, 'and brings the second band to the top')
+check(getPixelColor(50, 60) != band2, 'with the rest of the content moved with it')
+check(getPixelColor(186, 20) == track, 'while the scrollbar stays where it is')
+check(getPixelColor(100, 95) != band2, 'and the horizontal bar is not scrolled either')
+
+// The thumb says where in the content the box is: at the top it starts
+// at the track's top, and scrolled it has moved down by the same share.
+check(getPixelColor(192, 4) == track, 'the thumb has moved off the top of its track')
+check(getPixelColor(192, 12) == thumb, 'to where the content is through what there is of it')
+
+// A wheel over the box scrolls the box; over the page outside it, the
+// page. Asking which is the innermost scroll container under the point
+// is what the shell does with its own wheel.
+// Two struct values cannot be compared with `==` (FINDINGS.md, finding
+// 37), so the box that comes back is identified by the element behind
+// it rather than by being the same box.
+Box foundIn = scrollContainerAt(pmove.root, 50, 50, 1)
+check(foundIn != null && foundIn.node.id == sc.node.id,
+      'a point inside the box finds it as the container to scroll')
+check(scrollContainerAt(pmove.root, 300, 50, 1) == null,
+      'and a point outside it finds nothing, so the page takes the wheel')
+
+// The offset stops at the end of the content and at the start of it.
+check(boxScrollBy(sc, 10000), 'a wheel past the end still moves it')
+check(!boxScrollBy(sc, 10000), 'but not once it is there, which is what hands the page the rest')
+check(boxScrollBy(sc, 0 - 10000), 'and the same at the top')
+check(!boxScrollBy(sc, 0 - 10000), 'where it stops as well')
+clearCanvas()
+paintPage(pmove, 0, 0, 300)
+check(getPixelColor(50, 10) == band1, 'back at the top the first band is back')
+check(scrollContainerAt(pmove.root, 50, 50, 0 - 1) == null,
+      'and a wheel upwards there finds nothing, because there is nowhere to go')
+Box foundDown = scrollContainerAt(pmove.root, 50, 50, 1)
+check(foundDown != null && foundDown.node.id == sc.node.id,
+      'while downwards still finds the box')
+
+// A link inside a scrolled box is where it looks, not where it was laid
+// out: hit testing asks the box how far it has been scrolled.
+boxScrollReset()
+Page plink = pageFromHtml(head
+    + '<div id="sc" style="width:200px;height:100px;overflow:scroll">'
+    + '<div style="height:120px"></div><a href="deep.html">link</a></div></body>',
+    'test.html', 400)
+clearCanvas()
+paintPage(plink, 0, 0, 300)
+check(linkAt(plink.root, 20, 70) == null, 'the link is past the bottom of the box to start with')
+Box scl = scrollBoxOf(plink)
+// The spacer is 120 and the line about 20, so the content is 140 and
+// the visible part 85: fifty-five pixels of scrolling, which a wheel of
+// any size ends at. The link then sits at 65 rather than 120.
+checkEqInt(boxScrollRange(scl), 55, 'the box scrolls by what its content exceeds it by')
+check(boxScrollBy(scl, 400), 'scrolling to the end brings the link up')
+check(linkAt(plink.root, 20, 70) == 'deep.html', 'and clicking where it now is finds it')
+
 finish('overflow')
