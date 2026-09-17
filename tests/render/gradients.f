@@ -160,4 +160,62 @@ for int y = 20, y < 279, y++ {
 }
 check(sameDown > 130, 'off-axis: and down a column as well')
 
+// ---- interpolation hints (CSS Images 3 §3.4.4) ------------------------
+// A bare position between two colour stops is not a stop: it says where
+// the colour is halfway between them, and the interpolation either side
+// follows the standard's curve --
+//
+//     weight = P ^ (log 0.5 / log H)
+//
+// for P the fraction of the way between the two stops and H the hint's
+// own fraction. Every number below comes from that formula rather than
+// from another browser, because Chromium cannot supply pixels here; the
+// numbers are the same arithmetic the code does, so what the checks
+// really assert is the *shape*: the hint drags the midpoint to itself
+// and bends the ramp either side of it.
+//
+// In a 100px box, `red, 25%, blue`:
+//
+//   x = 10   172, 0, 83      x = 25   126, 0, 129     the average colour
+//   x = 50    74, 0, 181     x = 75    33, 0, 222
+//
+// without the hint the same points are 228/190/126/62 red.
+
+Page ph = pageFromHtml(head + '<div style="width:100px;height:40px;background:'
+    + 'linear-gradient(to right, #ff0000, 25%, #0000ff)"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(ph, 0, 0, 200)
+checkPixel(25, 20, 126, 0, 129, 'a hint at 25% puts the average colour a quarter along')
+checkPixel(10, 20, 172, 0, 83, 'the ramp before it is bent towards the second colour')
+checkPixel(50, 20, 74, 0, 181, 'and the ramp after it is bent away')
+checkPixel(75, 20, 33, 0, 222, 'all the way to the end')
+
+// A hint at three quarters bends it the other way.
+Page ph2 = pageFromHtml(head + '<div style="width:100px;height:40px;background:'
+    + 'linear-gradient(to right, #ff0000, 75%, #0000ff)"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(ph2, 0, 0, 200)
+checkPixel(75, 20, 125, 0, 130, 'a hint at 75% puts the average colour three quarters along')
+checkPixel(25, 20, 246, 0, 9, 'holding the first colour most of the way')
+checkPixel(50, 20, 206, 0, 49, 'past the point the unhinted ramp is half and half')
+
+// A hint exactly halfway is no hint at all: the two must agree. This is
+// the check that does not depend on the formula being right.
+Page ph3 = pageFromHtml(head + '<div style="width:100px;height:40px;background:'
+    + 'linear-gradient(to right, #ff0000, 50%, #0000ff)"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(ph3, 0, 0, 200)
+checkPixel(25, 20, 190, 0, 65, 'a hint at the midpoint leaves the ramp where it was')
+checkPixel(50, 20, 126, 0, 129, 'half and half in the middle')
+checkPixel(75, 20, 62, 0, 193, 'and unbent at the far end')
+
+// A hint belongs between the two stops it sits between, so one in a
+// three-stop gradient bends only its own half.
+Page ph4 = pageFromHtml(head + '<div style="width:100px;height:40px;background:'
+    + 'linear-gradient(to right, #ff0000, #ffffff 50%, 87.5%, #0000ff)"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(ph4, 0, 0, 200)
+checkPixel(25, 20, 255, 130, 130, 'the half before the hint is the ordinary ramp')
+checkPixel(88, 20, 119, 119, 255, 'and the hint bends only the half it sits in')
+
 finish('gradients')

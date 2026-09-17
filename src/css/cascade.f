@@ -1693,30 +1693,48 @@ float gradStopVal = 0.0
 // as a fraction of the sweep, which is what the stop machinery already
 // means by GSTOP_PERCENT -- so the painter needs to know nothing about
 // the difference.
-void func parseConicStop(t:ascii, currentColor:int) {
+// One stop position, into gradStopKind and gradStopVal. Along a line it
+// is a length or a percentage of the line; around a sweep it is an
+// angle or a percentage of the turn, and both come out as a fraction,
+// which is what GSTOP_PERCENT means either way. False for anything that
+// is not a position at all.
+bool func parseGradientPosition(p:ascii, conic:bool, fontSize:int) {
+    gradStopKind = GSTOP_AUTO
+    gradStopVal = 0.0
+    if p == null || p.length == 0 { return false }
+    if p.charCodeAt(p.length - 1) == CH_PERCENT {
+        parseNumberAt(p, 0)
+        if !numOk { return false }
+        gradStopKind = GSTOP_PERCENT
+        gradStopVal = numValue / 100.0
+        return true
+    }
+    if conic {
+        arr[bool] ok = [false]
+        float deg = parseAngleDegrees(p, ok)
+        if !ok[0] { return false }
+        gradStopKind = GSTOP_PERCENT
+        gradStopVal = deg / 360.0
+        return true
+    }
+    // a length: resolved the way every other length is, the pixels kept
+    // for the painter, which is the only thing that knows how long the
+    // line turned out to be
+    Len l = parseLength(p, fontSize)
+    if l.kind != LEN_PX { return false }
+    gradStopKind = GSTOP_PX
+    gradStopVal = l.v
+    return true
+}
+
+void func parseConicStop(t:ascii, currentColor:int, fontSize:int) {
     gradStopColor = COLOR_UNSET
     gradStopKind = GSTOP_AUTO
     gradStopVal = 0.0
     arr[ascii] parts = cssTokens(t)
     if parts.length == 0 { return }
     gradStopColor = parseCssColor(parts[0], currentColor)
-    if parts.length > 1 {
-        ascii p = asciiTrim(parts[1])
-        if p.length > 0 && p.charCodeAt(p.length - 1) == CH_PERCENT {
-            parseNumberAt(p, 0)
-            if numOk {
-                gradStopKind = GSTOP_PERCENT
-                gradStopVal = numValue / 100.0
-            }
-            return
-        }
-        arr[bool] ok = [false]
-        float deg = parseAngleDegrees(p, ok)
-        if ok[0] {
-            gradStopKind = GSTOP_PERCENT
-            gradStopVal = deg / 360.0
-        }
-    }
+    if parts.length > 1 { parseGradientPosition(asciiTrim(parts[1]), true, fontSize) }
 }
 
 void func parseGradientStop(t:ascii, currentColor:int, fontSize:int) {
@@ -2576,13 +2594,30 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     arr[int] colors = []
     arr[int] kinds = []
     arr[float] vals = []
+    arr[int] hintKinds = []
+    arr[float] hintVals = []
     for int i = first, i < parts.length, i++ {
-        if conic { parseConicStop(parts[i], currentColor) }
+        if conic { parseConicStop(parts[i], currentColor, fontSize) }
         else { parseGradientStop(parts[i], currentColor, fontSize) }
-        if gradStopColor == COLOR_UNSET { return noGradient() }
+        if gradStopColor == COLOR_UNSET {
+            // A component with a position and no colour is not a stop:
+            // it is an interpolation hint for the pair it sits between
+            // (§3.4.4). One that sits before any stop, or a second one
+            // for the same pair, is invalid and takes the gradient with
+            // it, which is what the standard asks for.
+            arr[ascii] only = cssTokens(asciiTrim(parts[i]))
+            if only.length != 1 || colors.length == 0 { return noGradient() }
+            if hintKinds[colors.length - 1] != GSTOP_AUTO { return noGradient() }
+            if !parseGradientPosition(asciiTrim(only[0]), conic, fontSize) { return noGradient() }
+            hintKinds[colors.length - 1] = gradStopKind
+            hintVals[colors.length - 1] = gradStopVal
+            continue
+        }
         colors.push(gradStopColor)
         kinds.push(gradStopKind)
         vals.push(gradStopVal)
+        hintKinds.push(GSTOP_AUTO)
+        hintVals.push(0.0)
     }
     if colors.length < 2 { return noGradient() }
 
@@ -2594,6 +2629,8 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
     g.stops = colors
     g.posKind = kinds
     g.posVal = vals
+    g.hintKind = hintKinds
+    g.hintVal = hintVals
     return g
 }
 

@@ -850,6 +850,10 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+Interpolation hints and the mirrored degenerate ellipse cost **4,256
+bytes** (2,755,280 → 2,759,536). A gradient with no hint in it pays one
+comparison per band against a resolved offset of -1.
+
 `conic-gradient()` costs **8,632 bytes** (2,746,648 → 2,755,280) and
 nothing at all to a page without one: the painter is reached only
 through the gradient dispatch, which asks the style it is already

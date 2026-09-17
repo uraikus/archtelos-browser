@@ -418,6 +418,12 @@ struct Gradient {
     stops:arr[int]       // packed colours
     posKind:arr[int]     // GSTOP_*
     posVal:arr[float]    // a fraction for PERCENT, pixels for PX
+    // An interpolation hint (Images 3 §3.4.4) is a bare position
+    // between two stops saying where the colour is halfway between
+    // them. One entry per stop: the hint that follows it, or
+    // GSTOP_AUTO for none.
+    hintKind:arr[int]
+    hintVal:arr[float]
     // A radial gradient runs out from a centre rather than along a
     // line. The stop list above means the same thing either way: a
     // fraction of the ray instead of a fraction of the line.
@@ -489,6 +495,8 @@ Gradient func noGradient() {
     g.stops = []
     g.posKind = []
     g.posVal = []
+    g.hintKind = []
+    g.hintVal = []
     // The radial fields are left at their zero values, which are already
     // the initial ones: not radial, not a circle, farthest-corner, and a
     // centre that `resolveGradientCenter` reads an unset length as. This

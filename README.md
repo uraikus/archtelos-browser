@@ -151,7 +151,9 @@ or an ellipse, sized by any of the four extent keywords or explicit
 radii and placed with `at`; and `conic-gradient()` and
 `repeating-conic-gradient()` sweep their stops around a centre instead,
 positioned by angle or by a percentage of the turn, starting where
-`from` says and centred where `at` does. `background-image: url()`
+`from` says and centred where `at` does. All three take interpolation
+hints: a bare position between two stops, saying where the colour is
+halfway between them rather than leaving it in the middle. `background-image: url()`
 paints a fetched image with `background-repeat`,
 `background-position` — or `background-position-x` and
 `background-position-y` separately — and `background-size`, which takes

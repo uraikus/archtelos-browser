@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Interpolation hints, and the degenerate ellipse the standard mirrors
+
+A bare position between two colour stops is not a stop: it is an
+interpolation hint (Images 3 §3.4.4), saying where the colour halfway
+between them falls. The ramp either side follows the standard's curve,
+`weight = P ^ (log 0.5 / log H)`, and a hint exactly in the middle is no
+hint at all — which is the check that depends on the formula being right
+for nothing: the hinted and unhinted gradients must agree pixel for
+pixel. Before this, a component with a position and no colour made the
+whole gradient invalid.
+
+`radial-gradient(100px 0 at 50% 50%, ...)` is the one degenerate ending
+shape the standard does not turn into a solid fill: an ellipse with zero
+height and a width of its own renders as a linear gradient **mirrored
+about its centre**, and it now does here. The other degenerate shapes —
+a zero width, both radii zero — stay a fill of the last stop, which is
+what a gradient line of zero length comes to.
+
+That leaves `image()`, `image-set()` and `cross-fade()` of CSS Images 3,
+which are notations for choosing between images rather than for drawing
+one.
+
+4,256 bytes for both.
+
 ### `conic-gradient()` and `repeating-conic-gradient()`
 
 A conic gradient gives every point the colour of its own angle about a

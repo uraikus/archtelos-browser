@@ -534,6 +534,11 @@ float func maxFloat(a:float, b:float) { return a > b ? a : b }
 // first and last default to 0 and 1 (CSS Images 3 SS3.4.3); positions
 // never decrease.
 arr[float] gradOffsets = []
+// The hints beside them, resolved the same way: the position of the
+// hint that follows each stop, or -1 where there is none. A global for
+// the same reason the offsets are one (FINDINGS.md, "one value out of a
+// function"), and read by gradientColorAt below.
+arr[float] gradHintOffsets = []
 
 void func resolveGradientStops(g:Gradient, length:float) {
     arr[float] out = []
@@ -561,6 +566,13 @@ void func resolveGradientStops(g:Gradient, length:float) {
         if out[i] < out[i - 1] { out[i] = out[i - 1] }
     }
     gradOffsets = out
+    arr[float] hints = []
+    for int i = 0, i < n, i++ {
+        if i >= g.hintKind.length || g.hintKind[i] == GSTOP_AUTO { hints.push(0.0 - 1.0) }
+        else if g.hintKind[i] == GSTOP_PERCENT { hints.push(g.hintVal[i]) }
+        else { hints.push(length > 0.0 ? g.hintVal[i] / length : 0.0 - 1.0) }
+    }
+    gradHintOffsets = hints
 }
 
 // The colour at `t` along the line, interpolated in sRGB between the
@@ -589,6 +601,19 @@ int func gradientColorAt(g:Gradient, offsets:arr[float], tIn:float) {
         if t < a || t > b { continue }
         if b <= a { return g.stops[i + 1] }
         float f = (t - a) / (b - a)
+        // An interpolation hint bends the ramp so that the colour
+        // halfway between the two stops falls at the hint rather than at
+        // the middle (§3.4.4): weight = P ^ (log 0.5 / log H), for P the
+        // fraction of the way between the stops and H the hint's own.
+        if i < gradHintOffsets.length {
+            float hint = gradHintOffsets[i]
+            if hint > a && hint < b && f > 0.0 {
+                float hf = (hint - a) / (b - a)
+                if hf > 0.0 && hf < 1.0 {
+                    f = Math.pow(f, Math.log(0.5) / Math.log(hf))
+                }
+            }
+        }
         int c0 = g.stops[i]
         int c1 = g.stops[i + 1]
         return packColor(
@@ -876,7 +901,37 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
     radialRadii(g, cx, cy, x, y, w, h, 0)
     float rx = radRx
     float ry = radRy
-    // A degenerate gradient -- one whose ending shape has a zero radius,
+    // An ending shape with zero height and a width of its own is not a
+    // gradient line of zero length: the standard renders it as a linear
+    // gradient mirrored about the centre, horizontally (CSS Images 3
+    // §3.4.2.3). The bands are rectangles the height of the box, two per
+    // band, one each side of the centre.
+    if ry <= 0.0 && rx > 0.0 {
+        resolveGradientStops(g, rx)
+        arr[float] mirrored = gradOffsets
+        fillAlpha(opacity)
+        float reach = maxFloat(absFloat(x.toFloat() - cx), absFloat((x + w).toFloat() - cx))
+        float tEnd = reach / rx
+        int bands = roundPx(reach)
+        if bands < 1 { bands = 1 }
+        if bands > 4096 { bands = 4096 }
+        for int i = 0, i < bands, i++ {
+            float t0 = tEnd * i.toFloat() / bands.toFloat()
+            float t1 = tEnd * (i + 1).toFloat() / bands.toFloat()
+            int c = gradientColorAt(g, mirrored, (t0 + t1) / 2.0)
+            if colorAlpha(c) == 0 { continue }
+            applyFillColor(c)
+            int ra = maxInt(roundPx(cx + t0 * rx), x)
+            int rb = minInt(roundPx(cx + t1 * rx), x + w)
+            if rb > ra { pDrawRect(ra, y, rb - ra, h) }
+            int la = maxInt(roundPx(cx - t1 * rx), x)
+            int lb = minInt(roundPx(cx - t0 * rx), x + w)
+            if lb > la { pDrawRect(la, y, lb - la, h) }
+        }
+        fillAlpha(1.0)
+        return
+    }
+    // Any other degenerate shape -- a zero width, or both radii zero,
     // which `closest-side` centred on an edge produces -- renders as a
     // gradient line of zero length, and that is a solid fill of the last
     // stop (CSS Images 3 §3.4.2.3, via §3.4.1).

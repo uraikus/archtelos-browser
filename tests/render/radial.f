@@ -149,4 +149,25 @@ check(getPixelColor(80, 50) == blue, 'and not out from a centre')
 check(getPixelColor(20, 10) == red, 'with every row alike')
 check(getPixelColor(80, 90) == blue, 'top to bottom')
 
+// ---- a degenerate ending shape (CSS Images 3 §3.4.2.3) ----------------
+// An ellipse with zero height and a width of its own is not a gradient
+// line of zero length: the standard renders it as a linear gradient
+// mirrored about the centre, horizontally. With the hard stops above
+// and a 100px half-width, the red half reaches 50 pixels either side of
+// the centre and the blue takes over outside it.
+paint(200, 60, 'radial-gradient(100px 0 at 50% 50%, ' + stops + ')')
+check(getPixelColor(100, 30) == red, 'a zero-height ellipse is red at its centre')
+check(getPixelColor(140, 30) == red, 'out to half the width on the right')
+check(getPixelColor(60, 30) == red, 'and the same distance on the left, mirrored')
+check(getPixelColor(160, 30) == blue, 'blue past the halfway point on one side')
+check(getPixelColor(40, 30) == blue, 'and past it on the other')
+check(getPixelColor(140, 5) == red, 'every row alike, top')
+check(getPixelColor(140, 55) == red, 'and bottom -- it is a band, not an ellipse')
+
+// A zero width is the other degenerate case, and the standard makes
+// that one a solid fill of the last stop rather than a mirrored line.
+paint(100, 100, 'radial-gradient(0 50px at 50% 50%, ' + stops + ')')
+check(getPixelColor(50, 50) == blue, 'a zero-width ellipse is the last stop everywhere')
+check(getPixelColor(10, 10) == blue, 'corner to corner')
+
 finish('radial gradients')
