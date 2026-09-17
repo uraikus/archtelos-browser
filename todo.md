@@ -284,6 +284,55 @@ either rule alone misses eight or eleven of them by one.
 regardless: one is a convolution and the other wants the path API an
 image does not have.
 
+### CSS Scroll Snap 1, which is measured and not written
+
+Nothing of it is implemented, and nothing in it is blocked: this browser
+already scrolls a container with the wheel and with either thumb, which
+is what a snap point acts on. What follows is Chromium 141's behaviour,
+measured rather than read, so that whoever writes this starts from the
+numbers instead of from the specification's prose.
+
+**A snap position is one subtraction.** For a child whose snap area runs
+from `start` to `end` in a snapport of `port` pixels:
+
+| `scroll-snap-align` | scroll position |
+|---|---|
+| `start` | childStart - snapportStart |
+| `center` | childCentre - snapportCentre |
+| `end` | childEnd - snapportEnd |
+
+`scroll-padding` insets the snapport, `scroll-margin` outsets the child's
+snap area, and the result is clamped to the scroll range.
+
+**Which one is chosen.** The nearest to the current position wins, and a
+tie goes to the lower. Read off six 30px children in a 100px snapport,
+whose `start` positions are 0, 30, 60 and a maximum of 80:
+
+    start   0->0  5->0  14->0  16->30  35->30  44->30  46->60  75->80  200->80
+    center  0->0  5->0  14->25 16->25  35->25  44->55  46->55  75->80  200->80
+    end     0->0  5->0  14->20 16->20  35->20  44->50  46->50  75->80  200->80
+
+`end` at 35 is the tie -- 20 and 50 are both fifteen away -- and Chromium
+takes 20.
+
+**`proximity` is one third of the snapport.** With snap points 0 and 500,
+Chromium snaps to 0 from an offset of 32 and not from 34 in a 100px
+snapport, and from 66 and not 68 in a 200px one: 0.32 and 0.33 of the
+snapport, which is a third and not a fixed number of pixels. `mandatory`
+snaps from anywhere.
+
+**A snap area taller than the snapport is a range, not a point**
+(§6.1). With four 100px children in an 85px snapport -- so each child
+overflows it -- the valid positions for child b are 100 to 115, and a
+position inside a child's range is left alone rather than pulled to its
+start:
+
+    10->10   40->15   49->15   51->15   60->100  120->115
+    149->115 199->200 260->300 400->315
+
+This is the case that makes a naive nearest-point implementation wrong,
+and the fixture above is the one that shows it.
+
 ### After the official definition
 
 the media features about a user's own preferences that
