@@ -842,6 +842,16 @@ benchmark page has no transform on it, so nothing here is reached:
 eight alternating samples give 100 to 106 ms against 97 to 104, two
 overlapping series whose difference is the machine.
 
+The grid track sizing functions cost **4,264 bytes** (2,737,728 →
+2,741,992). What they cost in time this file cannot say at this size,
+and the reason is worth the line: `features.html`, which has 48 grid
+containers on it, goes from 123 to 125 ms before to 125 to 126 after,
+six alternating best-of-3 samples apiece — and `generated.html`, which
+has no grid at all and therefore runs not one line of the new code,
+moves by the same 2 ms in the same direction, 128 to 131 against 130 to
+134. A difference a page that cannot have it shows just as clearly is
+the binary's own layout, or the machine, and not the feature.
+
 `content: url()` on an ordinary element costs **no bytes the linker
 records**: 2,737,728 with it and without. The two binaries hash
 differently (`756c6fe5` against `e2a09826`), so that is two programs

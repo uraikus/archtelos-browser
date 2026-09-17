@@ -36,17 +36,32 @@ const int CONTAINER_NORMAL = 0
 const int CONTAINER_INLINE_SIZE = 1
 const int CONTAINER_SIZE = 2
 
-// A grid track's size. `fr` is not a length: it is a share of what the
-// fixed tracks leave, so it cannot live in a Len and has a field of its
-// own. TRACK_AUTO sizes to the content.
-const int TRACK_LEN = 0     // a length or a percentage, in `size`
-const int TRACK_FR = 1      // a share, in `fr`
-const int TRACK_AUTO = 2
+// A grid track's two sizing functions (Grid 1 §7.2). Every track has a
+// minimum and a maximum, and the keywords are shorthands for a pair:
+// `auto` is minmax(auto, max-content), `100px` is minmax(100px, 100px),
+// `1fr` is minmax(auto, 1fr), `min-content` and `max-content` are that
+// function twice over, and `fit-content(L)` is a maximum of its own.
+//
+// TRACK_AUTO is zero so that a Track nobody filled in -- the one
+// `trackAt` hands back past the end of a template -- is `auto` on both
+// sides, which is what the standard says an implicit track is.
+//
+// `fr` is not a length: it is a share of what the other tracks leave,
+// so it cannot live in a Len and has a field of its own. It is only
+// valid as a maximum.
+const int TRACK_AUTO = 0
+const int TRACK_LEN = 1          // a length or a percentage, in `size`
+const int TRACK_FR = 2           // a share, in `fr`
+const int TRACK_MIN_CONTENT = 3
+const int TRACK_MAX_CONTENT = 4
+const int TRACK_FIT_CONTENT = 5  // the clamp is in `size`
 
 struct Track {
-    kind:int
+    kind:int        // the maximum: what the track may grow to
     size:Len
     fr:float
+    minKind:int     // the minimum: what it may not go below
+    minSize:Len
 }
 
 // One edge of an item's placement on one axis. A line number counts

@@ -3307,13 +3307,23 @@ int func trackBaseSize(t:Track, axisSize:int) {
 }
 
 // The track list an axis uses at index i: the explicit template while
-// it lasts, then the auto list repeating, then auto.
+// it lasts, then the auto list repeating, then auto. TRACK_AUTO is zero
+// on both sizing functions, so the Track built here is `auto` without
+// having to say so.
 Track func trackAt(explicit:arr[Track], auto:arr[Track], i:int) {
     if i < explicit.length { return explicit[i] }
     if auto.length > 0 { return auto[(i - explicit.length) % auto.length] }
     Track t
     t.kind = TRACK_AUTO
+    t.minKind = TRACK_AUTO
     return t
+}
+
+// Whether a track's size depends on what is in it. A track that is a
+// length on both sides does not, which is what lets a grid with
+// declared tracks skip measuring its items entirely.
+bool func trackIsIntrinsic(t:Track) {
+    return t.kind != TRACK_LEN || t.minKind != TRACK_LEN
 }
 
 void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
@@ -3460,7 +3470,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
         if a.rowSpan != 1 || a.row < 0 || a.row >= rowCount { continue }
-        if trackAt(s.gridRows, s.gridAutoRows, a.row).kind != TRACK_AUTO { continue }
+        if !trackIsIntrinsic(trackAt(s.gridRows, s.gridAutoRows, a.row)) { continue }
         int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan)
         Box c = a.box
         c.forcedWidthPx = lenIsAuto(c.style.width) ? measureW : -1
@@ -3555,51 +3565,137 @@ int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int) {
 // when it has none fixed -- which is the block axis of a grid whose
 // height is automatic, where `fr` has nothing to share and an auto
 // track is as big as its content.
+// Sizing one axis (Grid 1 §12). Every track has a minimum and a
+// maximum sizing function; the minimum gives the base size it may not
+// go below, the maximum the growth limit it may not pass. Free space is
+// then handed out three times over: to grow the tracks towards their
+// limits in equal shares, each freezing as it arrives (§12.5); to the
+// `fr` tracks, which take what the others left (§12.7); and, where no
+// `fr` track took it, to stretch the tracks whose maximum is `auto`
+// (§12.8). `justify-content` does not position tracks here, so a
+// `normal` that stretches and a `start` that does not cannot be told
+// apart yet -- todo.md carries it.
 arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
                            auto:arr[Track], count:int, axisSize:int,
                            gap:int, inline:bool) {
+    int pct = axisSize < 0 ? 0 : axisSize
+    // What each track has to hold: the largest contribution of the
+    // single-span items in it. An item spanning several tracks
+    // contributes to none of them, which is the standard's first pass
+    // and keeps this from needing a second. Nothing is measured at all
+    // unless some track's size depends on it.
+    arr[int] minC = []
+    arr[int] maxC = []
+    bool anyIntrinsic = false
+    for int i = 0, i < count, i++ {
+        minC.push(0)
+        maxC.push(0)
+        if trackIsIntrinsic(trackAt(explicit, auto, i)) { anyIntrinsic = true }
+    }
+    if anyIntrinsic {
+        for int i = 0, i < areas.length, i++ {
+            GridArea a = areas[i]
+            int at = inline ? a.col : a.row
+            int span = inline ? a.colSpan : a.rowSpan
+            if span != 1 || at < 0 || at >= count { continue }
+            int mn = 0
+            int mx = 0
+            if inline {
+                computeIntrinsic(a.box)
+                mn = a.box.minContent
+                mx = a.box.maxContent
+            } else {
+                // In the block axis an item has one contribution: the
+                // height it was laid out to at its column width.
+                mn = a.box.h + a.box.mt + a.box.mb
+                mx = mn
+            }
+            if mn > minC[at] { minC[at] = mn }
+            if mx > maxC[at] { maxC[at] = mx }
+        }
+    }
+
     arr[int] sizes = []
+    arr[int] limits = []
     arr[float] frs = []
+    arr[bool] stretchy = []
     float totalFr = 0.0
-    int fixed = 0
     for int i = 0, i < count, i++ {
         Track t = trackAt(explicit, auto, i)
-        int size = 0
-        float fr = 0.0
+        int base = 0
+        if t.minKind == TRACK_LEN { base = maxInt(resolveLen(t.minSize, pct, 0), 0) }
+        else if t.minKind == TRACK_MAX_CONTENT { base = maxC[i] }
+        else { base = minC[i] }
+        int limit = base
+        // Whether the maximum is a length this axis can resolve. A
+        // percentage against an indefinite axis is not one: it behaves
+        // as `auto`, so it must not be taken for a definite limit below.
+        bool definiteLimit = false
         if t.kind == TRACK_LEN {
-            size = trackBaseSize(t, axisSize < 0 ? 0 : axisSize)
-        } else if t.kind == TRACK_FR && axisSize >= 0 {
+            limit = maxInt(resolveLen(t.size, pct, 0), 0)
+            definiteLimit = axisSize >= 0 || t.size.kind == LEN_PX
+        } else if t.kind == TRACK_MIN_CONTENT {
+            limit = minC[i]
+        } else if t.kind == TRACK_MAX_CONTENT {
+            limit = maxC[i]
+        } else if t.kind == TRACK_FIT_CONTENT {
+            // The max-content size, clamped to the argument but never
+            // below what the minimum already demands.
+            limit = minInt(maxC[i], maxInt(base, maxInt(resolveLen(t.size, pct, 0), 0)))
+        } else if t.kind == TRACK_FR {
+            limit = base
+        } else {
+            limit = maxC[i]
+        }
+        if limit < base { limit = base }
+        float fr = 0.0
+        if t.kind == TRACK_FR && axisSize >= 0 {
             fr = t.fr
             totalFr = totalFr + t.fr
         }
+        int size = base
+        // §12.5: where the roomLeft space is indefinite, a track whose
+        // maximum is a definite length takes that length. It is why a
+        // `minmax(80px, 120px)` row is 120 tall in a container with no
+        // height of its own.
+        if axisSize < 0 && definiteLimit && limit > size { size = limit }
         sizes.push(size)
+        limits.push(limit)
         frs.push(fr)
-        fixed = fixed + size
+        stretchy.push(t.kind == TRACK_AUTO)
     }
-    // An auto track is as large as the largest item that sits in it
-    // alone; an item spanning several tracks does not contribute, which
-    // is the standard's rule and keeps this a single pass.
-    for int i = 0, i < areas.length, i++ {
-        GridArea a = areas[i]
-        int at = inline ? a.col : a.row
-        int span = inline ? a.colSpan : a.rowSpan
-        if span != 1 || at < 0 || at >= count { continue }
-        Track t = trackAt(explicit, auto, at)
-        if t.kind != TRACK_AUTO { continue }
-        int need = 0
-        if inline {
-            computeIntrinsic(a.box)
-            need = a.box.maxContent
-        } else {
-            need = a.box.h + a.box.mt + a.box.mb
-        }
-        if need > sizes[at] {
-            fixed = fixed + (need - sizes[at])
-            sizes[at] = need
+
+    int gaps = count > 1 ? gap * (count - 1) : 0
+    // §12.5 maximize tracks: equal shares, each track freezing as it
+    // reaches its growth limit and the rest going to those still growable.
+    if axisSize >= 0 {
+        int used = 0
+        for int i = 0, i < count, i++ { used = used + sizes[i] }
+        int roomLeft = axisSize - used - gaps
+        while roomLeft > 0 {
+            int growable = 0
+            for int i = 0, i < count, i++ {
+                if frs[i] <= 0.0 && sizes[i] < limits[i] { growable++ }
+            }
+            if growable == 0 { break }
+            int share = maxInt(Math.floorDiv(roomLeft, growable), 1)
+            bool moved = false
+            for int i = 0, i < count, i++ {
+                if roomLeft <= 0 { break }
+                if frs[i] > 0.0 || sizes[i] >= limits[i] { continue }
+                int add = minInt(minInt(share, limits[i] - sizes[i]), roomLeft)
+                sizes[i] = sizes[i] + add
+                roomLeft = roomLeft - add
+                if add > 0 { moved = true }
+            }
+            if !moved { break }
         }
     }
+    // §12.7 expand flexible tracks: an fr track takes its share of what
+    // the others left, and never less than its own base size.
     if axisSize >= 0 && totalFr > 0.0 {
-        int gaps = count > 1 ? gap * (count - 1) : 0
+        int fixed = 0
+        for int i = 0, i < count, i++ { if frs[i] <= 0.0 { fixed = fixed + sizes[i] } }
         int spare = maxInt(axisSize - fixed - gaps, 0)
         int handed = 0
         int lastFr = -1
@@ -3610,8 +3706,32 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
             // up to the space exactly rather than to a pixel less
             int share = i == lastFr ? spare - handed
                       : roundPx(spare.toFloat() * frs[i] / totalFr)
+            if share < sizes[i] { share = sizes[i] }
             sizes[i] = share
             handed = handed + share
+        }
+    }
+    // §12.8 stretch auto tracks: anything still spare is shared equally
+    // by the tracks whose maximum is `auto`. An fr track has already
+    // taken everything, so this only runs where there is none.
+    if axisSize >= 0 && totalFr <= 0.0 {
+        int used = 0
+        for int i = 0, i < count, i++ { used = used + sizes[i] }
+        int spare = axisSize - used - gaps
+        if spare > 0 {
+            int n = 0
+            int last = -1
+            for int i = 0, i < count, i++ { if stretchy[i] { n++  last = i } }
+            if n > 0 {
+                int handed = 0
+                int each = Math.floorDiv(spare, n)
+                for int i = 0, i < count, i++ {
+                    if !stretchy[i] { continue }
+                    int add = i == last ? spare - handed : each
+                    sizes[i] = sizes[i] + add
+                    handed = handed + add
+                }
+            }
         }
     }
     return sizes

@@ -175,11 +175,15 @@ Box gAutoCol = gridOf('grid-auto-flow:column;grid-template-rows:20px;'
 checkEqInt(findById(gAutoCol, 'b').x, 100, 'an implicit column follows the explicit one')
 checkEqInt(findById(gAutoCol, 'b').w, 60, 'sized by grid-auto-columns')
 
-// ---- auto tracks take their size from the content ------------------------
+// ---- an item's own width, and the track around it ------------------------
+// The item declares a width, so it keeps it whatever the track does --
+// and the track does not keep still: an auto track is stretched to what
+// the rest of the grid leaves, which the track sizing section below
+// measures.
 
 Box gAuto = gridOf('grid-template-columns:auto 100px',
                    gridCell('a', 'width:40px') + gridCell('b', ''))
-checkEqInt(findById(gAuto, 'a').w, 40, 'an auto track is as wide as its content')
+checkEqInt(findById(gAuto, 'a').w, 40, 'a declared width is the item width, track or no track')
 
 Box gAutoRow = gridOf('grid-template-columns:100px',
                       gridCell('a', 'height:37px'))
@@ -270,5 +274,156 @@ Box curB = findById(gCursor, 'b')
 checkEqInt(curA.x, 100, 'an item that names a column is placed there')
 checkEqInt(curB.x, 0, 'and the next item starts the row again')
 check(curB.y > curA.y, 'in the row below, because the cursor moved past the named column')
+
+// ---- the track sizing functions (Grid 1 §12) ---------------------------
+// A track has two sizing functions, a minimum and a maximum, and every
+// keyword is shorthand for a pair: `auto` is minmax(auto, max-content),
+// `100px` is minmax(100px, 100px), `1fr` is minmax(auto, 1fr),
+// `min-content` and `max-content` are that function twice over, and
+// `fit-content(L)` is the max-content size clamped to L but never below
+// the min-content size. Free space is then handed out twice: first to
+// grow every track towards its maximum, in equal shares, each track
+// freezing as it reaches it; then, if any is still spare and no `fr`
+// track took it, to stretch the tracks whose maximum is `auto`.
+//
+// The item below holds two 60px inline-blocks, so its min-content
+// contribution is 60 -- one per line -- and its max-content
+// contribution 120, whatever the font does. Chromium 141, grid
+// container 300px wide, reading `getComputedStyle().gridTemplateColumns`,
+// which reports the used sizes in pixels:
+//
+//   min-content                 60      max-content                120
+//   minmax(50px, 100px)        100      minmax(150px, 300px)       300
+//   minmax(min-content, 200px) 200      minmax(max-content, 280px) 280
+//   minmax(100px, min-content) 100      minmax(150px, 1fr)         300
+//   fit-content(80px)           80      fit-content(200px)         120
+//   fit-content(40px)           60
+
+text twoBoxes = '<span style="display:inline-block;width:60px;height:20px"></span>'
+              + '<span style="display:inline-block;width:60px;height:20px"></span>'
+
+// One track, one item: the track is exactly what its sizing functions
+// and that item make it.
+int func oneTrack(cols:text) {
+    Box g = gridOf('grid-template-columns:' + cols, '<div id="a">' + twoBoxes + '</div>')
+    Box c = findById(g, 'a')
+    return c == null ? -1 : c.w
+}
+
+checkEqInt(oneTrack('min-content'), 60, '`min-content` is the min-content contribution')
+checkEqInt(oneTrack('max-content'), 120, '`max-content` is the max-content contribution')
+checkEqInt(oneTrack('minmax(50px, 100px)'), 100, 'a minmax track grows to its maximum')
+checkEqInt(oneTrack('minmax(150px, 300px)'), 300, 'and to a larger one when the space is there')
+checkEqInt(oneTrack('minmax(min-content, 200px)'), 200, 'a min-content minimum with a length maximum')
+checkEqInt(oneTrack('minmax(max-content, 280px)'), 280, 'and a max-content minimum with one')
+checkEqInt(oneTrack('minmax(100px, min-content)'), 100,
+           'a maximum below the minimum is the minimum')
+checkEqInt(oneTrack('minmax(150px, 1fr)'), 300, 'an fr maximum takes the free space')
+checkEqInt(oneTrack('fit-content(80px)'), 80, '`fit-content` clamps the max-content size')
+checkEqInt(oneTrack('fit-content(200px)'), 120, 'but never grows past it')
+checkEqInt(oneTrack('fit-content(40px)'), 60, 'and never shrinks below min-content')
+
+// Two tracks, the item in the first and an empty probe in the second,
+// which contributes nothing to it. Chromium 141 on the same page:
+//
+//   min-content max-content              60    0
+//   min-content 1fr                      60  240
+//   minmax(50px,100px) 1fr              100  200
+//   fit-content(80px) auto               80  220
+//   minmax(0px,100px) minmax(0px,400px) 100  200
+//   minmax(0px,400px) minmax(0px,400px) 150  150
+//   auto minmax(0px,80px)               220   80
+
+int func twoTracks(cols:text, id:text) {
+    Box g = gridOf('grid-template-columns:' + cols,
+                   '<div id="a">' + twoBoxes + '</div><div id="b" style="grid-column:2"></div>')
+    Box c = findById(g, id)
+    return c == null ? -1 : c.w
+}
+
+checkEqInt(twoTracks('min-content max-content', 'a'), 60, 'the first of two tracks is its own size')
+checkEqInt(twoTracks('min-content max-content', 'b'), 0, 'and an empty max-content track is zero')
+checkEqInt(twoTracks('min-content 1fr', 'a'), 60, 'an fr track beside a min-content one')
+checkEqInt(twoTracks('min-content 1fr', 'b'), 240, 'takes everything the other left')
+checkEqInt(twoTracks('minmax(50px,100px) 1fr', 'a'), 100, 'a minmax track reaches its maximum first')
+checkEqInt(twoTracks('minmax(50px,100px) 1fr', 'b'), 200, 'and the fr track takes the rest')
+checkEqInt(twoTracks('fit-content(80px) auto', 'a'), 80, 'a fit-content track beside an auto one')
+checkEqInt(twoTracks('fit-content(80px) auto', 'b'), 220, 'which is stretched by what is spare')
+checkEqInt(twoTracks('minmax(0px,100px) minmax(0px,400px)', 'a'), 100,
+           'free space is shared equally until a track freezes at its maximum')
+checkEqInt(twoTracks('minmax(0px,100px) minmax(0px,400px)', 'b'), 200,
+           'and what the frozen one could not take goes to the other')
+checkEqInt(twoTracks('minmax(0px,400px) minmax(0px,400px)', 'a'), 150,
+           'two tracks that freeze at nothing share it evenly')
+checkEqInt(twoTracks('minmax(0px,400px) minmax(0px,400px)', 'b'), 150, 'half each')
+checkEqInt(twoTracks('auto minmax(0px,80px)', 'a'), 220,
+           'an auto track is stretched by whatever the maximizing left over')
+checkEqInt(twoTracks('auto minmax(0px,80px)', 'b'), 80, 'the limited one stays at its maximum')
+
+// The same two tracks with an item narrower than its track, which is
+// where `auto` differs from `max-content`. Chromium 141:
+//
+//   auto 100px   200 100      auto auto   170 130      auto 1fr   40 260
+
+int func narrowTracks(cols:text, id:text) {
+    Box g = gridOf('grid-template-columns:' + cols,
+                   '<div id="a"><div style="width:40px;height:20px"></div></div>'
+                   + '<div id="b" style="grid-column:2"></div>')
+    Box c = findById(g, id)
+    return c == null ? -1 : c.w
+}
+
+checkEqInt(narrowTracks('auto 100px', 'a'), 200, 'an auto track takes the space a fixed one leaves')
+checkEqInt(narrowTracks('auto 100px', 'b'), 100, 'and the fixed track keeps its length')
+checkEqInt(narrowTracks('auto auto', 'a'), 170, 'two auto tracks split the free space equally')
+checkEqInt(narrowTracks('auto auto', 'b'), 130, 'from bases of 40 and 0')
+checkEqInt(narrowTracks('auto 1fr', 'a'), 40, 'an auto track beside an fr one is not stretched')
+checkEqInt(narrowTracks('auto 1fr', 'b'), 260, 'because the fr track took the free space first')
+
+// The implicit tracks the placement section above leaves unsized are
+// sized by the same rules, `grid-auto-columns: auto` being the initial
+// value. Chromium 141: `100px` plus an item at column 2 is 100px 200px,
+// and plus one at column 3 is 100px 100px 100px.
+// The probe is empty here, because an implicit track with something in
+// it is sized by that something: `x` in the last column is ten pixels
+// of min-content and the stretching starts from those rather than
+// from nothing.
+Box gImp2 = gridOf('grid-template-columns:100px',
+                   gridCell('a', '') + '<div id="b" style="grid-column:2"></div>')
+checkEqInt(findById(gImp2, 'b').w, 200, 'an implicit auto column is stretched like any other')
+Box gImp3 = gridOf('grid-template-columns:100px',
+                   gridCell('a', '') + '<div id="b" style="grid-column:3"></div>')
+checkEqInt(findById(gImp3, 'b').x, 200, 'two implicit columns share what is left')
+checkEqInt(findById(gImp3, 'b').w, 100, 'equally, 100 each')
+
+// ---- the same functions in the block axis ------------------------------
+// The container has no height, so there is no free space to maximize
+// with -- and where the free space is indefinite the standard makes a
+// track whose maximum is a definite length take that length (§12.5).
+// Chromium 141, on an item 40px tall:
+//
+//   min-content / max-content / auto / 1fr  40      minmax(30px, 60px)   60
+//   minmax(80px, 120px)                    120      fit-content(25px)    40
+//   auto auto                             40  0
+
+int func rowHeight(rows:text, id:text) {
+    Box g = gridOf('grid-template-columns:100px;grid-template-rows:' + rows,
+                   '<div id="a"><div style="height:40px"></div></div>'
+                   + '<div id="b" style="grid-row:2"></div>')
+    Box c = findById(g, id)
+    return c == null ? -1 : c.h
+}
+
+checkEqInt(rowHeight('min-content', 'a'), 40, 'a min-content row is the item height')
+checkEqInt(rowHeight('max-content', 'a'), 40, 'and so is a max-content row')
+checkEqInt(rowHeight('auto', 'a'), 40, 'and an auto row, with no height to stretch into')
+checkEqInt(rowHeight('1fr', 'a'), 40, 'and an fr row, with no free space to take')
+checkEqInt(rowHeight('minmax(30px, 60px)', 'a'), 60,
+           'a definite maximum is the size where the free space is indefinite')
+checkEqInt(rowHeight('minmax(80px, 120px)', 'a'), 120, 'whatever the item needs')
+checkEqInt(rowHeight('fit-content(25px)', 'a'), 40,
+           'a fit-content maximum is not a definite one, so the content decides')
+checkEqInt(rowHeight('auto auto', 'a'), 40, 'the first of two auto rows is its item')
+checkEqInt(rowHeight('auto auto', 'b'), 0, 'and an empty one is nothing')
 
 finish('grid')

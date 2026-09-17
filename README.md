@@ -182,12 +182,19 @@ the run before it, itself across the full width, and the run after.
 
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and
-`grid-template-rows` say what the tracks are — lengths, percentages,
-`auto`, `fr` shares of what is left, and `repeat()` of a whole list —
-and items either fall into place in the flow's order or name the lines
-they sit between, by number or by `span`. Tracks past the template are
-created as needed and sized by `grid-auto-columns` and
-`grid-auto-rows`.
+`grid-template-rows` say what the tracks are, and items either fall into
+place in the flow's order or name the lines they sit between, by number
+or by `span`. Tracks past the template are created as needed and sized
+by `grid-auto-columns` and `grid-auto-rows`.
+
+A track is a pair of sizing functions, a minimum and a maximum: lengths
+and percentages, `auto`, `min-content`, `max-content`, `fr` shares of
+what is left, `minmax()` of any two of those, `fit-content()` of a
+length, and `repeat()` of a whole list. Free space is handed out in the
+standard's order — every track grows towards its maximum in equal
+shares, each freezing as it arrives; then the `fr` tracks take what is
+left; then, if nothing flexible took it, the tracks whose maximum is
+`auto` are stretched into the rest.
 
 **Containment** lets a box promise what cannot escape it. `contain:
 size` lays it out as if it were empty — its content is never measured,

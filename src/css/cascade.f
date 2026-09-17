@@ -2135,13 +2135,50 @@ arr[ascii] func splitTopLevelSlash(v:ascii) {
     return out
 }
 
-// One grid track. `fr` is a share of the free space rather than a
-// length, so it cannot go through parseLength at all.
+// One grid track: its two sizing functions (Grid 1 §7.2). `fr` is a
+// share of the free space rather than a length, so it cannot go through
+// parseLength at all. Anything unrecognized is `auto`, which is both
+// the initial value and what an invalid track list falls back to.
 Track func parseTrack(tok:ascii, fontSize:int) {
     Track t
     t.kind = TRACK_AUTO
+    t.minKind = TRACK_AUTO
     ascii low = asciiLower(asciiTrim(tok))
-    if low == 'auto' || low == 'min-content' || low == 'max-content' { return t }
+    if low == 'auto' { return t }
+    if low == 'min-content' {
+        t.kind = TRACK_MIN_CONTENT
+        t.minKind = TRACK_MIN_CONTENT
+        return t
+    }
+    if low == 'max-content' {
+        t.kind = TRACK_MAX_CONTENT
+        t.minKind = TRACK_MAX_CONTENT
+        return t
+    }
+    if asciiStartsWithLower(low, 'minmax(', 0) && low.charCodeAt(low.length - 1) == CH_RPAREN {
+        arr[ascii] mm = splitTopLevelCommas(low.slice(7, low.length - 1))
+        if mm.length != 2 { return t }
+        Track lo = parseTrack(asciiTrim(mm[0]), fontSize)
+        Track hi = parseTrack(asciiTrim(mm[1]), fontSize)
+        // Neither `fr` nor `fit-content()` is valid as a minimum, and
+        // `fit-content()` is not valid as a maximum inside minmax()
+        // either; each reads as `auto`, the value an invalid component
+        // of a track list falls back to.
+        t.minKind = lo.kind == TRACK_FR || lo.kind == TRACK_FIT_CONTENT ? TRACK_AUTO : lo.kind
+        t.minSize = lo.size
+        t.kind = hi.kind == TRACK_FIT_CONTENT ? TRACK_AUTO : hi.kind
+        t.size = hi.size
+        t.fr = hi.fr
+        return t
+    }
+    if asciiStartsWithLower(low, 'fit-content(', 0) && low.charCodeAt(low.length - 1) == CH_RPAREN {
+        Len clamp = parseLength(asciiTrim(low.slice(12, low.length - 1)), fontSize)
+        if clamp.kind == LEN_PX || clamp.kind == LEN_PERCENT {
+            t.kind = TRACK_FIT_CONTENT
+            t.size = clamp
+        }
+        return t
+    }
     if low.length > 2 && low.slice(low.length - 2, low.length) == 'fr' {
         parseNumberAt(low, 0)
         if numOk {
@@ -2155,6 +2192,8 @@ Track func parseTrack(tok:ascii, fontSize:int) {
     if l.kind == LEN_PX || l.kind == LEN_PERCENT {
         t.kind = TRACK_LEN
         t.size = l
+        t.minKind = TRACK_LEN
+        t.minSize = l
     }
     return t
 }

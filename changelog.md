@@ -5,6 +5,46 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The grid track sizing functions
+
+A track is a pair of sizing functions, a minimum and a maximum (Grid 1
+§7.2), and until now this engine kept one: a length, an `fr`, or `auto`.
+It now keeps both, and `minmax()`, `min-content`, `max-content` and
+`fit-content()` all say what they mean. `auto` is minmax(auto,
+max-content), `100px` is minmax(100px, 100px), `1fr` is minmax(auto,
+1fr) — so `TRACK_AUTO` is zero, and the track `trackAt` hands back past
+the end of a template is `auto` on both sides without having to say so.
+
+Sizing follows the standard's order rather than one pass. Each track
+gets a base size from its minimum and a growth limit from its maximum,
+both read off the largest contribution of the items that sit in it
+alone. Then the free space is handed out three times: every track grows
+towards its limit in equal shares, each freezing as it arrives (§12.5);
+the `fr` tracks take what the others left, never below their own base
+(§12.7); and what is still spare, where nothing flexible took it,
+stretches the tracks whose maximum is `auto` (§12.8). Where the free
+space is indefinite — a row axis with no height to fill — a track whose
+maximum is a definite length takes that length.
+
+Every expectation is Chromium 141's, read off
+`getComputedStyle().gridTemplateColumns`, which reports the used sizes
+in pixels. The item in the fixture holds two 60px inline-blocks, so its
+min-content contribution is 60 and its max-content 120 whatever the font
+does, which is what makes the two functions tell each other apart.
+
+**The stretching step changes what was there.** `grid-template-columns:
+auto 100px` in a 300px grid used to leave the auto track at its content
+size; Chromium gives it the 200 the fixed track leaves, and now so does
+this. `justify-content` does not position tracks here, so the `normal`
+that stretches and the `start` that does not cannot be told apart —
+todo.md carries it.
+
+It costs 4,264 bytes. What it costs in time cannot be read at this size:
+the feature page, which has 48 grids on it, goes from 123–125 ms to
+125–126 end to end, and `generated.html`, which has no grid at all and
+so runs none of this, moves by the same 2 ms in the same direction. Two
+series that differ by the noise floor say nothing about the feature.
+
 ### A grid item placed past the explicit grid hung the layout
 
 `<div style="display:grid;grid-template-columns:100px"><div></div>

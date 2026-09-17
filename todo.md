@@ -125,17 +125,20 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
    everywhere with no call to change it. Cairo has every Porter-Duff
    and separable blend operator; the entry point is what is missing.
-11. **Grid, completed**: `minmax()`, `min-content`, `max-content` and
-    `fit-content()`, `auto-fill` and `auto-fit`, dense packing, and
-    subgrid. Named lines and `grid-template-areas` are done. One
-    divergence is left in what is done: a placement naming a line the
-    template does not know leaves that edge automatic, where the
-    standard creates an implicit line of that name after the explicit
-    grid — Chromium puts `grid-area: zz` on a two-column grid at the
-    fourth column line and the fourth row line, and this puts it wherever
-    auto-placement does. An `auto`
-    track is sized by the largest item that sits in it alone, so an
-    item spanning two auto tracks does not grow either of them.
+11. **Grid, completed**: `auto-fill` and `auto-fit`, dense packing, and
+    subgrid. Named lines, `grid-template-areas` and the track sizing
+    functions — `minmax()`, `min-content`, `max-content`,
+    `fit-content()` — are done. Three divergences are left in what is
+    done. A placement naming a line the template does not know leaves
+    that edge automatic, where the standard creates an implicit line of
+    that name after the explicit grid — Chromium puts `grid-area: zz` on
+    a two-column grid at the fourth column line and the fourth row line,
+    and this puts it wherever auto-placement does. A track's size comes
+    from the items that sit in it alone, so an item spanning two tracks
+    grows neither of them. And `justify-content` does not position the
+    tracks, so the `normal` that stretches an `auto` track and the
+    `start` that does not are one value here: the stretching happens
+    either way.
 12. **Multi-column 1, completed**: a spanner that sits below the
     container's own children, which needs its ancestors broken around
     it; and real fragment boxes, so that a subtree nested
