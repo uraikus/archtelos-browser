@@ -735,6 +735,10 @@ struct Style {
     justifyItems:int
     // CSS Grid. An empty template is a grid with no explicit tracks in
     // that axis, which is the initial value and costs no allocation.
+    // `grid-template-columns: subgrid` takes the tracks from the
+    // parent grid's own lines rather than declaring any (CSS Grid 2 §3).
+    gridColsSubgrid:bool
+    gridRowsSubgrid:bool
     gridCols:arr[Track]
     gridRows:arr[Track]
     // grid-template-areas: the cell names row-major with the row width

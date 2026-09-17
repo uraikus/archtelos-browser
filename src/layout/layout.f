@@ -3592,8 +3592,50 @@ arr[bool] func gridCollapsedTracks(areas:arr[GridArea], count:int, from:int, spa
     return out
 }
 
+// The tracks a parent grid hands to a subgrid item: the sizes of the
+// lines it spans, and the gap between them (CSS Grid 2 §3). A grid that
+// is not a subgrid item finds them empty, and every grid clears them
+// before laying out its own items, so a subgrid inside a subgrid gets
+// its own parent's lines and not its grandparent's.
+arr[int] subgridColSizes = []
+arr[int] subgridRowSizes = []
+int subgridColGap = 0
+int subgridRowGap = 0
+
+// A track list of fixed sizes, which is what a subgrid's handed-down
+// tracks become: a track that may neither grow nor shrink is exactly a
+// line of its parent's.
+arr[Track] func gridFixedTracks(sizes:arr[int]) {
+    arr[Track] out = []
+    for int i = 0, i < sizes.length, i++ {
+        Track t
+        t.kind = TRACK_LEN
+        t.size = lenPx(sizes[i].toFloat())
+        t.minKind = TRACK_LEN
+        t.minSize = lenPx(sizes[i].toFloat())
+        out.push(t)
+    }
+    return out
+}
+
+// The sizes of `span` tracks from `at`, which is what a subgrid item is
+// handed.
+arr[int] func gridSpannedSizes(sizes:arr[int], at:int, span:int) {
+    arr[int] out = []
+    for int i = at, i < at + span && i < sizes.length, i++ { out.push(sizes[i]) }
+    return out
+}
+
 void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     Style s = b.style
+    // What this box was handed as a subgrid item, taken before anything
+    // else can overwrite it.
+    arr[int] givenCols = subgridColSizes
+    arr[int] givenRows = subgridRowSizes
+    int givenColGap = subgridColGap
+    int givenRowGap = subgridRowGap
+    subgridColSizes = []
+    subgridRowSizes = []
     b.x = cx + b.ml
     b.y = y + b.mt
     int innerX = contentX(b)
@@ -3618,6 +3660,19 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     arr[Track] rowTracks = gridExpandRepeat(s.gridRows, s.gridRowsAutoAt, s.gridRowsAutoLen,
                                             -1, rowGap)
     int rowRepeatSpan = gridRepeatSpan
+    // A subgrid's tracks are its parent's, not its own (CSS Grid 2 §3):
+    // the sizes of the lines it spans were handed down with the gap
+    // between them, and they stand in for the template here -- before
+    // the items are placed, because how many tracks there are is what
+    // the placement wraps at.
+    if s.gridColsSubgrid && givenCols.length > 0 {
+        colTracks = gridFixedTracks(givenCols)
+        colGap = givenColGap
+    }
+    if s.gridRowsSubgrid && givenRows.length > 0 {
+        rowTracks = gridFixedTracks(givenRows)
+        rowGap = givenRowGap
+    }
     int explicitCols = maxInt(colTracks.length, s.gridAreaCols)
     int explicitRows = maxInt(rowTracks.length, areaRows)
     arr[GridArea] areas = []
@@ -3779,7 +3834,20 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         int ah = gridSpanSize(rowSizes, rowGap, a.row, a.rowSpan, rowCollapsed)
         Box c = a.box
         c.forcedWidthPx = lenIsAuto(c.style.width) ? aw : -1
+        // An item that is itself a subgrid takes the lines it spans
+        // here, where they are known. The two assignments cost a page
+        // without a subgrid on it nothing but the flags being false.
+        if c.style.gridColsSubgrid {
+            subgridColSizes = gridSpannedSizes(colSizes, a.col, a.colSpan)
+            subgridColGap = colGap
+        }
+        if c.style.gridRowsSubgrid {
+            subgridRowSizes = gridSpannedSizes(rowSizes, a.row, a.rowSpan)
+            subgridRowGap = rowGap
+        }
         layoutBlock(c, ax, ay, aw, false)
+        subgridColSizes = []
+        subgridRowSizes = []
         if lenIsAuto(c.style.height) && ah > c.h { c.h = ah }
         c.forcedWidthPx = -1
     }

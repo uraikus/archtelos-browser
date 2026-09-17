@@ -2436,6 +2436,10 @@ int trackAutoRepeatAt = -1
 int trackAutoRepeatLen = 0
 bool trackAutoRepeatFit = false
 
+// Set by parseTrackList when the list was the word `subgrid`, which
+// declares no tracks of its own: they come from the parent grid.
+bool trackIsSubgrid = false
+
 arr[Track] func parseTrackList(v:ascii, fontSize:int) {
     trackLineNames = trackNoNames
     trackLineAt = trackNoLines
@@ -2443,10 +2447,15 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
     trackAutoRepeatAt = -1
     trackAutoRepeatLen = 0
     trackAutoRepeatFit = false
+    trackIsSubgrid = false
     arr[Track] out = []
     if v == null { return out }
     ascii t = asciiTrim(v)
     if t == '' || asciiLower(t) == 'none' { return out }
+    if asciiLower(t) == 'subgrid' {
+        trackIsSubgrid = true
+        return out
+    }
     arr[ascii] toks = cssTokens(t)
     for int i = 0, i < toks.length, i++ {
         // `[a b]` names the line before the next track. cssTokens splits
@@ -4886,12 +4895,14 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // every other property here, so a page with no grid on it allocates
     // nothing: an absent template is an empty list.
     s.gridCols = parseTrackList(styleProp(props, 'grid-template-columns'), s.fontSize)
+    s.gridColsSubgrid = trackIsSubgrid
     s.gridColLineNames = trackLineNames
     s.gridColLineAt = trackLineAt
     s.gridColsAutoAt = trackAutoRepeatAt
     s.gridColsAutoLen = trackAutoRepeatLen
     s.gridColsAutoFit = trackAutoRepeatFit
     s.gridRows = parseTrackList(styleProp(props, 'grid-template-rows'), s.fontSize)
+    s.gridRowsSubgrid = trackIsSubgrid
     s.gridRowLineNames = trackLineNames
     s.gridRowLineAt = trackLineAt
     s.gridRowsAutoAt = trackAutoRepeatAt

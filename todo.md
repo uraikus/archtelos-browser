@@ -161,7 +161,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
    everywhere with no call to change it. Cairo has every Porter-Duff
    and separable blend operator; the entry point is what is missing.
-11. **Grid, completed**: subgrid. Named lines,
+11. **Grid, completed**: **a subgrid's own line names and its items'
+    contribution to the parent's track sizing**. A subgrid takes the
+    sizes of the lines it spans and places its items on them, which is
+    what the feature is for; what it does not do is let its items'
+    content widen one of those tracks, which the standard has the parent
+    take into account, and it does not accept a line-name list of its
+    own beside the keyword. Subgrid itself, named lines,
     `grid-template-areas`, the track sizing functions — `minmax()`,
     `min-content`, `max-content`, `fit-content()` — `repeat()` with
     `auto-fill` and `auto-fit`, and dense packing are done. Three divergences are left in what is

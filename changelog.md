@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Subgrid
+
+A grid item that is itself a grid can take its tracks from the lines of
+its parent that it spans, rather than sizing tracks of its own, so the
+two levels line up (CSS Grid 2 §3). The parent hands the sizes down when
+it lays the item out, where they are known, together with the gap that
+separates them; the item's own template is replaced by tracks of exactly
+those sizes.
+
+**The substitution has to happen before the items are placed, not
+after.** The first version put the sizes in where the tracks are sized,
+which is after the placement pass -- and the placement pass wraps the
+flow at the number of tracks there are, which for a subgrid's own
+(empty) template is none. Every child landed in a row of its own, and
+the checks that said so are the three that failed.
+
+Against Chromium on a 300px grid of 100, 150 and 50 with rows of 40 and
+60: a subgrid spanning all of it puts its children at 0, 100 and 250,
+100, 150 and 50 wide, 40 then 60 tall; one spanning the second and third
+columns gets 150 and 50, starting at 100.
+
 ### The units of Values and Units 4
 
 `q`, a quarter of a millimetre; `vi` and `vb`, the inline and block

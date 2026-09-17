@@ -531,4 +531,49 @@ checkEqInt(findById(gDense, 'b').y, 10, 'dense packing places the wide item in t
 checkEqInt(findById(gDense, 'c').x, 100, 'but fills the hole beside a with what follows')
 checkEqInt(findById(gDense, 'c').y, 0, 'in the first row')
 
+// ---- subgrid (CSS Grid 2 §3) --------------------------------------------
+// A grid item that is itself a grid can take its tracks from the lines
+// of its parent that it spans, rather than sizing tracks of its own, so
+// the two levels line up. The gaps come with them.
+//
+// Chromium 141 on a 300px grid of 100px 150px 50px and rows of 40 and
+// 60, with an item spanning all of it and subgridding both axes:
+//
+//   the item's own children land at 0, 100 and 250, 100, 150 and 50
+//   wide, and 40 then 60 tall on the second row
+//
+// and on the same columns with an item spanning the second and third:
+//
+//   its children are 150 and 50 wide, the first starting at x = 100
+Box gSub = gridOf('grid-template-columns:100px 150px 50px;grid-template-rows:40px 60px',
+    '<div id="sub" style="grid-column:1 / 4;grid-row:1 / 3;display:grid;'
+    + 'grid-template-columns:subgrid;grid-template-rows:subgrid">'
+    + '<div id="sa"></div><div id="sb"></div><div id="sc"></div>'
+    + '<div id="sd"></div><div id="se"></div><div id="sf"></div></div>')
+checkEqInt(findById(gSub, 'sa').x, 0, 'a subgrid puts its first child on the parent\'s first line')
+checkEqInt(findById(gSub, 'sa').w, 100, 'at the width of the parent\'s own track')
+checkEqInt(findById(gSub, 'sb').x, 100, 'the second child on the second line')
+checkEqInt(findById(gSub, 'sb').w, 150, 'and that track\'s width')
+checkEqInt(findById(gSub, 'sc').x, 250, 'the third where the parent\'s third track starts')
+checkEqInt(findById(gSub, 'sc').w, 50, 'and as wide as it is')
+checkEqInt(findById(gSub, 'sd').y, 40, 'the rows are the parent\'s too')
+checkEqInt(findById(gSub, 'sd').h, 60, 'each as tall as the parent made it')
+
+Box gSub2 = gridOf('grid-template-columns:100px 150px 50px',
+    '<div id="sub2" style="grid-column:2 / 4;display:grid;grid-template-columns:subgrid">'
+    + '<div id="ta"></div><div id="tb"></div></div>')
+checkEqInt(findById(gSub2, 'ta').x, 100, 'a subgrid over part of the grid starts where its span does')
+checkEqInt(findById(gSub2, 'ta').w, 150, 'with the first of the tracks it spans')
+checkEqInt(findById(gSub2, 'tb').x, 250, 'and the second beside it')
+checkEqInt(findById(gSub2, 'tb').w, 50, 'at that track\'s own width')
+
+// A grid that is not a subgrid item sizes its own tracks, whatever the
+// keyword would have done: this is the check that says the two are told
+// apart rather than one standing in for the other.
+Box gPlain = gridOf('grid-template-columns:100px 150px 50px',
+    '<div id="plain" style="grid-column:1 / 4;display:grid;grid-template-columns:60px 40px">'
+    + '<div id="pa"></div><div id="pb"></div></div>')
+checkEqInt(findById(gPlain, 'pa').w, 60, 'an ordinary nested grid keeps its own first track')
+checkEqInt(findById(gPlain, 'pb').x, 60, 'and its own second')
+
 finish('grid')
