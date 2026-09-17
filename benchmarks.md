@@ -664,7 +664,7 @@ else in this file:
 
 | | Bytes |
 |---|---|
-| This browser, the whole program | 2,838,232 |
+| This browser, the whole program | 2,842,688 |
 | This browser, all `.f` source | 996,802 |
 | Chromium, main executable only | 463,227,992 |
 | Chromium, whole install tree | 624,734,779 |
@@ -1125,3 +1125,11 @@ rather than an omission: the only new code is one function the shell
 calls from a mouse-button handler, and the benchmark runs the renderer
 with no window and no pointer. A paired series would measure the
 machine, and there is already enough of that in this file.
+
+`revert-layer` costs **4,456 bytes** (2,838,232 → 2,842,688) and nothing
+at all to a page that does not say it: the whole of the layer
+bookkeeping sits inside the branch `revert` already put behind the
+per-document flag, so a page with neither keyword runs the same apply
+loop it always ran. Eleven paired samples of `generated.html` give the
+same best of 104 ms on each side, the two series interleaving through
+their whole range.

@@ -210,10 +210,19 @@ Style allRevert = revertStyleOf('<b id="a" style="all: revert">x</b>', 'b', 'a')
 check(allRevert.fontBold, '`all: revert` restores the UA boldness')
 checkEqInt(allRevert.display, DISPLAY_INLINE, 'and leaves the UA display alone')
 
-// `revert-layer` with no layer above it reverts to the previous origin
-// too, which is what Cascade 5 says when the declaration is unlayered.
+// `revert-layer` is not `revert` even where no layer is named. A style
+// attribute ranks above an unlayered author rule, so rolling back one
+// step lands on that rule rather than on the origin below it: Chromium
+// 141 gives `style="font-weight: revert"` 700 on this markup and
+// `style="font-weight: revert-layer"` 400.
+//
+// This check asserted the opposite until `revert-layer` stopped being
+// an alias for `revert`, because it was written against the alias
+// rather than against the standard -- which is what a test written
+// after the code tests.
 Style bRevertLayer = revertStyleOf('<b id="a" style="font-weight: revert-layer">x</b>', 'b', 'a')
-check(bRevertLayer.fontBold, '`revert-layer` outside a layer reverts the origin')
+check(!bRevertLayer.fontBold, '`revert-layer` rolls back one step, not the whole origin')
+check(bRevert.fontBold, 'where `revert` beside it rolls back the whole origin')
 
 // ---- the CSS-wide keywords on `display` -------------------------------
 // `display` is validated where it is applied, because by then the
@@ -251,5 +260,63 @@ checkEqInt(displayKeywordStyle('display: unset').display, DISPLAY_INLINE,
     '`display: unset` is the same, because display does not inherit')
 checkEqInt(displayKeywordStyle('display: bogus').display, DISPLAY_BLOCK,
     'and an invalid value is dropped, leaving the author rule')
+
+// ---- revert-layer (Cascade 5 §6.3) ------------------------------------
+// `revert-layer` rolls the property back to the value the previous
+// cascade *layer* gave it, where `revert` rolls back the whole origin.
+// An unlayered declaration is in the implicit outer layer, which comes
+// after every named one, so reverting one of those lands on the last
+// named layer rather than on the origin below.
+//
+// Chromium 141 on three layers -- `base` blue, `mid` green, `top` the
+// one under test:
+//
+//   @layer top { color: revert-layer }   green: the previous layer
+//   @layer top { color: revert }         black: past both, to the origin
+//   unlayered   { color: revert-layer }  green: the last named layer
+//   @layer top { color: #ff00ff }        magenta, the reference
+Style func layerStyleOf(rules:text, id:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>'
+        + '@layer base, mid, top;'
+        + '@layer base { p { color: #0000ff } }'
+        + '@layer mid  { p { color: #008000 } }'
+        + rules
+        + '</style></head><body><p id="' + id + '">x</p></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    arr[Node] found = []
+    collectElements(d, 'p', found)
+    for int i = 0, i < found.length, i++ {
+        if attrOf(found[i].id, 'id') == id { return found[i].style }
+    }
+    return null
+}
+
+int func layerColour(rules:text, id:text) {
+    Style st = layerStyleOf(rules, id)
+    return st == null ? 0 : st.color
+}
+
+// The reference first: the layers themselves have to be working, or
+// every rollback below is being read against nothing.
+checkEqInt(layerColour('', 'z'), packColor(0, 128, 0, 255),
+    'the later layer wins where nothing reverts')
+checkEqInt(layerColour('@layer top { #d { color: #ff00ff } }', 'd'),
+    packColor(255, 0, 255, 255), 'and a third layer beats them both')
+
+checkEqInt(layerColour('@layer top { #a { color: revert-layer } }', 'a'),
+    packColor(0, 128, 0, 255), '`revert-layer` rolls back to the previous layer')
+checkEqInt(layerColour('@layer top { #b { color: revert } }', 'b'),
+    COLOR_BLACK, 'where `revert` rolls back past every layer of the origin')
+checkEqInt(layerColour('#c { color: revert-layer }', 'c'),
+    packColor(0, 128, 0, 255),
+    'an unlayered `revert-layer` rolls back to the last named layer')
+
+// Two layers deep: reverting the middle one lands on the first, not on
+// the origin, which is what tells a per-layer rollback from a per-origin
+// one when only two layers are in play.
+checkEqInt(layerColour('@layer mid { #e { color: revert-layer } }', 'e'),
+    packColor(0, 0, 255, 255), 'reverting the middle layer lands on the first')
 
 finish('cascade')

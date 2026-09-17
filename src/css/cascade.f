@@ -106,6 +106,9 @@ bool anyCrossFade = false
 // where a page says `revert` at all.
 map[text] revertBase = {}
 bool revertBaseTaken = false
+// And the map as it stood before the layer being applied began, which is
+// what `revert-layer` rolls back to.
+map[text] layerBase = {}
 // Whether any computed style anywhere asked for a background image by
 // url(). A page with none never walks the document looking for them.
 bool anyBackgroundUrl = false
@@ -2978,13 +2981,40 @@ bool func matchedDirectionRtl(matches:arr[Match], parentRtl:bool) {
 // roll back past it.
 const int UA_WEIGHT_LIMIT = 10000000000000000
 
-// Whether a declaration's value is the `revert` keyword. `revert-layer`
-// counts here because an unlayered declaration reverts its origin,
-// which is the same thing (Cascade 5 §6.3).
-bool func declIsRevert(v:ascii) {
+// Whether a declaration's value is one of the two rollback keywords.
+// They roll back to different places -- `revert` to the previous origin
+// and `revert-layer` to the previous layer of this one -- so the two are
+// told apart where they are resolved and taken together only where the
+// question is whether the page uses either.
+bool func declIsRevertOnly(v:ascii) {
     if v == null { return false }
-    ascii t = asciiLower(asciiTrim(v))
-    return t == 'revert' || t == 'revert-layer'
+    return asciiLower(asciiTrim(v)) == 'revert'
+}
+
+bool func declIsRevertLayer(v:ascii) {
+    if v == null { return false }
+    return asciiLower(asciiTrim(v)) == 'revert-layer'
+}
+
+bool func declIsRevert(v:ascii) {
+    return declIsRevertOnly(v) || declIsRevertLayer(v)
+}
+
+// The tier a match falls in, which is the origin and the layer packed
+// together: `matchWeight` multiplies `originRank` by this and adds the
+// specificity and the source order under it, so dividing takes the rank
+// back out. A change in it is a layer boundary, or an origin one.
+int func matchRankOf(weight:int) {
+    return Math.floorDiv(weight, UA_WEIGHT_LIMIT)
+}
+
+// A property map copied, because a snapshot has to outlive the writes
+// that follow it.
+map[text] func copyProps(props:map[text]) {
+    map[text] out = {}
+    arr[text] ks = props.keys()
+    for int i = 0, i < ks.length, i++ { out[ks[i]] = props[ks[i]] }
+    return out
 }
 
 // The declarations of one element, applied in cascade order, with
@@ -3009,26 +3039,52 @@ void func applyMatches(props:map[text], matches:arr[Match]) {
     }
     revertBase = {}
     revertBaseTaken = false
+    layerBase = {}
+    int curRank = 0 - 1
     for int i = 0, i < matches.length, i++ {
+        int rank = matchRankOf(matches[i].weight)
+        if rank != curRank {
+            // A layer has ended. Whatever it left saying `revert-layer`
+            // is resolved now, against the map as it stood before that
+            // layer began -- which is the only moment that map is still
+            // to hand.
+            if curRank >= 0 { resolveRevertLayer(props) }
+            layerBase = copyProps(props)
+            curRank = rank
+        }
         if !revertBaseTaken && matches[i].weight >= UA_WEIGHT_LIMIT {
-            arr[text] ks = props.keys()
-            for int k = 0, k < ks.length, k++ { revertBase[ks[k]] = props[ks[k]] }
+            revertBase = copyProps(props)
             revertBaseTaken = true
         }
         applyDecl(props, matches[i].decl.name, matches[i].decl.value)
     }
-    // A `revert` still in the map came from the user-agent origin
-    // itself, or found nothing to roll back to; either way it is
-    // `unset`, which is what removing the declaration leaves.
+    if curRank >= 0 { resolveRevertLayer(props) }
+    // A `revert` is resolved last, because it rolls back past every
+    // layer to the origin below. One still in the map came from the
+    // user-agent origin itself, or found nothing to roll back to; either
+    // way it is `unset`, which is what removing the declaration leaves.
     arr[text] names = props.keys()
     for int i = 0, i < names.length, i++ {
         // The entry goes through a `text` local first: a `text` made
         // from a map entry is a private copy where an `ascii` one would
         // alias it (FINDINGS.md, "ascii aliasing").
         text raw = props[names[i]]
-        if !declIsRevert(raw.toAscii()) { continue }
+        if !declIsRevertOnly(raw.toAscii()) { continue }
         if revertBase[names[i]] == null { delete props[names[i]] }
         else { props[names[i]] = revertBase[names[i]] }
+    }
+}
+
+// Every `revert-layer` in the map, replaced by what the layer below
+// this one left -- or removed, which is `unset`, where that layer said
+// nothing.
+void func resolveRevertLayer(props:map[text]) {
+    arr[text] names = props.keys()
+    for int i = 0, i < names.length, i++ {
+        text raw = props[names[i]]
+        if !declIsRevertLayer(raw.toAscii()) { continue }
+        if layerBase[names[i]] == null { delete props[names[i]] }
+        else { props[names[i]] = layerBase[names[i]] }
     }
 }
 
@@ -3066,13 +3122,15 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
             delete props[had[i]]
         }
         if allKw == CSSWIDE_INITIAL { setProp(props, 'all', value) }
-        // `all: revert` puts the previous origin's declarations back,
-        // which is what the drop above took away.
+        // `all: revert` puts the previous origin's declarations back and
+        // `all: revert-layer` the previous layer's, which is what the
+        // drop above took away.
         if declIsRevert(value) {
-            arr[text] base = revertBase.keys()
+            map[text] back = declIsRevertLayer(value) ? layerBase : revertBase
+            arr[text] base = back.keys()
             for int i = 0, i < base.length, i++ {
                 if base[i] == 'direction' || base[i] == 'unicode-bidi' { continue }
-                props[base[i]] = revertBase[base[i]]
+                props[base[i]] = back[base[i]]
             }
         }
         return

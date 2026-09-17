@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `revert-layer` rolls back a layer, not the origin
+
+`revert-layer` had been read as `revert`. It rolls back one step now:
+to the value the previous cascade layer gave, where `revert` rolls back
+the whole origin (Cascade 5 §6.3).
+
+The bookkeeping is the origin snapshot generalised. `matchWeight` packs
+the origin and the layer into one rank and the specificity and source
+order under it, so dividing takes the rank back out and a change in it
+is a layer boundary. The map as it stood before each layer began is kept
+the same way the origin's already was, and a `revert-layer` is resolved
+when its layer ends -- which is the only moment that map is still to
+hand. `revert` is still resolved last, because it rolls back past every
+layer.
+
+Chromium 141 over three layers -- `base` blue, `mid` green, `top` under
+test -- gives `@layer top { color: revert-layer }` green, `@layer top {
+color: revert }` black, and an *unlayered* `color: revert-layer` green,
+because an unlayered declaration is in the implicit outer layer that
+comes after every named one. All three agree here now.
+
+**A check written against the old behaviour said the opposite.** When
+`revert-layer` was an alias, a test asserted that one in a style
+attribute reverts the origin -- and it passed, because it was written
+against the alias rather than against the standard. Chromium gives
+`style="font-weight: revert"` 700 on that markup and
+`style="font-weight: revert-layer"` 400: a style attribute ranks above
+an unlayered author rule, so rolling back one step lands on that rule.
+The check now says so, and says why it used to say otherwise. This is
+the thing CLAUDE.md means by a test written after the implementation
+testing what the code does.
+
 ### A wheel tilted sideways scrolls a container across
 
 The scroll container had both axes and both thumbs but only a vertical
