@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A flex item does not shrink below what its content needs
+
+Flexible Box 1 §4.5 gives an item whose `min-width` is `auto` -- the
+initial value -- an automatic minimum size: the smaller of its declared
+width and its content's own min-content width. This engine shrank an
+item to whatever the container left, so an unbreakable word was cut
+where it should have pushed the item past the container's edge. A
+declared `min-width` takes the minimum away, and so does the item being
+a scroll container, whose automatic minimum the standard puts at zero
+because the content can scroll instead.
+
+The flexible lengths are resolved as §9.7 says now: the space is handed
+out in proportion, every item is clamped to its own minimum, the clamped
+ones are frozen and the rest of the shrinking is handed out again --
+which is what makes an item that cannot shrink further push the
+shrinking onto its neighbours rather than swallowing it.
+
+**`computeIntrinsic` was keeping two different numbers in one field.**
+A declared `width` replaced the content's min-content in `minContent`,
+so an item with `width: 200px` reported a minimum of 200 where §4.5
+wants the smaller of the declared width and what the content needs. The
+two are separate fields now, filled in the same pass.
+
+**Two of the three things todo.md listed as missing here already
+worked**: `flex-basis: content`, and a flex container as an item of
+another. Both were checked against Chromium's geometry on the same
+markup before anything was written, which is why no code was written
+for them.
+
 ### An inset box-shadow's blur is the same Gaussian, from the other side
 
 The inside of a blurred shadow is the outside of its hole: where an

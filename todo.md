@@ -45,9 +45,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `auto`, which need a scrollable area rather than only a clip, and
    paged media (§13). Positioning (§9.3), floats (§9.5), generated
    content (§12) and `overflow: hidden` clipping (§11) are done.
-2. **What is left of Flexible Box 1**: `flex-basis: content`, the
-   min-content floor that keeps an item from shrinking below its own
-   content, and nested flex containers as flex items. `flex-wrap`,
+2. **What is left of Flexible Box 1**: `order`, which re-sorts the
+   items for layout and painting without moving them in the document,
+   and the `align-content` values that only wrapping multi-line
+   containers can show. The automatic minimum size of §4.5 is done, and
+   so is §9.7's freeze-and-repeat; `flex-basis: content` and nested flex
+   containers were listed here and already worked -- both were checked
+   against Chromium's geometry on the same markup before anything was
+   written. `flex-wrap`,
    `align-content`, `baseline` alignment and auto margins are done.
 3. **`::first-line`**. `::first-letter` is done, and `::before` and
    `::after` generate boxes from strings, `attr()`, `counter()`,

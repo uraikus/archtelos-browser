@@ -103,6 +103,11 @@ struct Box {
     // cached intrinsic widths (-1 = not computed)
     minContent:int
     maxContent:int
+    // The min-content width of the contents alone, before a declared
+    // `width` replaces it. Flexible Box 1 §4.5 wants that one: an item's
+    // automatic minimum is the smaller of what it declared and what its
+    // content needs, so the two have to be kept apart.
+    contentMin:int
 }
 
 struct Fragment {
@@ -1122,6 +1127,7 @@ void func computeIntrinsicUncounted(b:Box) {
     // reserved 30 pixels for a box that then drew ten. The kind is
     // asked second, so a box with no declared width pays nothing for
     // the question.
+    int ownMin = minW
     if s.width.kind == LEN_PX && b.kind != BOX_INLINE {
         int fixed = roundPx(s.width.v)
         minW = fixed
@@ -1141,6 +1147,7 @@ void func computeIntrinsicUncounted(b:Box) {
     if b.isListItem { }
     b.minContent = minW + extras
     b.maxContent = maxW + extras
+    b.contentMin = ownMin + extras
 }
 
 bool func textStartsWithSpace(b:Box) {
@@ -3086,6 +3093,31 @@ int func flexBaseSize(item:Box, row:bool, inner:int) {
     return 0
 }
 
+// How far an item may shrink along the main axis (Flexible Box 1 §4.5).
+//
+// An item whose `min-width` is `auto` -- the initial value -- does not
+// shrink below what its content needs: the smaller of its own declared
+// size and its min-content size, so an unbreakable word keeps the item
+// as wide as the word and the item overflows rather than the word being
+// cut. A declared minimum takes that away, and so does the item being a
+// scroll container, whose automatic minimum the standard puts at zero
+// because the content can scroll instead.
+int func flexMinMainSize(item:Box, row:bool, inner:int) {
+    Style s = item.style
+    Len declared = row ? s.minWidth : s.minHeight
+    if declared.kind != LEN_AUTO { return maxInt(resolveLen(declared, inner, 0), 0) }
+    if s.overflowHidden { return 0 }
+    if !row { return 0 }
+    computeIntrinsic(item)
+    int content = maxInt(item.contentMin, 0)
+    Len own = s.width
+    if !lenIsAuto(own) {
+        int specified = maxInt(resolveLen(own, inner, 0), 0)
+        if specified < content { return specified }
+    }
+    return content
+}
+
 // Where item `index` starts, relative to where the items would start if
 // they were packed flush at the main-start edge. `spare` is the space
 // left over once every item's outer main size and every gap is spent.
@@ -3983,16 +4015,48 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
             }
             spare = 0
         } else if spare < 0 && totalShrink > 0.0 {
-            int owed = 0 - spare
-            float acc = 0.0
-            int taken = 0
+            // §9.7: hand out the space to shrink by in proportion, clamp
+            // every item to its own minimum, and repeat with the clamped
+            // ones frozen -- which is what makes an item that cannot
+            // shrink any further push the shrinking onto its neighbours
+            // rather than swallowing it.
+            arr[bool] frozen = []
+            arr[int] minMain = []
             for int i = first, i <= last, i++ {
-                acc = acc + items[i].style.flexShrink / totalShrink
-                int upto = i == last ? owed : roundPx(owed.toFloat() * acc)
-                int cut = upto - taken
-                if cut > mainSize[i] { cut = mainSize[i] }
-                mainSize[i] = mainSize[i] - cut
-                taken = taken + cut
+                frozen.push(false)
+                minMain.push(flexMinMainSize(items[i], row, mainAvail))
+            }
+            int owed = 0 - spare
+            int rounds = 0
+            while owed > 0 && rounds <= n {
+                rounds++
+                float liveShrink = 0.0
+                for int i = 0, i < n, i++ {
+                    if !frozen[i] { liveShrink = liveShrink + items[first + i].style.flexShrink }
+                }
+                if liveShrink <= 0.0 { break }
+                float acc = 0.0
+                int taken = 0
+                int over = 0
+                int lastLive = -1
+                for int i = 0, i < n, i++ {
+                    if !frozen[i] { lastLive = i }
+                }
+                for int i = 0, i < n, i++ {
+                    if frozen[i] { continue }
+                    acc = acc + items[first + i].style.flexShrink / liveShrink
+                    int upto = i == lastLive ? owed : roundPx(owed.toFloat() * acc)
+                    int cut = upto - taken
+                    taken = taken + cut
+                    int want = mainSize[first + i] - cut
+                    if want < minMain[i] {
+                        over = over + (minMain[i] - want)
+                        want = minMain[i]
+                        frozen[i] = true
+                    }
+                    mainSize[first + i] = want
+                }
+                owed = over
             }
             spare = 0
         }

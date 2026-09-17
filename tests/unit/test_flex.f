@@ -124,4 +124,72 @@ check(anon.w > 0, 'the anonymous text item has a width')
 checkEqInt(w1.x, anon.w, 'and the next item starts where it ends')
 checkEqInt(w1.w, 60, 'which keeps its own declared width')
 
+// ---- an item does not shrink below what its content needs (§4.5) ------
+// A flex item whose `min-width` is `auto` has an automatic minimum
+// size: the smaller of its own declared width and the width its content
+// needs. An unbreakable word therefore keeps the item as wide as the
+// word, and the item overflows its container rather than the word being
+// cut. Two things take the minimum away: an explicit `min-width`, and
+// the item being a scroll container, which the standard says has an
+// automatic minimum of zero.
+//
+// The width a word needs is this engine's own text measurement, so
+// these compare the item against an inline-block holding the same word
+// rather than against a number -- Chromium 141 answers 96 for
+// `wwwwwwwwww` in 16px monospace, where an advance of 9.6 is its own
+// and not this engine's. The numbers Chromium gives for the same
+// markup, which is what says the rules are these rules:
+//
+//   width:50 container, item with no width            96, overflowing
+//   the same item with `width: 200px`                 96
+//   the same item with `min-width: 0`                 50
+//   the same item with `overflow: hidden`             50
+//   `flex-basis: content` on `wwww` in a wide row     39, its own width
+//   `wwww wwww` in a 50px container                   50, above its own
+//                                                     minimum of 39
+//   the same in a 30px container                      39
+//
+// where 96 and 39 are ten and four of Chromium's advances. The last two
+// are the pair that says what the minimum is: a container wider than
+// the item's minimum shrinks it to the container, and only a narrower
+// one shows the floor at all, so a check written against the wider one
+// would pass whether the floor existed or not.
+text shrinkRow = '<div id="f1" style="display:flex;width:50px">'
+    + '<div id="f1i" style="height:20px">wwwwwwwwww</div></div>'
+    + '<div id="f2" style="display:flex;width:50px">'
+    + '<div id="f2i" style="height:20px;width:200px">wwwwwwwwww</div></div>'
+    + '<div id="f3" style="display:flex;width:50px">'
+    + '<div id="f3i" style="height:20px;min-width:0">wwwwwwwwww</div></div>'
+    + '<div id="f4" style="display:flex;width:50px">'
+    + '<div id="f4i" style="height:20px;overflow:hidden">wwwwwwwwww</div></div>'
+    + '<div id="f5" style="display:flex;width:300px">'
+    + '<div id="f5i" style="height:20px;flex-basis:content">wwww</div>'
+    + '<div id="f5j" style="height:20px;width:100px"></div></div>'
+    + '<div id="f6" style="display:flex;width:50px">'
+    + '<div id="f6i" style="height:20px">wwww wwww</div></div>'
+    + '<div id="f7" style="display:flex;width:30px">'
+    + '<div id="f7i" style="height:20px">wwww wwww</div></div>'
+    + '<div id="ctl10" style="display:inline-block">wwwwwwwwww</div>'
+    + '<div id="ctl4" style="display:inline-block">wwww</div>'
+
+Page pmin = pageFromHtml(head + shrinkRow + '</body>', 'about:blank', 400)
+int wordTen = byId(pmin.root, 'ctl10').w
+int wordFour = byId(pmin.root, 'ctl4').w
+check(wordTen > 50, 'the control word is wider than the container it is put in')
+checkEqInt(byId(pmin.root, 'f1i').w, wordTen,
+           'an item with no width keeps the width its one word needs')
+checkEqInt(byId(pmin.root, 'f2i').w, wordTen,
+           'and so does one whose declared width is larger than that')
+checkEqInt(byId(pmin.root, 'f3i').w, 50,
+           'an explicit min-width takes the automatic minimum away')
+checkEqInt(byId(pmin.root, 'f4i').w, 50,
+           'and so does being a scroll container, whose automatic minimum is zero')
+checkEqInt(byId(pmin.root, 'f5i').w, wordFour,
+           '`flex-basis: content` sizes the item from its content')
+checkEqInt(byId(pmin.root, 'f5j').x, wordFour, 'and the next item follows it there')
+checkEqInt(byId(pmin.root, 'f6i').w, 50,
+           'text that can wrap shrinks to the container while that is above its minimum')
+checkEqInt(byId(pmin.root, 'f7i').w, wordFour,
+           'and stops at its longest word, which is what its content needs')
+
 finish('flex')
