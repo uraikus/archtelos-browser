@@ -1208,3 +1208,18 @@ at +2. And neither benchmark page paginates at all, so none of the
 pagination, the page-box resolution or the `@page` parsing is on their
 path -- which is why the only thing that could cost them anything was the
 one line that ran per declaration.
+
+CSS Scrollbars 1 and `scrollbar-gutter` cost **4,872 bytes** (2,874,536
+→ 2,879,408) and nothing measurable. Twenty-one paired samples of
+`generated.html` give the same 103 ms minimum and the same 106 ms median
+on each side, with a median paired difference of 0 and the individual
+differences running from −5 to +5 either way.
+
+The cost worth watching for was not the cascade's: three more fields
+read once per distinct computed style is nothing. It was the box tree's.
+Separating "does this box scroll" from "how much room did its bar take"
+put two more booleans on `Box`, and a `Box` is allocated per box rather
+than per distinct style -- 2,728 of them on this page against the 24
+styles they share. The measurement says those two booleans cost nothing
+that twenty-one samples can see, which is the answer, but the reason to
+take the samples was that this one could have gone the other way.
