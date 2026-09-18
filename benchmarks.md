@@ -490,6 +490,35 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What `position-visibility` cost, and the measurement that missed it
+
+`position-visibility` puts a test at the top of `paintBox`, which every
+painted box on every page reaches. The first paired A/B said median 0,
+mean -0.40, slower in 11 of 25 pairs -- and measured nothing at all,
+because the harness these comparisons use sums **parse, stylesheets,
+cascade and layout**, and this change is in none of them. Paint is
+outside that sum.
+
+Asked of the paint phase, over the same twenty-five alternating samples:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 8 ms | 9 ms | 10 ms | |
+| after | 8 ms | 9 ms | 13 ms | 8 of 25 pairs |
+
+Median 0, paired mean +0.36 ms on a 9 ms phase. Free, for the reason
+the code is written that way: a document that hides no anchored box
+never sets `anyAnchorHidden`, so the test is one boolean that fails
+immediately.
+
+The lesson is the one this file keeps relearning in new costumes. The
+first measurement was not wrong about its own numbers; it was answering
+a question nobody asked, and it answered it confidently. A paired A/B is
+only as good as its agreement with the phase the change is in, and
+nothing in its output says which phase that is -- the same shape as a
+property row that computes to its initial value, or a
+`getComputedStyle` probe of a paint-time property.
+
 ## What sorting the position-try candidates cost
 
 `position-try-order` builds the candidate list and sorts it, which
