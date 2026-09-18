@@ -38,8 +38,15 @@ resolved against a direction.
 
 **`contain` and `none` differ in nothing this browser does.** `none`
 also suppresses the overscroll affordance and there is none to suppress.
-The checks ask both keywords and expect the same answer, which says that
+The checks ask both keywords and expect the same answer, which says
 where the two are alike rather than implying one does more.
+
+**A scroll container with nothing to scroll contains the chain too.**
+The first version passed the wheel straight on from a box whose content
+fits, because the walk returned before it reached the question. Such a
+box is at both of its ends at once, so it is at a boundary exactly as
+one scrolled to its end is, and the wheel reached it either way: having
+nothing to give back is not a reason to pass it outward.
 
 ### `box-decoration-break`
 

@@ -3457,11 +3457,13 @@ Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
     }
     if b.sbW <= 0 { return null }
     int range = boxScrollRange(b)
-    if range <= 0 { return null }
-    if (dy > 0 && scrolled >= range) || (dy < 0 && scrolled <= 0) {
-        // This container has reached its end, so the wheel would pass
-        // outward. `overscroll-behavior` on the axis asked for stops it
-        // here instead (CSS Overscroll Behavior 1 §3).
+    // This container cannot take the wheel -- it has nothing to scroll,
+    // or it has reached its end in the direction asked for -- so the
+    // wheel would pass outward. `overscroll-behavior` on the axis asked
+    // for stops it here instead (CSS Overscroll Behavior 1 §3). A box
+    // with nothing to scroll is at both of its ends at once, so it
+    // contains the chain exactly as one scrolled to its end does.
+    if range <= 0 || (dy > 0 && scrolled >= range) || (dy < 0 && scrolled <= 0) {
         if overscrollY(b.style) != OSB_AUTO { wheelChainBlocked = true }
         return null
     }
@@ -3527,9 +3529,8 @@ Box func scrollContainerAcrossAt(b:Box, x:int, y:int, dx:int) {
     }
     if b.sbH <= 0 { return null }
     int range = boxScrollLeftRange(b)
-    if range <= 0 { return null }
     int at = boxScrollLeft(b)
-    if (dx > 0 && at >= range) || (dx < 0 && at <= 0) {
+    if range <= 0 || (dx > 0 && at >= range) || (dx < 0 && at <= 0) {
         if overscrollX(b.style) != OSB_AUTO { wheelChainBlocked = true }
         return null
     }

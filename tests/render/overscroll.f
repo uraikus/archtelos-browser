@@ -134,4 +134,31 @@ checkEq(outerWheel(''), 'page', 'a lone scroller at its end gives the wheel to t
 checkEq(outerWheel('overscroll-behavior:contain'), 'blocked',
         'and contain keeps the page still')
 
+// ---- a scroller with nothing to scroll ---------------------------------
+
+// A box with `overflow: scroll` whose content fits is at both of its
+// ends at once, so it is at a boundary and contains the chain exactly
+// as one scrolled to its end does. The wheel reached it either way;
+// having nothing to give back is not a reason to pass it on.
+Page emptyScroller = null
+text func fittedWheel(osb:text) {
+    boxScrollReset()
+    emptyScroller = pageFromHtml(
+        `<!doctype html><body style="margin:0;font:16px/20px monospace">`
+        + `<div id="outer" style="width:200px;height:100px;overflow:scroll">`
+        + `<div id="inner" style="width:150px;height:60px;overflow:scroll;${osb}">`
+        + `<div style="height:5px"></div></div>`
+        + `<div style="height:300px"></div></div></body>`, 'tests/fixtures/page.html', 400)
+    Box i = boxById(emptyScroller.root, 'inner')
+    if i == null { return 'missing' }
+    checkEqInt(boxScrollRange(i), 0, 'the inner scroller has nothing to scroll')
+    Box hit = wheelTargetAt(emptyScroller.root, 10, 10, 20)
+    if hit != null { return getAttr(hit.node, 'id') }
+    return wheelChainBlocked ? 'blocked' : 'page'
+}
+checkEq(fittedWheel(''), 'outer',
+        'a scroller with nothing to scroll passes the wheel to its ancestor')
+checkEq(fittedWheel('overscroll-behavior:contain'), 'blocked',
+        'and contain stops it there all the same')
+
 finish('overscroll behavior')
