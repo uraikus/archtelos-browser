@@ -1516,3 +1516,27 @@ re-opens the inlines that continue, which a page with no inline never
 enters; and the closing edge is added in a loop over the inlines open
 across a line break, which is empty on every line of a page that does
 not break one.
+
+`overscroll-behavior` and its four longhands cost **4,656 bytes**
+(2,961,264 → 2,965,920) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (b05691b) | 105 ms | 109 ms | 122 ms |
+| after (ccbf5d1) | 105 ms | 108 ms | 122 ms |
+| paired, after less before | −10 ms | **0 ms** | +3 ms |
+
+The new binary is the slower one in 10 pairs of 25 and the paired mean
+is −0.68 ms. The two ends of the run are the same on both sides, which
+is the shape of a change that is not there.
+
+It is free for the same structural reason the last two were, and the
+reason is worth stating because it is now the pattern rather than a
+piece of luck. The keyword pair is one packed `int` in a map keyed by
+the computed style's serial, read once per distinct style — 24 of them
+for this page's 2,728 elements — and the two reads on the scrolling path
+are guarded by a per-document flag that a page never saying the property
+leaves false. Nothing here runs per box, per fragment or per
+declaration, and the benchmark pages do not scroll at all, so they never
+reach the walk the property changes.
