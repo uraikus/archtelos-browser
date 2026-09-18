@@ -4,6 +4,7 @@
 import parser.f
 import ../dom/node.f
 import ../util/color.f
+import ../util/bidi.f
 import ua.f
 
 const int ORIGIN_UA = 0
@@ -165,6 +166,7 @@ void func cascadeReset() {
     // would otherwise register every one of them twice.
     resetPageRules()
     anyPageBreak = false
+    anyUnicodeBidi = false
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -4018,6 +4020,18 @@ void func snapAlignProp(v:ascii) {
     snapAlignInlineOut = t.length > 1 ? snapAlignKeyword(asciiLower(t[1])) : snapAlignBlockOut
 }
 
+// CSS Writing Modes 3 §2.2: which pair of formatting characters the
+// element's text is treated as being wrapped in.
+int func unicodeBidiKeyword(v:ascii) {
+    if v == null { return UBIDI_NORMAL }
+    if v == 'embed' { return UBIDI_EMBED }
+    if v == 'bidi-override' { return UBIDI_OVERRIDE }
+    if v == 'isolate' { return UBIDI_ISOLATE }
+    if v == 'isolate-override' { return UBIDI_ISOLATE_OVERRIDE }
+    if v == 'plaintext' { return UBIDI_PLAINTEXT }
+    return UBIDI_NORMAL
+}
+
 // CSS Scrollbars 1 §3: how wide a scroll container's bars are.
 int func scrollbarWidthKeyword(v:ascii) {
     if v == null { return SCROLLBAR_AUTO }
@@ -4670,10 +4684,13 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if t == 'rtl' { s.directionRtl = true }
         else if t == 'ltr' { s.directionRtl = false }
     }
-    s.bidiOverride = false
+    // `unicode-bidi` does not inherit: an element opens an embedding of
+    // its own or it does not, and its children decide that again.
+    s.unicodeBidi = UBIDI_NORMAL
     ascii ubidi = styleProp(props, 'unicode-bidi')
     if ubidi != null {
-        s.bidiOverride = asciiIndexOf(asciiLower(ubidi), 'bidi-override'.toAscii(), 0) >= 0
+        s.unicodeBidi = unicodeBidiKeyword(asciiLower(asciiTrim(ubidi)))
+        if s.unicodeBidi != UBIDI_NORMAL { anyUnicodeBidi = true }
     }
     s.textAlignExplicit = isRoot ? false : parent.textAlignExplicit
     s.textAlign = isRoot ? ALIGN_LEFT : parent.textAlign

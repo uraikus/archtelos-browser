@@ -1040,6 +1040,18 @@ itself rather than an escape, which works — `'…'` has a length of 1 —
 but it means a non-ASCII constant cannot be written in the form that
 survives a copy through a terminal, a patch, or a code review.
 
+Where the character is invisible the workaround stops being merely
+inconvenient. The nine directional formatting characters of UAX #9
+render as nothing at all, so `src/util/bidi.f` cannot name one in a
+literal without putting a character no reader can see into the source,
+and a test asserting that an RLE opened an embedding would be a line
+whose subject was blank. It names the code points instead —
+`BIDI_CP_RLE = 8235`, decimal because there is no hexadecimal literal
+either (finding 13) — and turns one into text with `cp.toChar()`,
+through a `bidiControl` function that exists only to give the character
+a name. An escape the lexer understood would be one expression rather
+than a constant, a function and a comment saying why.
+
 ---
 
 ## 35 A painted pixel can be compared but never read

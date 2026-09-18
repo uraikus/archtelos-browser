@@ -1076,11 +1076,7 @@ arr[text] supportedProperties = [
     'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
     'text-decoration-color', 'text-decoration-style',
     'text-decoration-thickness', 'text-underline-offset', 'text-shadow',
-    // `unicode-bidi` is deliberately absent: `bidi-override` is
-    // honoured but `embed`, `isolate` and `plaintext` are not, and
-    // `@supports` answers per property rather than per value, so the
-    // only answer it can give without overclaiming is no.
-    'direction',
+    'direction', 'unicode-bidi',
     'text-emphasis', 'text-emphasis-style', 'text-emphasis-color',
     'text-emphasis-position', 'text-underline-position',
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align',

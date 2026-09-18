@@ -5,6 +5,66 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The explicit half of UAX #9, and `unicode-bidi`
+
+The bidirectional algorithm had its implicit half -- the W, N and I
+rules, which resolve a character's direction from its own class and its
+neighbours'. It now has the explicit half as well: the nine directional
+formatting characters a document uses to say what the implicit rules
+would get wrong. X1 to X8 maintain the directional status stack, the
+depth limit of 125 and the two overflow counters that make a PDF or a
+PDI undo an embedding that was dropped rather than nested; X9 removes
+the embeddings, the overrides and the PDFs; X10 and BD13 build the
+isolating run sequences, and the implicit rules run over one sequence at
+a time rather than over the whole string, which is what lets an
+isolate's content resolve without the text around it and the text around
+it resolve without the content. An FSI takes its direction from the
+first strong character between it and its matching PDI, which is P2 and
+P3 applied to a span. None of the nine is drawn, so none of them is in
+the visual order.
+
+`unicode-bidi` is those characters under the names a stylesheet gives
+them, and that is exactly how it is implemented. CSS Writing Modes 3
+§2.2 defines each value as the pair the element's text is wrapped in --
+`embed` an LRE or an RLE and a PDF, `bidi-override` an LRO or an RLO,
+`isolate` an LRI or an RLI and a PDI, `isolate-override` both pairs,
+`plaintext` an FSI and a PDI -- so the property wraps and calls the one
+algorithm rather than opening a second path through it. All six values
+work where only `bidi-override` did, and the value belongs to the
+element the text is in rather than to the block: a text box carries its
+element's computed style, which is where an inline's `unicode-bidi` is.
+
+`normal` is now what the standard says it is, which is a fix rather than
+an addition: an element with `direction: rtl` and no `unicode-bidi` does
+*not* open an embedding, so its own direction does not reach the
+ordering of its content -- the paragraph's stands. That is the
+difference between `normal` and `embed`, and Chromium agrees: on
+`ab` and a Hebrew word inside a `direction: rtl` inline, `normal`
+answers `ab` first and `embed` answers the Hebrew first.
+
+**Every expected order is Chromium 141's**, read by wrapping each
+character in a span of its own and sorting the spans by their left
+edges -- a character the browser gives no width, which is every one of
+the nine, drops out of the answer, which is what this returns as well.
+Thirteen explicit-code cases and eighteen property cases settled the
+behaviour before any of it was written.
+
+`@supports` answers yes for `unicode-bidi` now that every value it takes
+does something, and the property registers on the instrument against a
+field of its own: **233 of 405**, up from 232, with `unicodeBidi` the
+field that moved.
+
+Two rules of the standard are still out, and for the same reason the
+character classes come from script ranges rather than from a table: W1
+resolves a combining mark to the class of the character it sits on and
+N0 mirrors a bracket inside a right-to-left run with its partner, and
+both want the Unicode database this repository does not vendor.
+
+A page that mentions neither a right-to-left script nor `unicode-bidi`
+pays nothing: `anyUnicodeBidi` is set during the cascade beside
+`anyRtlText`, and the reordering pass over a finished line is skipped
+unless one of them is true.
+
 ### CSS Scroll Snap 1
 
 A scroll container with `scroll-snap-type` comes to rest on one of the

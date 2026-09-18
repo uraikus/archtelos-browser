@@ -235,11 +235,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than a property.
 14. **Writing Modes 3, completed**: `writing-mode` and
     `text-orientation`, which need a second layout axis rather than a
-    property; the explicit embedding and isolate codes (the X rules of
-    UAX #9) and the `unicode-bidi` values that use them; reordering
-    across two inline boxes on one line rather than within each; and
-    Arabic shaping, which needs contextual forms the toy font API does
-    not offer (FINDINGS.md, finding 31).
+    property; reordering across two inline boxes on one line rather than
+    within each, which is what would let an isolate differ from an
+    embedding here rather than only in its own content; rule W1, which
+    resolves a combining mark to the class of the character it sits on,
+    and rule N0, which mirrors a bracket inside a right-to-left run with
+    its partner — both want the Unicode database this repository does
+    not vendor, as the character classes themselves do; and Arabic
+    shaping, which needs contextual forms the toy font API does not
+    offer (FINDINGS.md, finding 31).
 
 ### Filter Effects 1, when the language allows it
 

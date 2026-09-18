@@ -719,7 +719,7 @@ struct Style {
     // each element's own direction, so they cannot be resolved once and
     // inherited; `left` and `right` can.
     textAlignExplicit:bool
-    bidiOverride:bool       // unicode-bidi: bidi-override
+    unicodeBidi:int         // unicode-bidi, as one of the UBIDI_ values
     width:Len
     height:Len
     minWidth:Len

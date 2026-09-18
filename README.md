@@ -241,7 +241,15 @@ paragraph's base level, `text-align`'s `start` and `end` follow it, and
 the bidirectional algorithm puts each finished line into the order it is
 read on the screen rather than the order it is stored — so a Hebrew or
 Arabic run comes out reversed while Latin or digits inside it keep their
-own order.
+own order. A document that needs to say what the implicit rules would
+get wrong says it with the nine directional formatting characters — the
+embeddings, the overrides and the isolates — which the explicit half of
+UAX #9 carries: a directional status stack with its depth limit, and the
+isolating run sequences the implicit rules then resolve one at a time.
+`unicode-bidi` is those same characters under a stylesheet's names, and
+is implemented as such: each of its six values is the pair the standard
+defines it to be, wrapped around the element's text and put through the
+one algorithm.
 
 **Columns** break one flow into several. `column-count` and
 `column-width` say how many and how wide, the content is laid out once
@@ -393,7 +401,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-28,755 lines of Festina in `src/` and `browser.f`.
+29,144 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 

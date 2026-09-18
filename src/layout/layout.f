@@ -2854,14 +2854,19 @@ void func finishLineUncounted(forced:bool) {
     // line for the ordinary case of a paragraph of one script; a line
     // that mixes two inline boxes is reordered within each of them and
     // not across the two, which css-2026.md records.
-    if bs.directionRtl || bs.bidiOverride || anyRtlText {
+    // `unicode-bidi` belongs to the element the text is in rather than
+    // to the block, so it is read off the fragment's own box -- a text
+    // box carries its element's style, which is where an inline's value
+    // is.
+    if bs.directionRtl || anyRtlText || anyUnicodeBidi {
+        int baseLevel = bs.directionRtl ? 1 : 0
         for int i = 0, i < ifcFrags.length, i++ {
             Fragment f = ifcFrags[i]
             if f.kind != FRAG_TEXT { continue }
-            if !bidiNeedsReorder(f.content) && !bs.directionRtl && !bs.bidiOverride { continue }
-            int baseLevel = bs.directionRtl ? 1 : 0
-            f.content = bs.bidiOverride ? bidiVisualOverride(f.content, baseLevel)
-                                        : bidiVisual(f.content, baseLevel)
+            int mode = f.box == null ? UBIDI_NORMAL : f.box.style.unicodeBidi
+            if mode == UBIDI_NORMAL && !bidiNeedsReorder(f.content) && !bs.directionRtl { continue }
+            bool rtl = f.box == null ? bs.directionRtl : f.box.style.directionRtl
+            f.content = bidiVisualStyled(f.content, baseLevel, mode, rtl)
         }
     }
     // text-overflow: ellipsis replaces the end of a line that runs out
