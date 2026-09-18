@@ -1540,3 +1540,26 @@ are guarded by a per-document flag that a page never saying the property
 leaves false. Nothing here runs per box, per fragment or per
 declaration, and the benchmark pages do not scroll at all, so they never
 reach the walk the property changes.
+
+`anchor()` in the four inset properties costs **9,296 bytes**
+(2,965,920 → 2,975,216) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (edfce48) | 103 ms | 108 ms | 117 ms |
+| after (c108fbe) | 104 ms | 107 ms | 139 ms |
+| paired, after less before | −11 ms | **−2 ms** | +32 ms |
+
+The new binary is the slower one in 7 pairs of 25 and the paired mean
+is −0.04 ms. The one +32 pair is a 139 ms sample where every other read
+104 to 117; the median is where to read this, as it was for the `int`
+on `Style`.
+
+It is free because it runs where the feature already ran. The four
+references live on the `AnchorInfo` a page grows only when it says one
+of the anchor properties, not on `Style`; reading them costs four array
+lookups inside the walk that already resolves `position-anchor`, behind
+a flag a page that never says the function leaves false; and the
+resolution itself is in `placeAnchored`, which a page with no anchor
+never reaches. `generated.html` says none of it.
