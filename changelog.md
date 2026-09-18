@@ -61,6 +61,21 @@ A shadow follows the shape its box has, because `resolveCornerRadii` is
 where both the radii and the shapes are read and `shadowShapeRadii` goes
 through it.
 
+**The four exponents are one packed `int` rather than four `float`
+fields, and the benchmark is why.** The readable version cost 2 ms on a
+page with no corner shaped at all -- slower in 21 paired samples of 25,
+all of it in layout, none of it in the cascade that parses the property
+or the paint that draws it. Compiling the revision before this one with
+four `float` fields added to `Style` and never read reproduces it
+exactly, so the cost is thirty-two bytes of struct growth rather than
+any line the feature runs: `Style` is dereferenced once per box
+throughout layout, and the benchmark page has 2,728 boxes sharing 24 of
+them. One and two `int` fields cost nothing on the same test, so four
+codes of six bits in one field do too -- slower in 28 of 50 pairs, which
+is what a coin gives. No test could have caught this; every suite passed
+on the slow version. benchmarks.md keeps the numbers and the padding
+experiment.
+
 ### The explicit half of UAX #9, and `unicode-bidi`
 
 The bidirectional algorithm had its implicit half -- the W, N and I

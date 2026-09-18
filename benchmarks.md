@@ -490,6 +490,60 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What four fields on `Style` cost, and why `corner-shape` is a bitfield
+
+`corner-shape` was written with the obvious representation: one `float`
+per corner on `Style`, holding the superellipse exponent that corner is
+drawn with. The suite passed, the new render suite matched Chromium's
+corner profile row for row, and the paired benchmark said it cost **2 ms
+on `generated.html`** -- a page with no `corner-shape` in it and no
+corner shaped at all.
+
+Twenty-five alternating samples, parse through layout, at 800x600:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 102 ms | 105 ms | 107 ms | |
+| four floats on `Style` | 104 ms | 106 ms | 111 ms | 21 of 25 pairs |
+| four codes in one int | 103 ms | 104 ms | 109 ms | 28 of 50 pairs |
+
+Twenty-one pairs of twenty-five is not a coin. The phase timings said
+where it was and where it was not:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| before | 9 | 1 | 36 | 57-58 | 8 |
+| four floats | 9 | 2 | 36 | 59-60 | 9 |
+
+All of it in **layout**, none in the cascade that parses the property or
+the paint that draws it. That rules out every line the feature runs,
+because layout does not run any of them.
+
+The cause is the struct, not the code. Compiling the revision *before*
+`corner-shape` with four `float` fields added to `Style` and **never
+read** reproduces it exactly: layout 59, 61, 61 against that same
+revision's 57-58. `Style` is dereferenced once per box throughout
+layout, and `generated.html` has 2,728 boxes sharing 24 of them, so
+thirty-two bytes of growth moves the fields a box reads apart from one
+another.
+
+Padding the same revision with one and with two `int` fields costs
+nothing -- 57, 58, 59, and 58, 59, 59 -- so the threshold is somewhere
+between eight bytes and thirty-two, not at any growth at all. The four
+exponents are therefore packed into one `int`, six bits a corner, with
+codes past the six keywords indexing a per-page list of the exponents
+`superellipse()` named. Re-measured, the new binary is slower in 28 of
+50 paired samples, which is within one standard deviation of the 25 a
+coin gives, and the median difference is 1 ms.
+
+What makes this worth writing down is that **no test could have caught
+it**. Every suite passed on the slow version; the new feature's own
+render suite matched Chromium exactly. The only instrument that noticed
+was a paired A/B against the previous revision, and the only reason the
+cause was findable was that the phase timers put the cost in a phase the
+feature does not touch. A readable four-member struct is the right
+default everywhere `Style` is not read once per box.
+
 ## What UAX #9's explicit rules cost a page with no bidi in it
 
 The explicit half of the bidirectional algorithm reaches every page,

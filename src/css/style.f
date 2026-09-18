@@ -293,6 +293,77 @@ const float CORNER_K_BEVEL = 1.0
 const float CORNER_K_SCOOP = -2.0
 const float CORNER_K_SQUIRCLE = 4.0
 
+// The codes those exponents are packed as. `round` is zero so that a
+// `Style` nobody assigned to is every corner round, which is what a box
+// with only a `border-radius` has always been.
+const int CORNER_CODE_ROUND = 0
+const int CORNER_CODE_SQUARE = 1
+const int CORNER_CODE_BEVEL = 2
+const int CORNER_CODE_SCOOP = 3
+const int CORNER_CODE_NOTCH = 4
+const int CORNER_CODE_SQUIRCLE = 5
+// Six bits a corner, so four fit in one field with room for the
+// exponents `superellipse()` names beyond the keywords.
+const int CORNER_CODE_CUSTOM = 6
+const int CORNER_CODE_BASE = 64
+
+// The arbitrary exponents this page's `superellipse()` declarations
+// asked for, in the order they were first seen; a code of
+// CORNER_CODE_CUSTOM or more indexes this.
+arr[float] cornerCustomK = []
+
+float func cornerKOfCode(code:int) {
+    if code == CORNER_CODE_ROUND { return CORNER_K_ROUND }
+    if code == CORNER_CODE_SQUARE { return CORNER_K_SQUARE }
+    if code == CORNER_CODE_BEVEL { return CORNER_K_BEVEL }
+    if code == CORNER_CODE_SCOOP { return CORNER_K_SCOOP }
+    if code == CORNER_CODE_NOTCH { return CORNER_K_NOTCH }
+    if code == CORNER_CODE_SQUIRCLE { return CORNER_K_SQUIRCLE }
+    int i = code - CORNER_CODE_CUSTOM
+    if i < 0 || i >= cornerCustomK.length { return CORNER_K_ROUND }
+    return cornerCustomK[i]
+}
+
+// The code for an exponent, adding it to the page's list when it is one
+// no keyword names. A page that runs out of codes gets `round` for the
+// rest, which is the initial value rather than a wrong shape.
+int func cornerCodeOfK(k:float) {
+    if k == CORNER_K_ROUND { return CORNER_CODE_ROUND }
+    if k == CORNER_K_SQUARE { return CORNER_CODE_SQUARE }
+    if k == CORNER_K_BEVEL { return CORNER_CODE_BEVEL }
+    if k == CORNER_K_SCOOP { return CORNER_CODE_SCOOP }
+    if k == CORNER_K_NOTCH { return CORNER_CODE_NOTCH }
+    if k == CORNER_K_SQUIRCLE { return CORNER_CODE_SQUIRCLE }
+    for int i = 0, i < cornerCustomK.length, i++ {
+        if cornerCustomK[i] == k { return CORNER_CODE_CUSTOM + i }
+    }
+    if CORNER_CODE_CUSTOM + cornerCustomK.length >= CORNER_CODE_BASE {
+        return CORNER_CODE_ROUND
+    }
+    cornerCustomK.push(k)
+    return CORNER_CODE_CUSTOM + cornerCustomK.length - 1
+}
+
+// Corner 0 is the top left, then clockwise.
+int func cornerCodeAt(packed:int, which:int) {
+    if which == 0 { return packed % CORNER_CODE_BASE }
+    if which == 1 { return Math.floorDiv(packed, CORNER_CODE_BASE) % CORNER_CODE_BASE }
+    if which == 2 {
+        return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE) % CORNER_CODE_BASE
+    }
+    return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE)
+        % CORNER_CODE_BASE
+}
+
+float func cornerKAt(packed:int, which:int) { return cornerKOfCode(cornerCodeAt(packed, which)) }
+
+int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
+    return cornerCodeOfK(tl)
+        + cornerCodeOfK(tr) * CORNER_CODE_BASE
+        + cornerCodeOfK(br) * CORNER_CODE_BASE * CORNER_CODE_BASE
+        + cornerCodeOfK(bl) * CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE
+}
+
 const int SCROLLBAR_AUTO = 0
 const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
@@ -971,17 +1042,15 @@ struct Style {
     radiusBottomRightY:Len
     radiusBottomLeftX:Len
     radiusBottomLeftY:Len
-    // `corner-shape` (CSS Borders 4), as the superellipse exponent each
-    // corner is drawn with rather than as a keyword: every value the
-    // property takes is one number, and `superellipse()` takes an
-    // arbitrary one. 2 is the quarter ellipse `border-radius` draws on
-    // its own, so 2 is the initial value and the corner code's fast
-    // path. `anyCornerShape` is the one test a page that never mentions
-    // the property pays.
-    cornerTopLeftK:float
-    cornerTopRightK:float
-    cornerBottomRightK:float
-    cornerBottomLeftK:float
+    // `corner-shape` (CSS Borders 4): the four corners' shapes packed
+    // into one field, six bits each, because `Style` is read once per
+    // box in layout and four more floats on it cost two milliseconds on
+    // a page with no corner shaped at all -- measured, and the reason
+    // this is a bitfield rather than four readable members
+    // (benchmarks.md). Code zero is `round`, so an unset field is what
+    // `border-radius` has always drawn, and codes past the keywords
+    // index the exponents `superellipse()` named.
+    cornerShapes:int
     borderSpacing:int
     borderCollapse:bool
     textIndent:int

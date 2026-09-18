@@ -168,6 +168,7 @@ void func cascadeReset() {
     anyPageBreak = false
     anyUnicodeBidi = false
     anyCornerShape = false
+    cornerCustomK = []
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -5432,10 +5433,10 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // longhands, then the four logical ones -- which in the
     // left-to-right horizontal mode this engine lays out in name the
     // same four corners.
-    s.cornerTopLeftK = CORNER_K_ROUND
-    s.cornerTopRightK = CORNER_K_ROUND
-    s.cornerBottomRightK = CORNER_K_ROUND
-    s.cornerBottomLeftK = CORNER_K_ROUND
+    float cshTL = CORNER_K_ROUND
+    float cshTR = CORNER_K_ROUND
+    float cshBR = CORNER_K_ROUND
+    float cshBL = CORNER_K_ROUND
     ascii csh = styleProp(props, 'corner-shape')
     if csh != null {
         arr[ascii] ct = cssTokens(csh)
@@ -5445,22 +5446,24 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             if k != 0.0 { ks.push(k) }
         }
         if ks.length > 0 {
-            s.cornerTopLeftK = ks[0]
-            s.cornerTopRightK = ks.length > 1 ? ks[1] : ks[0]
-            s.cornerBottomRightK = ks.length > 2 ? ks[2] : ks[0]
-            s.cornerBottomLeftK = ks.length > 3 ? ks[3] : (ks.length > 1 ? ks[1] : ks[0])
+            cshTL = ks[0]
+            cshTR = ks.length > 1 ? ks[1] : ks[0]
+            cshBR = ks.length > 2 ? ks[2] : ks[0]
+            cshBL = ks.length > 3 ? ks[3] : (ks.length > 1 ? ks[1] : ks[0])
         }
     }
-    s.cornerTopLeftK = cornerShapeProp(props, 'corner-top-left-shape', s.cornerTopLeftK)
-    s.cornerTopRightK = cornerShapeProp(props, 'corner-top-right-shape', s.cornerTopRightK)
-    s.cornerBottomRightK = cornerShapeProp(props, 'corner-bottom-right-shape', s.cornerBottomRightK)
-    s.cornerBottomLeftK = cornerShapeProp(props, 'corner-bottom-left-shape', s.cornerBottomLeftK)
-    s.cornerTopLeftK = cornerShapeProp(props, 'corner-start-start-shape', s.cornerTopLeftK)
-    s.cornerTopRightK = cornerShapeProp(props, 'corner-start-end-shape', s.cornerTopRightK)
-    s.cornerBottomLeftK = cornerShapeProp(props, 'corner-end-start-shape', s.cornerBottomLeftK)
-    s.cornerBottomRightK = cornerShapeProp(props, 'corner-end-end-shape', s.cornerBottomRightK)
-    if s.cornerTopLeftK != CORNER_K_ROUND || s.cornerTopRightK != CORNER_K_ROUND
-        || s.cornerBottomRightK != CORNER_K_ROUND || s.cornerBottomLeftK != CORNER_K_ROUND {
+    cshTL = cornerShapeProp(props, 'corner-top-left-shape', cshTL)
+    cshTR = cornerShapeProp(props, 'corner-top-right-shape', cshTR)
+    cshBR = cornerShapeProp(props, 'corner-bottom-right-shape', cshBR)
+    cshBL = cornerShapeProp(props, 'corner-bottom-left-shape', cshBL)
+    cshTL = cornerShapeProp(props, 'corner-start-start-shape', cshTL)
+    cshTR = cornerShapeProp(props, 'corner-start-end-shape', cshTR)
+    cshBL = cornerShapeProp(props, 'corner-end-start-shape', cshBL)
+    cshBR = cornerShapeProp(props, 'corner-end-end-shape', cshBR)
+    s.cornerShapes = 0
+    if cshTL != CORNER_K_ROUND || cshTR != CORNER_K_ROUND
+        || cshBR != CORNER_K_ROUND || cshBL != CORNER_K_ROUND {
+        s.cornerShapes = cornerShapesPacked(cshTL, cshTR, cshBR, cshBL)
         anyCornerShape = true
     }
     s.borderSpacing = 0

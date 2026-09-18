@@ -190,12 +190,15 @@ void func cornerPointAt(ra:int, rb:int, i:int, k:float) {
 // on a page that never says the property -- leaves the fast path in
 // `roundedRectPathEllipses` switched on.
 void func cornerShapesOf(s:Style) {
-    pathKTL = s.cornerTopLeftK
-    pathKTR = s.cornerTopRightK
-    pathKBR = s.cornerBottomRightK
-    pathKBL = s.cornerBottomLeftK
-    pathAnyShaped = pathKTL != CORNER_K_ROUND || pathKTR != CORNER_K_ROUND
-        || pathKBR != CORNER_K_ROUND || pathKBL != CORNER_K_ROUND
+    if s.cornerShapes == 0 {
+        if pathAnyShaped { cornerShapesRound() }
+        return
+    }
+    pathKTL = cornerKAt(s.cornerShapes, 0)
+    pathKTR = cornerKAt(s.cornerShapes, 1)
+    pathKBR = cornerKAt(s.cornerShapes, 2)
+    pathKBL = cornerKAt(s.cornerShapes, 3)
+    pathAnyShaped = true
 }
 
 void func cornerShapesRound() {
