@@ -490,6 +490,43 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What UAX #9's explicit rules cost a page with no bidi in it
+
+The explicit half of the bidirectional algorithm reaches every page,
+because the question "is there anything here that could reorder" is
+asked of every text box, and the nine formatting characters are now part
+of that question. That is a test inside a loop over every character of
+the document, which is the shape the rule about features costing nothing
+exists to catch.
+
+Two things keep it off the pages that do not use it. `bidiClass` returns
+for ASCII before it reaches the nine, and asks for them behind a single
+range test rather than nine equalities; and `bidiNeedsReorder` asks
+`c >= BIDI_LRE` once, because every formatting class is numbered above
+every ordinary one.
+
+The run of 2026-09-18 read 104 ms on `generated.html` where the table
+above records 101, which on its own would look like a 3 ms regression.
+It is not: the revision before this one, rebuilt and run in the same
+minutes on the same machine, reads the same. Twenty-five alternating
+samples of the two binaries, parse through layout, `generated.html` at
+800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (43731f7) | 104 ms | 107 ms | 120 ms |
+| after (b7620bf) | 103 ms | 105 ms | 133 ms |
+| paired, after less before | -7 ms | **-2 ms** | +13 ms |
+
+The new binary is the slower one in 6 pairs of 25, and the paired mean
+is -0.96 ms. The change costs nothing measurable, and the 3 ms is the
+machine: Chromium's control row moved the other way on the same run,
+24.6 ms against the 26.0 recorded, 5.4% and inside the 15% the script
+allows. That the two engines drifted in opposite directions by similar
+fractions is what a day's difference in machine state looks like, and it
+is why the rendering table's large row is the middle of eight samples
+rather than one run of five -- one run of five is what produced the 104.
+
 ## What the preload scanner is worth
 
 The preload scanner reads the raw bytes for `<link rel=stylesheet>`,
