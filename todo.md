@@ -316,12 +316,26 @@ force rather than naming a new one.
 The two properties beside it are **not** implemented and stay uncounted,
 because nothing reads them:
 
-1. **`position-try-order`** sorts the candidate list before it is walked
-   -- by `most-width`, `most-height`, `most-block-size` or
-   `most-inline-size`. What has to be measured first is what "most"
-   compares: the area available to the box in that candidate, which
-   needs the available space computed per candidate rather than the fit
-   test the loop does now.
+1. **`position-try-order`** is measured now, and it is not what the
+   retry loop does. An anchor at (60, 200) sized 40x20 in a 400x300
+   block leaves 200 above it, 80 below, 60 to the left and 300 to the
+   right; a 30x30 box naming it answers:
+
+   | `position-area` | fallbacks | order | lands on |
+   |---|---|---|---|
+   | `left` | `left, right` | normal | `left`, x 30 |
+   | `left` | `left, right` | `most-width` | `right`, x 100 |
+   | `bottom` | `bottom, top` | normal | `bottom` |
+   | `bottom` | `bottom, top` | `most-height` | `top`, y 170 |
+
+   The last row is the one that decides the design: **`bottom` fits, and
+   the box moves anyway**. So the order is not a tie-break inside the
+   overflow retry -- it sorts the candidates by the space the region
+   offers in the named axis, descending, and that sort applies whether
+   or not the original position overflows. Bolting it onto the loop,
+   which engages only on overflow, would get that row wrong.
+   `most-block-size` is `most-height` and `most-inline-size` is
+   `most-width` in the horizontal writing mode this engine lays out in.
 2. **`position-visibility`** hides a box rather than moving it, under
    `always`, `anchors-visible` or `no-overflow`. It needs the same
    overflow test the loop already has, and a way to hide a box that is
