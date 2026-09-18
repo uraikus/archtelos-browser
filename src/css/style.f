@@ -1252,6 +1252,26 @@ Len func lenPercent(pct:float) {
 }
 
 // Resolves a length against a containing size; `auto` answers `dflt`.
+// CSS Overflow 4 §3.3. The edge an `overflow: clip` box clips to is its
+// padding box, and `overflow-clip-margin` moves that edge outward: by a
+// length, or by naming the box to start from. Held in a page-level map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records -- one `int` there cost the
+// benchmark page 1.08 ms of layout, on a page that used none of it.
+//
+// The value is the pixel length times eight plus the `GEOBOX_` code, so
+// one map carries both and a page that never says it carries nothing.
+map[int] clipMarginOf = {}
+bool anyClipMargin = false
+
+// The packed value, or -1 when this style said nothing.
+int func clipMarginPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if clipMarginOf[k] == null { return -1 }
+    return clipMarginOf[k]
+}
+
 int func motionIndexOf(s:Style) {
     if s == null { return 0 }
     text k = `${s.serial}`

@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `overflow-clip-margin`, and where a clip box's edge actually is
+
+`overflow: clip` clips to the **padding** box, not the border box, and
+`overflow-clip-margin` moves that edge outward -- by a length, or by
+naming the box to start from. A clip box at left 100 with a 5px border
+keeps ink from 105 under the initial value, from 85 under `20px`, and
+from 115 under `content-box`. `overflow: hidden` ignores it.
+
+**A `getClientRects()` probe said there was no difference**, on all five
+cases, because it reports where the child was laid out rather than where
+its ink survived. That is the third instrument in this release to answer
+"no difference" confidently and wrongly about a paint-time property,
+after `getComputedStyle` on `position-visibility` and a paired benchmark
+that summed a phase the change was not in. Rasterising and reading the
+pixels separated the five cases immediately.
+
+The length and the box code are packed into one value in a page-level
+map keyed by the computed style's serial, not a field on `Style`, for
+the reason benchmarks.md records. Paint expands the clip rectangle only
+for `overflow: clip`, and a page that never declares the property pays
+one bool test.
+
+**254 of 405.**
+
 ### CSS Motion Path, which was filed under things that need a clock
 
 `offset-path` gives a box a path, `offset-distance` a point along it,

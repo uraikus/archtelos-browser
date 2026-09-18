@@ -2930,6 +2930,42 @@ void func paintClipped(b:Box) {
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
+    // `overflow-clip-margin` moves that edge outward, and only for
+    // `overflow: clip` -- a `hidden` box ignores it, which is what
+    // Chromium does (todo.md records the measurement). A page that
+    // never declares it pays one bool test here.
+    if anyClipMargin && (s.overflowX == OVERFLOW_CLIP || s.overflowY == OVERFLOW_CLIP) {
+        int packed = clipMarginPacked(s)
+        if packed >= 0 {
+            int mpx = Math.floorDiv(packed, 8)
+            int mbox = packed % 8
+            // Where the named box is, before the length pushes it out.
+            int cx = px
+            int cy = py
+            int cw = pw
+            int ch = ph
+            if mbox == GEOBOX_CONTENT {
+                cx = contentX(b)
+                cy = contentY(b)
+                cw = contentWidth(b)
+                ch = b.h - b.pt - b.pb - b.bt - b.bb
+            } else if mbox == GEOBOX_BORDER {
+                cx = b.x
+                cy = b.y
+                cw = b.w
+                ch = b.h
+            } else if mbox == GEOBOX_MARGIN {
+                cx = b.x - b.ml
+                cy = b.y - b.mt
+                cw = b.w + b.ml + b.mr
+                ch = b.h + b.mt + b.mb
+            }
+            px = cx - mpx
+            py = cy - mpx
+            pw = cw + mpx + mpx
+            ph = ch + mpx + mpx
+        }
+    }
     if pw <= 0 || ph <= 0 { return }
 
     img layer = blankImage(pw, ph)

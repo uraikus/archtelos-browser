@@ -371,46 +371,23 @@ coordinates, as though only the top and left sides existed. A
 is a defect rather than a decision, so it is written down here and not
 copied.
 
-### What `overflow-clip-margin` and `box-decoration-break` were measured to be
+### What `box-decoration-break` was measured to be
 
-Two properties from different specifications, both gradable and both
-rendering in a still frame.
+`overflow-clip-margin` is done. `box-decoration-break` is measured and
+not implemented yet.
 
-**`overflow-clip-margin`** (CSS Overflow 4). A clip box at left 100 with
-a 5px border and 10px padding -- so its border box begins at 100, its
-padding box at 105 and its content box at 115 -- with a wide child
-spilling out to the left, read off the rasterised row:
-
-| the value | red ink begins at | which edge that is |
-|---|---|---|
-| the initial `0px` | 105 | **the padding box**, not the border box |
-| `20px` | 85 | the padding box pushed 20 outward |
-| `content-box` | 115 | the content edge |
-| `padding-box` | 105 | the same as the initial |
-
-So the clip an `overflow: clip` box applies is its *padding* box, and
-this property moves that edge outward by a length, or names a different
-box to start from. `overflow: hidden` ignores it.
-
-**A `getClientRects()` probe of the same five cases answered "no
-difference" on every one**, because it reports where the child was laid
-out and not where its ink survived. That is the third instrument this
-session to answer confidently and wrongly about a paint-time property,
-after `getComputedStyle` on `position-visibility` and a paired benchmark
-that summed the wrong phase. The question has to be asked of the pixels.
-
-**`box-decoration-break`** (CSS Fragmentation 3). An inline with 6px
-padding and a 4px border, fragmenting over the lines of a 150px
-paragraph. Fragment widths are 135 and 125 under `slice` and 145 and 145
-under `clone`: each fragment gains its own padding and border on the
-side the slice left open. In pixels, `clone` puts four blue pixels at
-the end of the first line and four at the start of the second, where
-`slice` puts none -- which is the border closing each fragment, and the
-check that does not depend on a width being known in advance.
+An inline with 6px padding and a 4px border, fragmenting over the lines
+of a 150px paragraph: fragment widths are 135 and 125 under `slice` and
+145 and 145 under `clone`, each fragment gaining its own padding and
+border on the side the slice left open. In pixels, `clone` puts four
+blue pixels at the end of the first line and four at the start of the
+second where `slice` puts none -- the border closing each fragment, and
+the check that does not depend on a width being known in advance.
 
 This engine already fragments an inline across lines and already paints
-a background and border per fragment, so what is missing is the choice
-between the two, and the extra advance `clone` needs at each break.
+a background and a border per fragment. What is missing is the choice
+between the two, and the extra advance `clone` needs at each break so
+the closing border has room.
 
 ### After the official definition
 

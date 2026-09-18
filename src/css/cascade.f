@@ -174,6 +174,9 @@ void func cascadeReset() {
     anchorInfos = []
     anyOffsetPath = false
     motionInfos = []
+    anyClipMargin = false
+    map[int] emptyClipMargin = {}
+    clipMarginOf = emptyClipMargin
     map[int] emptyMotion = {}
     motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
@@ -6373,6 +6376,35 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     // Every value but `visible` clips what runs past the box.
     s.overflowHidden = s.overflowX != OVERFLOW_VISIBLE || s.overflowY != OVERFLOW_VISIBLE
+    // `overflow-clip-margin: <visual-box> || <length [0,inf]>`. The box
+    // defaults to the padding box, which is what an unmoved clip edge
+    // already is, and the length to zero.
+    ascii ocm = styleProp(props, 'overflow-clip-margin')
+    if ocm != null {
+        ascii ocmLow = asciiLower(asciiTrim(ocm))
+        arr[ascii] ocmWords = asciiSplitSpace(ocmLow)
+        int ocmBox = GEOBOX_PADDING
+        int ocmPx = 0
+        bool ocmSaid = false
+        for int i = 0, i < ocmWords.length, i++ {
+            int gb = geometryBoxAt(ocmWords[i], 0, ocmWords[i].length)
+            if gb >= 0 {
+                ocmBox = gb
+                ocmSaid = true
+            } else {
+                Len l = parseLength(ocmWords[i], s.fontSize)
+                if l.kind != LEN_AUTO && l.kind != LEN_INVALID {
+                    int px = resolveLen(l, 0, 0)
+                    if px > 0 { ocmPx = px }
+                    ocmSaid = true
+                }
+            }
+        }
+        if ocmSaid {
+            clipMarginOf[`${s.serial}`] = ocmPx * 8 + ocmBox
+            anyClipMargin = true
+        }
+    }
     return s
 }
 
