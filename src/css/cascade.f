@@ -5555,12 +5555,21 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     int aArea = positionAreaValue(styleProp(props, 'position-area'))
     text aFall = anchorIdent(props, 'position-try-fallbacks')
     if aFall == 'none' { aFall = '' }
-    if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != '' {
+    int aOrder = TRYORDER_NORMAL
+    ascii ordv = styleProp(props, 'position-try-order')
+    if ordv != null {
+        ascii ot = asciiLower(asciiTrim(ordv))
+        if ot == 'most-height' || ot == 'most-block-size' { aOrder = TRYORDER_MOST_BLOCK }
+        else if ot == 'most-width' || ot == 'most-inline-size' { aOrder = TRYORDER_MOST_INLINE }
+    }
+    if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
+        || aOrder != TRYORDER_NORMAL {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
         ai.area = aArea
         ai.fallbacks = aFall
+        ai.tryOrder = aOrder
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }

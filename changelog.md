@@ -5,6 +5,31 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `position-try-order`, which is not part of the retry loop
+
+The order sorts the candidates -- the area the element asked for, then
+its fallbacks -- by the room each region offers in the named axis, most
+first. `most-height` and `most-block-size` measure the block axis,
+`most-width` and `most-inline-size` the inline one, which coincide in
+the writing mode this engine lays out in.
+
+**The sort applies whether or not the original position overflows.**
+That is the row the probe existed for: with `position-area: bottom` and
+`position-try-order: most-height`, Chromium moves the box to `top` even
+though `bottom` fits. Adding an ordering step to the overflow retry --
+the obvious place for it -- would leave the box where it was and agree
+with Chromium on every other case tried.
+
+Making room for it simplified what was there. One candidate walk now
+covers both the plain retry and the ordered choice: the candidates are
+the declared area followed by the fallbacks, sorted when an order asks,
+and the first that fits wins. Without an order the declared area is
+simply first, so a fitting position is kept and the rest are never
+reached -- the behaviour the previous commit spelled out separately.
+
+**246 of 405**, and earned: layout sorts by it. `anchor-scope` and
+`position-visibility` are still neither counted nor stored.
+
 ### CSS Anchor Positioning 1, and the retry loop `position-try-fallbacks` is
 
 An anchored box that overflows its containing block now walks the

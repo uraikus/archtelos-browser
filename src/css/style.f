@@ -364,6 +364,15 @@ int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
         + cornerCodeOfK(bl) * CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE
 }
 
+// `position-try-order` sorts the candidates by the room the region
+// offers in one axis. It is not a tie-break inside the overflow retry:
+// the sort applies whether or not the original position overflows,
+// which Chromium shows by moving a box out of a `bottom` that fits
+// (todo.md records the measurement).
+const int TRYORDER_NORMAL = 0
+const int TRYORDER_MOST_BLOCK = 1
+const int TRYORDER_MOST_INLINE = 2
+
 // CSS Anchor Positioning 1. Each axis of `position-area` is one of
 // three bands around the anchor, or a span of all three.
 const int PAREA_NONE = 0
@@ -374,9 +383,8 @@ const int PAREA_SPAN = 4
 // The two axes in one number, block first.
 const int PAREA_AXIS = 8
 
-// What the four anchor properties this engine acts on say about one
-// element. `anchor-scope`, `position-try-order` and
-// `position-visibility` are not here: nothing would read them, and a
+// What the five anchor properties this engine acts on say about one
+// element. `anchor-scope` and `position-visibility` are not here: nothing would read them, and a
 // property the cascade computes but neither layout nor paint reads is
 // not implemented however faithfully it is stored (todo.md says what
 // each of them needs). It is
@@ -390,6 +398,7 @@ struct AnchorInfo {
     anchor:text          // position-anchor
     area:int             // position-area, block * PAREA_AXIS + inline
     fallbacks:text       // position-try-fallbacks, as written
+    tryOrder:int         // position-try-order, as a TRYORDER_ value
 }
 
 // This page's anchor declarations; `Style.anchorInfo` is an index into

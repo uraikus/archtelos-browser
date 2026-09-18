@@ -313,30 +313,16 @@ first candidate that fits, leaving the original position alone when none
 does. `flip-block`, `flip-inline` and `flip-start` transform the area in
 force rather than naming a new one.
 
-The two properties beside it are **not** implemented and stay uncounted,
-because nothing reads them:
+`position-try-order` sorts the candidates by the room each region
+offers in the named axis, most first, and that sort applies whether or
+not the original position overflows -- it is a choice among the
+candidates rather than a repair of a bad one, which is what Chromium
+shows by moving a box out of a `bottom` that fits.
 
-1. **`position-try-order`** is measured now, and it is not what the
-   retry loop does. An anchor at (60, 200) sized 40x20 in a 400x300
-   block leaves 200 above it, 80 below, 60 to the left and 300 to the
-   right; a 30x30 box naming it answers:
+One property beside them is **not** implemented and stays uncounted,
+because nothing reads it:
 
-   | `position-area` | fallbacks | order | lands on |
-   |---|---|---|---|
-   | `left` | `left, right` | normal | `left`, x 30 |
-   | `left` | `left, right` | `most-width` | `right`, x 100 |
-   | `bottom` | `bottom, top` | normal | `bottom` |
-   | `bottom` | `bottom, top` | `most-height` | `top`, y 170 |
-
-   The last row is the one that decides the design: **`bottom` fits, and
-   the box moves anyway**. So the order is not a tie-break inside the
-   overflow retry -- it sorts the candidates by the space the region
-   offers in the named axis, descending, and that sort applies whether
-   or not the original position overflows. Bolting it onto the loop,
-   which engages only on overflow, would get that row wrong.
-   `most-block-size` is `most-height` and `most-inline-size` is
-   `most-width` in the horizontal writing mode this engine lays out in.
-2. **`position-visibility`** hides a box rather than moving it, under
+1. **`position-visibility`** hides a box rather than moving it, under
    `always`, `anchors-visible` or `no-overflow`. It needs the same
    overflow test the loop already has, and a way to hide a box that is
    laid out -- `visibility: hidden` exists, so this is mostly a question

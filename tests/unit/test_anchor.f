@@ -183,4 +183,73 @@ checkEqInt(triedY(10, 'top', 'flip-block'), triedY(10, 'top', 'bottom'),
 checkEqInt(triedX(150, 'left', 'flip-inline'), 110, 'a flip is not applied when the original fits')
 checkEqInt(triedY(150, 'left', 'flip-inline'), 145, 'in either axis')
 
+// ---- position-try-order --------------------------------------------------
+// The order sorts the candidates by the space the region offers in the
+// named axis, descending, and that sort applies whether or not the
+// original position overflows -- which is what makes it a different
+// mechanism from the retry loop above rather than a tie-break inside
+// it.
+//
+// Chromium 141 on an anchor at (60, 200) sized 40x20 in a 400x300
+// block, so the space is 200 above, 80 below, 60 left and 300 right,
+// with a 30x30 box naming it:
+//
+//   `left`,   `left, right`,  normal        x 30   (left, first and fits)
+//   `left`,   `left, right`,  most-width    x 100  (right, 300 > 60)
+//   `bottom`, `bottom, top`,  normal        y 220  (bottom fits)
+//   `bottom`, `bottom, top`,  most-height   y 170  (top, 200 > 80)
+
+Box func ordered(area:text, fb:text, ord:text) {
+    cascadeReset()
+    cssViewportWidth = 600
+    text ordDecl = ord == '' ? '' : ('position-try-order:' + ord + ';')
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="position:relative;width:400px;height:300px;overflow:hidden">'
+        + '<div id="anc" style="position:absolute;left:60px;top:200px;'
+        + 'width:40px;height:20px;anchor-name:--a"></div>'
+        + '<div id="pos" style="position:absolute;position-anchor:--a;'
+        + 'width:30px;height:30px;position-area:' + area + ';'
+        + 'position-try-fallbacks:' + fb + ';' + ordDecl + '"></div>'
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return anchorBoxById(layoutDocument(doc, 600), 'pos')
+}
+
+int func orderedX(area:text, fb:text, ord:text) { Box b = ordered(area, fb, ord)  return b == null ? -1 : b.x }
+int func orderedY(area:text, fb:text, ord:text) { Box b = ordered(area, fb, ord)  return b == null ? -1 : b.y }
+
+// Without an order the first candidate that fits wins, which is the
+// one written first.
+checkEqInt(orderedX('left', 'left, right', ''), 30, 'with no order the first that fits wins')
+checkEqInt(orderedY('bottom', 'bottom, top', ''), 220, 'and a fitting original is kept')
+
+// `most-width` sorts by the inline space each region offers, so the
+// right side -- 300 against 60 -- goes first and is taken.
+checkEqInt(orderedX('left', 'left, right', 'most-width'), 100,
+           'most-width takes the side with more room')
+check(orderedX('left', 'left, right', 'most-width') != orderedX('left', 'left, right', ''),
+      'which is not where the written order would have put it')
+
+// The row that says the order is not part of the retry: `bottom` fits,
+// and `most-height` moves the box to `top` anyway.
+checkEqInt(orderedY('bottom', 'bottom, top', 'most-height'), 170,
+           'most-height sorts even when the original fits')
+check(orderedY('bottom', 'bottom, top', 'most-height')
+      != orderedY('bottom', 'bottom, top', ''),
+      'so the order applies without any overflow to trigger it')
+
+// The logical spellings are the physical ones in this writing mode.
+checkEqInt(orderedY('bottom', 'bottom, top', 'most-block-size'),
+           orderedY('bottom', 'bottom, top', 'most-height'),
+           'most-block-size is most-height here')
+checkEqInt(orderedX('left', 'left, right', 'most-inline-size'),
+           orderedX('left', 'left, right', 'most-width'),
+           'and most-inline-size is most-width')
+// Both would also pass if neither did anything, so each must differ
+// from the unordered case too.
+check(orderedY('bottom', 'bottom, top', 'most-block-size')
+      != orderedY('bottom', 'bottom, top', ''),
+      'and each of them moves the box at all')
+
 finish('anchor positioning')

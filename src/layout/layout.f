@@ -5279,6 +5279,25 @@ void func anchorPlaceAt(area:int, ax:int, ay:int, aw:int, ah:int, b:Box) {
     anchorTryY = anchorBandPos(Math.floorDiv(area, PAREA_AXIS), ay, ay + ah, b.h, b.y)
 }
 
+// How much room one band of one axis offers, which is what
+// `position-try-order` sorts the candidates by: the space between the
+// containing block's edge and the anchor's for a band beyond it, the
+// anchor's own extent for its band, and the whole block for a span.
+int func anchorBandRoom(band:int, a0:int, a1:int, cb0:int, cbSize:int) {
+    if band == PAREA_BEFORE { return a0 - cb0 }
+    if band == PAREA_AFTER { return cb0 + cbSize - a1 }
+    if band == PAREA_CENTER { return a1 - a0 }
+    return cbSize
+}
+
+int func anchorAreaRoom(area:int, order:int, ax:int, ay:int, aw:int, ah:int,
+                        cbX:int, cbY:int, cbW:int, cbH:int) {
+    if order == TRYORDER_MOST_BLOCK {
+        return anchorBandRoom(Math.floorDiv(area, PAREA_AXIS), ay, ay + ah, cbY, cbH)
+    }
+    return anchorBandRoom(area % PAREA_AXIS, ax, ax + aw, cbX, cbW)
+}
+
 void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
     if b == null { return }
     if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
@@ -5291,21 +5310,50 @@ void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
             anchorPlaceAt(ai.area, ax, ay, aw, ah, b)
             int wantX = anchorTryX
             int wantY = anchorTryY
-            // The fallbacks are a retry list, not a correction: a
-            // position that fits is kept and they are never consulted,
-            // and when none of them fits either, the original stands
-            // rather than the last one tried.
-            if ai.fallbacks != '' && anchorOverflows(wantX, wantY, b.w, b.h, cbX, cbY, cbW, cbH) {
+            // The candidates: the area the element asked for, then the
+            // fallbacks in written order.
+            arr[int] areas = []
+            if ai.fallbacks != '' || ai.tryOrder != TRYORDER_NORMAL {
+                areas.push(ai.area)
                 arr[ascii] cands = asciiSplitChar(ai.fallbacks.toAscii(), CH_COMMA)
                 for int i = 0, i < cands.length, i++ {
                     int area = tryCandidateArea(ai.area, asciiLower(asciiTrim(cands[i])))
-                    if area == PAREA_NONE { continue }
-                    anchorPlaceAt(area, ax, ay, aw, ah, b)
-                    if !anchorOverflows(anchorTryX, anchorTryY, b.w, b.h, cbX, cbY, cbW, cbH) {
-                        wantX = anchorTryX
-                        wantY = anchorTryY
-                        break
+                    if area != PAREA_NONE { areas.push(area) }
+                }
+            }
+            // `position-try-order` sorts them by the room each region
+            // offers, most first, and that sort applies whether or not
+            // the original position overflows -- it is a choice among
+            // the candidates, not a repair of a bad one. A selection
+            // sort keeps it stable, so equal rooms hold their order.
+            if ai.tryOrder != TRYORDER_NORMAL && areas.length > 1 {
+                for int i = 0, i < areas.length - 1, i++ {
+                    int best = i
+                    int bestRoom = anchorAreaRoom(areas[i], ai.tryOrder, ax, ay, aw, ah,
+                                                  cbX, cbY, cbW, cbH)
+                    for int j = i + 1, j < areas.length, j++ {
+                        int room = anchorAreaRoom(areas[j], ai.tryOrder, ax, ay, aw, ah,
+                                                  cbX, cbY, cbW, cbH)
+                        if room > bestRoom { best = j  bestRoom = room }
                     }
+                    if best != i {
+                        int t = areas[i]
+                        areas[i] = areas[best]
+                        areas[best] = t
+                    }
+                }
+            }
+            // Walk them and take the first that fits. Without an order
+            // the first candidate is the area the element asked for, so
+            // a position that fits is kept and the rest are never
+            // reached; when none fits, the original stands rather than
+            // the last one tried.
+            for int i = 0, i < areas.length, i++ {
+                anchorPlaceAt(areas[i], ax, ay, aw, ah, b)
+                if !anchorOverflows(anchorTryX, anchorTryY, b.w, b.h, cbX, cbY, cbW, cbH) {
+                    wantX = anchorTryX
+                    wantY = anchorTryY
+                    break
                 }
             }
             if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
