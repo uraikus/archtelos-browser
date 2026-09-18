@@ -1978,8 +1978,14 @@ void func paintBorders(b:Box) {
     fillAlpha(1.0)
 }
 
+// A box is worth painting when it meets the window. Both culls are
+// widened by the furthest any inline box on the document reaches
+// outside its line, because that ink belongs to the box and is not in
+// its rectangle; on a document with no padded or bordered inline the
+// number is zero and the test is the plain one.
 bool func boxVisible(b:Box) {
-    return b.y + b.h >= paintTop && b.y <= paintBottom
+    return b.y + b.h + inlineInkOverhang >= paintTop
+        && b.y - inlineInkOverhang <= paintBottom
 }
 
 // The first line box inside a list item, for placing its marker.
@@ -2598,24 +2604,44 @@ void func paintWavyLine(x:int, y:int, w:int, thickness:int, c:int, opacity:float
     }
 }
 
+// One line's worth of an inline box. The top and bottom edges are on
+// every fragment; the opening side is on the fragment that begins the
+// inline and the closing side on the one that ends it, so a fragment
+// in the middle of a broken inline has neither (CSS2 8.4). A margin
+// takes no paint, so the fragment's rectangle is cut back by it on
+// whichever sides the fragment carries.
 void func paintInlineBackground(f:Fragment) {
     Box ib = f.box
     Style s = ib.style
     if s.hidden || f.w <= 0 { return }
-    // an inline fragment carries no padding or border of its own, so
-    // its three background areas are all the fragment's own rectangle
-    paintBackground(f.x, f.y, f.w, f.h, 0, 0, 0, 0, 0, 0, 0, 0, s)
-    if s.borderStyle != BORDER_NONE {
-        if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
-            paintFill(s.borderTopColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y, f.w, ib.bt)
-        }
-        if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-            paintFill(s.borderBottomColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
-        }
-        fillAlpha(1.0)
+    bool opens = fragOpens(f)
+    bool closes = fragCloses(f)
+    int lead = opens ? ib.ml : 0
+    int x = f.x + lead
+    int w = f.w - lead - (closes ? ib.mr : 0)
+    if w <= 0 { return }
+    int lw = opens ? ib.bl : 0
+    int rw = closes ? ib.br : 0
+    paintBackground(x, f.y, w, f.h, lw, ib.bt, rw, ib.bb,
+                    opens ? ib.pl : 0, ib.pt, closes ? ib.pr : 0, ib.pb, s)
+    if s.borderStyle == BORDER_NONE { return }
+    if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
+        paintBorderSide(x, f.y, w, ib.bt, true, true, s.borderTopStyle,
+                        s.borderTopColor, s.effectiveOpacity)
     }
+    if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
+        paintBorderSide(x, f.y + f.h - ib.bb, w, ib.bb, true, false,
+                        s.borderBottomStyle, s.borderBottomColor, s.effectiveOpacity)
+    }
+    if lw > 0 && colorIsPaintable(s.borderLeftColor) {
+        paintBorderSide(x, f.y, lw, f.h, false, true, s.borderLeftStyle,
+                        s.borderLeftColor, s.effectiveOpacity)
+    }
+    if rw > 0 && colorIsPaintable(s.borderRightColor) {
+        paintBorderSide(x + w - rw, f.y, rw, f.h, false, false,
+                        s.borderRightStyle, s.borderRightColor, s.effectiveOpacity)
+    }
+    fillAlpha(1.0)
 }
 
 // The concrete size object-fit gives a replaced element's content,
@@ -2827,7 +2853,8 @@ void func paintFormControl(b:Box) {
 void func paintLines(b:Box) {
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
-        if ln.y + ln.h < paintTop || ln.y > paintBottom { continue }
+        if ln.y + ln.h + inlineInkOverhang < paintTop
+            || ln.y - inlineInkOverhang > paintBottom { continue }
         // inline backgrounds first, outermost first
         for int j = 0, j < ln.frags.length, j++ {
             Fragment f = ln.frags[j]

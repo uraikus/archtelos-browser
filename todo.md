@@ -377,17 +377,40 @@ copied.
 not implemented yet.
 
 An inline with 6px padding and a 4px border, fragmenting over the lines
-of a 150px paragraph: fragment widths are 135 and 125 under `slice` and
-145 and 145 under `clone`, each fragment gaining its own padding and
-border on the side the slice left open. In pixels, `clone` puts four
-blue pixels at the end of the first line and four at the start of the
-second where `slice` puts none -- the border closing each fragment, and
-the check that does not depend on a width being known in advance.
+of a 150px paragraph at 16px/24px monospace: fragment widths are 135,
+125 and 58 under `slice` and 145, 145 and 68 under `clone`, each
+fragment gaining its own padding and border on every side the slice
+left open. The two rows cross-check each other exactly -- each fragment
+gains 10 for each edge `slice` left off -- so the relation holds without
+any of the six widths being known in advance. In pixels, `clone` puts
+four blue pixels at the end of the first line and four at the start of
+the second where `slice` puts none.
 
-This engine already fragments an inline across lines and already paints
-a background and a border per fragment. What is missing is the choice
-between the two, and the extra advance `clone` needs at each break so
-the closing border has room.
+`slice` is what this engine does: the opening margin, border and
+padding go on the fragment that begins the inline and the closing ones
+on the fragment that ends it. What `clone` needs is the choice, and the
+extra advance at each break so that the closing border has room and the
+next fragment starts after an opening one.
+
+### An inline box's side edges are on the wrong side in right-to-left text
+
+An inline's opening margin, border and padding go on the fragment that
+begins it and the closing ones on the fragment that ends it. This
+engine puts the opening edge at the fragment's physical **left** and
+the closing one at its physical right, which is correct in left-to-right
+text and mirrored in right-to-left.
+
+Measured: the same inline in `direction: rtl`, 6px padding and a 4px
+border in a 150px paragraph. Chromium puts the opening edge at x 146
+to 149, the right-hand end of the first fragment, and the closing one
+at x 121 to 124, the left-hand end of the last.
+
+Fixing the side alone would give a half-mirrored result, because the
+engine does not reorder inline boxes on a line at all -- bidi
+reordering here is within each text fragment and not across two inline
+boxes (css-2026.md, CSS Writing Modes 3). The two belong together: the
+fragments go into visual order and then the opening edge follows the
+inline's start side rather than its left.
 
 ### What CSS Inline 3 still needs
 
@@ -405,53 +428,6 @@ makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.70, ex 0.55
 -- stand in for metrics Festina cannot read out of a font, so a family
 whose real proportions differ will trim to the wrong place. The numbers
 come from Chromium on the monospace family the tests use.
-
-### An inline fragment's side border is painted nowhere
-
-CSS2 §8.4 puts the opening border and padding of a broken inline on its
-first fragment and the closing ones on its last. **Layout already does
-its half**: `placeInline` adds `b.ml + b.bl + b.pl` to the pen before an
-inline's content and `b.pr + b.br + b.mr` after it, so the advance is
-reserved and the text is pushed across.
-
-What is missing is only the paint. `paintInlineBackground` draws a
-fragment's background and its **top and bottom** borders and stops
-there, so an inline's left and right borders are drawn nowhere --
-`paintBorders`, which draws all four, is the block path. The comment
-above it, that an inline fragment "carries no padding or border of its
-own", is true of the fragment rectangle and misleading about the
-element. The border render suite is green because every border it tests
-is on a block.
-
-Measured, an inline with `padding: 6px; border: 4px solid` over the
-lines of a 150px paragraph at 16px/24px monospace:
-
-| | fragment widths |
-|---|---|
-| Chromium, `slice` | 135, 125, 58 |
-| Chromium, `clone` | 145, 145, 68 |
-| this engine | 140, 130, 60 |
-
-The engine is within 5, 5 and 2 of the `slice` row, and the residue is
-text advance rather than edges: its monospace metric differs from
-Chromium's, which is a separate and font-dependent matter. The opening
-edge is 10 -- border 4 plus padding 6 -- and Chromium's first character
-starts at x = 10.
-
-The `clone` row cross-checks the `slice` one exactly: every fragment
-gains 10 for each edge `slice` left off, so 135 + 10, 125 + 20 and
-58 + 10 give 145, 145 and 68. That relation is the test worth writing,
-since it holds without any of the six widths being known in advance.
-
-**The side edges do not change the line height.** Chromium's lines sit
-24 apart while each fragment box is 39 tall -- the content area of 19
-plus 12 of padding and 8 of border -- so they take horizontal advance
-and paint outside the line box, and the block gets no taller.
-
-So the work is: paint the opening border on a fragment that begins its
-inline and the closing one on a fragment that ends it, in the fragment's
-own rectangle, which already has room for both. `box-decoration-break`
-is then the choice of putting both on every fragment instead.
 
 ### After the official definition
 

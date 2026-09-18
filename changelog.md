@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An inline box's own border and padding
+
+CSS2 §8.4 gives an inline box margin, border and padding on all four
+sides. The engine reserved the horizontal advance for them and painted
+none of them: `paintInlineBackground` drew a background and the top and
+bottom borders and stopped, so an inline's left and right borders were
+drawn nowhere and its vertical padding took no room. The border render
+suite was green because every border it tested was on a block.
+
+**The opening side goes on the fragment that begins the inline and the
+closing side on the fragment that ends it**, which is what the initial
+`box-decoration-break: slice` means. A fragment now records which of the
+two it carries, so a fragment in the middle of a broken inline gets
+neither, and a margin takes no paint on the sides it does carry. The
+four sides go through `paintBorderSide` rather than a filled rectangle,
+so an inline's border draws dashed, dotted, double or in relief exactly
+as a block's does.
+
+**The decorations go on the content area, not the line box.** Measured
+against Chromium, an inline's background covers the font's ascent and
+descent about the baseline -- 18 pixels of a 24-pixel line -- and its
+padding and border then grow that box outside the line. The engine used
+the line box, or the inline's own line height where that was shorter,
+which was two pixels high and five pixels tall out.
+
+**None of it changes the line height.** Chromium's lines sit 24 apart
+while each fragment box is 39 tall, so the box simply paints outside the
+line and the block is no taller for it.
+
+The check that earns its place counts the side borders alone, with the
+top and bottom given no width and the text no colour: the same inline
+over one line and over three must paint the same number of them, because
+`slice` puts each side edge on exactly one fragment however many
+fragments there are. Neither number is known in advance and neither is
+written down in the test.
+
+**A box taller than its line broke the painter's cull**, which skipped a
+line box and a block box outside the window it was drawing. An inline's
+border now reaches past both, so a border a few pixels from the edge
+vanished when the line itself scrolled out: the last scroll position
+that painted any of it was the line box's last row, 44, and not the
+border box's, 50. Both culls are widened by the furthest any inline on
+the document reaches outside its line, which is one number computed
+where the fragments are placed and left at zero by a document with no
+padded or bordered inline -- so the test is the plain one on every page
+that does not use the feature.
+
+The opening side is the physical left one. In right-to-left text
+Chromium mirrors it, and this engine does not; that is measured and
+written down in todo.md rather than half-fixed, because the fragments
+would have to go into visual order first.
+
 ### `text-box-trim` and `text-box-edge`
 
 A line box is taller than its text by the leading, half above and half

@@ -143,6 +143,24 @@ struct Fragment {
     w:int
     h:int
     baseline:int
+    edges:int
+}
+
+// Which of its inline's own side edges a fragment carries. An inline
+// broken across lines puts its opening margin, border and padding on
+// the fragment that begins it and its closing ones on the fragment
+// that ends it; the fragments between carry neither (CSS2 8.4).
+const int FRAGEDGE_NONE = 0
+const int FRAGEDGE_START = 1
+const int FRAGEDGE_END = 2
+const int FRAGEDGE_BOTH = 3
+
+bool func fragOpens(f:Fragment) {
+    return f.edges == FRAGEDGE_START || f.edges == FRAGEDGE_BOTH
+}
+
+bool func fragCloses(f:Fragment) {
+    return f.edges == FRAGEDGE_END || f.edges == FRAGEDGE_BOTH
 }
 
 struct Line {
@@ -153,6 +171,15 @@ struct Line {
     baseline:int
     frags:arr[Fragment]
 }
+
+// How far any inline box on this document reaches outside the line box
+// it sits on. An inline's decorations go on its content area grown by
+// its padding and border, which can be taller than the line, so the
+// painter widens both of its culls by this rather than trusting a line
+// box or a block's own height to contain its ink. A document with no
+// padded or bordered inline leaves it at zero, and the culls are then
+// exactly what they were.
+int inlineInkOverhang = 0
 
 // Images the shell has loaded, keyed by resolved URL; buildBox reads
 // them through the node's 'data-resolved-src' attribute.
@@ -2770,6 +2797,7 @@ Fragment func newFragment(kind:int, box:Box, t:text) {
     f.kind = kind
     f.box = box
     f.content = t
+    f.edges = FRAGEDGE_NONE
     return f
 }
 
@@ -2980,19 +3008,23 @@ void func finishLineUncounted(forced:bool) {
             f.h = total
             f.baseline = baseline
         } else {
-            f.y = ifcY
-            f.h = lineH
+            // An inline's decorations go on its content area -- the
+            // font's ascent and descent about the baseline, which is
+            // neither the line box nor the inline's own line-height --
+            // grown by its padding and border. None of that changes
+            // the line height: the box paints outside the line and the
+            // block is no taller for it.
+            Box ib = f.box
+            Style is = ib.style
             f.baseline = baseline
-            // shrink vertically to the inline's own font box when the
-            // line is taller than it, as CSS does for inline backgrounds
-            Style is = f.box.style
-            int own = lineHeightOf(is)
-            if own < lineH {
-                int content = fontAscent(is) + fontDescent(is)
-                int half = Math.floorDiv(own - content, 2)
-                f.y = baseline - half - fontAscent(is)
-                f.h = own
-            }
+            f.y = baseline - fontAscent(is) - ib.pt - ib.bt
+            f.h = fontAscent(is) + fontDescent(is) + ib.pt + ib.bt + ib.pb + ib.bb
+            // and how far outside the line box that reaches, which is
+            // what the painter widens its culls by
+            int above = ifcY - f.y
+            if above > inlineInkOverhang { inlineInkOverhang = above }
+            int below = f.y + f.h - (ifcY + lineH)
+            if below > inlineInkOverhang { inlineInkOverhang = below }
         }
     }
     // inline backgrounds were extended as content was placed; a
@@ -3060,6 +3092,9 @@ void func placeInline(b:Box) {
         // start edge: margin + border + padding
         int startEdge = b.ml + b.bl + b.pl
         Fragment f = newFragment(FRAG_INLINE_BG, b, '')
+        // this fragment begins the inline, so it carries the opening
+        // margin, border and padding that startEdge just reserved
+        f.edges = FRAGEDGE_START
         if ifcPendingSpace && ifcLineHasContent {
             ifcX = ifcX + ifcPendingSpaceWidth
             ifcPendingSpace = false
@@ -3079,7 +3114,10 @@ void func placeInline(b:Box) {
         }
         int endEdge = b.pr + b.br + b.mr
         // the closing edge belongs to the line the content ended on:
-        // extend this inline's fragment on the current line
+        // extend this inline's fragment on the current line, and mark
+        // it as the one carrying the closing margin, border and padding
+        Fragment closing = ifcOpenBg[ifcOpenBg.length - 1]
+        closing.edges = closing.edges == FRAGEDGE_START ? FRAGEDGE_BOTH : FRAGEDGE_END
         ifcX = ifcX + endEdge
         extendOpenInlines(ifcX)
         ifcOpenInlines.pop()
@@ -5683,6 +5721,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     docHasPositioned = false
     anyRtlText = false
     docHasFloats = false
+    inlineInkOverhang = 0
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')
     if html == null { return null }
