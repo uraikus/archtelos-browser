@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `text-box-trim` and `text-box-edge`
+
+A line box is taller than its text by the leading, half above and half
+below. `text-box-trim` says which of those halves to drop, and
+`text-box-edge` which two of the font's edges the height then runs
+between. A 20px/2 block is 40 tall untrimmed, 24 under `trim-both`, and
+14 between the cap height and the baseline.
+
+**Trimming sets the edge; it does not shrink to it.** At a line height
+below the content height the leading is negative, and trimming it makes
+the line *taller*. That was the one check of twenty-three that failed
+before it was fixed, and it only exists because the measurement showed
+line-height 1, 2 and 3 all give 24 -- every ordinary line height hides
+the bug.
+
+**The engine needed no new capability.** It reads no font metrics --
+Festina exposes only a string's inked width -- so it already models them
+as ratios per em and already computes the half-leading this trims. Its
+existing constants give 19 + 5 = 24 at 20px, which is Chromium's own
+number, so only the `cap` and `ex` over-edges needed adding, at 0.70 and
+0.55 per em. The two already there were evidently estimated and land
+within 0.02 of the measurement.
+
+The trim splits across lines the way the standard asks: the over edge on
+the first line, and the under edge on the last once there is a last one.
+
+**The property instrument was lying about one of them, and the row was
+fixed rather than the count banked.** `text-box-edge: text` is the
+initial edge and changes nothing without a trim beside it; it registered
+only because storing the value made a map entry. Its row now reads
+`cap alphabetic; text-box-trim: trim-both`, so it can register on the
+edge alone -- and the count stayed the same, which is what says the
+property was implemented rather than propped up.
+
+**256 of 405.**
+
 ### `overflow-clip-margin`, and where a clip box's edge actually is
 
 `overflow: clip` clips to the **padding** box, not the border box, and

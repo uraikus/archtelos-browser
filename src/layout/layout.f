@@ -43,6 +43,12 @@ const int FRAG_INLINE_BG = 3
 // no ascent/descent API, only the inked height of a string.
 const float FONT_ASCENT = 0.93
 const float FONT_DESCENT = 0.24
+// The other two edges `text-box-edge` can name, measured off Chromium
+// the same way: a 20px monospace cap height is 14 and its x-height 11.
+// The two above were evidently estimated rather than measured and land
+// within 0.02 of that measurement's 0.95 and 0.25.
+const float FONT_CAP = 0.70
+const float FONT_EX = 0.55
 
 int nextBoxId = 1
 // every box of the current layout, indexed by id (parentBox looks parents up here)
@@ -263,6 +269,30 @@ int func spaceWidth(s:Style) {
 
 int func fontAscent(s:Style) {
     return roundPx(s.fontSize.toFloat() * FONT_ASCENT)
+}
+
+// How far above the baseline `text-box-trim` trims the first line to,
+// or -1 when this block does not trim that end. A trim removes all the
+// leading, so the answer is a font edge rather than a share of it.
+int func textBoxOverEdge(s:Style) {
+    int packed = textBoxPacked(s)
+    if packed < 0 { return -1 }
+    int trim = Math.floorDiv(packed, 16)
+    if trim != TBTRIM_START && trim != TBTRIM_BOTH { return -1 }
+    int over = Math.floorDiv(packed % 16, 4)
+    if over == TBOVER_CAP { return roundPx(s.fontSize.toFloat() * FONT_CAP) }
+    if over == TBOVER_EX { return roundPx(s.fontSize.toFloat() * FONT_EX) }
+    return roundPx(s.fontSize.toFloat() * FONT_ASCENT)
+}
+
+// And how far below it trims the last line to, or -1.
+int func textBoxUnderEdge(s:Style) {
+    int packed = textBoxPacked(s)
+    if packed < 0 { return -1 }
+    int trim = Math.floorDiv(packed, 16)
+    if trim != TBTRIM_END && trim != TBTRIM_BOTH { return -1 }
+    if packed % 4 == TBUNDER_ALPHABETIC { return 0 }
+    return roundPx(s.fontSize.toFloat() * FONT_DESCENT)
 }
 
 int func fontDescent(s:Style) {
@@ -2600,6 +2630,19 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
         placeInline(b.children[i])
     }
     finishLine(false)
+    // The other half of `text-box-trim`: the last line's bottom, now
+    // that there is a last line. Trimming it shortens the block by what
+    // it removes, which is what the height below picks up.
+    if anyTextBoxTrim && b.lines.length > 0 {
+        int under = textBoxUnderEdge(b.style)
+        if under >= 0 {
+            int li = b.lines.length - 1
+            int lAbove = b.lines[li].baseline - b.lines[li].y
+            int lBelow = b.lines[li].h - lAbove
+            b.lines[li].h = lAbove + under
+            ifcY = ifcY - (lBelow - under)
+        }
+    }
     int h = ifcY - cy
     if b.lines.length > 0 {
         Line last = b.lines[b.lines.length - 1]
@@ -2844,6 +2887,17 @@ void func finishLineUncounted(forced:bool) {
                 below = maxInt(below, total - a)
             }
         }
+    }
+    // CSS Inline 3: `text-box-trim` takes the leading off the first
+    // line's top. The last line's bottom is trimmed once the block's
+    // lines are all in, since which one is last is not known here.
+    if anyTextBoxTrim && ifcLineCount == 0 {
+        // Set to the edge rather than shrink to it: at a line height
+        // below the content height the leading is negative, and
+        // trimming it then makes the line taller. That is what the
+        // measurement shows -- 24 at line-height 1, 2 and 3 alike.
+        int over = textBoxOverEdge(bs)
+        if over >= 0 { above = over }
     }
     int lineH = above + below
     int baseline = ifcY + above

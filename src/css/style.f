@@ -1252,6 +1252,32 @@ Len func lenPercent(pct:float) {
 }
 
 // Resolves a length against a containing size; `auto` answers `dflt`.
+// CSS Inline 3. A line box is taller than its text by the leading, half
+// above and half below. `text-box-trim` says which of those halves to
+// drop, and `text-box-edge` which two of the font's edges the height
+// then runs between. Measured: `trim-both` leaves ascent plus descent
+// whatever the line height is, so it removes all the leading rather
+// than a fixed amount (todo.md).
+const int TBTRIM_NONE = 0
+const int TBTRIM_START = 1
+const int TBTRIM_END = 2
+const int TBTRIM_BOTH = 3
+
+// The over edge, and the under edge. A single keyword is not a value of
+// `text-box-edge` -- Chromium computes `cap` alone back to `auto` --
+// so only `auto`, `text` and a pair are taken.
+const int TBOVER_TEXT = 0
+const int TBOVER_CAP = 1
+const int TBOVER_EX = 2
+const int TBUNDER_TEXT = 0
+const int TBUNDER_ALPHABETIC = 1
+
+// Packed as trim * 16 + over * 4 + under, in a map keyed by the
+// computed style's serial rather than a field on `Style`, for the
+// reason benchmarks.md records.
+map[int] textBoxOf = {}
+bool anyTextBoxTrim = false
+
 // CSS Overflow 4 §3.3. The edge an `overflow: clip` box clips to is its
 // padding box, and `overflow-clip-margin` moves that edge outward: by a
 // length, or by naming the box to start from. Held in a page-level map
@@ -1270,6 +1296,14 @@ int func clipMarginPacked(s:Style) {
     text k = `${s.serial}`
     if clipMarginOf[k] == null { return -1 }
     return clipMarginOf[k]
+}
+
+// The packed `text-box` value, or -1 when this style said nothing.
+int func textBoxPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if textBoxOf[k] == null { return -1 }
+    return textBoxOf[k]
 }
 
 int func motionIndexOf(s:Style) {

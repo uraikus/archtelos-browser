@@ -177,6 +177,9 @@ void func cascadeReset() {
     anyClipMargin = false
     map[int] emptyClipMargin = {}
     clipMarginOf = emptyClipMargin
+    anyTextBoxTrim = false
+    map[int] emptyTextBox = {}
+    textBoxOf = emptyTextBox
     map[int] emptyMotion = {}
     motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
@@ -4679,6 +4682,41 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     return got
 }
 
+// ---- CSS Inline 3: text-box-trim and text-box-edge ------------------------
+
+int func textBoxTrimKeyword(w:ascii) {
+    if w == 'trim-both' { return TBTRIM_BOTH }
+    if w == 'trim-start' { return TBTRIM_START }
+    if w == 'trim-end' { return TBTRIM_END }
+    if w == 'none' { return TBTRIM_NONE }
+    return -1
+}
+
+// `text-box-edge: auto | <text-edge>`, where a bare over-edge keyword is
+// *not* a value: Chromium computes `cap` alone back to `auto`, and only
+// `auto`, `text` and a pair are taken (todo.md records the measurement).
+// Returns over * 4 + under, or -1 for a value that is none of those.
+int func textBoxEdgePair(words:arr[ascii], from:int) {
+    int n = words.length - from
+    if n <= 0 { return -1 }
+    if n == 1 {
+        if words[from] == 'auto' || words[from] == 'text' {
+            return TBOVER_TEXT * 4 + TBUNDER_TEXT
+        }
+        return -1
+    }
+    int over = -1
+    if words[from] == 'text' { over = TBOVER_TEXT }
+    else if words[from] == 'cap' { over = TBOVER_CAP }
+    else if words[from] == 'ex' { over = TBOVER_EX }
+    if over < 0 { return -1 }
+    int under = -1
+    if words[from + 1] == 'text' { under = TBUNDER_TEXT }
+    else if words[from + 1] == 'alphabetic' { under = TBUNDER_ALPHABETIC }
+    if under < 0 { return -1 }
+    return over * 4 + under
+}
+
 // ---- CSS Motion Path 1 ---------------------------------------------------
 
 // `offset-path: none | ray() | <basic-shape> | path()`. The basic
@@ -6376,6 +6414,43 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     // Every value but `visible` clips what runs past the box.
     s.overflowHidden = s.overflowX != OVERFLOW_VISIBLE || s.overflowY != OVERFLOW_VISIBLE
+    // CSS Inline 3. The shorthand is read first so a longhand beside it
+    // wins, which is what the cascade already does for every other pair.
+    int tbTrim = TBTRIM_NONE
+    int tbEdge = TBOVER_TEXT * 4 + TBUNDER_TEXT
+    bool tbSaid = false
+    ascii tbShort = styleProp(props, 'text-box')
+    if tbShort != null {
+        ascii tbsLow = asciiLower(asciiTrim(tbShort))
+        arr[ascii] w = asciiSplitSpace(tbsLow)
+        if w.length > 0 {
+            int t = textBoxTrimKeyword(w[0])
+            if t >= 0 {
+                tbTrim = t
+                tbSaid = true
+                if w.length > 1 {
+                    int e = textBoxEdgePair(w, 1)
+                    if e >= 0 { tbEdge = e }
+                }
+            }
+        }
+    }
+    ascii tbTrimV = styleProp(props, 'text-box-trim')
+    if tbTrimV != null {
+        int t = textBoxTrimKeyword(asciiLower(asciiTrim(tbTrimV)))
+        if t >= 0 { tbTrim = t  tbSaid = true }
+    }
+    ascii tbEdgeV = styleProp(props, 'text-box-edge')
+    if tbEdgeV != null {
+        ascii tbeLow = asciiLower(asciiTrim(tbEdgeV))
+        arr[ascii] w = asciiSplitSpace(tbeLow)
+        int e = textBoxEdgePair(w, 0)
+        if e >= 0 { tbEdge = e  tbSaid = true }
+    }
+    if tbSaid {
+        textBoxOf[`${s.serial}`] = tbTrim * 16 + tbEdge
+        if tbTrim != TBTRIM_NONE { anyTextBoxTrim = true }
+    }
     // `overflow-clip-margin: <visual-box> || <length [0,inf]>`. The box
     // defaults to the padding box, which is what an unmoved clip edge
     // already is, and the length to zero.

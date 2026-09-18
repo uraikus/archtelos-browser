@@ -1072,7 +1072,7 @@ arr[text] supportedProperties = [
     'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
     'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
     'border-spacing', 'border-collapse',
-    'overflow-clip-margin',
+    'overflow-clip-margin', 'text-box-trim', 'text-box-edge',
     'offset-path', 'offset-distance', 'offset-rotate', 'offset-anchor', 'offset-position',
     'anchor-name', 'anchor-scope', 'position-anchor', 'position-area', 'position-try-fallbacks', 'position-try-order', 'position-visibility',
     'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
