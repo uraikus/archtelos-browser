@@ -305,6 +305,48 @@ container's own children, which is the depth this engine fragments and
 measures at everywhere else. A grandchild carrying `scroll-snap-align`
 is not a snap point, where in the standard it is.
 
+### The position-try retry loop
+
+`position-try-fallbacks`, `position-try-order` and `position-visibility`
+all need the same mechanism: lay the anchored box out, test it for
+overflow against its containing block, and lay it out again at the next
+candidate. That is a retry loop around positioning rather than a
+property, which is why the three are uncounted until it exists.
+
+**Chromium 141 measured first.** A 400x300 containing block that clips,
+an anchor 100x20 whose top varies, and a 40x30 box naming it:
+
+| anchor top | `position-area` | fallbacks | result |
+|---|---|---|---|
+| 150 | `top` | none | y 120 |
+| 10 | `top` | none | y **-20** |
+| 10 | `top` | `bottom` | y 30 |
+| 150 | `top` | `bottom` | y 120 |
+| 10 | `top` | `left, bottom` | x 110, y 5 |
+| 10 | `top` | `flip-block` | y 30 |
+| 150 | `left` | `flip-inline` | unchanged |
+| 270 | `bottom` | `top` | y 240 |
+| 10 | `top` | `top` | y **-20** |
+
+The algorithm those rows describe: take the position `position-area`
+gives; if it does not overflow the containing block, keep it; otherwise
+try each fallback in written order and take **the first that fits**, not
+the best-fitting one -- `left, bottom` from an overflowing `top` lands
+on `left`, which is merely first. If none fits, the original position
+stands, which is what the last row pins: an implementation that kept the
+last candidate it tried, or the one that overflowed least, would put the
+box somewhere else.
+
+A fallback that is a `flip-` keyword transforms the current area rather
+than naming a new one: `flip-block` swaps the before and after bands of
+the block axis, `flip-inline` the inline axis, and `flip-start` exchanges
+the two axes. A flip is not applied at all when the original fits, which
+the `flip-inline` row shows.
+
+Not yet probed, and needed before those two are implemented rather than
+merely stored: what `position-try-order` sorts the candidates by, and
+when `position-visibility` hides a box rather than moving it.
+
 ### What is left of CSS Anchor Positioning 1
 
 `anchor-name`, `position-anchor` and `position-area` place a box against
