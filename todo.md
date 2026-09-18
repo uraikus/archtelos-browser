@@ -389,6 +389,57 @@ a background and a border per fragment. What is missing is the choice
 between the two, and the extra advance `clone` needs at each break so
 the closing border has room.
 
+### What `text-box-trim` and `text-box-edge` were measured to be
+
+A 20px/2 monospace block holding "Hxy", read by its own height. The
+whole line box is 40; the trimmed heights are:
+
+| declaration | height |
+|---|---|
+| none | 40 |
+| `text-box-trim: trim-both` | 24 |
+| `trim-start` alone | 32 |
+| `trim-end` alone | 32 |
+| `trim-both`, edge `text` | 24 |
+| ... `cap alphabetic` | 14 |
+| ... `ex alphabetic` | 11 |
+| ... `text alphabetic` | 19 |
+| ... `cap text` | 19 |
+| ... `ex text` | 16 |
+| `text-box: trim-both cap alphabetic` | 14 |
+
+Every row is the same four font metrics -- ascent 19, descent 5, cap
+height 14, x-height 11 -- and they cross-check: text..text is 19 + 5 =
+24, cap..text is 14 + 5 = 19, ex..text is 11 + 5 = 16. So the pair of
+properties is "trim the leading from one or both ends, and run the
+remaining height between two of the font's edges".
+
+Two things the grammar does not lead you to expect:
+
+- **A single keyword is rejected.** `text-box-edge: cap`, `ex`,
+  `ideographic` and `ideographic-ink` all compute back to `auto`. Only
+  `auto`, `text` or a pair is accepted.
+- **`trim-both` removes all the leading, not a fixed amount.** At
+  line-height 1, 2 and 3 alike the trimmed height is 24. Half the
+  leading is 8 at line-height 2 and negative at line-height 1, and the
+  answer does not care.
+
+**The engine needs no new capability for this.** It reads no font
+metrics at all -- Festina exposes only a string's inked width -- so it
+already models them as ratios per em, `FONT_ASCENT = 0.93` and
+`FONT_DESCENT = 0.24`, and already computes
+`half = (lineHeight - (ascent + descent)) / 2` in the strut and again
+per text fragment. `trim-both` is exactly "drop `half`", and at 20px
+those constants give 19 + 5 = 24, which is Chromium's number. The
+default case is free; only the `cap` and `ex` over-edges need constants
+added, at 0.70 and 0.55 per em.
+
+Those existing two were evidently estimated rather than measured, and
+land within 0.02 of Chromium's 0.95 and 0.25.
+
+A 40px font gives 46 rather than twice 24, so the metrics do not scale
+linearly and a test should hold the font size still.
+
 ### After the official definition
 
 the media features about a user's own preferences that
