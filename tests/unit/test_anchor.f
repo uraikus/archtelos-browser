@@ -252,4 +252,162 @@ check(orderedY('bottom', 'bottom, top', 'most-block-size')
       != orderedY('bottom', 'bottom, top', ''),
       'and each of them moves the box at all')
 
+// ---- which of several anchors of one name --------------------------------
+// Measured against Chromium: an anchor that comes after the box in tree
+// order is not a candidate at all, and of the ones before it the last
+// wins. A registry holding one rectangle per name cannot say either --
+// the document's last writer is the only answer it has -- so the box
+// between two anchors is the row that tells the two rules apart.
+//
+// Both anchors carry `--a`: one at (20, 20), one at (200, 200), each
+// 40x30. The box is 40x30 and asks for `bottom center`, so it lands at
+// the anchor's own x and 30 below its top.
+Box func treeOrder(where:text) {
+    cascadeReset()
+    cssViewportWidth = 600
+    text near = '<div style="position:absolute;left:20px;top:20px;width:40px;'
+        + 'height:30px;anchor-name:--a"></div>'
+    text far = '<div style="position:absolute;left:200px;top:200px;width:40px;'
+        + 'height:30px;anchor-name:--a"></div>'
+    text pos = '<div id="pos" style="position:absolute;position-anchor:--a;'
+        + 'width:40px;height:30px;position-area:bottom center"></div>'
+    text inner = near + far + pos
+    if where == 'between' { inner = near + pos + far }
+    if where == 'before' { inner = pos + near + far }
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="position:relative;width:400px;height:300px">'
+        + inner + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return anchorBoxById(layoutDocument(doc, 600), 'pos')
+}
+
+Box tAfter = treeOrder('after')
+checkEqInt(tAfter.x, 200, 'with both anchors before it the box takes the last')
+checkEqInt(tAfter.y, 230, 'in the other axis too')
+
+Box tBetween = treeOrder('between')
+checkEqInt(tBetween.x, 20, 'an anchor after the box is not a candidate')
+checkEqInt(tBetween.y, 50, 'so the one before it is what the box resolves to')
+check(tBetween.x != tAfter.x, 'and moving the box past an anchor changes the answer')
+
+Box tBefore = treeOrder('before')
+checkEqInt(tBefore.x, 0, 'a box before every anchor of its name resolves to none')
+checkEqInt(tBefore.y, 0, 'and keeps the position it would have had')
+
+// ---- anchor-scope --------------------------------------------------------
+// A scope is a boundary in *both* directions, which is the part a
+// reading of "scopes the name to this element's subtree" gets wrong. An
+// anchor and a box see each other only when the nearest scope of that
+// name enclosing each of them is the same element -- so a box inside a
+// scope of `--a` is cut off from every `--a` outside it as well, even
+// when the scope holds no anchor of that name at all. That row, `empty
+// scope` below, is the one an outward-only implementation passes
+// everything else without.
+//
+// Two anchors of `--a`, one near at (20, 20) and one far at (200, 200),
+// each 40x30; the box is 40x30 and asks for `bottom center`, so it
+// lands at its anchor's own x and 30 below its top, and at (0, 0) when
+// it resolves to no anchor at all.
+text ANEAR = '<div style="position:absolute;left:20px;top:20px;width:40px;'
+    + 'height:30px;anchor-name:--a"></div>'
+text AFAR = '<div style="position:absolute;left:200px;top:200px;width:40px;'
+    + 'height:30px;anchor-name:--a"></div>'
+text APOS = '<div id="pos" style="position:absolute;position-anchor:--a;'
+    + 'width:40px;height:30px;position-area:bottom center"></div>'
+
+Box func scopeCase(inner:text, id:text) {
+    cascadeReset()
+    cssViewportWidth = 600
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="position:relative;width:400px;height:300px">'
+        + inner + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return anchorBoxById(layoutDocument(doc, 600), id)
+}
+
+int func scopeX(inner:text) { Box b = scopeCase(inner, 'pos')  return b == null ? -1 : b.x }
+int func scopeY(inner:text) { Box b = scopeCase(inner, 'pos')  return b == null ? -1 : b.y }
+
+text func scopeOf(names:text, inner:text) {
+    return '<div style="anchor-scope:' + names + '">' + inner + '</div>'
+}
+
+// The control: no scope anywhere, so the box takes the only anchor.
+checkEqInt(scopeX(ANEAR + APOS), 20, 'with no scope the box finds the anchor')
+checkEqInt(scopeY(ANEAR + APOS), 50, 'in both axes')
+
+// Outward: a scoped name does not reach a box outside the scope.
+checkEqInt(scopeX(scopeOf('--a', ANEAR) + APOS), 0, 'a scoped anchor is hidden from outside')
+checkEqInt(scopeY(scopeOf('--a', ANEAR) + APOS), 0, 'so the box keeps its own position')
+check(scopeX(scopeOf('--a', ANEAR) + APOS) != scopeX(ANEAR + APOS),
+      'which is not where the unscoped page put it')
+
+// Inward: a box inside a scope takes the scope's own anchor over one
+// outside it.
+checkEqInt(scopeX(AFAR + scopeOf('--a', ANEAR + APOS)), 20,
+           'a box inside a scope takes the scoped anchor')
+checkEqInt(scopeY(AFAR + scopeOf('--a', ANEAR + APOS)), 50, 'and not the outer one')
+
+// The row that matters: the scope declares `--a` and holds no anchor of
+// that name, and the box inside it resolves to nothing rather than
+// reaching the `--a` outside.
+checkEqInt(scopeX(AFAR + scopeOf('--a', APOS)), 0,
+           'an empty scope cuts the box off from an outer anchor too')
+checkEqInt(scopeY(AFAR + scopeOf('--a', APOS)), 0, 'in both axes')
+check(scopeX(AFAR + scopeOf('--a', APOS)) != scopeX(AFAR + APOS),
+      'which is not what the same page without the scope does')
+
+// Nesting: the innermost scope of the name owns it.
+checkEqInt(scopeX(scopeOf('--a', AFAR + scopeOf('--a', ANEAR + APOS))), 20,
+           'a box in the inner of two scopes takes the inner anchor')
+checkEqInt(scopeX(scopeOf('--a', AFAR + scopeOf('--a', ANEAR) + APOS)), 200,
+           'and a box in the outer one takes the outer anchor')
+checkEqInt(scopeY(scopeOf('--a', AFAR + scopeOf('--a', ANEAR) + APOS)), 230,
+           'in both axes')
+
+// `all` scopes every name; `none` is the initial value and scopes none;
+// a name the scope does not list is left alone. The last two must agree
+// with the unscoped control, which is the only way to tell a keyword
+// that does nothing from one that is read and means nothing here.
+checkEqInt(scopeX(scopeOf('all', ANEAR) + APOS), 0, 'all hides every name outward')
+checkEqInt(scopeX(AFAR + scopeOf('all', APOS)), 0, 'and inward')
+checkEqInt(scopeX(scopeOf('none', ANEAR) + APOS), scopeX(ANEAR + APOS),
+           'none scopes nothing, so the page reads as if it were absent')
+checkEqInt(scopeX(scopeOf('--b', ANEAR) + APOS), scopeX(ANEAR + APOS),
+           'and a scope of another name leaves --a alone')
+check(scopeX(scopeOf('none', ANEAR) + APOS) != scopeX(scopeOf('all', ANEAR) + APOS),
+      'while none and all do not agree with each other')
+
+// A list scopes each of its names.
+text BNEAR = '<div style="position:absolute;left:20px;top:20px;width:40px;'
+    + 'height:30px;anchor-name:--b"></div>'
+text BPOS = '<div id="pos" style="position:absolute;position-anchor:--b;'
+    + 'width:40px;height:30px;position-area:bottom center"></div>'
+checkEqInt(scopeX(BNEAR + BPOS), 20, 'the --b control finds its anchor')
+checkEqInt(scopeX(scopeOf('--a, --b', BNEAR) + BPOS), 0,
+           'and a two-name scope covers the second name as well')
+
+// A scope encloses itself, not only its descendants: the element that
+// declares both is hidden from outside, and a box that scopes a name is
+// cut off from every anchor of it.
+text SELFANC = '<div style="position:absolute;left:20px;top:20px;width:40px;'
+    + 'height:30px;anchor-name:--a;anchor-scope:--a"></div>'
+checkEqInt(scopeX(SELFANC + APOS), 0, 'an element scoping its own name hides itself')
+text SELFPOS = '<div id="pos" style="position:absolute;position-anchor:--a;'
+    + 'anchor-scope:--a;width:40px;height:30px;position-area:bottom center"></div>'
+checkEqInt(scopeX(ANEAR + SELFPOS), 0, 'and a box that scopes the name sees no anchor')
+
+// Two sibling scopes of one name, which is what the property is for:
+// each box takes the anchor from its own subtree.
+text PAIR = scopeOf('--a', ANEAR + APOS)
+    + scopeOf('--a', AFAR + '<div id="two" style="position:absolute;'
+      + 'position-anchor:--a;width:40px;height:30px;position-area:bottom center"></div>')
+Box pairOne = scopeCase(PAIR, 'pos')
+Box pairTwo = scopeCase(PAIR, 'two')
+checkEqInt(pairOne.x, 20, 'of two sibling scopes the first box takes its own anchor')
+checkEqInt(pairTwo.x, 200, 'and the second takes its own')
+check(pairOne.x != pairTwo.x, 'so the two subtrees resolve the one name differently')
+
 finish('anchor positioning')

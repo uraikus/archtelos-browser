@@ -305,79 +305,16 @@ container's own children, which is the depth this engine fragments and
 measures at everywhere else. A grandchild carrying `scroll-snap-align`
 is not a snap point, where in the standard it is.
 
-### What `position-try-order` and `position-visibility` still need
+### What CSS Anchor Positioning still needs
 
-The retry loop exists: an anchored box that overflows its containing
-block walks `position-try-fallbacks` in written order and takes the
-first candidate that fits, leaving the original position alone when none
-does. `flip-block`, `flip-inline` and `flip-start` transform the area in
-force rather than naming a new one.
+All seven properties work. What sits beside them does not:
 
-`position-try-order` sorts the candidates by the room each region
-offers in the named axis, most first, and that sort applies whether or
-not the original position overflows -- it is a choice among the
-candidates rather than a repair of a bad one, which is what Chromium
-shows by moving a box out of a `bottom` that fits.
-
-### What `anchor-scope` was measured to be
-
-`anchor-scope` is the last of the specification's seven properties, and
-it is not implemented or counted. Twenty-seven cases put it, and the
-anchor resolution it modifies, to Chromium first: a 400x300 relative
-block, an anchor of a known offset, and a 40x30 box naming it with
-`position-area: bottom center`. The box's own rectangle names the anchor
-it found, and a box that found none sits at its containing block's
-origin, so the outcomes are told apart by two numbers.
-
-**The scope is a boundary in both directions**, which is what a reading
-of "scopes the name to this element's subtree" gets wrong. An
-implementation that only stopped a scoped name from leaking outward
-agrees with Chromium on every row but the fourth:
-
-| the scope | where the `--a` anchor is | where the box is | the box lands on |
-|---|---|---|---|
-| none | outside | outside | the anchor |
-| `--a` | inside it | outside | nothing |
-| `--a` | one inside, one outside | inside it | the inner one |
-| `--a` | outside only | inside it | **nothing** |
-| `--a` and `--a` nested | in each | in the inner | the inner one |
-| `--a` and `--a` nested | in each | in the outer | the outer one |
-| `all` | inside it | outside | nothing |
-| `all` | outside only | inside it | nothing |
-| `none` | inside it | outside | the anchor |
-| `--b` | inside it | outside | the anchor |
-| `--a, --b` | a `--b` inside it | outside | nothing |
-
-So the rule is not "a name declared in the subtree stays in it" but
-"an anchor and a box see each other only when the nearest scope of that
-name enclosing each of them is the same element". A box inside a scope
-of `--a` is cut off from every `--a` outside it even when the scope
-holds no anchor at all, and a scope covers **itself** as well as its
-descendants: `anchor-scope` and `anchor-name` on one element hide that
-element from outside, and `anchor-scope` on the positioned box hides
-every anchor from it.
-
-Two rules of resolution that this engine does not follow came out of the
-same measurement, and they are not about scope:
-
-- **An anchor that comes after the box in tree order is not a
-  candidate.** With an anchor at each side of the box, the box takes the
-  one before it; with only one after it, the box is unanchored. This
-  engine keeps one rectangle per name and takes the last writer in the
-  whole document, so it takes the wrong one of the two.
-- **An anchor must be a descendant of the box's containing block**, and
-  being that containing block is not enough: a box inside its own
-  anchor, and a box in a `position: relative` block with the anchor
-  outside, are both unanchored. This engine does not ask.
-
-The first is a filter this engine can apply by resolving each box
-against the anchors seen so far in one tree-order walk. The second needs
-the placement pass to carry the identity of a box's containing block,
-which it does not -- it carries the four numbers of its rectangle -- so
-it stays recorded here rather than done.
-
-Where several candidates survive all of that, the last in tree order
-wins.
+**An anchor must be a descendant of the box's containing block**, and
+being that containing block is not enough. A box inside its own anchor,
+and a box in a `position: relative` block whose anchor is outside it,
+are both unanchored in Chromium and both find their anchor here. The
+placement pass carries a containing block's four numbers rather than its
+identity, so it cannot ask; giving it the identity is the work.
 
 `position-visibility` treats **`anchors-visible` as `always`**. Telling
 the two apart needs the anchor scrolled out of a scrollport while the

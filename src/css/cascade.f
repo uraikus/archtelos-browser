@@ -170,6 +170,7 @@ void func cascadeReset() {
     anyCornerShape = false
     cornerCustomK = []
     anyAnchorName = false
+    anyAnchorScope = false
     anchorInfos = []
     map[bool] emptyHidden = {}
     anchorHiddenIds = emptyHidden
@@ -5570,8 +5571,14 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if visv != null && asciiLower(asciiTrim(visv)) == 'no-overflow' {
         aVis = POSVIS_NO_OVERFLOW
     }
+    text aScope = ''
+    ascii scopev = styleProp(props, 'anchor-scope')
+    if scopev != null {
+        ascii st = asciiLower(asciiTrim(scopev))
+        if st != 'none' && st != '' { aScope = st.toText() }
+    }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
-        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS {
+        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != '' {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
@@ -5579,9 +5586,11 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ai.fallbacks = aFall
         ai.tryOrder = aOrder
         ai.visibility = aVis
+        ai.scope = aScope
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }
+        if aScope != '' { anyAnchorScope = true }
     }
     s.cornerShapes = 0
     if cshTL != CORNER_K_ROUND || cshTR != CORNER_K_ROUND

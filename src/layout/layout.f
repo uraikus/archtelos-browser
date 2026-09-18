@@ -5205,25 +5205,127 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
 // final rectangle until that pass is done. An anchor that is itself
 // anchored would need a second round; the standard forbids the cycle
 // that would make one necessary.
-map[int] anchorRectX = {}
-map[int] anchorRectY = {}
-map[int] anchorRectW = {}
-map[int] anchorRectH = {}
-bool anchorRectsFound = false
+// The walk keeps, for each anchor name, the rectangle of the last
+// element carrying it that it has passed, and resolves each anchored
+// box against that as it reaches the box. So an anchor is a candidate
+// only when it comes before the box in tree order, and of the ones
+// that do, the last wins -- which is what Chromium does and what one
+// rectangle per name for the whole document cannot express, since the
+// document's last writer is the only answer such a registry has.
+map[int] anchorLiveX = {}
+map[int] anchorLiveY = {}
+map[int] anchorLiveW = {}
+map[int] anchorLiveH = {}
+// The answer, per box, so the placement pass does not resolve again.
+map[int] anchorBoxX = {}
+map[int] anchorBoxY = {}
+map[int] anchorBoxW = {}
+map[int] anchorBoxH = {}
+bool anchorBoxFound = false
 
-void func collectAnchors(b:Box) {
+// `anchor-scope` makes a name mean different anchors in different parts
+// of the document, so the live rectangles are keyed by the scope a name
+// is in rather than by the name alone. The scope of a name at a point in
+// the walk is the nearest enclosing element that scopes it, itself
+// included, or nothing; an anchor and a box see each other only when
+// they agree on that element. That is a boundary in *both* directions:
+// a box inside a scope of `--a` is cut off from every `--a` outside it
+// as well, even when the scope holds none of its own (todo.md records
+// the measurement). A page that scopes nothing keys by the bare name and
+// never touches the stack below.
+map[int] scopeNameId = {}       // name -> the element scoping it
+map[int] scopeNameDepth = {}    // and how deep that element is
+// `all` is held under a key no dashed identifier can spell, so one
+// lookup pair serves both spellings of the property.
+const text SCOPE_ALL_KEY = '*'
+// The walk's undo log: what each push overwrote. A push returns how
+// many entries it added, and leaving the element pops exactly that many.
+arr[text] scopeSavedName = []
+arr[int] scopeSavedId = []
+arr[int] scopeSavedDepth = []
+
+int func anchorScopeDepthOf(name:text) {
+    if scopeNameDepth[name] == null { return -1 }
+    return scopeNameDepth[name]
+}
+
+// The deeper of the two candidates wins, which is what makes an inner
+// `anchor-scope: --a` override an outer `anchor-scope: all` and the
+// other way round.
+text func anchorScopeKey(name:text) {
+    if !anyAnchorScope { return name }
+    int byName = anchorScopeDepthOf(name)
+    int byAll = anchorScopeDepthOf(SCOPE_ALL_KEY)
+    if byName < 0 && byAll < 0 { return `0 ${name}` }
+    if byName > byAll { return `${scopeNameId[name]} ${name}` }
+    return `${scopeNameId[SCOPE_ALL_KEY]} ${name}`
+}
+
+void func anchorScopeEnter(name:text, id:int, depth:int) {
+    scopeSavedName.push(name)
+    scopeSavedId.push(scopeNameId[name] == null ? 0 : scopeNameId[name])
+    scopeSavedDepth.push(anchorScopeDepthOf(name))
+    scopeNameId[name] = id
+    scopeNameDepth[name] = depth
+}
+
+// How many names this element scopes, having entered each of them.
+int func anchorScopePush(sc:text, id:int, depth:int) {
+    if sc == 'all' {
+        anchorScopeEnter(SCOPE_ALL_KEY, id, depth)
+        return 1
+    }
+    int n = 0
+    arr[ascii] parts = asciiSplitChar(sc.toAscii(), CH_COMMA)
+    for int i = 0, i < parts.length, i++ {
+        ascii nm = asciiTrim(parts[i])
+        if nm == '' { continue }
+        anchorScopeEnter(nm.toText(), id, depth)
+        n = n + 1
+    }
+    return n
+}
+
+void func anchorScopePop(n:int) {
+    for int i = 0, i < n, i++ {
+        text nm = scopeSavedName.pop()
+        scopeNameId[nm] = scopeSavedId.pop()
+        scopeNameDepth[nm] = scopeSavedDepth.pop()
+    }
+}
+
+void func collectAnchors(b:Box, depth:int) {
     if b == null { return }
+    int pushed = 0
     if b.style != null && b.style.anchorInfo > 0 {
         AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        // The scope covers the element declaring it, so it goes up
+        // before this element's own name and anchor are looked at.
+        if anyAnchorScope && ai.scope != '' {
+            pushed = anchorScopePush(ai.scope, b.id, depth)
+        }
+        // Resolving before declaring is what stops an element that both
+        // names an anchor and is one from anchoring to itself.
+        if ai.anchor != '' && boxIsOutOfFlow(b) {
+            text key = anchorScopeKey(ai.anchor)
+            if anchorLiveW[key] != null {
+                anchorBoxX[`${b.id}`] = anchorLiveX[key]
+                anchorBoxY[`${b.id}`] = anchorLiveY[key]
+                anchorBoxW[`${b.id}`] = anchorLiveW[key]
+                anchorBoxH[`${b.id}`] = anchorLiveH[key]
+                anchorBoxFound = true
+            }
+        }
         if ai.name != '' {
-            anchorRectX[ai.name] = b.x
-            anchorRectY[ai.name] = b.y
-            anchorRectW[ai.name] = b.w
-            anchorRectH[ai.name] = b.h
-            anchorRectsFound = true
+            text key = anchorScopeKey(ai.name)
+            anchorLiveX[key] = b.x
+            anchorLiveY[key] = b.y
+            anchorLiveW[key] = b.w
+            anchorLiveH[key] = b.h
         }
     }
-    for int i = 0, i < b.children.length, i++ { collectAnchors(b.children[i]) }
+    for int i = 0, i < b.children.length, i++ { collectAnchors(b.children[i], depth + 1) }
+    if pushed > 0 { anchorScopePop(pushed) }
 }
 
 // Where a box of `size` goes in one axis, given the anchor's two edges
@@ -5302,11 +5404,11 @@ void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
     if b == null { return }
     if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
         AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
-        if ai.area != PAREA_NONE && ai.anchor != '' && anchorRectW[ai.anchor] != null {
-            int ax = anchorRectX[ai.anchor]
-            int ay = anchorRectY[ai.anchor]
-            int aw = anchorRectW[ai.anchor]
-            int ah = anchorRectH[ai.anchor]
+        if ai.area != PAREA_NONE && anchorBoxW[`${b.id}`] != null {
+            int ax = anchorBoxX[`${b.id}`]
+            int ay = anchorBoxY[`${b.id}`]
+            int aw = anchorBoxW[`${b.id}`]
+            int ah = anchorBoxH[`${b.id}`]
             anchorPlaceAt(ai.area, ax, ay, aw, ah, b)
             int wantX = anchorTryX
             int wantY = anchorTryY
@@ -5561,13 +5663,30 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
             map[int] emptyY = {}
             map[int] emptyW = {}
             map[int] emptyH = {}
-            anchorRectX = emptyX
-            anchorRectY = emptyY
-            anchorRectW = emptyW
-            anchorRectH = emptyH
-            anchorRectsFound = false
-            collectAnchors(root)
-            if anchorRectsFound { placeAnchored(root, 0, 0, width, root.h) }
+            map[int] emptyBX = {}
+            map[int] emptyBY = {}
+            map[int] emptyBW = {}
+            map[int] emptyBH = {}
+            anchorLiveX = emptyX
+            anchorLiveY = emptyY
+            anchorLiveW = emptyW
+            anchorLiveH = emptyH
+            anchorBoxX = emptyBX
+            anchorBoxY = emptyBY
+            anchorBoxW = emptyBW
+            anchorBoxH = emptyBH
+            anchorBoxFound = false
+            if anyAnchorScope {
+                map[int] emptySId = {}
+                map[int] emptySDepth = {}
+                scopeNameId = emptySId
+                scopeNameDepth = emptySDepth
+                scopeSavedName = []
+                scopeSavedId = []
+                scopeSavedDepth = []
+            }
+            collectAnchors(root, 0)
+            if anchorBoxFound { placeAnchored(root, 0, 0, width, root.h) }
         }
     }
     return root

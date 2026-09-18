@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `anchor-scope`, and two rules of resolution it exposed
+
+`anchor-scope: none | all | <dashed-ident>#` scopes an anchor name to an
+element's subtree. **It is a boundary in both directions**, which the
+property's own description does not say: a box inside a scope of `--a`
+is cut off from every `--a` outside it as well, even when the scope
+holds no anchor of that name at all. The rule is symmetric -- an anchor
+and a box see each other only when the nearest scope of the name
+enclosing each of them is the same element -- and the scope covers the
+element declaring it, so `anchor-scope` and `anchor-name` together hide
+an element from outside, and a box that scopes a name sees no anchor of
+it anywhere. An implementation that only stopped a scoped name leaking
+outward agrees with Chromium on every case tried but those.
+
+**Two resolution rules came out of the same measurement**, neither of
+them about scope. An anchor that comes after the box in tree order is
+not a candidate, and of the ones before it the last wins; this engine
+kept one rectangle per name and took the document's last writer, so a
+box between two anchors took the wrong one. And an anchor must be a
+descendant of the box's containing block -- a box inside its own anchor
+is unanchored -- which stays unimplemented and recorded, because the
+placement pass carries a containing block's four numbers rather than its
+identity.
+
+The first fell out of the fix for the scope. One tree-order walk now
+keeps the live rectangle of each name, resolves each anchored box
+against what it has passed, and stores the answer per box, so the
+placement pass no longer resolves anything. The names are keyed by the
+scope they are in; a page that scopes nothing keys by the bare name and
+never touches the scope stack, which is one bool test per box.
+
+**248 of 405.** All seven of the specification's properties work.
+
 ### `position-visibility`, and a probe that asked the wrong question
 
 An anchored box that still overflows its containing block once every
@@ -36,7 +69,7 @@ per box -- 2,728 of them on the benchmark page -- where a field costs
 whether or not anything reads it.
 
 **247 of 405.** Six of the specification's seven properties work;
-`anchor-scope` alone is left, and needs a scope tree.
+`anchor-scope` alone is left.
 
 ### `position-try-order`, which is not part of the retry loop
 

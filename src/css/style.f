@@ -415,6 +415,9 @@ struct AnchorInfo {
     fallbacks:text       // position-try-fallbacks, as written
     tryOrder:int         // position-try-order, as a TRYORDER_ value
     visibility:int       // position-visibility, as a POSVIS_ value
+    // anchor-scope, lowercased and as written: '' for `none`, 'all',
+    // or the comma-separated list of names this element scopes.
+    scope:text
 }
 
 // This page's anchor declarations; `Style.anchorInfo` is an index into
@@ -424,6 +427,11 @@ arr[AnchorInfo] anchorInfos = []
 // Whether any element on this page declared an anchor name at all, so
 // that a document with none skips both walks the feature would add.
 bool anyAnchorName = false
+
+// Whether any element scoped a name. A page with none resolves each
+// anchor under its bare name, as it did before the property existed,
+// and pays nothing for the scope stack -- one bool test per box.
+bool anyAnchorScope = false
 
 AnchorInfo func anchorInfoOf(idx:int) {
     if idx <= 0 || idx > anchorInfos.length {
