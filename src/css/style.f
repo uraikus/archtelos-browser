@@ -1315,6 +1315,32 @@ bool func decorationIsClone(s:Style) {
     return decoCloneOf[`${s.serial}`] != null
 }
 
+// CSS Overscroll Behavior 1. A scroll container that has reached its
+// end normally passes the scroll outward, to the nearest ancestor that
+// can still take it and then to the page. `contain` and `none` stop
+// that chain at the box that declares them; they differ only in that
+// `none` also suppresses the overscroll affordance, and this browser
+// has none to suppress.
+const int OSB_AUTO = 0
+const int OSB_CONTAIN = 1
+const int OSB_NONE = 2
+
+// Packed as x * 4 + y, in a map keyed by the computed style's serial
+// rather than a field on `Style`, for the reason benchmarks.md records.
+map[int] overscrollOf = {}
+bool anyOverscrollBehavior = false
+
+int func overscrollPacked(s:Style) {
+    if !anyOverscrollBehavior || s == null { return 0 }
+    text k = `${s.serial}`
+    if overscrollOf[k] == null { return 0 }
+    return overscrollOf[k]
+}
+
+int func overscrollX(s:Style) { return Math.floorDiv(overscrollPacked(s), 4) }
+
+int func overscrollY(s:Style) { return overscrollPacked(s) % 4 }
+
 // The packed `text-box` value, or -1 when this style said nothing.
 int func textBoxPacked(s:Style) {
     if s == null { return -1 }

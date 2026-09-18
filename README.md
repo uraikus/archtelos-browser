@@ -433,7 +433,7 @@ real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text, box shadows,
-corner shapes, anchor visibility, motion paths, first lines, inline boxes and printed pages — three conformance
+corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour and printed pages — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

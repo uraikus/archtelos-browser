@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `overscroll-behavior`
+
+All five: the shorthand and `-x`, `-y`, `-inline`, `-block`. A scroll
+container that has reached its end passes a wheel outward, to the
+nearest ancestor that can still take it and then to the page;
+`contain` and `none` stop that chain at the box that declares them.
+The count is **261 of 405**, and `--fields` says all four graded rows
+moved `overscrollBehavior`.
+
+**The probe that would have measured the behaviour could not fail, and
+the control is what said so.** A synthetic `WheelEvent` is untrusted, so
+dispatching one over a nested scroller already at its end moves neither
+the scroller nor its ancestor — with `contain`, and equally with the
+default `auto`, where a real wheel would certainly chain. So Chromium
+answers the computed values here and nothing else, and the chain is
+graded against this engine's own scrolling, which is written down:
+`scrollContainerAt` walks outward from the box under the pointer, and
+`wheelAt` gives the remainder to the page.
+
+The check that earns its place is the one that does not depend on the
+keyword doing anything: a container that can **still** scroll takes the
+wheel whatever it declares. `overscroll-behavior` acts at the boundary
+and nowhere else, so `contain` and `auto` must be indistinguishable
+until the scroller runs out.
+
+**The two logical longhands are the two physical ones under other
+names.** Chromium reads `-inline` back as `-x` and `-block` as `-y`, and
+`dir="rtl"` changes neither; only a `writing-mode` could swap those axes
+and there is none here. So they are read into the same pair rather than
+resolved against a direction.
+
+**`contain` and `none` differ in nothing this browser does.** `none`
+also suppresses the overscroll affordance and there is none to suppress.
+The checks ask both keywords and expect the same answer, which says that
+where the two are alike rather than implying one does more.
+
 ### `box-decoration-break`
 
 `slice`, the initial value, is what the engine does. `clone` gives every

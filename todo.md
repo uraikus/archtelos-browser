@@ -371,9 +371,11 @@ coordinates, as though only the top and left sides existed. A
 is a defect rather than a decision, so it is written down here and not
 copied.
 
-### What `overscroll-behavior` was measured to be
+### What `overscroll-behavior` leaves out
 
-Five properties: the shorthand and `-x`, `-y`, `-inline`, `-block`.
+All five work: the shorthand and `-x`, `-y`, `-inline`, `-block`. This
+is what they were measured against and what is left over.
+
 Chromium's computed values, for a 100x60 `overflow: scroll` box:
 
 | declaration | -x | -y | -inline | -block | shorthand |
@@ -408,7 +410,14 @@ engine's own scrolling, which is written down and testable:
 `scrollContainerAt` in src/paint/paint.f walks outward from the box
 under the pointer to the nearest ancestor that can still scroll in the
 direction asked for, and `wheelAt` in browser.f gives what is left to
-the page. That walk is the chain `contain` and `none` stop.
+the page. That walk is the chain `contain` and `none` stop, and
+`tests/render/overscroll.f` grades it.
+
+**What is left out is the scroll a wheel does not start.** A scroll
+this engine performs any other way -- the thumb dragged, a fragment
+navigated to -- never chains in the first place, so there is no chain
+for the property to stop there and nothing to test. The standard's
+affordance half is out for the reason below.
 
 **`contain` and `none` differ in nothing this browser does.** `none`
 additionally suppresses the overscroll affordance -- the rubber band, the

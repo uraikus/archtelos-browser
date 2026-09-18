@@ -183,6 +183,9 @@ void func cascadeReset() {
     anyDecorationClone = false
     map[int] emptyDecoClone = {}
     decoCloneOf = emptyDecoClone
+    anyOverscrollBehavior = false
+    map[int] emptyOverscroll = {}
+    overscrollOf = emptyOverscroll
     map[int] emptyMotion = {}
     motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
@@ -4687,6 +4690,14 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
 
 // ---- CSS Inline 3: text-box-trim and text-box-edge ------------------------
 
+// `auto | contain | none`, or -1 for anything else.
+int func overscrollKeyword(w:ascii) {
+    if w == 'auto' { return OSB_AUTO }
+    if w == 'contain' { return OSB_CONTAIN }
+    if w == 'none' { return OSB_NONE }
+    return -1
+}
+
 int func textBoxTrimKeyword(w:ascii) {
     if w == 'trim-both' { return TBTRIM_BOTH }
     if w == 'trim-start' { return TBTRIM_START }
@@ -6460,6 +6471,54 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if bdb != null && asciiLower(asciiTrim(bdb)) == 'clone' {
         decoCloneOf[`${s.serial}`] = 1
         anyDecorationClone = true
+    }
+    // `overscroll-behavior: [ contain | none | auto ]{1,2}`, the first
+    // value the horizontal axis and the second the vertical, one value
+    // both. The logical longhands are the physical ones under other
+    // names -- `inline` is `x` and `block` is `y`, in either direction
+    // (todo.md) -- so they are read into the same pair. The shorthand is
+    // read before them, which resolves the two by a fixed order rather
+    // than by where they were written, as this file does elsewhere.
+    int osbX = OSB_AUTO
+    int osbY = OSB_AUTO
+    bool osbSaid = false
+    ascii osb = styleProp(props, 'overscroll-behavior')
+    if osb != null {
+        ascii osbLow = asciiLower(asciiTrim(osb))
+        arr[ascii] osbW = asciiSplitSpace(osbLow)
+        if osbW.length > 0 {
+            int first = overscrollKeyword(osbW[0])
+            if first >= 0 {
+                osbX = first
+                osbY = osbW.length > 1 ? overscrollKeyword(osbW[1]) : first
+                if osbY < 0 { osbY = first }
+                osbSaid = true
+            }
+        }
+    }
+    ascii osbI = styleProp(props, 'overscroll-behavior-inline')
+    if osbI != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbI)))
+        if v >= 0 { osbX = v  osbSaid = true }
+    }
+    ascii osbB = styleProp(props, 'overscroll-behavior-block')
+    if osbB != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbB)))
+        if v >= 0 { osbY = v  osbSaid = true }
+    }
+    ascii osbXv = styleProp(props, 'overscroll-behavior-x')
+    if osbXv != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbXv)))
+        if v >= 0 { osbX = v  osbSaid = true }
+    }
+    ascii osbYv = styleProp(props, 'overscroll-behavior-y')
+    if osbYv != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbYv)))
+        if v >= 0 { osbY = v  osbSaid = true }
+    }
+    if osbSaid && (osbX != OSB_AUTO || osbY != OSB_AUTO) {
+        overscrollOf[`${s.serial}`] = osbX * 4 + osbY
+        anyOverscrollBehavior = true
     }
     // `overflow-clip-margin: <visual-box> || <length [0,inf]>`. The box
     // defaults to the padding box, which is what an unmoved clip edge

@@ -3421,6 +3421,25 @@ Box func hitTest(b:Box, x:int, y:int) {
 // The innermost scroll container under a point that has anything left
 // to scroll in the direction asked for, or null where there is none --
 // which is what hands the wheel back to the page.
+// Whether the wheel that `wheelTargetAt` could not place should go on
+// to the page. A scroll container that has reached its end normally
+// passes the wheel outward; `overscroll-behavior` stops it there and
+// sets this instead.
+bool wheelChainBlocked = false
+
+// The box a wheel at (x, y) scrolls, or null -- and then
+// `wheelChainBlocked` says whether the page may take what is left.
+Box func wheelTargetAt(root:Box, x:int, y:int, dy:int) {
+    wheelChainBlocked = false
+    return scrollContainerAt(root, x, y, dy)
+}
+
+// The same, across.
+Box func wheelTargetAcrossAt(root:Box, x:int, y:int, dx:int) {
+    wheelChainBlocked = false
+    return scrollContainerAcrossAt(root, x, y, dx)
+}
+
 Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     int scrolled = boxScrollTop(b)
@@ -3431,13 +3450,21 @@ Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
         if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAt(c, x, inner, dy)
             if found != null { return found }
+            // a descendant contained the chain: this box does not get
+            // the wheel and neither does anything outside it
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbW <= 0 { return null }
     int range = boxScrollRange(b)
     if range <= 0 { return null }
-    if dy > 0 && scrolled >= range { return null }
-    if dy < 0 && scrolled <= 0 { return null }
+    if (dy > 0 && scrolled >= range) || (dy < 0 && scrolled <= 0) {
+        // This container has reached its end, so the wheel would pass
+        // outward. `overscroll-behavior` on the axis asked for stops it
+        // here instead (CSS Overscroll Behavior 1 §3).
+        if overscrollY(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 
@@ -3495,14 +3522,17 @@ Box func scrollContainerAcrossAt(b:Box, x:int, y:int, dx:int) {
         if innerX >= c.x && innerX < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAcrossAt(c, innerX, inner, dx)
             if found != null { return found }
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbH <= 0 { return null }
     int range = boxScrollLeftRange(b)
     if range <= 0 { return null }
     int at = boxScrollLeft(b)
-    if dx > 0 && at >= range { return null }
-    if dx < 0 && at <= 0 { return null }
+    if (dx > 0 && at >= range) || (dx < 0 && at <= 0) {
+        if overscrollX(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 
