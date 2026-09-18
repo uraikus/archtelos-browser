@@ -5,6 +5,52 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Anchor Positioning 1: `anchor-name`, `position-anchor`, `position-area`
+
+An absolutely positioned box resolves against the padding box of its
+nearest positioned ancestor. `position-anchor` names a second rectangle
+to resolve against instead -- another element's border box, found by the
+`anchor-name` it declared -- and `position-area` says which of nine
+regions around it the box goes in.
+
+Each axis is one of three bands. A band before the anchor end-aligns the
+box so its far edge meets the anchor's near one, a band after
+start-aligns it, and the anchor's own band centres it. **`span-all`
+centres on the anchor, not on the region it spans**: in a 300px
+containing block Chromium answers 120 where centring in the region would
+give 140, which is the case a region-first reading gets wrong and the
+reason the thirteen regions were measured before any of this was
+written.
+
+The placement runs after the ordinary positioning pass rather than
+inside it, because an anchor may itself be absolutely positioned and so
+has no final rectangle until that pass is done.
+
+**One bug the tests caught.** `top span-all` came out centred rather
+than above: `span-all` names no axis, and assigning the keywords in
+written order let it overwrite the block axis `top` had already claimed.
+The keywords that name an axis are placed first now, and the ones that
+name none fill whatever is left.
+
+**Four of the specification's properties are not implemented, and are
+not counted.** `anchor-scope`, `position-try-fallbacks`,
+`position-try-order` and `position-visibility` all registered on the
+instrument while they were merely stored in a field -- a property the
+cascade computes but nothing reads renders the same either way, so by
+this project's own definition it is not implemented. They are neither
+stored nor claimed by `@supports` now, and todo.md says what each needs:
+a scope tree for the first, and for the other three a retry loop that
+lays the box out, tests it for overflow and lays it out again.
+
+The count is therefore **244 of 405**, up from 241 by the three
+properties that move a box, rather than the 248 the digest would have
+given.
+
+The three are held off `Style` in a side table indexed by one `int`,
+because a field on `Style` costs time in layout whether or not anything
+reads it -- four floats cost two milliseconds on a page using none of
+them, measured the commit before this one.
+
 ### CSS Borders 4: `corner-shape`
 
 A corner is the region the border radius already resolves, and every

@@ -5193,6 +5193,74 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
     }
 }
 
+// ---- CSS Anchor Positioning 1 ---------------------------------------------
+//
+// `position-anchor` names another element's box to resolve against, and
+// `position-area` says which of nine regions around that box the
+// positioned one goes in. Each axis is one of three bands -- before the
+// anchor, its own extent, or after it -- or a span of all three.
+//
+// This runs after the ordinary positioning pass rather than inside it,
+// because an anchor may itself be absolutely positioned and so has no
+// final rectangle until that pass is done. An anchor that is itself
+// anchored would need a second round; the standard forbids the cycle
+// that would make one necessary.
+map[int] anchorRectX = {}
+map[int] anchorRectY = {}
+map[int] anchorRectW = {}
+map[int] anchorRectH = {}
+bool anchorRectsFound = false
+
+void func collectAnchors(b:Box) {
+    if b == null { return }
+    if b.style != null && b.style.anchorInfo > 0 {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        if ai.name != '' {
+            anchorRectX[ai.name] = b.x
+            anchorRectY[ai.name] = b.y
+            anchorRectW[ai.name] = b.w
+            anchorRectH[ai.name] = b.h
+            anchorRectsFound = true
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { collectAnchors(b.children[i]) }
+}
+
+// Where a box of `size` goes in one axis, given the anchor's two edges
+// on it. A band before the anchor end-aligns the box, so its far edge
+// meets the anchor's near one; a band after start-aligns it; and the
+// anchor's own band centres it. `span-all` centres on the anchor as
+// well, rather than on the region it spans -- which is what Chromium
+// does and what a region-first reading of the standard gets wrong
+// (todo.md records the measurement).
+int func anchorBandPos(band:int, a0:int, a1:int, size:int, fallback:int) {
+    if band == PAREA_BEFORE { return a0 - size }
+    if band == PAREA_AFTER { return a1 }
+    if band == PAREA_CENTER || band == PAREA_SPAN {
+        return a0 + Math.floorDiv(a1 - a0 - size, 2)
+    }
+    return fallback
+}
+
+void func placeAnchored(b:Box) {
+    if b == null { return }
+    if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        if ai.area != PAREA_NONE && ai.anchor != '' && anchorRectW[ai.anchor] != null {
+            int ax = anchorRectX[ai.anchor]
+            int ay = anchorRectY[ai.anchor]
+            int aw = anchorRectW[ai.anchor]
+            int ah = anchorRectH[ai.anchor]
+            int blockBand = Math.floorDiv(ai.area, PAREA_AXIS)
+            int inlineBand = ai.area % PAREA_AXIS
+            int wantX = anchorBandPos(inlineBand, ax, ax + aw, b.w, b.x)
+            int wantY = anchorBandPos(blockBand, ay, ay + ah, b.h, b.y)
+            if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { placeAnchored(b.children[i]) }
+}
+
 // ---- entry points ----------------------------------------------------------------
 
 // Lays out a styled document in a viewport `width` px wide. Returns
@@ -5361,6 +5429,22 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // with no positioned box skips the walk entirely.
     if docHasPositioned {
         layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
+        // An anchored box resolves against another element's finished
+        // rectangle, so it is placed after every other positioned box
+        // has one. A page that names no anchor never walks the tree.
+        if anyAnchorName {
+            map[int] emptyX = {}
+            map[int] emptyY = {}
+            map[int] emptyW = {}
+            map[int] emptyH = {}
+            anchorRectX = emptyX
+            anchorRectY = emptyY
+            anchorRectW = emptyW
+            anchorRectH = emptyH
+            anchorRectsFound = false
+            collectAnchors(root)
+            if anchorRectsFound { placeAnchored(root) }
+        }
     }
     return root
 }

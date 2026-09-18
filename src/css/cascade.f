@@ -169,6 +169,8 @@ void func cascadeReset() {
     anyUnicodeBidi = false
     anyCornerShape = false
     cornerCustomK = []
+    anyAnchorName = false
+    anchorInfos = []
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -4058,6 +4060,89 @@ float func cornerShapeProp(props:map[text], name:text, fallback:float) {
     return k == 0.0 ? fallback : k
 }
 
+// `position-area`'s keywords (CSS Anchor Positioning 1 §3.1). A keyword
+// names a band, and some name an axis with it: `top` and `bottom` are
+// the block axis, `left` and `right` the inline one. `start`, `end`,
+// `center` and `span-all` name neither, and take the block axis first
+// and the inline second, which is what the standard's grammar means by
+// taking them in order.
+const int PAREA_AX_ANY = 0
+const int PAREA_AX_BLOCK = 1
+const int PAREA_AX_INLINE = 2
+
+int pareaBand = PAREA_NONE
+int pareaAxis = PAREA_AX_ANY
+
+void func pareaKeyword(v:ascii) {
+    pareaBand = PAREA_NONE
+    pareaAxis = PAREA_AX_ANY
+    if v == 'top' { pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_BLOCK  return }
+    if v == 'bottom' { pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_BLOCK  return }
+    if v == 'block-start' || v == 'y-start' || v == 'y-self-start' {
+        pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_BLOCK  return
+    }
+    if v == 'block-end' || v == 'y-end' || v == 'y-self-end' {
+        pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_BLOCK  return
+    }
+    if v == 'left' { pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_INLINE  return }
+    if v == 'right' { pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_INLINE  return }
+    if v == 'inline-start' || v == 'x-start' || v == 'x-self-start' {
+        pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_INLINE  return
+    }
+    if v == 'inline-end' || v == 'x-end' || v == 'x-self-end' {
+        pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_INLINE  return
+    }
+    if v == 'start' || v == 'self-start' { pareaBand = PAREA_BEFORE  return }
+    if v == 'end' || v == 'self-end' { pareaBand = PAREA_AFTER  return }
+    if v == 'center' { pareaBand = PAREA_CENTER  return }
+    if v == 'span-all' { pareaBand = PAREA_SPAN  return }
+}
+
+// The whole value: one or two keywords, packed block then inline. A
+// keyword that names an axis goes to it and leaves the other spanning;
+// one that names neither fills the block axis first. A single keyword
+// naming neither applies to both, which is what makes `center` centre
+// in two directions rather than one.
+int func positionAreaValue(v:ascii) {
+    if v == null { return PAREA_NONE }
+    arr[ascii] t = cssTokens(asciiLower(v))
+    if t.length == 0 { return PAREA_NONE }
+    int blockBand = PAREA_NONE
+    int inlineBand = PAREA_NONE
+    // The keywords that name an axis are placed first, because one that
+    // names none takes whichever axis is left: in `top span-all` the
+    // span is the inline axis, and assigning in written order would
+    // give it the block axis the `top` had already claimed.
+    for int i = 0, i < t.length, i++ {
+        pareaKeyword(t[i])
+        if pareaBand == PAREA_NONE { return PAREA_NONE }
+        if pareaAxis == PAREA_AX_BLOCK { blockBand = pareaBand }
+        else if pareaAxis == PAREA_AX_INLINE { inlineBand = pareaBand }
+    }
+    int anyCount = 0
+    for int i = 0, i < t.length, i++ {
+        pareaKeyword(t[i])
+        if pareaAxis != PAREA_AX_ANY { continue }
+        anyCount++
+        if blockBand == PAREA_NONE { blockBand = pareaBand }
+        else if inlineBand == PAREA_NONE { inlineBand = pareaBand }
+    }
+    // One axis-agnostic keyword on its own covers both axes, which is
+    // what makes `center` centre in two directions rather than one.
+    if t.length == 1 && anyCount == 1 { inlineBand = blockBand }
+    if blockBand == PAREA_NONE { blockBand = PAREA_SPAN }
+    if inlineBand == PAREA_NONE { inlineBand = PAREA_SPAN }
+    return blockBand * PAREA_AXIS + inlineBand
+}
+
+// A dashed identifier as written, or '' -- an anchor name is compared
+// rather than parsed, so it keeps its dashes.
+text func anchorIdent(props:map[text], name:text) {
+    ascii v = styleProp(props, name)
+    if v == null { return '' }
+    return asciiTrim(v).toText()
+}
+
 // CSS Writing Modes 3 §2.2: which pair of formatting characters the
 // element's text is treated as being wrapped in.
 int func unicodeBidiKeyword(v:ascii) {
@@ -5460,6 +5545,23 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     cshTR = cornerShapeProp(props, 'corner-start-end-shape', cshTR)
     cshBL = cornerShapeProp(props, 'corner-end-start-shape', cshBL)
     cshBR = cornerShapeProp(props, 'corner-end-end-shape', cshBR)
+    // CSS Anchor Positioning 1: the three properties that place a box,
+              // behind one index. The entry
+    // is only made when the element said something, so a page with no
+    // anchors carries no side table and every `Style` holds a zero.
+    s.anchorInfo = 0
+    text aName = anchorIdent(props, 'anchor-name')
+    text aAnchor = anchorIdent(props, 'position-anchor')
+    int aArea = positionAreaValue(styleProp(props, 'position-area'))
+    if aName != '' || aAnchor != '' || aArea != PAREA_NONE {
+        AnchorInfo ai
+        ai.name = aName
+        ai.anchor = aAnchor
+        ai.area = aArea
+        anchorInfos.push(ai)
+        s.anchorInfo = anchorInfos.length
+        if aName != '' { anyAnchorName = true }
+    }
     s.cornerShapes = 0
     if cshTL != CORNER_K_ROUND || cshTR != CORNER_K_ROUND
         || cshBR != CORNER_K_ROUND || cshBL != CORNER_K_ROUND {

@@ -1072,6 +1072,7 @@ arr[text] supportedProperties = [
     'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
     'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
     'border-spacing', 'border-collapse',
+    'anchor-name', 'position-anchor', 'position-area',
     'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
     'corner-bottom-right-shape', 'corner-bottom-left-shape',
     'corner-start-start-shape', 'corner-start-end-shape',

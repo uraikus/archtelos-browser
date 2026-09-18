@@ -364,6 +364,50 @@ int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
         + cornerCodeOfK(bl) * CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE
 }
 
+// CSS Anchor Positioning 1. Each axis of `position-area` is one of
+// three bands around the anchor, or a span of all three.
+const int PAREA_NONE = 0
+const int PAREA_BEFORE = 1
+const int PAREA_CENTER = 2
+const int PAREA_AFTER = 3
+const int PAREA_SPAN = 4
+// The two axes in one number, block first.
+const int PAREA_AXIS = 8
+
+// What the three anchor properties this engine acts on say about one
+// element. `anchor-scope`, `position-try-fallbacks`, `position-try-order`
+// and `position-visibility` are not here: nothing would read them, and a
+// property the cascade computes but neither layout nor paint reads is
+// not implemented however faithfully it is stored (todo.md says what
+// each of them needs). It is
+// held off `Style` and indexed from it, because `Style` is read once
+// per box throughout layout and a field on it costs time whether or not
+// anything reads it -- four floats cost two milliseconds on a page
+// using none of them (benchmarks.md). Anchored boxes are rare, so the
+// rare data goes in a side table and `Style` carries one int.
+struct AnchorInfo {
+    name:text            // anchor-name
+    anchor:text          // position-anchor
+    area:int             // position-area, block * PAREA_AXIS + inline
+}
+
+// This page's anchor declarations; `Style.anchorInfo` is an index into
+// it, one past the entry, so that zero means the element said nothing.
+arr[AnchorInfo] anchorInfos = []
+
+// Whether any element on this page declared an anchor name at all, so
+// that a document with none skips both walks the feature would add.
+bool anyAnchorName = false
+
+AnchorInfo func anchorInfoOf(idx:int) {
+    if idx <= 0 || idx > anchorInfos.length {
+        AnchorInfo none
+        none.area = PAREA_NONE
+        return none
+    }
+    return anchorInfos[idx - 1]
+}
+
 const int SCROLLBAR_AUTO = 0
 const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
@@ -1051,6 +1095,7 @@ struct Style {
     // `border-radius` has always drawn, and codes past the keywords
     // index the exponents `superellipse()` named.
     cornerShapes:int
+    anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool
     textIndent:int
