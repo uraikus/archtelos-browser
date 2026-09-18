@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The static position of an absolutely positioned box
+
+CSS2 §10.3.7: a box with `position: absolute` and an `auto` inset sits
+**where it would have been in flow**. This engine put it at the corner
+of its containing block, on both axes and in every case tried — 0, 0
+where Chromium answers 0, 50 for a box after a 50px block, 60, 0 for one
+inside an indented div, 0, 20 for a block-level one after text on a
+line, and 20, 70 in a containing block with 20px of padding.
+
+**The flow already walks past these boxes, so the position was there to
+be taken.** The block layout skips an out-of-flow child and
+`placeInline` returns for one immediately; the static position is the
+pen at exactly those two moments. It is recorded on the way past, in a
+map keyed by box id that a document with nothing positioned never grows,
+because `docHasPositioned` guards the writes as well as the read.
+
+That split is also what gets the two kinds right without a case for
+either. An **inline-level** box takes `ifcX`, `ifcY` and lands where the
+inline itself would have been. A **block-level** one among inline
+content is a sibling of the anonymous box holding that text, so the
+block loop hands it the line after — which is what Chromium does, and
+neither needed to be asked for.
+
+**The two axes are decided separately**, so `top: 5px` with `left: auto`
+puts the box at the declared 5 down and the static position across. A
+`fixed` box has no such place: it resolves against the viewport and
+stays at its corner.
+
+This was found while implementing `anchor()`. With no fallback and no
+anchor the declaration has no effect, and "no effect" means the static
+position — which turned out to be somewhere the engine did not compute.
+
 ### `anchor()` in the inset properties
 
 CSS Anchor Positioning 1's placement function, in `left`, `right`,

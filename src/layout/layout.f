@@ -334,6 +334,14 @@ int func fontDescent(s:Style) {
 // neither. The flags are set once while the box tree is built and read
 // wherever a pass can be skipped whole.
 bool docHasPositioned = false
+
+// Where an out-of-flow box would have been in flow, keyed by box id --
+// its static position (CSS2 §10.3.7), which is what an `auto` inset
+// resolves to. The flow already walks past these boxes; this is the pen
+// at the moment it does. A document with nothing positioned never grows
+// it, because `docHasPositioned` guards both the writes and the read.
+map[int] staticPosX = {}
+map[int] staticPosY = {}
 bool docHasFloats = false
 // Set while the box tree is built when any text holds a right-to-left
 // character. A page with none never runs the bidirectional algorithm
@@ -2491,7 +2499,15 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
         // An absolutely positioned box is out of flow: it takes no
         // space here and is laid out by the positioning pass once the
         // containing block it resolves against is known (CSS2 §9.3).
-        if boxIsOutOfFlow(c) { continue }
+        // Where the flow had reached is its static position, which an
+        // `auto` inset resolves to, so it is noted on the way past.
+        if boxIsOutOfFlow(c) {
+            if docHasPositioned {
+                staticPosX[`${c.id}`] = cx
+                staticPosY[`${c.id}`] = y
+            }
+            continue
+        }
         if boxIsFloated(c) {
             placeFloat(c, cx, cx + cw, y)
             continue
@@ -3100,7 +3116,15 @@ void func hardBreakLine() {
 }
 
 void func placeInline(b:Box) {
-    if boxIsOutOfFlow(b) { return }
+    if boxIsOutOfFlow(b) {
+        // An inline-level out-of-flow box takes its static position
+        // from the pen on the line it was written on.
+        if docHasPositioned {
+            staticPosX[`${b.id}`] = ifcX
+            staticPosY[`${b.id}`] = ifcY
+        }
+        return
+    }
     if boxIsFloated(b) {
         placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
         // the float may have narrowed the line that is open
@@ -5267,8 +5291,16 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
         Style s = b.style
         int w = b.w + b.ml + b.mr
         int h = b.h + b.mt + b.mb
+        // With both insets on an axis `auto` the box sits where it
+        // would have been in flow, which the flow noted on its way past
+        // (CSS2 §10.3.7). A fixed box has no such place: it resolves
+        // against the viewport and stays at its corner.
         int wantX = b.x
         int wantY = b.y
+        if b.style.position != POS_FIXED && staticPosX[`${b.id}`] != null {
+            wantX = staticPosX[`${b.id}`] + b.ml
+            wantY = staticPosY[`${b.id}`] + b.mt
+        }
         if !lenIsAuto(s.left) {
             wantX = useX + resolveLen(s.left, useW, 0) + b.ml
         } else if !lenIsAuto(s.right) {
@@ -5834,6 +5866,10 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // second layout does not inherit the first one's floats.
     resetFloats()
     docHasPositioned = false
+    map[int] emptyStaticX = {}
+    map[int] emptyStaticY = {}
+    staticPosX = emptyStaticX
+    staticPosY = emptyStaticY
     anyRtlText = false
     docHasFloats = false
     inlineInkOverhang = 0

@@ -506,50 +506,6 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
-### The static position of an absolutely positioned box is not implemented
-
-CSS2 §10.3.7 and §9.4.3: a box with `position: absolute` and an `auto`
-inset sits **where it would have been in flow**, not at the corner of
-its containing block. This engine puts it at the corner. It is core
-CSS2 rather than a new feature, and it reaches every absolutely
-positioned box that leaves an inset alone.
-
-Both engines, on the same six pages, as the box's position relative to
-its containing block's border box:
-
-| the box | Chromium | this engine |
-|---|---|---|
-| a direct child of the containing block | 0, 0 | 0, 0 |
-| after a 50px block | 0, **50** | 0, 0 |
-| inside a `margin-left: 60px` div | **60**, 0 | 0, 0 |
-| after a 50px block *and* inside that div | **60**, **50** | 0, 0 |
-| after five characters of text | 0, **20** | 0, 0 |
-| in a containing block with `padding: 20px` | **20**, **70** | 0, 0 |
-
-The engine answers 0, 0 to all six. Two more of Chromium's, which say
-what the rule is rather than only that it exists: an **inline-level**
-absolute box after `xy` on the second line lands at 19, 50 -- where the
-inline itself would have been, two characters along -- while a
-**block-level** one after text on a line lands at 0, 20, on the line
-after it. And an inset that is *not* auto is unaffected: with `top: 5px`
-and `left: auto` the box is at 60, 5, so the two axes are decided
-separately.
-
-**Where to put it.** The flow already walks past these boxes: the block
-layout skips an out-of-flow child and `placeInline` returns for one
-immediately. The static position is the pen at exactly those two
-moments -- the content origin and the running `y` in the block case, and
-`ifcX`, `ifcY` in the inline case -- recorded on the box for
-`layoutPositioned` to use in place of the containing block's corner when
-the inset on that axis is `auto`. The one case needing more than the pen
-is a block-level box among inline content, which starts on the following
-line rather than where the pen is.
-
-This was found while implementing `anchor()`: with no fallback and no
-anchor the declaration has no effect, and "no effect" means the static
-position -- which turned out to be somewhere this engine does not
-compute.
-
 ### What is left of `anchor()` and `anchor-size()`
 
 `anchor()` works in the four inset properties. `anchor-size()` does

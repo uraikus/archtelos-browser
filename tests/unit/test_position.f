@@ -66,4 +66,64 @@ collectBoxesForTag(p6.root, 'p', ap6)
 checkEqInt(ap6[0].y, 12, 'a fixed box ignores its positioned ancestor')
 checkEqInt(ap6[0].x, 8, 'in both axes')
 
+// ---- the static position (CSS2 §10.3.7) -------------------------------
+
+// A box with an `auto` inset sits where it would have been in flow, not
+// at the corner of its containing block. Every number below is
+// Chromium's, in todo.md, as the box's position relative to its
+// containing block.
+
+Box func staticBox(inner:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;font:16px/20px monospace">'
+        + '<div id="cb" style="position:relative;width:400px;height:200px">'
+        + inner + '</div></body>', 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'i', all)
+    return all.length > 0 ? all[0] : null
+}
+
+// The box under test is an <i>, so that `collectBoxesForTag` finds it
+// whether it was written block-level or inline-level.
+text ABS = '<i style="position:absolute;display:block;width:30px;height:20px"></i>'
+
+Box sb1 = staticBox(ABS)
+checkEqInt(sb1.x, 0, 'a direct child of the containing block starts at its corner')
+checkEqInt(sb1.y, 0, 'in both axes')
+
+Box sb2 = staticBox('<div style="height:50px"></div>' + ABS)
+checkEqInt(sb2.y, 50, 'a box after a 50px block sits below it')
+checkEqInt(sb2.x, 0, 'and still at the left')
+
+Box sb3 = staticBox('<div style="margin-left:60px">' + ABS + '</div>')
+checkEqInt(sb3.x, 60, 'a box inside an indented div is indented with it')
+checkEqInt(sb3.y, 0, 'and still at the top')
+
+Box sb4 = staticBox('<div style="height:50px"></div>'
+                    + '<div style="margin-left:60px">' + ABS + '</div>')
+checkEqInt(sb4.x, 60, 'both at once, across')
+checkEqInt(sb4.y, 50, 'and down')
+
+// A block-level box among inline content starts on the line after it.
+Box sb5 = staticBox('abcde' + ABS)
+checkEqInt(sb5.y, 20, 'a block-level box after text starts on the next line')
+checkEqInt(sb5.x, 0, 'at the start of it')
+
+// The flow begins inside the containing block's padding.
+Page padded = pageFromHtml('<!doctype html><body style="margin:0;font:16px/20px monospace">'
+    + '<div id="cb" style="position:relative;width:400px;height:200px;padding:20px">'
+    + '<div style="height:50px"></div>' + ABS + '</div></body>', 'about:blank', 800)
+arr[Box] padIt = []
+collectBoxesForTag(padded.root, 'i', padIt)
+checkEqInt(padIt[0].x, 20, "the containing block's padding moves the static position across")
+checkEqInt(padIt[0].y, 70, 'and down')
+
+// An inset that is not `auto` is unaffected, so the two axes are
+// decided separately.
+Box sb6 = staticBox('<div style="height:50px"></div>'
+    + '<div style="margin-left:60px">'
+    + '<i style="position:absolute;display:block;width:30px;height:20px;top:5px"></i>'
+    + '</div>')
+checkEqInt(sb6.x, 60, 'a declared top leaves the static position across alone')
+checkEqInt(sb6.y, 5, 'while down it is the inset that decides')
+
 finish('position')
