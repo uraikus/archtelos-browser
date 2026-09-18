@@ -1624,3 +1624,19 @@ It is free for the plainest of reasons: the sampling runs where the path
 is built, which is once per element that has an `offset-path`, and
 `generated.html` has none. The minimum moved from 104 to 105 here as it
 did there, which is the one part of that entry this run does not settle.
+
+A motion path's subpaths cost **80 bytes** (2,983,920 → 2,984,000) and
+nothing measurable. Twenty-five alternating paired samples of
+`generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (1abcb5b) | 103 ms | 106 ms | 110 ms |
+| after (520877e) | 103 ms | 106 ms | 115 ms |
+| paired, after less before | −4 ms | **0 ms** | +5 ms |
+
+The new binary is the slower one in 11 pairs of 25, the paired mean is
+exactly zero and the minimum does not move — the one entry in this file
+where it did not. Eighty bytes is the smallest change measured here: a
+`moveTo` that pushes a point without adding the gap to the running
+length, a counter, and two conditions.
