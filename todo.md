@@ -330,6 +330,76 @@ second round of the placement pass rather than the one this does; and
 `position-area`'s effect on a box whose `width` or `height` is `auto`,
 which should size the box to the region rather than shrink to fit.
 
+### What CSS Motion Path 1 was measured to be
+
+The specification is grouped with Transitions, Animations and Will Change
+in css-2026.md, under "an animation needs a clock and a repaint loop".
+That is wrong about this one: `offset-distance: 40%` places a box along a
+path in a still frame, and its five properties -- `offset-path`,
+`offset-distance`, `offset-rotate`, `offset-anchor`, `offset-position`
+-- are all gradable and all render without a clock.
+
+Seventy cases against Chromium, a 40x20 box at `left: 30px; top: 40px`
+inside a 400x300 relative block, read as the box's own rectangle.
+
+**The control was not one.** `offset-rotate: none` is not a value of the
+property -- the grammar is `[ auto | reverse ] || <angle>` -- so every
+row of the first round that wrote it was silently measuring the initial
+`auto`, and computed style said `auto 0deg` when asked. The rows looked
+ordinary: half of them showed an unrotated box, because at those points
+the path's direction happens to be zero. Writing `offset-rotate: 0deg`
+is how the rotation is turned off, and asking `getComputedStyle` which
+declarations survived is how the first round's error was found.
+
+**The whole effect is one translation, and it composes like this:**
+
+    final top-left = static top-left + P - anchor
+
+where `P` is the point on the path and `anchor` is `offset-anchor`
+measured from the element's own top-left. Every anchor row falls out of
+it exactly: `auto` is the centre `(20, 10)`, `0% 0%` is `(0, 0)`,
+`100% 100%` is `(40, 20)`, `10px 5px` is itself. **The path's
+coordinates are the element's own**, not the containing block's: a
+`circle(50px at 100px 100px)` on a box at `(30, 40)` puts its centre at
+`(130, 140)` on the page. A box at `0, 0` cannot tell the two apart,
+which is why the first round could not.
+
+**A circle starts at three o'clock and runs clockwise**, not at twelve:
+`0%` is `(150, 100)` for `circle(50px at 100px 100px)`, `25%` is
+`(100, 150)`, `50%` is `(50, 100)`. `12.5%` is `(135.4, 135.4)`, which
+is 45 degrees along. An ellipse is the same, quarter by quarter.
+
+The rest, each measured:
+
+| | |
+|---|---|
+| `ray(0deg)` | points **up**; 90deg right, 180deg down |
+| `offset-position` | moves the ray's origin; `normal` is the element's own position, which is the path space's `0, 0` |
+| a polygon | closes itself: `polygon(0 0, 100px 0, 100px 100px)` is 341.42 long, and 90% is `(24.1, 24.1)` on the closing edge |
+| `path()` | `M`, `L`, `H`, `V` and `Z` all measured; `M 0 0 L 100 0 L 100 100 Z` at 60% is `(96.6, 96.6)` |
+| `offset-rotate: auto` | turns the box to the path's direction; `reverse` computes to `auto 180deg`; `auto 90deg` adds to it |
+| a distance past the end | wraps on a closed path -- 125% of a circle is 25% -- and runs on along a ray, including backwards from a negative |
+| the `transform` property | applies first, and the offset translates the result: a `rotate(90deg)` box moves the full 100px |
+| `offset-path: none` | ignores `offset-position` and `offset-distance` entirely |
+
+**Where Chromium is not usable as the yardstick.** Ray sizes and
+percentage-valued shapes are measured against the containing block in
+the specification. Chromium behaves as though only the top and left
+sides existed. From a ray origin at `(120, 80)` in a 400x300 block it
+answers `closest-side` 80 and `closest-corner` 144.2 -- both right --
+and `farthest-side` 120 where the right edge is 280 away, and
+`farthest-corner` 144.2, the closest one. `sides` answers 0 in every
+case tried. A `circle(25% at 50% 50%)` collapses to a point. All of it
+fits one rule -- the sizes come out as `min` and `max` of the origin's
+own two coordinates -- which is a defect rather than a decision, so
+this is the one part to implement from the specification and not from
+the browser, with these numbers written down beside the tests.
+
+`inset()` is the remaining unknown: Chromium puts the start point on the
+inset rectangle's top-left corner and then never moves along it, at any
+distance. That is not a rule worth copying either way, so `inset()` is
+left out until there is something to copy.
+
 ### After the official definition
 
 the media features about a user's own preferences that
