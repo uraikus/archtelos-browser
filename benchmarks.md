@@ -1604,3 +1604,23 @@ ruled out here. It is recorded as measured, unattributed, and the number
 is a millisecond on a page that never enters the feature.
 
 The tables above are not updated from these runs.
+
+A motion path's curve commands cost **4,360 bytes**
+(2,979,560 → 2,983,920) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (5bac95e) | 104 ms | 106 ms | 111 ms |
+| after (b8f17ee) | 105 ms | 107 ms | 108 ms |
+| paired, after less before | −6 ms | **0 ms** | +2 ms |
+
+The new binary is the slower one in 11 pairs of 25 and the paired mean
+is +0.12 ms. Eleven of twenty-five is inside the band the parent
+measured against a copy of itself — 6 and 12 of 25 — where the entry
+above it sat at 15 to 17 in five separate runs.
+
+It is free for the plainest of reasons: the sampling runs where the path
+is built, which is once per element that has an `offset-path`, and
+`generated.html` has none. The minimum moved from 104 to 105 here as it
+did there, which is the one part of that entry this run does not settle.
