@@ -5242,7 +5242,44 @@ int func anchorBandPos(band:int, a0:int, a1:int, size:int, fallback:int) {
     return fallback
 }
 
-void func placeAnchored(b:Box) {
+// `position-try-fallbacks`: a candidate area, either named outright or
+// reached by flipping the one in force. A flip swaps a band for the one
+// opposite it rather than naming a region of its own, so `flip-block`
+// turns a `top` into a `bottom` whatever `top` was written as.
+int func flipBand(band:int) {
+    if band == PAREA_BEFORE { return PAREA_AFTER }
+    if band == PAREA_AFTER { return PAREA_BEFORE }
+    return band
+}
+
+int func tryCandidateArea(current:int, spec:ascii) {
+    int blockBand = Math.floorDiv(current, PAREA_AXIS)
+    int inlineBand = current % PAREA_AXIS
+    if spec == 'flip-block' { return flipBand(blockBand) * PAREA_AXIS + inlineBand }
+    if spec == 'flip-inline' { return blockBand * PAREA_AXIS + flipBand(inlineBand) }
+    if spec == 'flip-start' { return inlineBand * PAREA_AXIS + blockBand }
+    return positionAreaValue(spec)
+}
+
+// Whether a box at (x, y) would fall outside the containing block it
+// resolves against, which is the whole of the test Chromium applies
+// before moving on to the next candidate.
+bool func anchorOverflows(x:int, y:int, w:int, h:int,
+                          cbX:int, cbY:int, cbW:int, cbH:int) {
+    return x < cbX || y < cbY || x + w > cbX + cbW || y + h > cbY + cbH
+}
+
+// Where one area puts the box. Two values out of a function need
+// globals (FINDINGS.md, "one value out of a function").
+int anchorTryX = 0
+int anchorTryY = 0
+
+void func anchorPlaceAt(area:int, ax:int, ay:int, aw:int, ah:int, b:Box) {
+    anchorTryX = anchorBandPos(area % PAREA_AXIS, ax, ax + aw, b.w, b.x)
+    anchorTryY = anchorBandPos(Math.floorDiv(area, PAREA_AXIS), ay, ay + ah, b.h, b.y)
+}
+
+void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
     if b == null { return }
     if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
         AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
@@ -5251,14 +5288,42 @@ void func placeAnchored(b:Box) {
             int ay = anchorRectY[ai.anchor]
             int aw = anchorRectW[ai.anchor]
             int ah = anchorRectH[ai.anchor]
-            int blockBand = Math.floorDiv(ai.area, PAREA_AXIS)
-            int inlineBand = ai.area % PAREA_AXIS
-            int wantX = anchorBandPos(inlineBand, ax, ax + aw, b.w, b.x)
-            int wantY = anchorBandPos(blockBand, ay, ay + ah, b.h, b.y)
+            anchorPlaceAt(ai.area, ax, ay, aw, ah, b)
+            int wantX = anchorTryX
+            int wantY = anchorTryY
+            // The fallbacks are a retry list, not a correction: a
+            // position that fits is kept and they are never consulted,
+            // and when none of them fits either, the original stands
+            // rather than the last one tried.
+            if ai.fallbacks != '' && anchorOverflows(wantX, wantY, b.w, b.h, cbX, cbY, cbW, cbH) {
+                arr[ascii] cands = asciiSplitChar(ai.fallbacks.toAscii(), CH_COMMA)
+                for int i = 0, i < cands.length, i++ {
+                    int area = tryCandidateArea(ai.area, asciiLower(asciiTrim(cands[i])))
+                    if area == PAREA_NONE { continue }
+                    anchorPlaceAt(area, ax, ay, aw, ah, b)
+                    if !anchorOverflows(anchorTryX, anchorTryY, b.w, b.h, cbX, cbY, cbW, cbH) {
+                        wantX = anchorTryX
+                        wantY = anchorTryY
+                        break
+                    }
+                }
+            }
             if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
         }
     }
-    for int i = 0, i < b.children.length, i++ { placeAnchored(b.children[i]) }
+    // The containing block for the descendants, tracked the way the
+    // positioning pass tracks it rather than stored on every box.
+    int nx = cbX
+    int ny = cbY
+    int nw = cbW
+    int nh = cbH
+    if boxIsPositioned(b) {
+        nx = b.x + b.bl
+        ny = b.y + b.bt
+        nw = b.w - b.bl - b.br
+        nh = b.h - b.bt - b.bb
+    }
+    for int i = 0, i < b.children.length, i++ { placeAnchored(b.children[i], nx, ny, nw, nh) }
 }
 
 // ---- entry points ----------------------------------------------------------------
@@ -5443,7 +5508,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
             anchorRectH = emptyH
             anchorRectsFound = false
             collectAnchors(root)
-            if anchorRectsFound { placeAnchored(root) }
+            if anchorRectsFound { placeAnchored(root, 0, 0, width, root.h) }
         }
     }
     return root

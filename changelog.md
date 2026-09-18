@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Anchor Positioning 1, and the retry loop `position-try-fallbacks` is
+
+An anchored box that overflows its containing block now walks the
+candidates `position-try-fallbacks` names and takes **the first that
+fits**, in written order, rather than the best-fitting one. A position
+that fits is kept and the list is never consulted; when no candidate
+fits either, the original position stands rather than the last one
+tried. `flip-block`, `flip-inline` and `flip-start` transform the area
+in force rather than naming a new one, and are not applied at all when
+the original fits.
+
+Both of those last two rules are why the nine cases were read off
+Chromium before anything was written: an implementation that kept the
+last candidate it tried, or the one that overflowed least, agrees with
+Chromium everywhere except exactly there.
+
+`position-try-fallbacks` is counted because layout reads it -- 245 of
+405. `position-try-order` and `position-visibility` are still not, and
+still are not stored: neither has been probed, and a property nothing
+reads is not implemented however faithfully it is kept.
+
 ### CSS Anchor Positioning 1: `anchor-name`, `position-anchor`, `position-area`
 
 An absolutely positioned box resolves against the padding box of its

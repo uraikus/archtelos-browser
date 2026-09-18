@@ -112,4 +112,75 @@ checkEqInt(anchoredY('block-start inline-start'), 80, 'in both axes')
 int plainX = anchoredX('')
 check(plainX != 110 || anchoredY('') != 80, 'no position-area is not a region')
 
+// ---- position-try-fallbacks ----------------------------------------------
+// An anchored box that overflows its containing block tries the
+// fallbacks in written order and takes the first that fits. Every
+// number here is Chromium 141's, read off a clipping 400x300 block, an
+// anchor 100x20 whose top varies, and a 40x30 box naming it.
+//
+//   anchor top 150, `top`, no fallback          y 120
+//   anchor top 10,  `top`, no fallback          y -20
+//   anchor top 10,  `top`, `bottom`             y 30
+//   anchor top 150, `top`, `bottom`             y 120
+//   anchor top 10,  `top`, `left, bottom`       x 110, y 5
+//   anchor top 10,  `top`, `flip-block`         y 30
+//   anchor top 150, `left`, `flip-inline`       unchanged
+//   anchor top 270, `bottom`, `top`             y 240
+//   anchor top 10,  `top`, `top`                y -20
+
+Box func tried(ancTop:int, area:text, fb:text) {
+    cascadeReset()
+    cssViewportWidth = 600
+    text fbDecl = fb == '' ? '' : ('position-try-fallbacks:' + fb + ';')
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="position:relative;width:400px;height:300px;overflow:hidden">'
+        + `<div id="anc" style="position:absolute;left:150px;top:${ancTop}px;`
+        + 'width:100px;height:20px;anchor-name:--a"></div>'
+        + '<div id="pos" style="position:absolute;position-anchor:--a;'
+        + 'width:40px;height:30px;position-area:' + area + ';' + fbDecl + '"></div>'
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return anchorBoxById(layoutDocument(doc, 600), 'pos')
+}
+
+int func triedX(ancTop:int, area:text, fb:text) { Box b = tried(ancTop, area, fb)  return b == null ? -1 : b.x }
+int func triedY(ancTop:int, area:text, fb:text) { Box b = tried(ancTop, area, fb)  return b == null ? -1 : b.y }
+
+// A position that fits is kept, and the fallbacks are never consulted.
+checkEqInt(triedY(150, 'top', ''), 120, 'a fitting position is kept')
+checkEqInt(triedY(150, 'top', 'bottom'), 120, 'and a fallback beside it is not used')
+
+// Without fallbacks, an overflowing position is left overflowing: this
+// is a retry list, not an automatic correction.
+checkEqInt(triedY(10, 'top', ''), -20, 'an overflowing position with no fallback stands')
+
+// With one, the box moves to it.
+checkEqInt(triedY(10, 'top', 'bottom'), 30, 'an overflowing position takes its fallback')
+check(triedY(10, 'top', 'bottom') != triedY(10, 'top', ''),
+      'which is not where it would have been')
+
+// With two, the FIRST that fits wins -- not the best fit. `left` is
+// merely written first, and that is what decides it.
+checkEqInt(triedX(10, 'top', 'left, bottom'), 110, 'the first fallback that fits wins')
+checkEqInt(triedY(10, 'top', 'left, bottom'), 5, 'in both axes')
+check(triedY(10, 'top', 'left, bottom') != triedY(10, 'top', 'bottom'),
+      'and the order of the list is what chooses between them')
+
+// When nothing fits, the original position stands. An implementation
+// that kept the last candidate it tried would put the box elsewhere.
+checkEqInt(triedY(10, 'top', 'top'), -20, 'when no candidate fits the original stands')
+
+// Overflow at the far edge falls back too, not just at the near one.
+checkEqInt(triedY(270, 'bottom', 'top'), 240, 'overflow past the end falls back as well')
+
+// ---- the flip keywords ---------------------------------------------------
+// A `flip-` fallback transforms the area in force rather than naming a
+// new one, and is not applied at all when the original fits.
+checkEqInt(triedY(10, 'top', 'flip-block'), 30, 'flip-block swaps the block axis bands')
+checkEqInt(triedY(10, 'top', 'flip-block'), triedY(10, 'top', 'bottom'),
+           'which is what `bottom` would have said')
+checkEqInt(triedX(150, 'left', 'flip-inline'), 110, 'a flip is not applied when the original fits')
+checkEqInt(triedY(150, 'left', 'flip-inline'), 145, 'in either axis')
+
 finish('anchor positioning')

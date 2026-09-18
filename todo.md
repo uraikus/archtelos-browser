@@ -305,47 +305,32 @@ container's own children, which is the depth this engine fragments and
 measures at everywhere else. A grandchild carrying `scroll-snap-align`
 is not a snap point, where in the standard it is.
 
-### The position-try retry loop
+### What `position-try-order` and `position-visibility` still need
 
-`position-try-fallbacks`, `position-try-order` and `position-visibility`
-all need the same mechanism: lay the anchored box out, test it for
-overflow against its containing block, and lay it out again at the next
-candidate. That is a retry loop around positioning rather than a
-property, which is why the three are uncounted until it exists.
+The retry loop exists: an anchored box that overflows its containing
+block walks `position-try-fallbacks` in written order and takes the
+first candidate that fits, leaving the original position alone when none
+does. `flip-block`, `flip-inline` and `flip-start` transform the area in
+force rather than naming a new one.
 
-**Chromium 141 measured first.** A 400x300 containing block that clips,
-an anchor 100x20 whose top varies, and a 40x30 box naming it:
+The two properties beside it are **not** implemented and stay uncounted,
+because nothing reads them:
 
-| anchor top | `position-area` | fallbacks | result |
-|---|---|---|---|
-| 150 | `top` | none | y 120 |
-| 10 | `top` | none | y **-20** |
-| 10 | `top` | `bottom` | y 30 |
-| 150 | `top` | `bottom` | y 120 |
-| 10 | `top` | `left, bottom` | x 110, y 5 |
-| 10 | `top` | `flip-block` | y 30 |
-| 150 | `left` | `flip-inline` | unchanged |
-| 270 | `bottom` | `top` | y 240 |
-| 10 | `top` | `top` | y **-20** |
+1. **`position-try-order`** sorts the candidate list before it is walked
+   -- by `most-width`, `most-height`, `most-block-size` or
+   `most-inline-size`. What has to be measured first is what "most"
+   compares: the area available to the box in that candidate, which
+   needs the available space computed per candidate rather than the fit
+   test the loop does now.
+2. **`position-visibility`** hides a box rather than moving it, under
+   `always`, `anchors-visible` or `no-overflow`. It needs the same
+   overflow test the loop already has, and a way to hide a box that is
+   laid out -- `visibility: hidden` exists, so this is mostly a question
+   of what Chromium does when the anchor is partly visible, which has
+   not been probed.
 
-The algorithm those rows describe: take the position `position-area`
-gives; if it does not overflow the containing block, keep it; otherwise
-try each fallback in written order and take **the first that fits**, not
-the best-fitting one -- `left, bottom` from an overflowing `top` lands
-on `left`, which is merely first. If none fits, the original position
-stands, which is what the last row pins: an implementation that kept the
-last candidate it tried, or the one that overflowed least, would put the
-box somewhere else.
-
-A fallback that is a `flip-` keyword transforms the current area rather
-than naming a new one: `flip-block` swaps the before and after bands of
-the block axis, `flip-inline` the inline axis, and `flip-start` exchanges
-the two axes. A flip is not applied at all when the original fits, which
-the `flip-inline` row shows.
-
-Not yet probed, and needed before those two are implemented rather than
-merely stored: what `position-try-order` sorts the candidates by, and
-when `position-visibility` hides a box rather than moving it.
+Neither is guessed at here. Both want a Chromium probe of their own
+first, the way every other feature in this file got one.
 
 ### What is left of CSS Anchor Positioning 1
 

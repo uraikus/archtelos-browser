@@ -374,9 +374,9 @@ const int PAREA_SPAN = 4
 // The two axes in one number, block first.
 const int PAREA_AXIS = 8
 
-// What the three anchor properties this engine acts on say about one
-// element. `anchor-scope`, `position-try-fallbacks`, `position-try-order`
-// and `position-visibility` are not here: nothing would read them, and a
+// What the four anchor properties this engine acts on say about one
+// element. `anchor-scope`, `position-try-order` and
+// `position-visibility` are not here: nothing would read them, and a
 // property the cascade computes but neither layout nor paint reads is
 // not implemented however faithfully it is stored (todo.md says what
 // each of them needs). It is
@@ -389,6 +389,7 @@ struct AnchorInfo {
     name:text            // anchor-name
     anchor:text          // position-anchor
     area:int             // position-area, block * PAREA_AXIS + inline
+    fallbacks:text       // position-try-fallbacks, as written
 }
 
 // This page's anchor declarations; `Style.anchorInfo` is an index into

@@ -5553,11 +5553,14 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     text aName = anchorIdent(props, 'anchor-name')
     text aAnchor = anchorIdent(props, 'position-anchor')
     int aArea = positionAreaValue(styleProp(props, 'position-area'))
-    if aName != '' || aAnchor != '' || aArea != PAREA_NONE {
+    text aFall = anchorIdent(props, 'position-try-fallbacks')
+    if aFall == 'none' { aFall = '' }
+    if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != '' {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
         ai.area = aArea
+        ai.fallbacks = aFall
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }
