@@ -506,6 +506,50 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
+### What a motion path's curve commands were measured to be
+
+`motionPathData` in src/css/motion.f reads `M`, `L`, `H`, `V` and `Z`
+and stops at the first curve, so `path()` is a polyline and nothing
+else. Chromium 141, on a 2x2 box whose anchor is its own centre, at five
+distances along each path -- the readings below are the path's own
+points, the box's corner being one pixel back from each:
+
+| path | 0% | 25% | 50% | 75% | 100% |
+|---|---|---|---|---|---|
+| `M 0 0 L 100 0 L 100 100` (the control) | 0,0 | 50,0 | 100,0 | 100,50 | 100,100 |
+| `M 0 0 C 0 100 100 100 100 0` | 0,0 | 11,48 | 50,75 | 89,48 | 100,0 |
+| `M 0 0 c 0 100 100 100 100 0` | 0,0 | 11,48 | 50,75 | 89,48 | 100,0 |
+| `M 0 0 Q 50 100 100 0` | 0,0 | 19,31 | 50,50 | 81,31 | 100,0 |
+| `M 0 0 C 0 50 50 50 50 0 S 100 -50 100 0` | 0,0 | 25,38 | 50,0 | 75,−37 | 100,0 |
+| `M 0 0 Q 25 50 50 0 T 100 0` | 0,0 | 25,25 | 50,0 | 75,−25 | 100,0 |
+| `M 0 0 A 50 50 0 0 1 100 0` | 0,0 | 15,−35 | 50,−50 | 85,−35 | 100,0 |
+| `M 0 0 A 50 50 0 1 0 100 0` | 0,0 | 15,35 | 50,50 | 85,35 | 100,0 |
+
+The control row is the polyline this engine already walks, and it lands
+exactly where the corners are, so the distances are arc length and the
+engine's existing lookup is the right one to feed.
+
+**The relative form is the same curve**, which is the check worth
+keeping: `c 0 100 100 100 100 0` from the origin reads identically to
+its absolute twin at all five distances, so a test can assert they agree
+without either being known.
+
+**`S` and `T` reflect the previous control point** about the current
+point, which the two rows show: the `S` path is symmetric about 50,0 and
+the `T` path likewise, each rising as far above the axis in its second
+half as its first half fell below.
+
+**Both `A` rows are semicircles**, because the chord of 100 is exactly
+the diameter of a radius-50 circle -- so the large-arc flag has nothing
+to choose between and only the sweep flips the curve from one side of
+the chord to the other. That makes them a good pair for a test and a
+poor pair for telling the two flags apart, which wants a smaller chord.
+
+The work is: sample each Bézier into the polyline `motionAddPoint`
+already builds, which the arc-length lookup then walks unchanged. `A`
+needs the endpoint-to-centre conversion (SVG F.6.5) first, and a second
+subpath after an `M` is still refused.
+
 ### What is left of `anchor()` and `anchor-size()`
 
 `anchor()` works in the four inset properties. `anchor-size()` does
