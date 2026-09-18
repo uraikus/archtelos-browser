@@ -3019,7 +3019,15 @@ void func paintScrollbars(b:Box) {
 // is a matrix around the painting of the subtree and touches no
 // geometry. The question is asked once per document -- cascadeSawTransform
 // -- rather than of every box.
+// An anchored box `position-visibility: no-overflow` hid is laid out
+// like any other and simply not painted. The page-level flag is the one
+// test a document with no such box pays.
+bool func anchorHides(b:Box) {
+    return anyAnchorHidden && b.node != null && anchorHiddenIds[`${b.node.id}`] != null
+}
+
 void func paintBox(b:Box) {
+    if anyAnchorHidden && anchorHides(b) { return }
     if !cascadeSawTransform || b.style.transforms.length == 0 {
         paintBoxUntransformed(b)
         return

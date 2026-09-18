@@ -5357,6 +5357,17 @@ void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
                 }
             }
             if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+            // `position-visibility: no-overflow` hides a box that still
+            // overflows once every candidate has been tried. It hides
+            // the whole box rather than clipping it harder, which is
+            // what Chromium does and what the render suite checks by
+            // straddling the box across the edge: a stricter clip would
+            // leave the part that falls inside.
+            if ai.visibility == POSVIS_NO_OVERFLOW && b.node != null
+                && anchorOverflows(b.x, b.y, b.w, b.h, cbX, cbY, cbW, cbH) {
+                anchorHiddenIds[`${b.node.id}`] = true
+                anyAnchorHidden = true
+            }
         }
     }
     // The containing block for the descendants, tracked the way the

@@ -369,6 +369,21 @@ int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
 // the sort applies whether or not the original position overflows,
 // which Chromium shows by moving a box out of a `bottom` that fits
 // (todo.md records the measurement).
+// `position-visibility` decides whether an anchored box is painted at
+// all, not where it goes. `anchors-visible` is treated as `always`,
+// because telling them apart needs the anchor scrolled out of a
+// scrollport while the box stays visible and `position-area` ties the
+// two together -- a static render has no such state, which todo.md
+// records rather than guesses at.
+const int POSVIS_ALWAYS = 0
+const int POSVIS_NO_OVERFLOW = 1
+
+// The anchored boxes this page hides, by the element id of the box.
+// Kept here rather than as a field on `Box`, which is allocated per box
+// and pays for a field whether or not anything reads it.
+map[bool] anchorHiddenIds = {}
+bool anyAnchorHidden = false
+
 const int TRYORDER_NORMAL = 0
 const int TRYORDER_MOST_BLOCK = 1
 const int TRYORDER_MOST_INLINE = 2
@@ -399,6 +414,7 @@ struct AnchorInfo {
     area:int             // position-area, block * PAREA_AXIS + inline
     fallbacks:text       // position-try-fallbacks, as written
     tryOrder:int         // position-try-order, as a TRYORDER_ value
+    visibility:int       // position-visibility, as a POSVIS_ value
 }
 
 // This page's anchor declarations; `Style.anchorInfo` is an index into

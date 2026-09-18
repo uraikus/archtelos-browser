@@ -322,56 +322,17 @@ shows by moving a box out of a `bottom` that fits.
 One property beside them is **not** implemented and stays uncounted,
 because nothing reads it:
 
-1. **`position-visibility`** is measured now. A 400x300 clipping block,
-   an anchor at its lower edge and a 40x30 box placed `bottom` so it
-   straddles the edge -- 20 of its 25 pixels on the sampled row fall
-   inside the block:
+Only **`anchor-scope`** is left of the specification's seven
+properties, and it is not implemented or counted: it limits which
+elements an anchor name is visible to, which needs a notion of a name's
+scope tree, and the registry here is one flat map per page.
 
-   | | black pixels of 25 |
-   |---|---|
-   | `always` | 20 -- paints, clipped by the block |
-   | `no-overflow` | **0** -- the whole box is hidden |
-   | `anchors-visible` | 20 -- the anchor is visible, so it paints |
-
-   So `no-overflow` hides the **entire** box when it overflows, not
-   merely the part that does: an implementation that clipped harder
-   would leave those 20 pixels.
-
-   Two things this probe also settled. **None of it reaches computed
-   style** -- Chromium answers `visibility: visible` for every keyword,
-   so the effect is a paint-time state and a `getComputedStyle` probe
-   sees nothing; the first attempt here did exactly that and reported no
-   difference at all. And **`anchors-visible` could not be
-   discriminated**: making the anchor invisible while the box stays
-   visible needs the anchor scrolled out of a scrollport, and
-   `position-area` ties the box to the anchor, so both leave together.
-   In a static render there is no such state, which is a reason to treat
-   it as `always` and say so rather than a reason to guess.
-
-Neither is guessed at here. Both want a Chromium probe of their own
-first, the way every other feature in this file got one.
-
-### What is left of CSS Anchor Positioning 1
-
-`anchor-name`, `position-anchor` and `position-area` place a box against
-another element's rectangle, in all thirteen regions, measured against
-Chromium first. Four properties of the specification are **not**
-implemented and are deliberately not counted, because a property the
-cascade computes but neither layout nor paint reads is not implemented
-however faithfully it is stored -- each of them registered on the
-instrument when it was merely kept in a field, which is the same trap
-`outline-style` once fell into from the other direction:
-
-1. **`anchor-scope`** limits which elements an anchor name is visible
-   to. It needs a notion of a name's scope tree, which is a lookup rule
-   rather than geometry, and the registry here is one flat map per page.
-2. **`position-try-fallbacks`** and **`position-try-order`** need the
-   box laid out, tested for overflow against its containing block, and
-   laid out again at the next candidate. That is a retry loop around
-   positioning rather than a property, and the placement it retries had
-   to exist first.
-3. **`position-visibility`** hides a box whose anchor has scrolled out
-   of view, which needs the same overflow test.
+`position-visibility` treats **`anchors-visible` as `always`**. Telling
+the two apart needs the anchor scrolled out of a scrollport while the
+box stays visible, and `position-area` ties the box to the anchor, so
+both leave together; a static render has no such state. That is a
+measurement that could not be made rather than one that was skipped,
+and it is recorded here for whoever can make it.
 
 Also missing: the `anchor()` and `anchor-size()` functions, which give
 an inset or a size from the anchor's own box rather than choosing a

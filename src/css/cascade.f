@@ -171,6 +171,9 @@ void func cascadeReset() {
     cornerCustomK = []
     anyAnchorName = false
     anchorInfos = []
+    map[bool] emptyHidden = {}
+    anchorHiddenIds = emptyHidden
+    anyAnchorHidden = false
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -5562,14 +5565,20 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if ot == 'most-height' || ot == 'most-block-size' { aOrder = TRYORDER_MOST_BLOCK }
         else if ot == 'most-width' || ot == 'most-inline-size' { aOrder = TRYORDER_MOST_INLINE }
     }
+    int aVis = POSVIS_ALWAYS
+    ascii visv = styleProp(props, 'position-visibility')
+    if visv != null && asciiLower(asciiTrim(visv)) == 'no-overflow' {
+        aVis = POSVIS_NO_OVERFLOW
+    }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
-        || aOrder != TRYORDER_NORMAL {
+        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
         ai.area = aArea
         ai.fallbacks = aFall
         ai.tryOrder = aOrder
+        ai.visibility = aVis
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }

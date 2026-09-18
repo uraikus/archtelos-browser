@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `position-visibility`, and a probe that asked the wrong question
+
+An anchored box that still overflows its containing block once every
+candidate has been tried is hidden under `no-overflow` and drawn under
+`always`. It hides the **whole** box rather than clipping it harder: a
+box straddling the block's edge paints 20 of the 25 pixels sampled on a
+row inside it under `always`, and none of them under `no-overflow`. A
+stricter clip would leave those twenty.
+
+**The first probe found nothing, confidently.** It read
+`getComputedStyle().visibility` under each keyword and got `visible`
+every time, because Chromium implements this as a paint-time state that
+never reaches computed style. That is worth recording beside the
+behaviour: an instrument asking the wrong question answers "no
+difference" exactly as firmly as one asking the right question, and the
+only reason it was caught is that a property doing nothing at all was
+the less likely of the two explanations.
+
+**`anchors-visible` is treated as `always`, and says so.** Telling them
+apart needs the anchor scrolled out of a scrollport while the box stays
+visible, and `position-area` ties the box to the anchor. A static render
+has no such state, so this is a measurement that could not be made
+rather than a guess dressed as one.
+
+The hidden boxes are a page-level map keyed by element id, consulted in
+paint behind a flag. `Style` is shared between identically-styled
+elements so it cannot carry a per-box decision, and `Box` is allocated
+per box -- 2,728 of them on the benchmark page -- where a field costs
+whether or not anything reads it.
+
+**247 of 405.** Six of the specification's seven properties work;
+`anchor-scope` alone is left, and needs a scope tree.
+
 ### `position-try-order`, which is not part of the retry loop
 
 The order sorts the candidates -- the area the element asked for, then
