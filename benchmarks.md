@@ -1459,3 +1459,36 @@ page the benchmark measures, and every page a screenshot takes -- does
 not reach the code at all. What it does pay for is the thirteen fields
 the snap properties put on `Style`, and those are read once per distinct
 computed style: 24 of them for this page's 2,728 elements.
+
+An inline box's own border and padding cost **4,352 bytes**
+(2,956,712 → 2,961,064) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (b7dc926) | 106 ms | 108 ms | 118 ms |
+| after (71251ad) | 105 ms | 108 ms | 127 ms |
+| paired, after less before | −12 ms | **0 ms** | +20 ms |
+
+The new binary is the slower one in 10 pairs of 25 and the paired mean
+is +0.64 ms. The noise floor was taken first, by running the parent
+against a byte-identical copy of itself: nine pairs gave 107 against
+108 as a minimum, so a 1 ms gap is what this machine calls "the same".
+
+**The tables above are not updated from this run, because the control
+says they would be measuring the machine.** The whole-run figures read
+106 ms on `generated.html` where the table records 101, and Chromium's
+control row read 24.0 ms where the table records 26.0 — the two engines
+drifting in opposite directions by similar fractions, both inside the
+15% the script allows. The parent, rebuilt and run in the same minutes,
+reads the same 106, which is what settles it.
+
+Two things could have cost something here and did not. The first is a
+field on `Fragment`, which is allocated per text run and per inline per
+line rather than per distinct style — nearer to `Box`'s 2,728 than to
+the 24 styles they share. The second is the painter's cull, which every
+line and every box on every page goes through: widening it by the
+furthest any inline reaches outside its line is one addition against a
+number that a document without a padded or bordered inline leaves at
+zero, so the arithmetic is there but the pages that do not use the
+feature get the same answer they got before.
