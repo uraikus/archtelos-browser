@@ -506,6 +506,46 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
+### What a motion path's subpaths were measured to be
+
+`path()` reads one subpath: a second `M` ends it. Chromium 141, at
+distances along each of these, the readings being the path's own points:
+
+| path | 0% | 50% | 100% | 150px | 400px | −20px |
+|---|---|---|---|---|---|---|
+| `M 0 60 L 100 60` | 0,60 | 50,60 | 100,60 | 100,60 | 100,60 | 0,60 |
+| `M 0 60 L 100 60 M 0 160 L 100 160` | 0,60 | 100,60 | 100,160 | 50,160 | 100,160 | 0,60 |
+| `M 0 60 L 100 60 M 0 160 L 50 160` | 0,60 | 75,60 | 50,160 | 50,160 | 50,160 | 0,60 |
+| `M 0 60 L 100 60 Z M 0 160 L 100 160` | 0,60 | 50,60 | 100,160 | 50,60 | 100,160 | 0,60 |
+| `M 0 60 L 100 60 Z` | 0,60 | 100,60 | 0,60 | 50,60 | 0,60 | 20,60 |
+| `M 0 60 100 60` | 0,60 | 50,60 | 100,60 | 100,60 | 100,60 | 0,60 |
+
+**The length is the sum of the subpaths and the distance walks them in
+order**, with nothing joining them: at 50% of the 100 + 100 path the
+point is at the end of the first, and the next step is at the start of
+the second. The 100 + 50 row is the arithmetic in the open: a total of
+150 puts 50% at 75 along the first and 100% at the end of the second.
+
+**`Z` closes the subpath it is in**, so the fourth row's first subpath
+is 200 long -- out and back -- and the whole path 300. Its 150px is
+halfway back along the return leg.
+
+**A path of more than one subpath clamps at its ends; a single closed
+one wraps.** The fourth row answers 100,160 at 400px, which is its end,
+while `M 0 60 L 100 60 Z` answers 0,60 at 400px and 20,60 at −20px,
+which is 400 and −20 taken modulo its 200. So the wrap this engine
+already does belongs to a lone closed subpath and has to be turned off
+the moment a second `M` appears.
+
+**A second coordinate pair after `M` is a line, not a second move**
+(SVG §8.3.2), which the last row shows: `M 0 60 100 60` reads exactly
+as `M 0 60 L 100 60`. This engine drops it.
+
+The work: a `moveTo` that pushes a point without adding the gap to the
+running length, the subpath's own start remembered for `Z`, the wrap
+turned off past the first subpath, and the pairs after an `M` treated
+as an `L`.
+
 ### What is left of `anchor()` and `anchor-size()`
 
 `anchor()` works in the four inset properties. `anchor-size()` does
