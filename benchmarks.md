@@ -490,6 +490,21 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What sorting the position-try candidates cost
+
+`position-try-order` builds the candidate list and sorts it, which
+sounds like more work than the retry loop it replaced a branch in. It is
+not: the list is built only for a box that names an anchor and declares
+either fallbacks or an order, so on every other page neither the build
+nor the sort is reached. Twenty-five alternating samples against the
+revision before it: median -1 ms, paired mean -2.08, slower in 8 of 25
+pairs.
+
+The sort itself is a selection sort over a list that is a handful of
+entries long, which is the right shape here: an allocation-free sort
+over four items beats anything cleverer, and it is stable, so candidates
+offering equal room keep their written order.
+
 ## What the position-try retry loop cost
 
 The retry loop lays an anchored box out, tests it against its containing
