@@ -5,6 +5,62 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Borders 4: `corner-shape`
+
+A corner is the region the border radius already resolves, and every
+value this property takes is that region under a different superellipse
+exponent -- `|x/rx|^k + |y/ry|^k = 1`, with a negative exponent giving
+the concave reflection. So there is one curve in the painter and not
+six: `square` is a large k, `squircle` is 4, `round` is 2, `bevel` is 1,
+`scoop` is -2 and `notch` is a large negative one. `superellipse()`
+takes any of them, and the suite checks it against the keywords rather
+than against numbers worked out here -- `superellipse(1)` must be the
+same picture as `bevel`, or the keywords are a second table that happens
+to agree.
+
+The shorthand reads one to four values the way `border-radius` does, the
+four physical longhands override it, and the four logical ones name the
+same corners in the left-to-right horizontal mode this engine lays out
+in. **241 of 405** properties now change the computed style, up from
+233, and `--fields` says each of the eight moved its own corner's field.
+
+**Chromium 141 was measured first**, as a 100x100 box with a 40px radius
+read as the first fully black pixel on each row of the corner. `bevel`
+is what pins the parameterisation down: an exponent of 1 collapses the
+formula to a straight line, so all of its rows are exact rather than
+near, and an exponent wrong anywhere could not match every one.
+
+Three things the tests caught that the implementation had wrong:
+
+**Sampling a corner evenly in one axis is wrong for an extreme
+exponent.** `square` and `notch` put everything they do in the last
+thousandth of an axis parameter, so sixteen even steps drew a diagonal
+across the corner instead of the shape. The corner is walked in the
+angle now, which samples every exponent evenly along its own curve.
+
+**The shape was painter state, and stale state leaked between boxes.** A
+page that used the property left the globals set, so the next box with
+no shape came out bevelled. The check that caught it is the one that
+asks two ways of saying the same thing to agree: a box with no
+`corner-shape` must be the same picture as one asking for `round`.
+
+**`Math.cos` of half pi is 6e-17, and `notch` raises it to the 1/500.**
+That is 0.93 rather than 0, and it put the end of a corner three pixels
+from the edge it joins. Both ends of every corner are pinned to the
+straight edges exactly rather than computed.
+
+A corner that is `round` keeps the bezier the canvas draws natively even
+when another corner of the same box is shaped, so `round` is the same
+pixels whatever surrounds it -- an invariant worth having structurally
+rather than by watching a polyline converge to it. A page that never
+says the property never leaves that path at all: `anyCornerShape` is one
+boolean on the box's radius resolution, and `roundedRectPathEllipses`
+takes its old four-curve route whole.
+
+A shadow follows the shape its box has, because `resolveCornerRadii` is
+where both the radii and the shapes are read and `shadowShapeRadii` goes
+through it.
+
 ### The explicit half of UAX #9, and `unicode-bidi`
 
 The bidirectional algorithm had its implicit half -- the W, N and I

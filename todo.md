@@ -305,57 +305,6 @@ container's own children, which is the depth this engine fragments and
 measures at everywhere else. A grandchild carrying `scroll-snap-align`
 is not a snap point, where in the standard it is.
 
-### CSS Borders 4: `corner-shape`
-
-Eight gradable rows in the property instrument -- the four physical
-`corner-*-shape` longhands and the four logical ones -- for one
-generalisation of geometry the engine already has. A corner is a region
-`rx` by `ry` that the border radius already resolves, and every one of
-these shapes is that same region under a different superellipse
-exponent: `|x/r|^k + |y/r|^k = 1`.
-
-**Chromium 141 measured first**, as a 100x100 black box with
-`border-radius: 40px`, read as the first fully black pixel on each row
-of the top-left corner:
-
-| row | 0 | 2 | 5 | 8 | 10 | 14 | 18 | 20 | 25 | 30 | 35 | 40 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `round` | 40 | 28 | 21 | 16 | 14 | 10 | 7 | 6 | 3 | 2 | 1 | 0 |
-| `square` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `bevel` | 40 | 38 | 35 | 32 | 30 | 26 | 22 | 20 | 15 | 10 | 5 | 0 |
-| `scoop` | 40 | 40 | 40 | 40 | 39 | 38 | 36 | 35 | 31 | 26 | 19 | 0 |
-| `notch` | 40 | 40 | 40 | 40 | 40 | 40 | 40 | 40 | 40 | 40 | 40 | 0 |
-| `squircle` | 27 | 14 | 8 | 5 | 4 | 2 | 1 | 1 | 1 | 0 | 0 | 0 |
-
-One formula fits all six. With `u` the depth into the corner as a
-fraction of `ry`, the inset from the edge is
-`r * (1 - (1 - (1 - u)^k)^(1/k))` for a positive `k`, and
-`r * (1 - u^|k|)^(1/|k|)` for a negative one, which is the concave form:
-
-| | k |
-|---|---|
-| `square` | +infinity, so the inset is zero and the corner is filled |
-| `squircle` | 4 |
-| `round` | 2, which is what `cornerInset` already computes |
-| `bevel` | 1, so the inset is `r * (1 - u)` -- exact on every row above |
-| `scoop` | -2, so the inset is `r * sqrt(1 - u^2)` |
-| `notch` | -infinity, so the inset is the whole radius until the corner ends |
-
-`bevel` checks exactly against the table at every sampled row, which is
-what says the parameterisation is right rather than merely close.
-`squircle` reads 27 at row 0 not because it bulges past the radius but
-because a fourth-power curve is within a ninth of a pixel of the top
-edge from x=27 onward -- worth knowing before a test is written against
-that row.
-
-The work, once it is written: the shape carried on `Style` per corner,
-`roundedRectPathEllipses` emitting each corner per its own shape --
-`bevel` and `notch` are straight segments, the curved ones are sliced
-the way `shadowCorner` already slices a blurred corner -- `cornerInset`
-generalised so a shadow follows the shape, and `superellipse()` taking
-an arbitrary exponent. A layer still draws its corners square, which is
-the path-API limit `border-radius` already has inside a clipped subtree.
-
 ### After the official definition
 
 the media features about a user's own preferences that

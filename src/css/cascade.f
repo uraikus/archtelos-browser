@@ -167,6 +167,7 @@ void func cascadeReset() {
     resetPageRules()
     anyPageBreak = false
     anyUnicodeBidi = false
+    anyCornerShape = false
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -4020,6 +4021,42 @@ void func snapAlignProp(v:ascii) {
     snapAlignInlineOut = t.length > 1 ? snapAlignKeyword(asciiLower(t[1])) : snapAlignBlockOut
 }
 
+// `corner-shape`'s keywords and `superellipse()`, as the exponent each
+// one names (CSS Borders 4 §5). Zero is "not a shape", which no real
+// value is, because a superellipse of exponent zero is not a curve.
+float func cornerShapeKeyword(v:ascii) {
+    if v == null { return 0.0 }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'round' { return CORNER_K_ROUND }
+    if t == 'square' { return CORNER_K_SQUARE }
+    if t == 'bevel' { return CORNER_K_BEVEL }
+    if t == 'scoop' { return CORNER_K_SCOOP }
+    if t == 'notch' { return CORNER_K_NOTCH }
+    if t == 'squircle' { return CORNER_K_SQUIRCLE }
+    if asciiStartsWith(t, 'superellipse('.toAscii(), 0) && t[t.length - 1] == ')' {
+        ascii inner = asciiTrim(t.slice(13, t.length - 1))
+        if inner == 'infinity' { return CORNER_K_SQUARE }
+        if inner == '-infinity' { return CORNER_K_NOTCH }
+        float n = parseFloatAscii(inner)
+        // An exponent of zero is not a curve, and one past the extremes
+        // is the extreme.
+        if n == 0.0 { return 0.0 }
+        if n > CORNER_K_SQUARE { return CORNER_K_SQUARE }
+        if n < CORNER_K_NOTCH { return CORNER_K_NOTCH }
+        return n
+    }
+    return 0.0
+}
+
+// One `corner-*-shape` longhand, or the value already there when the
+// declaration is absent or unreadable.
+float func cornerShapeProp(props:map[text], name:text, fallback:float) {
+    ascii v = styleProp(props, name)
+    if v == null { return fallback }
+    float k = cornerShapeKeyword(v)
+    return k == 0.0 ? fallback : k
+}
+
 // CSS Writing Modes 3 §2.2: which pair of formatting characters the
 // element's text is treated as being wrapped in.
 int func unicodeBidiKeyword(v:ascii) {
@@ -5390,6 +5427,42 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.radiusBottomLeftY = cornerRadiusY
     }
     s.borderRadius = radiusAny(s) ? 1 : 0
+    // `corner-shape` (CSS Borders 4 §5): the shorthand in the same
+    // one-to-four form as `border-radius`, then the four physical
+    // longhands, then the four logical ones -- which in the
+    // left-to-right horizontal mode this engine lays out in name the
+    // same four corners.
+    s.cornerTopLeftK = CORNER_K_ROUND
+    s.cornerTopRightK = CORNER_K_ROUND
+    s.cornerBottomRightK = CORNER_K_ROUND
+    s.cornerBottomLeftK = CORNER_K_ROUND
+    ascii csh = styleProp(props, 'corner-shape')
+    if csh != null {
+        arr[ascii] ct = cssTokens(csh)
+        arr[float] ks = []
+        for int i = 0, i < ct.length, i++ {
+            float k = cornerShapeKeyword(ct[i])
+            if k != 0.0 { ks.push(k) }
+        }
+        if ks.length > 0 {
+            s.cornerTopLeftK = ks[0]
+            s.cornerTopRightK = ks.length > 1 ? ks[1] : ks[0]
+            s.cornerBottomRightK = ks.length > 2 ? ks[2] : ks[0]
+            s.cornerBottomLeftK = ks.length > 3 ? ks[3] : (ks.length > 1 ? ks[1] : ks[0])
+        }
+    }
+    s.cornerTopLeftK = cornerShapeProp(props, 'corner-top-left-shape', s.cornerTopLeftK)
+    s.cornerTopRightK = cornerShapeProp(props, 'corner-top-right-shape', s.cornerTopRightK)
+    s.cornerBottomRightK = cornerShapeProp(props, 'corner-bottom-right-shape', s.cornerBottomRightK)
+    s.cornerBottomLeftK = cornerShapeProp(props, 'corner-bottom-left-shape', s.cornerBottomLeftK)
+    s.cornerTopLeftK = cornerShapeProp(props, 'corner-start-start-shape', s.cornerTopLeftK)
+    s.cornerTopRightK = cornerShapeProp(props, 'corner-start-end-shape', s.cornerTopRightK)
+    s.cornerBottomLeftK = cornerShapeProp(props, 'corner-end-start-shape', s.cornerBottomLeftK)
+    s.cornerBottomRightK = cornerShapeProp(props, 'corner-end-end-shape', s.cornerBottomRightK)
+    if s.cornerTopLeftK != CORNER_K_ROUND || s.cornerTopRightK != CORNER_K_ROUND
+        || s.cornerBottomRightK != CORNER_K_ROUND || s.cornerBottomLeftK != CORNER_K_ROUND {
+        anyCornerShape = true
+    }
     s.borderSpacing = 0
     ascii bs = styleProp(props, 'border-spacing')
     if bs != null {

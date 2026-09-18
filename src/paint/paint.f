@@ -124,7 +124,98 @@ float func radiusShrink(sum:int, side:int) {
     return side.toFloat() / sum.toFloat()
 }
 
+// The `corner-shape` exponent each corner of the next path is drawn
+// with, and whether any of them is not `round`. Globals rather than
+// four more arguments on a function that already takes twelve
+// (FINDINGS.md, "one value out of a function" is the same shape of
+// problem going the other way), set by `cornerShapesOf` and left at
+// `round` for every caller that does not have a shaped box.
+float pathKTL = CORNER_K_ROUND
+float pathKTR = CORNER_K_ROUND
+float pathKBR = CORNER_K_ROUND
+float pathKBL = CORNER_K_ROUND
+bool pathAnyShaped = false
+
+// How many straight segments a shaped corner is walked in. Sixteen is
+// what the render suite's comparison against Chromium's own corner
+// profile passes at, on a 40px radius across all six keywords; the
+// error is a pixel at the steepest part of a `bevel`, which is where
+// any polyline approximation is worst.
+const int CORNER_SLICES = 16
+
+const float HALF_PI = 1.5707963267948966
+
+// A point on one corner's superellipse, `i` of `CORNER_SLICES` of the
+// way round it. `cornerPA` is the distance travelled along the edge the
+// corner leaves and `cornerPB` the distance from the edge it meets, so
+// a caller places both without knowing which corner it is drawing. Two
+// values out of a function need globals (FINDINGS.md, "one value out of
+// a function").
+//
+// The angle, not either axis, is the parameter: at `i` of 0 the point
+// is where the first straight edge ended and at `i` of CORNER_SLICES it
+// is where the next begins, for every exponent. A positive exponent
+// gives the convex curve `border-radius` draws, a negative one its
+// concave reflection, which is what `scoop` and `notch` are.
+float cornerPA = 0.0
+float cornerPB = 0.0
+
+void func cornerPointAt(ra:int, rb:int, i:int, k:float) {
+    // The two ends are where the straight edges are, exactly. They are
+    // not computed, because an extreme exponent magnifies the error in
+    // them out of all proportion: `Math.cos` of half pi is 6e-17 rather
+    // than zero, and raising that to the 1/500 a `notch` asks for gives
+    // 0.93, which puts the end of the corner three pixels from the edge
+    // it is supposed to meet.
+    if i >= CORNER_SLICES { cornerPA = ra.toFloat()  cornerPB = rb.toFloat()  return }
+    if i <= 0 { cornerPA = 0.0  cornerPB = 0.0  return }
+    float th = HALF_PI * i.toFloat() / CORNER_SLICES.toFloat()
+    float c = Math.cos(th)
+    float sn = Math.sin(th)
+    if c < 0.0 { c = 0.0 }
+    if sn < 0.0 { sn = 0.0 }
+    if k < 0.0 {
+        float m = 0.0 - k
+        cornerPA = ra.toFloat() * (1.0 - Math.pow(c, 2.0 / m))
+        cornerPB = rb.toFloat() * Math.pow(sn, 2.0 / m)
+        return
+    }
+    cornerPA = ra.toFloat() * Math.pow(sn, 2.0 / k)
+    cornerPB = rb.toFloat() * (1.0 - Math.pow(c, 2.0 / k))
+}
+
+
+// Puts a box's four `corner-shape` exponents where the path builder
+// reads them. A box whose corners are all `round` -- which is every box
+// on a page that never says the property -- leaves the fast path in
+// `roundedRectPathEllipses` switched on.
+void func cornerShapesOf(s:Style) {
+    pathKTL = s.cornerTopLeftK
+    pathKTR = s.cornerTopRightK
+    pathKBR = s.cornerBottomRightK
+    pathKBL = s.cornerBottomLeftK
+    pathAnyShaped = pathKTL != CORNER_K_ROUND || pathKTR != CORNER_K_ROUND
+        || pathKBR != CORNER_K_ROUND || pathKBL != CORNER_K_ROUND
+}
+
+void func cornerShapesRound() {
+    pathKTL = CORNER_K_ROUND
+    pathKTR = CORNER_K_ROUND
+    pathKBR = CORNER_K_ROUND
+    pathKBL = CORNER_K_ROUND
+    pathAnyShaped = false
+}
+
 void func resolveCornerRadii(s:Style, w:int, h:int) {
+    // The shape travels with the radii, because every place that needs
+    // one needs the other: one boolean on a page that never says
+    // `corner-shape`, and `shadowShapeRadii` reaches it through here
+    // too, so a shadow follows the same curve its box does.
+    // A page that says the property leaves the globals wherever the
+    // last box left them, so a later box with no shape has to put them
+    // back: the shapes are painter state, and stale state is what made
+    // an unshaped box come out bevelled.
+    if anyCornerShape { cornerShapesOf(s) } else if pathAnyShaped { cornerShapesRound() }
     radTLX = radiusPx(s.radiusTopLeftX, w)
     radTLY = radiusPx(s.radiusTopLeftY, h)
     radTRX = radiusPx(s.radiusTopRightX, w)
@@ -211,13 +302,65 @@ void func roundedRectPathEllipses(x:int, y:int, w:int, h:int,
     beginPath()
     moveTo(x + ax, y)
     lineTo(x + w - bx, y)
-    curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    if !pathAnyShaped {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+        lineTo(x + w, y + h - cy)
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+        lineTo(x + dx, y + h)
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+        lineTo(x, y + ay)
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+        closePath()
+        return
+    }
+    // A `corner-shape` other than `round` is walked rather than curved:
+    // a bezier is not a superellipse and the canvas has no primitive
+    // that is. A corner that IS round keeps its bezier even when the box
+    // has a shaped corner elsewhere, so `round` is the same pixels
+    // whatever its neighbours are -- an invariant the suite checks, and
+    // one worth having structurally rather than by convergence.
+    //
+    // Each corner runs from where one straight edge ends to where the
+    // next begins, and is walked in the angle rather than in either
+    // axis: `square` and `notch` put everything they do in the last
+    // thousandth of an axis parameter and would come out as a diagonal
+    // across the corner, where in the angle every exponent is sampled
+    // evenly along its own curve.
+    if pathKTR == CORNER_K_ROUND {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(bx, by, i, pathKTR)
+            lineTo(x + w - bx + roundPx(cornerPA), y + roundPx(by.toFloat() - cornerPB))
+        }
+    }
     lineTo(x + w, y + h - cy)
-    curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    if pathKBR == CORNER_K_ROUND {
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(cy, cx, i, pathKBR)
+            lineTo(x + w - roundPx(cornerPB), y + h - cy + roundPx(cornerPA))
+        }
+    }
     lineTo(x + dx, y + h)
-    curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    if pathKBL == CORNER_K_ROUND {
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(dx, dy, i, pathKBL)
+            lineTo(x + dx - roundPx(cornerPA), y + h - roundPx(dy.toFloat() - cornerPB))
+        }
+    }
     lineTo(x, y + ay)
-    curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    if pathKTL == CORNER_K_ROUND {
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(ay, ax, i, pathKTL)
+            lineTo(x + roundPx(cornerPB), y + ay - roundPx(cornerPA))
+        }
+    }
     closePath()
 }
 
@@ -402,14 +545,40 @@ float func cornerInset(rx:int, ry:int, dy:float) {
     return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
 }
 
+// The same question of a corner drawn with any `corner-shape`: the
+// superellipse `|x/rx|^k + |y/ry|^k = 1` for a positive exponent, and
+// its concave reflection for a negative one, which is what `scoop` and
+// `notch` are. `dy` is into the band as above -- nothing at the inner
+// end, the whole radius at the outer one.
+//
+// Every keyword is one exponent (CSS Borders 4 §5), so there is one
+// curve here and not six: 2 is `round`, 1 is `bevel` -- where the
+// formula collapses to `rx * t` and the corner is the straight cut it
+// should be -- 4 is `squircle`, -2 is `scoop`, and the two extremes are
+// `square` and `notch`. `round` keeps the square root, because it is
+// the value nearly every corner has and it is inside the shadow
+// painter's per-row loop.
+float func cornerInsetShaped(rx:int, ry:int, dy:float, k:float) {
+    if k == CORNER_K_ROUND { return cornerInset(rx, ry, dy) }
+    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
+    float fry = ry.toFloat()
+    float frx = rx.toFloat()
+    float t = dy >= fry ? 1.0 : dy / fry
+    if k < 0.0 {
+        float m = 0.0 - k
+        return frx * Math.pow(1.0 - Math.pow(1.0 - t, m), 1.0 / m)
+    }
+    return frx * (1.0 - Math.pow(1.0 - Math.pow(t, k), 1.0 / k))
+}
+
 void func shadowSpanAt(vc:float, w:int, h:int,
                        tlx:int, tly:int, trx:int, trys:int,
                        brx:int, brys:int, blx:int, blys:int) {
-    shadowSpanLo = maxFloat(cornerInset(tlx, tly, tly.toFloat() - vc),
-                            cornerInset(blx, blys, vc - (h - blys).toFloat()))
+    shadowSpanLo = maxFloat(cornerInsetShaped(tlx, tly, tly.toFloat() - vc, pathKTL),
+                            cornerInsetShaped(blx, blys, vc - (h - blys).toFloat(), pathKBL))
     shadowSpanHi = w.toFloat()
-        - maxFloat(cornerInset(trx, trys, trys.toFloat() - vc),
-                   cornerInset(brx, brys, vc - (h - brys).toFloat()))
+        - maxFloat(cornerInsetShaped(trx, trys, trys.toFloat() - vc, pathKTR),
+                   cornerInsetShaped(brx, brys, vc - (h - brys).toFloat(), pathKBR))
 }
 
 // One corner of a rounded shadow, as an image carrying the blurred

@@ -198,6 +198,15 @@ of the box, and may be an ellipse rather than a quarter circle — the
 after. Two radii that would overlap on one edge are scaled back
 together, so the shape keeps its proportions.
 
+**`corner-shape`** decides what curve that corner is drawn with, per
+corner or in one shorthand. A corner is the region the radius already
+resolves, and each value is that region under a different superellipse
+exponent, so `square` fills the corner, `notch` cuts it out, `bevel` is
+a straight cut, `scoop` bows away from the box and `squircle` hugs it;
+`superellipse()` takes any exponent, and the keywords are the exponents
+it names rather than a separate set of shapes. A shadow follows the
+shape its box has.
+
 `border-image` cuts an image into nine regions and lays them round the
 border: the corners at their own size, the edges between them, and the
 middle only if `fill` asks. Each edge image is scaled to the thickness

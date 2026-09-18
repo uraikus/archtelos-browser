@@ -274,6 +274,25 @@ const int SNAPALIGN_START = 1
 const int SNAPALIGN_CENTER = 2
 const int SNAPALIGN_END = 3
 
+// `corner-shape`'s keywords, as the superellipse exponents they name
+// (CSS Borders 4 §5). The two extremes are large finite numbers rather
+// than an infinity the language has no literal for, and they are large
+// enough that the curve is flat to well inside a pixel at any radius a
+// page uses: at k = 1000 the corner is square to within a thousandth of
+// its radius.
+// Whether any element on this page asked for a corner that is not
+// `round`, so that a page which never says the property never leaves
+// the curve the canvas draws natively (CLAUDE.md, "a feature must not
+// cost anything to the pages that do not use it").
+bool anyCornerShape = false
+
+const float CORNER_K_ROUND = 2.0
+const float CORNER_K_SQUARE = 1000.0
+const float CORNER_K_NOTCH = -1000.0
+const float CORNER_K_BEVEL = 1.0
+const float CORNER_K_SCOOP = -2.0
+const float CORNER_K_SQUIRCLE = 4.0
+
 const int SCROLLBAR_AUTO = 0
 const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
@@ -952,6 +971,17 @@ struct Style {
     radiusBottomRightY:Len
     radiusBottomLeftX:Len
     radiusBottomLeftY:Len
+    // `corner-shape` (CSS Borders 4), as the superellipse exponent each
+    // corner is drawn with rather than as a keyword: every value the
+    // property takes is one number, and `superellipse()` takes an
+    // arbitrary one. 2 is the quarter ellipse `border-radius` draws on
+    // its own, so 2 is the initial value and the corner code's fast
+    // path. `anyCornerShape` is the one test a page that never mentions
+    // the property pays.
+    cornerTopLeftK:float
+    cornerTopRightK:float
+    cornerBottomRightK:float
+    cornerBottomLeftK:float
     borderSpacing:int
     borderCollapse:bool
     textIndent:int
