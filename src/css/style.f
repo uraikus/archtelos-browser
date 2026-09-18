@@ -1298,6 +1298,23 @@ int func clipMarginPacked(s:Style) {
     return clipMarginOf[k]
 }
 
+// CSS Fragmentation 3 §4.2. `box-decoration-break: clone` puts the
+// whole box -- margin, border, padding and background -- on every
+// fragment of a broken box, where the initial `slice` puts the opening
+// edge on the first fragment and the closing one on the last. Kept in a
+// map keyed by the computed style's serial rather than a field on
+// `Style`, for the reason benchmarks.md records.
+map[int] decoCloneOf = {}
+bool anyDecorationClone = false
+
+// Whether this style asked for `clone`. The flag is false on every
+// document that never says the property, and `&&` short-circuits, so
+// such a document never reaches the map.
+bool func decorationIsClone(s:Style) {
+    if !anyDecorationClone || s == null { return false }
+    return decoCloneOf[`${s.serial}`] != null
+}
+
 // The packed `text-box` value, or -1 when this style said nothing.
 int func textBoxPacked(s:Style) {
     if s == null { return -1 }

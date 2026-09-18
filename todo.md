@@ -371,27 +371,6 @@ coordinates, as though only the top and left sides existed. A
 is a defect rather than a decision, so it is written down here and not
 copied.
 
-### What `box-decoration-break` was measured to be
-
-`overflow-clip-margin` is done. `box-decoration-break` is measured and
-not implemented yet.
-
-An inline with 6px padding and a 4px border, fragmenting over the lines
-of a 150px paragraph at 16px/24px monospace: fragment widths are 135,
-125 and 58 under `slice` and 145, 145 and 68 under `clone`, each
-fragment gaining its own padding and border on every side the slice
-left open. The two rows cross-check each other exactly -- each fragment
-gains 10 for each edge `slice` left off -- so the relation holds without
-any of the six widths being known in advance. In pixels, `clone` puts
-four blue pixels at the end of the first line and four at the start of
-the second where `slice` puts none.
-
-`slice` is what this engine does: the opening margin, border and
-padding go on the fragment that begins the inline and the closing ones
-on the fragment that ends it. What `clone` needs is the choice, and the
-extra advance at each break so that the closing border has room and the
-next fragment starts after an opening one.
-
 ### An inline box's side edges are on the wrong side in right-to-left text
 
 An inline's opening margin, border and padding go on the fragment that

@@ -68,7 +68,11 @@ fi
 # computed style, which omits 120 properties it computes perfectly well,
 # and 33 of those are ordinary longhands. Seven were already
 # implemented here and had never been counted.
-PROPERTIES_MIN=210
+#
+# Otherwise it only ever goes up, and it is raised with the count: a
+# floor left where it was cannot catch the regression it exists to
+# catch.
+PROPERTIES_MIN=257
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1

@@ -180,6 +180,9 @@ void func cascadeReset() {
     anyTextBoxTrim = false
     map[int] emptyTextBox = {}
     textBoxOf = emptyTextBox
+    anyDecorationClone = false
+    map[int] emptyDecoClone = {}
+    decoCloneOf = emptyDecoClone
     map[int] emptyMotion = {}
     motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
@@ -6450,6 +6453,13 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if tbSaid {
         textBoxOf[`${s.serial}`] = tbTrim * 16 + tbEdge
         if tbTrim != TBTRIM_NONE { anyTextBoxTrim = true }
+    }
+    // `box-decoration-break: slice | clone`. Only `clone` is recorded:
+    // `slice` is the initial value and what an unrecorded style means.
+    ascii bdb = styleProp(props, 'box-decoration-break')
+    if bdb != null && asciiLower(asciiTrim(bdb)) == 'clone' {
+        decoCloneOf[`${s.serial}`] = 1
+        anyDecorationClone = true
     }
     // `overflow-clip-margin: <visual-box> || <length [0,inf]>`. The box
     // defaults to the padding box, which is what an unmoved clip edge

@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `box-decoration-break`
+
+`slice`, the initial value, is what the engine does. `clone` gives every
+fragment of a broken inline the whole box: both side edges, each
+continuation's content starting after the opening one.
+
+**It changes no line break.** The natural reading is that cloning the
+edges takes room and so breaks the text earlier. Chromium does not: the
+same characters stay on the same lines, each continuation is pushed
+right by the opening edge, and the closing edge overflows the line. Both
+`slice` and `clone` put the first line's ink at x 11 to 143 in a 150px
+paragraph, and `clone`'s closing border then sits at 150 to 153 —
+outside the paragraph. So the closing edge is added to the fragment's
+width and never to the pen.
+
+The count is **257 of 405**, and `--fields` says the field that moved is
+`boxDecorationBreak`.
+
+The check counts the side borders alone: over three lines `clone` paints
+three times as many as `slice`, because `slice` paints two however many
+fragments there are — and the three is counted from the render, as the
+number of bands of ink, rather than assumed. On a single line, where
+there is one fragment either way, the two keywords must be
+indistinguishable, and that check does not depend on the count at all.
+
+**The first version of the multiplier check was measuring the overlap.**
+At the 24px line height the rest of the suite uses, a padded inline's
+box is 31 tall, so two consecutive fragments overlap by seven rows — and
+three opening edges, which all sit in the same four columns, cover fewer
+pixels than three of them. The fixture's line height is 40 for that
+reason, which is written beside it.
+
+**The properties floor in `tests/run.sh` was 210 against a count of
+257.** A floor left where it was cannot catch the regression it exists
+to catch, so it is raised with the count now and the rule is written
+next to it.
+
 ### An inline box's own border and padding
 
 CSS2 §8.4 gives an inline box margin, border and padding on all four

@@ -94,10 +94,18 @@ int func columnRun(c:color, x:int) {
 
 // Side borders only, and invisible text: every blue pixel on the canvas
 // then belongs to an opening or a closing edge.
-const text SIDES = 'color:white;padding:6px;border:4px solid blue;'
-    + 'border-top-width:0;border-bottom-width:0'
-const text SIDES_BARE = 'color:white;padding:0;border:4px solid blue;'
-    + 'border-top-width:0;border-bottom-width:0'
+//
+// The line height is raised past the border box on purpose. At the
+// 24px the rest of this file uses, a padded inline's box is 31 tall and
+// the boxes of two consecutive fragments overlap by seven rows -- so
+// the opening edges of three fragments, which all sit in the same four
+// columns, cover fewer pixels than three of them, and counting them
+// would answer a question about the overlap rather than about the
+// edges.
+const text SIDES = 'color:white;line-height:40px;padding:6px;'
+    + 'border:4px solid blue;border-top-width:0;border-bottom-width:0'
+const text SIDES_BARE = 'color:white;line-height:40px;padding:0;'
+    + 'border:4px solid blue;border-top-width:0;border-bottom-width:0'
 
 // ---- the opening and closing edges are painted at all -------------------
 
@@ -138,7 +146,7 @@ checkEqInt(paddedEdge - bareEdge, 12,
 
 shot(400, SIDES)
 int paddedGreen = firstYOf(green)
-shot(400, 'color:white')
+shot(400, 'color:white;line-height:40px')
 int plainGreen = firstYOf(green)
 check(paddedGreen > 0, 'the strip below the paragraph is on the canvas')
 checkEqInt(paddedGreen, plainGreen,
@@ -206,5 +214,95 @@ for int sy = 0, sy <= 80, sy++ {
 }
 checkEqInt(lastVisible, boxBottom,
            'a border paints for exactly as long as its own box is in the window')
+
+// ---- box-decoration-break ----------------------------------------------
+
+// `slice`, the initial value, puts the opening edge on the fragment
+// that begins the inline and the closing one on the fragment that ends
+// it. `clone` puts both on every fragment. Measured against Chromium,
+// it changes no break at all: the same characters stay on the same
+// lines, each continuation is pushed right by the opening edge, and the
+// closing edge overflows the line rather than forcing an earlier break.
+
+const text CLONE = ';box-decoration-break:clone'
+
+// The number of separate bands of ink down the canvas, which for a
+// paragraph of plain text is the number of lines it broke into. Counted
+// from the render rather than assumed, because it is what the check
+// below multiplies by. The green strip under the paragraph is not ink.
+int func inkBands() {
+    int n = 0
+    bool inBand = false
+    for int y = 0, y < 300, y++ {
+        bool any = false
+        for int x = 0, x < 400 && !any, x++ {
+            color c = getPixelColor(x, y)
+            if c != white && c != green { any = true }
+        }
+        if any && !inBand { n++ }
+        inBand = any
+    }
+    return n
+}
+
+shot(150, 'color:black')
+int lineCount = inkBands()
+checkEqInt(lineCount, 3, 'the narrow fixture breaks into three lines')
+
+// One fragment carries both edges either way, so on a single line the
+// two keywords must be indistinguishable. That check does not depend on
+// the count at all.
+shot(400, SIDES)
+int oneSlice = countColor(blue, 0, 0, 400, 300)
+shot(400, SIDES + CLONE)
+checkEqInt(countColor(blue, 0, 0, 400, 300), oneSlice,
+           'on a single fragment clone and slice are the same box')
+
+// Over three, `clone` paints three times as many side edges as `slice`,
+// because `slice` paints two however many fragments there are.
+shot(150, SIDES)
+int sliceBlue = countColor(blue, 0, 0, 400, 300)
+shot(150, SIDES + CLONE)
+checkEqInt(countColor(blue, 0, 0, 400, 300), sliceBlue * lineCount,
+           'clone puts both side edges on every fragment')
+
+// ---- and what that does to the text ------------------------------------
+
+// The first and last column of ink on one row, ignoring the borders.
+int inkFirst = -1
+int inkLast = -1
+void func scanInk(y:int) {
+    inkFirst = -1
+    inkLast = -1
+    for int x = 0, x < 400, x++ {
+        color c = getPixelColor(x, y)
+        if c != white && c != blue {
+            if inkFirst < 0 { inkFirst = x }
+            inkLast = x
+        }
+    }
+}
+
+// Borders that take their space and paint nothing, so only the text is
+// left to measure. The rows are the middle of each of the three lines,
+// which sit 24 apart under the 20px spacer.
+const text GHOST = 'color:black;padding:6px;border:4px solid transparent'
+
+shot(150, GHOST)
+scanInk(32)
+int sliceL1First = inkFirst
+int sliceL1Last = inkLast
+scanInk(56)
+int sliceL2First = inkFirst
+check(sliceL1First >= 0 && sliceL2First >= 0, 'both lines have ink to measure')
+
+shot(150, GHOST + CLONE)
+scanInk(32)
+checkEqInt(inkFirst, sliceL1First, 'clone leaves the first line where it was')
+checkEqInt(inkLast, sliceL1Last,
+           'and its closing edge overflows the line rather than breaking it early')
+scanInk(56)
+checkEqInt(inkFirst - sliceL2First, 10,
+           'a continuation is pushed across by the opening edge clone gives it')
 
 finish('inline box')

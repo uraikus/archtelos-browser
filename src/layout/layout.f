@@ -2778,6 +2778,16 @@ void func beginLine() {
         f.y = ifcY
         f.w = 0
         f.h = 0
+        // `box-decoration-break: clone` gives every fragment the whole
+        // box, so a continuation opens with the margin, border and
+        // padding the first fragment had, and its content starts after
+        // them.
+        if decorationIsClone(ib.style) {
+            int se = ib.ml + ib.bl + ib.pl
+            f.w = se
+            f.edges = FRAGEDGE_START
+            ifcX = ifcX + se
+        }
         ifcFrags.push(f)
         ifcOpenBg.push(f)
     }
@@ -3026,6 +3036,24 @@ void func finishLineUncounted(forced:bool) {
             int below = f.y + f.h - (ifcY + lineH)
             if below > inlineInkOverhang { inlineInkOverhang = below }
         }
+    }
+    // `clone` closes every fragment of an inline that breaks, and the
+    // closing edge overflows the line rather than forcing an earlier
+    // break -- which is what Chromium does: the same characters stay on
+    // the same lines. Innermost first, so an outer inline's box still
+    // ends outside the inner one's closing edge. A document with no
+    // inline open across this break never enters the loop.
+    int cloneEnd = 0
+    for int i = ifcOpenBg.length - 1, i >= 0, i-- {
+        Fragment f = ifcOpenBg[i]
+        if f.w <= 0 { continue }
+        f.w = f.w + cloneEnd
+        Box cb = f.box
+        if !decorationIsClone(cb.style) { continue }
+        int ee = cb.pr + cb.br + cb.mr
+        f.w = f.w + ee
+        cloneEnd = cloneEnd + ee
+        f.edges = f.edges == FRAGEDGE_START ? FRAGEDGE_BOTH : FRAGEDGE_END
     }
     // inline backgrounds were extended as content was placed; a
     // fragment that never got content (an inline that continued onto
