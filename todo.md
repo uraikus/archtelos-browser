@@ -506,6 +506,65 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
+### What `anchor()` and `anchor-size()` were measured to be
+
+The two functions css-2026.md names as what is left of CSS Anchor
+Positioning 1. Chromium 141, against an anchor whose border box is
+x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 -- with the
+box absolutely positioned in the same containing block.
+
+**`anchor(<name>? <side>, <fallback>?)` in an inset property** resolves
+to a position on the anchor's border box, in the containing block's
+coordinates:
+
+| declaration | box | reading |
+|---|---|---|
+| `left: anchor(--a left)` | x = 100 | the anchor's left edge |
+| `left: anchor(--a right)` | x = 220 | its right edge |
+| `left: anchor(--a center)` | x = 160 | its centre |
+| `left: anchor(--a 25%)` | x = 130 | 100 + a quarter of 120 |
+| `left: anchor(--a 0%)` | x = 100 | the start side |
+| `left: anchor(--a 100%)` | x = 220 | the end side |
+| `right: anchor(--a left)` | x = 70 | the box's *right* edge at 100 |
+| `top: anchor(--a top)` | y = 80 | |
+| `top: anchor(--a bottom)` | y = 140 | |
+| `bottom: anchor(--a top)` | y = 60 | the box's bottom edge at 80 |
+
+**The logical side names are the physical ones here.** `top:
+anchor(--a start)` is 80 and `end` is 140, and `left: anchor(--a
+self-start)` is 100 -- the block axis runs down and the inline axis
+runs right, and this engine has no `writing-mode` to make them
+anything else.
+
+**`anchor-size(<name>? <dimension>, <fallback>?)`** gives the anchor's
+own size: `width: anchor-size(--a width)` is 120, `height:
+anchor-size(--a height)` is 60, and `self-inline` is 120 as well.
+
+**The name may be left out, and then `position-anchor` supplies it.**
+`left: anchor(right)` beside `position-anchor: --a` is 220. With no
+`position-anchor` either, it has no effect at all.
+
+**The fallback is taken only when the anchor cannot be found.**
+`anchor(--missing right, 7px)` gives 7; `anchor-size(--missing width,
+5px)` gives 5; `anchor-size(--a width, 5px)` gives 120, because the
+anchor was found. With no fallback and no anchor the declaration has no
+effect -- `left: anchor(--missing right)` leaves the box at its static
+position.
+
+**Both are refused outside the places the standard allows.**
+`margin-left: anchor(--a right)` does nothing. `anchor-size()` on a
+`position: static` or `position: relative` box does nothing: the box
+came out 780 wide, which is `width: auto` against the body. So the
+functions need an absolutely positioned box, and `anchor()` needs an
+inset property.
+
+**`anchor()` composes inside `calc()`**, and that is the one part worth
+scoping out of a first implementation: `left: calc(anchor(--a right) +
+5px)` gives 225. Resolving it needs the calc evaluator to carry a term
+that is not a length until the anchor is known, where the whole-value
+form only needs the positioning pass to ask for the anchor's rectangle
+it already has.
+
 ### How far `initial-letter` got, and where it stopped
 
 The measurement above is complete. An implementation was written
