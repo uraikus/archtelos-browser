@@ -2638,6 +2638,13 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     int savedStart = ifcLineStart
     int savedRight = ifcLineRight
     int savedY = ifcY
+    // The containing block's edges belong to this formatting context
+    // and are restored with the rest of it. A float in inline content
+    // is laid out from inside the line it interrupts, so its own
+    // inline content runs through here and would otherwise leave the
+    // outer context wrapping its text in the FLOAT's containing block.
+    int savedCbLeft = ifcCbLeft
+    int savedCbRight = ifcCbRight
     arr[Fragment] savedFrags = ifcFrags
     bool savedPending = ifcPendingSpace
     bool savedHas = ifcLineHasContent
@@ -2698,6 +2705,8 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     ifcLineStart = savedStart
     ifcLineRight = savedRight
     ifcY = savedY
+    ifcCbLeft = savedCbLeft
+    ifcCbRight = savedCbRight
     ifcFrags = savedFrags
     ifcPendingSpace = savedPending
     ifcLineHasContent = savedHas
