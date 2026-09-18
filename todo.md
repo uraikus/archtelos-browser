@@ -506,12 +506,15 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
-### What `anchor()` and `anchor-size()` were measured to be
+### What is left of `anchor()` and `anchor-size()`
 
-The two functions css-2026.md names as what is left of CSS Anchor
-Positioning 1. Chromium 141, against an anchor whose border box is
-x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 -- with the
-box absolutely positioned in the same containing block.
+`anchor()` works in the four inset properties. `anchor-size()` does
+not, and neither function composes inside `calc()`; both are measured
+and both are left out for the same structural reason, at the end.
+
+All of the following is Chromium 141, against an anchor whose border
+box is x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 --
+with the box absolutely positioned in the same containing block.
 
 **`anchor(<name>? <side>, <fallback>?)` in an inset property** resolves
 to a position on the anchor's border box, in the containing block's
@@ -558,12 +561,22 @@ came out 780 wide, which is `width: auto` against the body. So the
 functions need an absolutely positioned box, and `anchor()` needs an
 inset property.
 
-**`anchor()` composes inside `calc()`**, and that is the one part worth
-scoping out of a first implementation: `left: calc(anchor(--a right) +
-5px)` gives 225. Resolving it needs the calc evaluator to carry a term
-that is not a length until the anchor is known, where the whole-value
-form only needs the positioning pass to ask for the anchor's rectangle
-it already has.
+**`anchor()` composes inside `calc()`**: `left: calc(anchor(--a right)
++ 5px)` gives 225. Not implemented -- it needs the calc evaluator to
+carry a term that is not a length until the anchor is known, where the
+whole-value form needs only the rectangle the positioning pass already
+has.
+
+**`anchor-size()` is not implemented either, and the reason is the
+ordering.** A placement can wait: `anchor()` in an inset is resolved
+after the tree has been laid out, in the same pass as `position-area`,
+because moving a box that is already laid out is a shift. A *size*
+cannot -- the box has to be laid out at that size in the first place,
+and an anchor has no rectangle until the layout it would be measured
+from is finished. So it wants a second layout pass, which this engine
+already has the shape of for `@container`: lay out, resolve the sizes,
+lay out again. `Box.forcedWidthPx` is the hook the second pass would
+write to.
 
 ### How far `initial-letter` got, and where it stopped
 

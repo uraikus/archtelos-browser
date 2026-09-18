@@ -418,7 +418,27 @@ struct AnchorInfo {
     // anchor-scope, lowercased and as written: '' for `none`, 'all',
     // or the comma-separated list of names this element scopes.
     scope:text
+    // `anchor()` in the four inset properties, in the order left,
+    // right, top, bottom.
+    //
+    // Every side keyword the function takes is a position along the
+    // anchor's box on the property's own axis, so one number carries
+    // all of them: `left` and `top` and `start` and `self-start` are 0,
+    // `center` is 50, `right` and `bottom` and `end` are 100, and a
+    // percentage is itself. It is kept in hundredths of a percent, and
+    // -1 means this inset said nothing. An empty name means the one
+    // `position-anchor` gave, and a fallback of ANCHOR_NO_FALLBACK
+    // means there was none.
+    insetNames:arr[text]
+    insetPcts:arr[int]
+    insetFallbacks:arr[int]
 }
+
+const int ANCHOR_INSET_LEFT = 0
+const int ANCHOR_INSET_RIGHT = 1
+const int ANCHOR_INSET_TOP = 2
+const int ANCHOR_INSET_BOTTOM = 3
+const int ANCHOR_NO_FALLBACK = -1000000
 
 // This page's anchor declarations; `Style.anchorInfo` is an index into
 // it, one past the entry, so that zero means the element said nothing.
@@ -427,6 +447,11 @@ arr[AnchorInfo] anchorInfos = []
 // Whether any element on this page declared an anchor name at all, so
 // that a document with none skips both walks the feature would add.
 bool anyAnchorName = false
+
+// Whether any element put an `anchor()` in one of its insets. A page
+// with none does not grow the per-inset rectangles below and does not
+// test for them while it places its anchored boxes.
+bool anyAnchorInset = false
 
 // Whether any element scoped a name. A page with none resolves each
 // anchor under its bare name, as it did before the property existed,
@@ -437,6 +462,10 @@ AnchorInfo func anchorInfoOf(idx:int) {
     if idx <= 0 || idx > anchorInfos.length {
         AnchorInfo none
         none.area = PAREA_NONE
+        none.insetNames = ['', '', '', '']
+        none.insetPcts = [-1, -1, -1, -1]
+        none.insetFallbacks = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
         return none
     }
     return anchorInfos[idx - 1]

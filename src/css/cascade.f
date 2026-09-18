@@ -171,6 +171,7 @@ void func cascadeReset() {
     cornerCustomK = []
     anyAnchorName = false
     anyAnchorScope = false
+    anyAnchorInset = false
     anchorInfos = []
     anyOffsetPath = false
     motionInfos = []
@@ -4690,6 +4691,60 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
 
 // ---- CSS Inline 3: text-box-trim and text-box-edge ------------------------
 
+// One `anchor()`, as the three things it says. Returned through
+// globals rather than a struct, for the reason FINDINGS.md records
+// about forwarded structs.
+text anchorInsetName = ''
+int anchorInsetPct = -1
+int anchorInsetFallback = ANCHOR_NO_FALLBACK
+
+// The position along the anchor a side keyword names, in hundredths of
+// a percent, or -1 for a word that is not one. Every keyword the
+// function takes is such a position: the physical near sides and their
+// logical spellings are 0, `center` is 5000, and the far sides 10000.
+// There is no `writing-mode` here to make the logical names anything
+// else, which is measured rather than assumed (todo.md).
+int func anchorSidePct(w:ascii) {
+    if w == 'left' || w == 'top' || w == 'start' || w == 'self-start' { return 0 }
+    if w == 'center' { return 5000 }
+    if w == 'right' || w == 'bottom' || w == 'end' || w == 'self-end' { return 10000 }
+    if w.length > 1 && w.charCodeAt(w.length - 1) == CH_PERCENT {
+        parseNumberAt(w, 0)
+        if numOk && numEnd == w.length - 1 { return roundPx(numValue * 100.0) }
+    }
+    return -1
+}
+
+// `[ <name>? <side> ] , <fallback>?` -- the inside of one `anchor()`.
+// Answers whether it parsed, and leaves what it said in the three
+// globals above. `axis` is which inset this is, which decides nothing
+// here: the side keywords are read the same way on both axes and it is
+// the resolver that knows which edge to measure from.
+bool func parseAnchorInset(inner:ascii, axis:int) {
+    anchorInsetName = ''
+    anchorInsetPct = -1
+    anchorInsetFallback = ANCHOR_NO_FALLBACK
+    arr[ascii] parts = asciiSplitChar(inner, CH_COMMA)
+    if parts.length == 0 || parts.length > 2 { return false }
+    arr[ascii] words = asciiSplitSpace(asciiTrim(parts[0]))
+    if words.length == 0 || words.length > 2 { return false }
+    int at = 0
+    if words.length == 2 {
+        if !asciiStartsWith(words[0], '--', 0) { return false }
+        anchorInsetName = words[0].toText()
+        at = 1
+    }
+    int pct = anchorSidePct(words[at])
+    if pct < 0 { return false }
+    anchorInsetPct = pct
+    if parts.length == 2 {
+        Len l = parseLength(asciiTrim(parts[1]), 16)
+        if l.kind == LEN_INVALID || lenIsAuto(l) { return false }
+        anchorInsetFallback = resolveLen(l, 0, 0)
+    }
+    return true
+}
+
 // `auto | contain | none`, or -1 for anything else.
 int func overscrollKeyword(w:ascii) {
     if w == 'auto' { return OSB_AUTO }
@@ -5738,8 +5793,31 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii st = asciiLower(asciiTrim(scopev))
         if st != 'none' && st != '' { aScope = st.toText() }
     }
+    // `anchor()` in the four insets, read into one position along the
+    // anchor's box per side.
+    arr[text] inNames = ['', '', '', '']
+    arr[int] inPcts = [-1, -1, -1, -1]
+    arr[int] inFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+    bool anySaidInset = false
+    arr[text] insetProps = ['left', 'right', 'top', 'bottom']
+    for int i = 0, i < 4, i++ {
+        ascii raw = styleProp(props, insetProps[i])
+        if raw == null { continue }
+        ascii low = asciiLower(asciiTrim(raw))
+        if !asciiStartsWith(low, 'anchor(', 0) { continue }
+        int close = asciiMatchingParen(low, 6)
+        if close < 0 { continue }
+        if !parseAnchorInset(low.slice(7, close), i) { continue }
+        inNames[i] = anchorInsetName
+        inPcts[i] = anchorInsetPct
+        inFalls[i] = anchorInsetFallback
+        anySaidInset = true
+        anyAnchorInset = true
+    }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
-        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != '' {
+        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != ''
+        || anySaidInset {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
@@ -5748,6 +5826,9 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ai.tryOrder = aOrder
         ai.visibility = aVis
         ai.scope = aScope
+        ai.insetNames = inNames
+        ai.insetPcts = inPcts
+        ai.insetFallbacks = inFalls
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }

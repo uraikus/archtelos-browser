@@ -5337,6 +5337,16 @@ map[int] anchorLiveY = {}
 map[int] anchorLiveW = {}
 map[int] anchorLiveH = {}
 // The answer, per box, so the placement pass does not resolve again.
+// The rectangle each `anchor()` inset resolved to, keyed by the box's
+// id and which inset it is. A named `anchor()` looks its own name up
+// rather than borrowing the one `position-anchor` found, which is what
+// lets one box anchor its left edge to one element and its top to
+// another. Grown only by a page that says the function.
+map[int] anchorInsetX = {}
+map[int] anchorInsetY = {}
+map[int] anchorInsetW = {}
+map[int] anchorInsetH = {}
+
 map[int] anchorBoxX = {}
 map[int] anchorBoxY = {}
 map[int] anchorBoxW = {}
@@ -5436,6 +5446,26 @@ void func collectAnchors(b:Box, depth:int) {
                 anchorBoxFound = true
             }
         }
+        // Each `anchor()` inset resolves its own name, against the
+        // anchors this walk has already passed -- the same rule
+        // `position-anchor` follows, and for the same reason.
+        if anyAnchorInset && boxIsOutOfFlow(b) {
+            for int i = 0, i < 4, i++ {
+                if ai.insetPcts[i] < 0 { continue }
+                // A box with an inset to resolve is a box to place,
+                // whether or not its anchor was found: a fallback is
+                // still an answer.
+                anchorBoxFound = true
+                text nm = ai.insetNames[i] != '' ? ai.insetNames[i] : ai.anchor
+                if nm == '' { continue }
+                text ikey = anchorScopeKey(nm)
+                if anchorLiveW[ikey] == null { continue }
+                anchorInsetX[`${b.id}:${i}`] = anchorLiveX[ikey]
+                anchorInsetY[`${b.id}:${i}`] = anchorLiveY[ikey]
+                anchorInsetW[`${b.id}:${i}`] = anchorLiveW[ikey]
+                anchorInsetH[`${b.id}:${i}`] = anchorLiveH[ikey]
+            }
+        }
         if ai.name != '' {
             text key = anchorScopeKey(ai.name)
             anchorLiveX[key] = b.x
@@ -5520,8 +5550,57 @@ int func anchorAreaRoom(area:int, order:int, ax:int, ay:int, aw:int, ah:int,
     return anchorBandRoom(area % PAREA_AXIS, ax, ax + aw, cbX, cbW)
 }
 
+// Where one `anchor()` inset puts the box's own edge, in the containing
+// block's coordinates -- or the fallback measured from the containing
+// block where the anchor was not found, or the position the box already
+// has where there is neither. `i` is which inset, in the order left,
+// right, top, bottom, and the side keyword has already become a
+// position along the anchor (src/css/style.f).
+int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
+                         cbW:int, cbH:int, have:int) {
+    bool vertical = i >= ANCHOR_INSET_TOP
+    int size = vertical ? b.h : b.w
+    text k = `${b.id}:${i}`
+    if anchorInsetW[k] != null {
+        int at = vertical ? anchorInsetY[k] : anchorInsetX[k]
+        int span = vertical ? anchorInsetH[k] : anchorInsetW[k]
+        int edge = at + Math.floorDiv(span * ai.insetPcts[i], 10000)
+        // A near inset puts the box's near edge there and a far inset
+        // its far edge, which is what makes `right: anchor(--a left)`
+        // hang the box off the anchor's left rather than start there.
+        if i == ANCHOR_INSET_RIGHT || i == ANCHOR_INSET_BOTTOM { return edge - size }
+        return edge
+    }
+    int fb = ai.insetFallbacks[i]
+    if fb == ANCHOR_NO_FALLBACK { return have }
+    if i == ANCHOR_INSET_RIGHT { return cbX + cbW - fb - size }
+    if i == ANCHOR_INSET_BOTTOM { return cbY + cbH - fb - size }
+    return (vertical ? cbY : cbX) + fb
+}
+
 void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
     if b == null { return }
+    // `anchor()` in an inset, which is resolved here rather than where
+    // the insets usually are because an anchor's rectangle is not known
+    // until the whole tree has been laid out.
+    if anyAnchorInset && b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        int wantX = b.x
+        int wantY = b.y
+        // A near inset wins over the far one on its axis, as it does
+        // for any absolutely positioned box.
+        if ai.insetPcts[ANCHOR_INSET_LEFT] >= 0 {
+            wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_LEFT, cbX, cbY, cbW, cbH, b.x)
+        } else if ai.insetPcts[ANCHOR_INSET_RIGHT] >= 0 {
+            wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_RIGHT, cbX, cbY, cbW, cbH, b.x)
+        }
+        if ai.insetPcts[ANCHOR_INSET_TOP] >= 0 {
+            wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_TOP, cbX, cbY, cbW, cbH, b.y)
+        } else if ai.insetPcts[ANCHOR_INSET_BOTTOM] >= 0 {
+            wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_BOTTOM, cbX, cbY, cbW, cbH, b.y)
+        }
+        if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+    }
     if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
         AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
         if ai.area != PAREA_NONE && anchorBoxW[`${b.id}`] != null {
@@ -5792,6 +5871,14 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
             anchorLiveY = emptyY
             anchorLiveW = emptyW
             anchorLiveH = emptyH
+            map[int] emptyIX = {}
+            map[int] emptyIY = {}
+            map[int] emptyIW = {}
+            map[int] emptyIH = {}
+            anchorInsetX = emptyIX
+            anchorInsetY = emptyIY
+            anchorInsetW = emptyIW
+            anchorInsetH = emptyIH
             anchorBoxX = emptyBX
             anchorBoxY = emptyBY
             anchorBoxW = emptyBW

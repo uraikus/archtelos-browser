@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `anchor()` in the inset properties
+
+CSS Anchor Positioning 1's placement function, in `left`, `right`,
+`top` and `bottom`. `left: anchor(--a right)` puts the box's left edge
+on the anchor's right, `right: anchor(--a left)` hangs its right edge
+off the anchor's left, and a fallback beside the name is used only when
+the anchor cannot be found.
+
+**Every side keyword is one number.** `left`, `top`, `start` and
+`self-start` are 0, `center` is 50, `right`, `bottom` and `end` are 100,
+and a percentage is itself — so the nine keywords and the percentage
+are the same value in hundredths of a percent along the anchor's box,
+and the resolver has one case rather than ten. That the logical names
+are the physical ones here is measured rather than assumed: there is no
+`writing-mode` to make them anything else.
+
+The checks that earn their place are the ones that do not depend on a
+position being known: `anchor(--a 0%)` must land where `anchor(--a
+left)` lands, `100%` where `right` lands, and `50%` where `center`
+lands, on both axes.
+
+**Each `anchor()` resolves its own name**, against the anchors the
+tree-order walk has already passed — the same rule `position-anchor`
+follows — so one box can anchor its left edge to one element and its top
+to another. A nameless one takes the name `position-anchor` gave.
+
+It is resolved where `position-area` is, after the tree has been laid
+out, because that is the first moment an anchor has a rectangle.
+
+**`anchor-size()` is measured and not implemented, and the reason is
+structural.** It sizes the box rather than placing it, and the size is
+needed before the box is laid out while the anchor's rectangle is not
+known until afterwards — so it wants a second layout pass, as
+`@container` already has. Written down in todo.md rather than
+half-built, along with `anchor()` inside `calc()`, which wants the calc
+evaluator to carry a term that is not yet a length.
+
 ### `overscroll-behavior`
 
 All five: the shorthand and `-x`, `-y`, `-inline`, `-block`. A scroll

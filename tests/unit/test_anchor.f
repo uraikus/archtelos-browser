@@ -410,4 +410,85 @@ checkEqInt(pairOne.x, 20, 'of two sibling scopes the first box takes its own anc
 checkEqInt(pairTwo.x, 200, 'and the second takes its own')
 check(pairOne.x != pairTwo.x, 'so the two subtrees resolve the one name differently')
 
+// ---- anchor() in an inset property ------------------------------------
+
+// The same fixture, but the argument is declarations rather than a
+// `position-area` value, because what is under test here is what an
+// inset resolves to.
+Box func anchoredBy(decls:text) {
+    cascadeReset()
+    cssViewportWidth = 600
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="position:relative;width:400px;height:300px">'
+        + '<div id="anc" style="position:absolute;left:150px;top:100px;'
+        + 'width:100px;height:60px;anchor-name:--a"></div>'
+        + '<div id="pos" style="position:absolute;position-anchor:--a;'
+        + 'width:40px;height:20px;' + decls + '"></div>'
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return anchorBoxById(layoutDocument(doc, 600), 'pos')
+}
+
+int func insetX(decls:text) { Box b = anchoredBy(decls)  return b == null ? -1 : b.x }
+int func insetY(decls:text) { Box b = anchoredBy(decls)  return b == null ? -1 : b.y }
+
+// The same fixture the regions above use: the anchor's border box is
+// x 150 to 250 and y 100 to 160, so its centre is 200, 130, and the
+// positioned box is 40 by 20.
+//
+// Every number below comes from Chromium, in todo.md -- but the checks
+// that earn their place are the ones that do not: a percentage along
+// the anchor must land where the side keyword for that percentage
+// lands, which holds without any of the six positions being known.
+
+checkEqInt(insetX('left:anchor(--a left)'), 150,
+           'anchor(left) is the anchor\'s left edge')
+checkEqInt(insetX('left:anchor(--a right)'), 250, 'and anchor(right) its right')
+checkEqInt(insetX('left:anchor(--a center)'), 200, 'and anchor(center) its centre')
+checkEqInt(insetY('top:anchor(--a top)'), 100, 'anchor(top) is its top edge')
+checkEqInt(insetY('top:anchor(--a bottom)'), 160, 'and anchor(bottom) its bottom')
+
+// An inset on the far side puts the box's own far edge there.
+checkEqInt(insetX('right:anchor(--a left)'), 110,
+           "a right inset puts the box's right edge on the anchor's left")
+checkEqInt(insetY('bottom:anchor(--a top)'), 80,
+           "and a bottom inset its bottom edge on the anchor's top")
+
+// The percentage and the keyword are two ways of saying one thing.
+checkEqInt(insetX('left:anchor(--a 0%)'), insetX('left:anchor(--a left)'),
+           '0% along the anchor is its start side')
+checkEqInt(insetX('left:anchor(--a 100%)'), insetX('left:anchor(--a right)'),
+           'and 100% its end side')
+checkEqInt(insetX('left:anchor(--a 50%)'), insetX('left:anchor(--a center)'),
+           'and 50% its centre')
+checkEqInt(insetY('top:anchor(--a 100%)'), insetY('top:anchor(--a bottom)'),
+           'which holds down the block axis too')
+checkEqInt(insetX('left:anchor(--a 25%)'), 175, 'a quarter along is a quarter of 100')
+
+// The logical names are the physical ones here, there being no
+// writing-mode to make them anything else.
+checkEqInt(insetY('top:anchor(--a start)'), insetY('top:anchor(--a top)'),
+           'start on the block axis is the top')
+checkEqInt(insetY('top:anchor(--a end)'), insetY('top:anchor(--a bottom)'),
+           'and end is the bottom')
+checkEqInt(insetX('left:anchor(--a self-start)'), insetX('left:anchor(--a left)'),
+           'and self-start on the inline axis is the left')
+
+// Both axes at once, and the name left out.
+Box both = anchoredBy('left:anchor(--a right);top:anchor(--a bottom)')
+checkEqInt(both.x, 250, 'two insets resolve together, across')
+checkEqInt(both.y, 160, 'and down')
+checkEqInt(insetX('left:anchor(right)'), 250,
+           'a nameless anchor() takes the name position-anchor gave')
+
+// The fallback is taken only when the anchor cannot be found.
+checkEqInt(insetX('left:anchor(--missing right, 7px)'), 7,
+           'a missing anchor falls back to the length beside it')
+checkEqInt(insetX('left:anchor(--a right, 7px)'), 250,
+           'and an anchor that is found ignores the fallback')
+checkEqInt(insetX('left:anchor(--missing right)'),
+           insetX(''),
+           'with no fallback the declaration has no effect at all')
+
 finish('anchor positioning')
