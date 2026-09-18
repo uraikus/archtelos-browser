@@ -305,6 +305,61 @@ container's own children, which is the depth this engine fragments and
 measures at everywhere else. A grandchild carrying `scroll-snap-align`
 is not a snap point, where in the standard it is.
 
+### CSS Anchor Positioning 1
+
+Seven gradable rows -- `anchor-name`, `anchor-scope`, `position-anchor`,
+`position-area`, `position-try-fallbacks`, `position-try-order` and
+`position-visibility`. The engine already resolves an absolutely
+positioned box against a containing block, and `position-area` is that
+same resolution against a rectangle derived from another element's box
+instead, so the layout work is a second containing block rather than a
+new formatting context.
+
+**Chromium 141 measured first.** An anchor at (150, 100) sized 100x60 --
+so its edges are left 150, right 250, top 100, bottom 160, and its
+centre is (200, 130) -- with a 40x20 absolutely positioned box naming it
+through `position-anchor`:
+
+| `position-area` | x | y |
+|---|---|---|
+| `center` | 180 | 120 |
+| `top` | 180 | 80 |
+| `bottom` | 180 | 160 |
+| `left` | 110 | 120 |
+| `right` | 250 | 120 |
+| `top left` | 110 | 80 |
+| `bottom right` | 250 | 160 |
+| `span-all center` | 180 | 120 |
+| `start start` | 110 | 80 |
+| `end end` | 250 | 160 |
+| `block-start inline-start` | 110 | 80 |
+| `top span-all` | 180 | 80 |
+| `span-all left` | 110 | 120 |
+
+Each axis is one of three bands: before the anchor, the anchor's own
+extent, or after it. A band **before** the anchor end-aligns the box, so
+its far edge is flush with the anchor's near one -- `top` puts the box's
+bottom at the anchor's top, 100 - 20 = 80. A band **after** start-aligns
+it, so `bottom` puts its top at the anchor's bottom, 160. The anchor's
+own band centres the box on the anchor, 130 - 10 = 120.
+
+`span-all` centres on the **anchor**, not on the region it spans: with a
+300px containing block, `span-all center` reads 120 rather than the 140
+that centring in the region would give. That is the case a
+region-first implementation gets wrong, and the reason to measure
+before writing.
+
+The keyword sets coincide in the left-to-right horizontal mode this
+engine lays out in: `start` is `top` in the block axis and `left` in the
+inline one, `block-start` and `inline-start` likewise, so each is a
+renaming rather than a second geometry.
+
+`position-try-fallbacks`, `position-try-order` and `position-visibility`
+are a different kind of work: they need the box laid out, tested for
+overflow against its containing block, and laid out again at the next
+candidate. That is a retry loop around positioning rather than a
+property, and it is worth doing after the placement it retries.
+
 ### After the official definition
 
 the media features about a user's own preferences that
