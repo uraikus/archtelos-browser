@@ -339,4 +339,67 @@ int arcDown = curveY - curveOriginY
 checkNear(arcUp, 0 - 50, 2, 'the top of the sweeping arc is 50 up')
 checkNear(arcDown, 0 - arcUp, 2, 'and the other sweep is its mirror')
 
+// ---- more than one subpath ---------------------------------------------
+
+// A second `M` used to end the path. The length is the sum of the
+// subpaths and the distance walks them in order with nothing joining
+// them, so the point at half way along two equal legs is the end of the
+// first and not somewhere between the two.
+
+text TWO = 'M 0 60 L 100 60 M 0 160 L 100 160'
+originOf(TWO)
+pointAt('50%', TWO)
+checkNear(curveX - curveOriginX, 100, 2, 'half way along two equal subpaths is the end of the first')
+checkNear(curveY - curveOriginY, 0, 2, 'still on the first subpath, not between them')
+pointAt('75%', TWO)
+checkNear(curveX - curveOriginX, 50, 2, 'three quarters is half way along the second')
+checkNear(curveY - curveOriginY, 100, 2, 'a hundred further down')
+pointAt('100%', TWO)
+checkNear(curveX - curveOriginX, 100, 2, 'and the end is the end of the second')
+checkNear(curveY - curveOriginY, 100, 2, 'down there')
+
+// Unequal legs put the arithmetic in the open: 100 and 50 make 150, so
+// half of it is 75 along the first.
+text UNEVEN = 'M 0 60 L 100 60 M 0 160 L 50 160'
+originOf(UNEVEN)
+pointAt('50%', UNEVEN)
+checkNear(curveX - curveOriginX, 75, 2, 'half of 150 is 75 along the first subpath')
+checkNear(curveY - curveOriginY, 0, 2, 'which is still the first')
+
+// `Z` closes the subpath it is in, so the first is 200 long -- out and
+// back -- and the whole path 300.
+text ZSUB = 'M 0 60 L 100 60 Z M 0 160 L 100 160'
+originOf(ZSUB)
+pointAt('150px', ZSUB)
+checkNear(curveX - curveOriginX, 50, 2, 'past the turn, 150 is half way back along the return leg')
+checkNear(curveY - curveOriginY, 0, 2, 'on the first subpath still')
+pointAt('50%', ZSUB)
+checkNear(curveX - curveOriginX, 50, 2, 'and half of 300 lands in the same place')
+
+// A path of more than one subpath clamps at its ends, where a single
+// closed one wraps. The two rows disagree at the same distance, which
+// is the check: 400 is past the end of both.
+pointAt('400px', ZSUB)
+checkNear(curveX - curveOriginX, 100, 2, 'a multi-subpath path clamps at its end')
+checkNear(curveY - curveOriginY, 100, 2, 'on the last subpath')
+text ONECLOSED = 'M 0 60 L 100 60 Z'
+originOf(ONECLOSED)
+pointAt('400px', ONECLOSED)
+checkNear(curveX - curveOriginX, 0, 2, 'while one closed subpath wraps, 400 of 200 being 0')
+pointAt('150px', ONECLOSED)
+checkNear(curveX - curveOriginX, 50, 2, 'and 150 of it is half way back')
+
+// A second coordinate pair after `M` is a line, not another move, so
+// the two spellings are one path -- which needs neither point known.
+text IMPLICIT = 'M 0 60 100 60'
+text EXPLICIT = 'M 0 60 L 100 60'
+originOf(IMPLICIT)
+pointAt('50%', IMPLICIT)
+int impX = curveX
+int impY = curveY
+originOf(EXPLICIT)
+pointAt('50%', EXPLICIT)
+checkEqInt(impX, curveX, 'a pair after M is a line, so the two spellings agree across')
+checkEqInt(impY, curveY, 'and down')
+
 finish('motion path')

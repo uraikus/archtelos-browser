@@ -66,6 +66,15 @@ void func motionReset() {
     motionKind = MPATH_NONE
 }
 
+// The start of a subpath: the point joins the polyline without the gap
+// to it counting as length, so a distance walks the subpaths in order
+// and never crosses between them (todo.md has Chromium's numbers).
+void func motionMoveTo(x:float, y:float) {
+    motionPX.push(x)
+    motionPY.push(y)
+    motionCum.push(motionTotal)
+}
+
 void func motionAddPoint(x:float, y:float) {
     if motionPX.length > 0 {
         float dx = x - motionPX[motionPX.length - 1]
@@ -140,6 +149,11 @@ bool func motionReadNum(d:ascii) {
 // The control point the last curve used, and which kind it was, so
 // that `S` and `T` can reflect it. A command that is neither leaves
 // both false, which makes the reflection the current point itself.
+// How many subpaths the path has. A distance wraps round a path that is
+// one closed subpath and clamps at the ends of anything else, which is
+// measured rather than assumed (todo.md).
+int motionSubpaths = 1
+
 float motionCtrlX = 0.0
 float motionCtrlY = 0.0
 bool motionPrevCubic = false
@@ -221,6 +235,7 @@ void func motionPathData(data:text) {
     motionScanAt = 0
     motionPrevCubic = false
     motionPrevQuad = false
+    motionSubpaths = 1
     float cx = 0.0
     float cy = 0.0
     float startX = 0.0
@@ -233,17 +248,18 @@ void func motionPathData(data:text) {
         bool rel = c >= 97 && c <= 122
         int cmd = rel ? c - 32 : c
         if cmd == 90 {                                  // Z
+            // `Z` closes the subpath it is in, which is a leg back to
+            // that subpath's own start rather than to the path's.
             if started {
                 motionAddPoint(startX, startY)
+                cx = startX
+                cy = startY
                 motionClosed = true
             }
             continue
         }
         if cmd == 77 || cmd == 76 {                     // M, L
-            // A second M would begin a subpath, and joining it to this
-            // one would invent a segment that is not in the path. One
-            // subpath is what this reads.
-            if cmd == 77 && started { break }
+            bool first = true
             while true {
                 if !motionReadNum(d) { break }
                 float x = motionScanNum
@@ -251,9 +267,19 @@ void func motionPathData(data:text) {
                 float y = motionScanNum
                 cx = rel ? cx + x : x
                 cy = rel ? cy + y : y
-                motionAddPoint(cx, cy)
+                // Only the first pair of an `M` moves; the ones after
+                // it are a line, which is what SVG §8.3.2 says and what
+                // `M 0 60 100 60` reads as.
+                if cmd == 77 && first {
+                    if started { motionSubpaths++ }
+                    motionMoveTo(cx, cy)
+                    startX = cx
+                    startY = cy
+                } else {
+                    motionAddPoint(cx, cy)
+                }
                 if !started { startX = cx  startY = cy  started = true }
-                if cmd == 77 { break }
+                first = false
             }
             continue
         }
@@ -476,7 +502,7 @@ void func motionAt(dist:float) {
         return
     }
     float d = dist
-    if motionClosed {
+    if motionClosed && motionSubpaths == 1 {
         d = d - motionTotal * Math.floor(d / motionTotal)
     } else if d < 0.0 {
         d = 0.0
@@ -488,6 +514,15 @@ void func motionAt(dist:float) {
     while lo < hi - 1 {
         int mid = Math.floorDiv(lo + hi, 2)
         if motionCum[mid] <= d { lo = mid } else { hi = mid }
+    }
+    // A distance that lands exactly on the join between two subpaths
+    // belongs to the one before it rather than the one after, which is
+    // what Chromium answers. The search takes the last index whose
+    // distance is not past `d`, so at a join that is the start of the
+    // next subpath; stepping back over the gap -- a segment of no
+    // length -- puts it on the end of the one before.
+    while lo > 0 && motionCum[lo] == motionCum[lo - 1] && d <= motionCum[lo] {
+        lo = lo - 1
     }
     float seg = motionCum[lo + 1] - motionCum[lo]
     float f = seg <= 0.0 ? 0.0 : (d - motionCum[lo]) / seg

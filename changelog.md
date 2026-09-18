@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A motion path's subpaths
+
+A second `M` used to end the path. It begins a subpath now: the path's
+length is the sum of them and a distance walks them in order with
+nothing joining them, so half way along two equal legs is the end of
+the first and the next step is the start of the second. `Z` closes the
+subpath it is in rather than the path, and the coordinate pairs after
+an `M`'s first are a line rather than another move (SVG §8.3.2), which
+this engine had been dropping.
+
+**A distance wraps round a path that is a single closed subpath and
+clamps at the ends of anything else.** That is measured, not reasoned
+about: `M 0 60 L 100 60 Z` answers 0,60 at 400px and 20,60 at −20px,
+both taken modulo its 200, while the same path with a second subpath
+after it answers its own end at 400px. So the wrap this engine already
+did belongs to a lone closed subpath, and it is turned off the moment a
+second `M` appears.
+
+**The gap between two subpaths is a segment of no length**, which is
+what lets the existing arc-length lookup walk them unchanged. It cost
+one correction: the lookup takes the last point whose distance is not
+past the one asked for, which at a join is the *start* of the next
+subpath, where Chromium answers the end of the previous one. Stepping
+back over a zero-length segment — and only when the distance is exactly
+the join, or a point in the middle of the second subpath would step back
+too — is what puts it there.
+
 ### A motion path's curve commands
 
 `path()` read `M`, `L`, `H`, `V` and `Z` and stopped at the first curve.
