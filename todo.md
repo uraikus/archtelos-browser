@@ -445,6 +445,67 @@ boxes (css-2026.md, CSS Writing Modes 3). The two belong together: the
 fragments go into visual order and then the opening edge follows the
 inline's start side rather than its left.
 
+### What `initial-letter` was measured to be
+
+A drop cap: `initial-letter: <size> <sink>?`, on `::first-letter`. All
+of the following is Chromium 141 on a 300px paragraph at 20px/30px
+monospace, and the geometry is simpler than the property's reputation.
+
+**The size is where the letter's baseline sits.** Its cap top is the cap
+top of the first line and its baseline is the baseline of line `size`,
+so its cap height is one line-height taller for each line it spans.
+Rasterised, the ink of an `H`:
+
+| size | ink rows | cap height |
+|---|---|---|
+| 2 | 7 to 49 | 43 |
+| 3 | 7 to 79 | 73 |
+| 4 | 8 to 109 | 102 |
+
+Thirty apart each time, which is the line height exactly, and the ink
+top does not move. The unscaled `H` at 20px is 13 tall, so the rule is
+`cap(size) = cap(1) + (size - 1) x line-height` with nothing else in it.
+
+**The sink is how many lines are shortened, and it is not the size.**
+With the default sink -- `floor(size)` -- a size of 3 indents three
+lines by the letter's advance and a size of 2 indents two. Declared, it
+is the sink alone that counts: `initial-letter: 2 1` and
+`initial-letter: 3 1` each indent exactly **one** line, and the lines
+after it start at the paragraph's own edge.
+
+**What is left over goes above the text.** The paragraph grows by
+`size - sink` lines and the text begins that many lines down, so the
+letter's top rises out of the first line rather than its bottom sinking
+past the last one. A five-line paragraph is 150 tall at `2` and `3`, 180
+at `2 1`, 210 at `3 1` and `4 2`.
+
+| declaration | lines indented | paragraph | text starts |
+|---|---|---|---|
+| `2` | 2 | +0 lines | line 1 |
+| `3` | 3 | +0 | line 1 |
+| `2 1` | 1 | +1 | line 2 |
+| `3 1` | 1 | +2 | line 3 |
+| `4 2` | 2 | +2 | line 3 |
+
+The advance the lines are indented by is the letter's own: 36, 61 and 86
+pixels at sizes 2, 3 and 4, against 12 unscaled.
+
+**`getComputedStyle` cannot see the size, so it has to be rasterised.**
+Asked for the `font-size` of `::first-letter`, Chromium answers the
+paragraph's own `20px` under every value of `initial-letter`, including
+the ones where the letter is plainly seven times as wide. That is the
+fourth instrument this branch has caught answering a well-formed
+falsehood, and the widths above come from pixels for that reason.
+
+**The engine's cap ratio is not Chromium's, so the test must check the
+relation and not the widths.** Chromium's letter at size 2 is 60px with
+a 43px cap, which makes its monospace cap ratio 0.717; this engine's
+`FONT_CAP` is 0.70, so the same rule gives a letter about two per cent
+larger. What is the same in both is that the cap height grows by exactly
+one line-height per line and the baseline lands on line `size` -- so
+that is what to assert, as `text-box-edge` does with the same four
+ratios.
+
 ### What CSS Inline 3 still needs
 
 `text-box-trim` and `text-box-edge` work, with the `text-box` shorthand.
