@@ -371,6 +371,51 @@ coordinates, as though only the top and left sides existed. A
 is a defect rather than a decision, so it is written down here and not
 copied.
 
+### What `overscroll-behavior` was measured to be
+
+Five properties: the shorthand and `-x`, `-y`, `-inline`, `-block`.
+Chromium's computed values, for a 100x60 `overflow: scroll` box:
+
+| declaration | -x | -y | -inline | -block | shorthand |
+|---|---|---|---|---|---|
+| `overscroll-behavior: contain` | contain | contain | contain | contain | `contain` |
+| `overscroll-behavior: contain none` | contain | none | contain | none | `contain none` |
+| `overscroll-behavior: auto contain` | auto | contain | auto | contain | `auto contain` |
+| `overscroll-behavior-x: contain` | contain | auto | contain | auto | `contain auto` |
+| `overscroll-behavior-y: none` | auto | none | auto | none | `auto none` |
+| `overscroll-behavior-block: none` | auto | none | auto | none | `auto none` |
+| `overscroll-behavior-inline: contain` | contain | auto | contain | auto | `contain auto` |
+| `overscroll-behavior: scroll` | auto | auto | auto | auto | `auto` |
+
+So the shorthand is `<x> <y>` with one value applying to both, an
+invalid keyword leaves the initial `auto`, and **the two logical
+longhands are the two physical ones under other names**: `inline` reads
+back as `-x` and `block` as `-y`, and `dir="rtl"` changes neither. Only
+a `writing-mode` could swap those axes and this engine has none, so the
+logical pair is a spelling rather than a mapping to resolve. It computes
+on a box that does not scroll, too; it simply has no effect there. The
+root element's value is `auto`.
+
+**The behaviour cannot be measured from Chromium in this harness, and
+the control says so rather than the guess.** A synthetic `WheelEvent` is
+untrusted, so dispatching one over a nested scroller already at its end
+moves neither the scroller nor its ancestor -- with `contain` *and* with
+the default `auto`, where a real wheel would certainly chain. An
+instrument whose control cannot move is not measuring the thing.
+
+What the property changes here is therefore checked against this
+engine's own scrolling, which is written down and testable:
+`scrollContainerAt` in src/paint/paint.f walks outward from the box
+under the pointer to the nearest ancestor that can still scroll in the
+direction asked for, and `wheelAt` in browser.f gives what is left to
+the page. That walk is the chain `contain` and `none` stop.
+
+**`contain` and `none` differ in nothing this browser does.** `none`
+additionally suppresses the overscroll affordance -- the rubber band, the
+pull to refresh -- and there is none to suppress. The two are
+distinguishable in the computed style and nowhere else, which is worth
+saying rather than implying that one of them does more.
+
 ### An inline box's side edges are on the wrong side in right-to-left text
 
 An inline's opening margin, border and padding go on the fragment that
