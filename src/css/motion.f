@@ -137,9 +137,90 @@ bool func motionReadNum(d:ascii) {
 // `M`, `L`, `H`, `V` and `Z`, in either case, which is every command
 // that draws a straight line. A curve command ends the path where it
 // stands rather than being guessed at (css-2026.md records it).
+// The control point the last curve used, and which kind it was, so
+// that `S` and `T` can reflect it. A command that is neither leaves
+// both false, which makes the reflection the current point itself.
+float motionCtrlX = 0.0
+float motionCtrlY = 0.0
+bool motionPrevCubic = false
+bool motionPrevQuad = false
+
+// How many segments a curve becomes. The polyline they join is what the
+// arc-length lookup walks, so this is the accuracy of every distance
+// along the curve as well as of its shape; sixty-four holds a hundred
+// pixel curve to well under a pixel.
+const int MOTION_CURVE_STEPS = 64
+
+// One cubic Bézier, flattened into the polyline.
+void func motionCubic(x0:float, y0:float, x1:float, y1:float,
+                      x2:float, y2:float, x3:float, y3:float) {
+    for int i = 1, i <= MOTION_CURVE_STEPS, i++ {
+        float t = i.toFloat() / MOTION_CURVE_STEPS.toFloat()
+        float u = 1.0 - t
+        float a = u * u * u
+        float b = 3.0 * u * u * t
+        float c = 3.0 * u * t * t
+        float e = t * t * t
+        motionAddPoint(a * x0 + b * x1 + c * x2 + e * x3,
+                       a * y0 + b * y1 + c * y2 + e * y3)
+    }
+}
+
+// An elliptical arc, from its two endpoints to its centre and the two
+// angles it runs between (SVG 1.1 §F.6.5), then flattened. A radius of
+// zero, or two endpoints in the same place, is a straight line.
+void func motionArcTo(x0:float, y0:float, rxIn:float, ryIn:float, rotDeg:float,
+                      large:bool, sweep:bool, x1:float, y1:float) {
+    float rx = rxIn < 0.0 ? 0.0 - rxIn : rxIn
+    float ry = ryIn < 0.0 ? 0.0 - ryIn : ryIn
+    if rx == 0.0 || ry == 0.0 || (x0 == x1 && y0 == y1) {
+        motionAddPoint(x1, y1)
+        return
+    }
+    float phi = rotDeg * 3.14159265358979 / 180.0
+    float cosPhi = Math.cos(phi)
+    float sinPhi = Math.sin(phi)
+    // The endpoints in the ellipse's own frame, halfway between them.
+    float dx2 = (x0 - x1) / 2.0
+    float dy2 = (y0 - y1) / 2.0
+    float px = cosPhi * dx2 + sinPhi * dy2
+    float py = 0.0 - sinPhi * dx2 + cosPhi * dy2
+    // Radii too small for the chord are scaled up until they fit, which
+    // the standard asks for rather than treating the arc as invalid.
+    float lam = (px * px) / (rx * rx) + (py * py) / (ry * ry)
+    if lam > 1.0 {
+        float grow = Math.sqrt(lam)
+        rx = rx * grow
+        ry = ry * grow
+    }
+    float num = rx * rx * ry * ry - rx * rx * py * py - ry * ry * px * px
+    float den = rx * rx * py * py + ry * ry * px * px
+    float scale = den == 0.0 ? 0.0 : Math.sqrt(num < 0.0 ? 0.0 : num / den)
+    if large == sweep { scale = 0.0 - scale }
+    float cxp = scale * rx * py / ry
+    float cyp = 0.0 - scale * ry * px / rx
+    float centreX = cosPhi * cxp - sinPhi * cyp + (x0 + x1) / 2.0
+    float centreY = sinPhi * cxp + cosPhi * cyp + (y0 + y1) / 2.0
+    float startAng = motionAtan2((py - cyp) / ry, (px - cxp) / rx)
+    float endAng = motionAtan2((0.0 - py - cyp) / ry, (0.0 - px - cxp) / rx)
+    float sweepAng = endAng - startAng
+    float TAU = 6.28318530717959
+    if !sweep && sweepAng > 0.0 { sweepAng = sweepAng - TAU }
+    if sweep && sweepAng < 0.0 { sweepAng = sweepAng + TAU }
+    for int i = 1, i <= MOTION_CURVE_STEPS, i++ {
+        float ang = startAng + sweepAng * i.toFloat() / MOTION_CURVE_STEPS.toFloat()
+        float ex = rx * Math.cos(ang)
+        float ey = ry * Math.sin(ang)
+        motionAddPoint(centreX + cosPhi * ex - sinPhi * ey,
+                       centreY + sinPhi * ex + cosPhi * ey)
+    }
+}
+
 void func motionPathData(data:text) {
     ascii d = data.toAscii()
     motionScanAt = 0
+    motionPrevCubic = false
+    motionPrevQuad = false
     float cx = 0.0
     float cy = 0.0
     float startX = 0.0
@@ -185,7 +266,102 @@ void func motionPathData(data:text) {
             }
             continue
         }
-        break                                           // a curve: stop here
+        if cmd == 67 || cmd == 83 {                     // C, S
+            while true {
+                float x1 = 0.0
+                float y1 = 0.0
+                if cmd == 67 {
+                    if !motionReadNum(d) { break }
+                    x1 = rel ? cx + motionScanNum : motionScanNum
+                    if !motionReadNum(d) { break }
+                    y1 = rel ? cy + motionScanNum : motionScanNum
+                } else {
+                    // `S` takes the reflection of the previous cubic's
+                    // second control point about the current point, and
+                    // the current point itself where the command before
+                    // was not a cubic (SVG §8.3.6).
+                    x1 = motionPrevCubic ? cx + cx - motionCtrlX : cx
+                    y1 = motionPrevCubic ? cy + cy - motionCtrlY : cy
+                }
+                if !motionReadNum(d) { break }
+                float x2 = rel ? cx + motionScanNum : motionScanNum
+                if !motionReadNum(d) { break }
+                float y2 = rel ? cy + motionScanNum : motionScanNum
+                if !motionReadNum(d) { break }
+                float ex = rel ? cx + motionScanNum : motionScanNum
+                if !motionReadNum(d) { break }
+                float ey = rel ? cy + motionScanNum : motionScanNum
+                if !started { motionAddPoint(cx, cy)  startX = cx  startY = cy  started = true }
+                motionCubic(cx, cy, x1, y1, x2, y2, ex, ey)
+                motionCtrlX = x2
+                motionCtrlY = y2
+                motionPrevCubic = true
+                motionPrevQuad = false
+                cx = ex
+                cy = ey
+            }
+            continue
+        }
+        if cmd == 81 || cmd == 84 {                     // Q, T
+            while true {
+                float x1 = 0.0
+                float y1 = 0.0
+                if cmd == 81 {
+                    if !motionReadNum(d) { break }
+                    x1 = rel ? cx + motionScanNum : motionScanNum
+                    if !motionReadNum(d) { break }
+                    y1 = rel ? cy + motionScanNum : motionScanNum
+                } else {
+                    x1 = motionPrevQuad ? cx + cx - motionCtrlX : cx
+                    y1 = motionPrevQuad ? cy + cy - motionCtrlY : cy
+                }
+                if !motionReadNum(d) { break }
+                float ex = rel ? cx + motionScanNum : motionScanNum
+                if !motionReadNum(d) { break }
+                float ey = rel ? cy + motionScanNum : motionScanNum
+                if !started { motionAddPoint(cx, cy)  startX = cx  startY = cy  started = true }
+                // A quadratic is the cubic whose controls are two
+                // thirds of the way from each end to it, so there is
+                // one sampler rather than two.
+                motionCubic(cx, cy,
+                            cx + 2.0 * (x1 - cx) / 3.0, cy + 2.0 * (y1 - cy) / 3.0,
+                            ex + 2.0 * (x1 - ex) / 3.0, ey + 2.0 * (y1 - ey) / 3.0,
+                            ex, ey)
+                motionCtrlX = x1
+                motionCtrlY = y1
+                motionPrevQuad = true
+                motionPrevCubic = false
+                cx = ex
+                cy = ey
+            }
+            continue
+        }
+        if cmd == 65 {                                  // A
+            while true {
+                if !motionReadNum(d) { break }
+                float rx = motionScanNum
+                if !motionReadNum(d) { break }
+                float ry = motionScanNum
+                if !motionReadNum(d) { break }
+                float rot = motionScanNum
+                if !motionReadNum(d) { break }
+                bool large = motionScanNum != 0.0
+                if !motionReadNum(d) { break }
+                bool sweep = motionScanNum != 0.0
+                if !motionReadNum(d) { break }
+                float ex = rel ? cx + motionScanNum : motionScanNum
+                if !motionReadNum(d) { break }
+                float ey = rel ? cy + motionScanNum : motionScanNum
+                if !started { motionAddPoint(cx, cy)  startX = cx  startY = cy  started = true }
+                motionArcTo(cx, cy, rx, ry, rot, large, sweep, ex, ey)
+                motionPrevCubic = false
+                motionPrevQuad = false
+                cx = ex
+                cy = ey
+            }
+            continue
+        }
+        break                                           // an unknown command
     }
 }
 

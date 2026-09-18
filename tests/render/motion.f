@@ -229,4 +229,114 @@ inkBounds('offset-path:ray(90deg);offset-distance:100px;offset-rotate:0deg;'
           + 'transform:rotate(90deg);transform-origin:0 0')
 checkEqInt(mLeft - spunLeft, 100, 'the offset translates the transformed box')
 
+// ---- the curve commands ------------------------------------------------
+
+// `path()` read only straight lines until now, stopping at the first
+// curve. Every point below is Chromium's, in todo.md.
+//
+// Each path starts at y = 60 rather than at the origin, because the
+// fixture's box sits 40 pixels from the top of the canvas and the arcs
+// and the smooth curves go *up*: measured from y = 0 their upper halves
+// fall off the canvas, and `boundsOf` then reports where the ink was
+// clipped rather than where the box is. The first version of these
+// checks read -30 for every one of them, which is the canvas edge and
+// not a curve.
+//
+// Each path is measured against its own 0% point, so the fixture's
+// laid-out position never enters the arithmetic.
+
+int curveX = 0
+int curveY = 0
+void func pointAt(d:text, path:text) {
+    inkBounds(`offset-path:path('${path}');offset-distance:${d};offset-rotate:0deg`)
+    curveX = mLeft
+    curveY = mTop
+}
+
+int curveOriginX = 0
+int curveOriginY = 0
+void func originOf(path:text) {
+    pointAt('0%', path)
+    curveOriginX = curveX
+    curveOriginY = curveY
+}
+
+// A straight path is the control: its half-way point is its middle.
+originOf('M 0 60 L 100 60')
+check(curveOriginY > 60, 'the box is on the canvas at the start of a path')
+pointAt('50%', 'M 0 60 L 100 60')
+checkNear(curveX - curveOriginX, 50, 1, 'half way along a straight 100px path is 50 across')
+checkNear(curveY - curveOriginY, 0, 1, 'and nowhere down')
+
+// A cubic: 0,0 / 11,48 / 50,75 / 89,48 / 100,0 from its start.
+text CUBIC = 'M 0 60 C 0 160 100 160 100 60'
+originOf(CUBIC)
+pointAt('25%', CUBIC)
+checkNear(curveX - curveOriginX, 11, 2, 'a quarter along the cubic is 11 across')
+checkNear(curveY - curveOriginY, 48, 2, 'and 48 down')
+pointAt('50%', CUBIC)
+checkNear(curveX - curveOriginX, 50, 2, 'half way is 50 across')
+checkNear(curveY - curveOriginY, 75, 2, 'and 75 down, which is not the control point')
+pointAt('100%', CUBIC)
+checkNear(curveX - curveOriginX, 100, 2, 'and the end is the end point')
+checkNear(curveY - curveOriginY, 0, 2, 'back on the axis')
+
+// The relative form is the same curve, which needs neither point known.
+pointAt('25%', CUBIC)
+int absX = curveX
+int absY = curveY
+pointAt('25%', 'M 0 60 c 0 100 100 100 100 0')
+checkEqInt(curveX, absX, 'a relative cubic is the same curve, across')
+checkEqInt(curveY, absY, 'and down')
+
+// A quadratic: 0,0 / 19,31 / 50,50 / 81,31 / 100,0.
+text QUAD = 'M 0 60 Q 50 160 100 60'
+originOf(QUAD)
+pointAt('25%', QUAD)
+checkNear(curveX - curveOriginX, 19, 2, 'a quarter along the quadratic is 19 across')
+checkNear(curveY - curveOriginY, 31, 2, 'and 31 down')
+pointAt('50%', QUAD)
+checkNear(curveY - curveOriginY, 50, 2, 'half way is 50 down, half of its control point')
+
+// `S` reflects the previous cubic's second control point, so the path
+// is symmetric about its middle: as far above the axis in the second
+// half as below it in the first. That symmetry is the check that does
+// not depend on either half being known.
+text SMOOTH = 'M 0 60 C 0 110 50 110 50 60 S 100 10 100 60'
+originOf(SMOOTH)
+pointAt('25%', SMOOTH)
+int sDown = curveY - curveOriginY
+pointAt('75%', SMOOTH)
+int sUp = curveY - curveOriginY
+checkNear(sDown, 38, 2, 'a quarter along the smooth cubic is 38 down')
+checkNear(sUp, 0 - sDown, 2, 'and three quarters along is as far up, by reflection')
+pointAt('50%', SMOOTH)
+checkNear(curveY - curveOriginY, 0, 2, 'with the join itself on the axis')
+
+// `T` reflects the previous quadratic's control point the same way.
+text TSMOOTH = 'M 0 60 Q 25 110 50 60 T 100 60'
+originOf(TSMOOTH)
+pointAt('25%', TSMOOTH)
+int tDown = curveY - curveOriginY
+pointAt('75%', TSMOOTH)
+checkNear(tDown, 25, 2, 'a quarter along the smooth quadratic is 25 down')
+checkNear(curveY - curveOriginY, 0 - tDown, 2, 'and three quarters as far up')
+
+// An arc. A chord of 100 with a radius of 50 is exactly a semicircle,
+// so the sweep flag alone decides which side of the chord it takes --
+// and the two are mirror images, which again needs neither known.
+text ARCUP = 'M 0 60 A 50 50 0 0 1 100 60'
+text ARCDOWN = 'M 0 60 A 50 50 0 1 0 100 60'
+originOf(ARCUP)
+pointAt('50%', ARCUP)
+int arcUp = curveY - curveOriginY
+pointAt('25%', ARCUP)
+checkNear(curveX - curveOriginX, 15, 2, 'a quarter along the arc is 15 across')
+checkNear(curveY - curveOriginY, 0 - 35, 2, 'and 35 up')
+originOf(ARCDOWN)
+pointAt('50%', ARCDOWN)
+int arcDown = curveY - curveOriginY
+checkNear(arcUp, 0 - 50, 2, 'the top of the sweeping arc is 50 up')
+checkNear(arcDown, 0 - arcUp, 2, 'and the other sweep is its mirror')
+
 finish('motion path')

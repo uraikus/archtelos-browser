@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A motion path's curve commands
+
+`path()` read `M`, `L`, `H`, `V` and `Z` and stopped at the first curve.
+It reads `C`, `S`, `Q`, `T` and `A` now, each flattened into the same
+polyline the arc-length lookup already walks — sixty-four segments a
+curve, which holds a hundred-pixel curve to well under a pixel.
+
+**A quadratic is the cubic whose controls are two thirds of the way
+from each end to it**, so there is one sampler rather than two. `S` and
+`T` reflect the previous curve's control point about the current point,
+and the current point itself where the command before was not of that
+kind. `A` is converted from its two endpoints to a centre and two
+angles, with radii too small for their chord scaled up until they fit,
+which is what the standard asks for rather than treating the arc as
+invalid.
+
+The checks that earn their place need no point known in advance: a
+relative cubic from the same start is the same curve as its absolute
+twin at every distance; `S` and `T` make a path symmetric about its
+middle, as far above the axis in the second half as below it in the
+first; and the two sweeps of a semicircular arc are mirror images.
+
+**The first version of those checks read −30 for everything that goes
+up**, which is the canvas edge and not a curve. The suite's box sits
+forty pixels from the top, so the upper half of every arc fell off the
+canvas and `boundsOf` reported where the ink was clipped. The paths
+start at y = 60 now, and each is measured against its own start rather
+than the fixture's.
+
 ### The static position of an absolutely positioned box
 
 CSS2 §10.3.7: a box with `position: absolute` and an `auto` inset sits
