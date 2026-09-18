@@ -490,6 +490,19 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What the position-try retry loop cost
+
+The retry loop lays an anchored box out, tests it against its containing
+block and tries the next candidate. It runs only for a box that both
+names an anchor and overflows, so on a page with neither it is a
+comparison that fails immediately. Twenty-five alternating samples
+against the revision before it: median 0 ms, paired mean -0.64, slower
+in 12 of 25 pairs.
+
+The containing block it tests against is tracked down the recursion
+rather than stored on each box, for the reason the section below
+measured: a field on a per-box record costs more than a parameter does.
+
 ## What anchor positioning cost, with the lesson below applied first
 
 CSS Anchor Positioning adds two walks of the finished box tree -- one to
