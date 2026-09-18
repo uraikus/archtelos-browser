@@ -1563,3 +1563,44 @@ lookups inside the walk that already resolves `position-anchor`, behind
 a flag a page that never says the function leaves false; and the
 resolution itself is in `placeAnchored`, which a page with no anchor
 never reaches. `generated.html` says none of it.
+
+The static position costs **4,592 bytes** (2,975,216 → 2,979,808) and
+about **one millisecond on `generated.html`, which runs none of it**.
+That sentence is the finding, and it took five binaries to be able to
+write it honestly.
+
+Twenty-five alternating paired samples each, parse through layout at
+800x600, all on an idle machine:
+
+| | Median | Mean | Slower in |
+|---|---|---|---|
+| the change | +1 ms | +0.72 ms | **17 of 25** |
+| the change, again | +1 ms | +0.44 ms | **17 of 25** |
+| the change, a third time | +2 ms | +1.56 ms | **17 of 25** |
+| the change with its two map resets guarded | +1 ms | +1.08 ms | 15 of 25 |
+| the two globals and the reset, none of the code | +1 ms | +0.92 ms | 16 of 25 |
+| that binary against the whole change | −1 ms | −1.44 ms | 7 of 25 |
+| **the parent against a copy of itself** | 0 ms | −1.96 ms | **6 of 25** |
+| the parent against itself, again | 0 ms | −0.12 ms | 12 of 25 |
+| the parent plus two *unused* global maps | 0 ms | −4.20 ms | 9 of 25 |
+
+Everything carrying the change is slower in 15 to 17 pairs of 25.
+Everything that does not carry it is slower in 6 to 12. The minimum
+moves from 103 ms to 104 in every binary that is not the parent. Five
+runs agree, so it is not the run.
+
+**And it cannot be work.** `generated.html` declares no `position:` at
+all; the engine's own `docHasPositioned` reads false on it, so the
+writes, the read and the reset are all behind a flag that is never
+raised. Two things that would have explained it do not: two unused
+global maps added to the parent cost nothing by the pair statistics, and
+guarding the resets — which does remove two allocations per layout —
+did not move the number either.
+
+So what is left is the shape of the binary rather than anything it does,
+which is the explanation this file ruled out once before for
+`corner-shape`, where 41 KB of never-called code cost nothing. It is not
+ruled out here. It is recorded as measured, unattributed, and the number
+is a millisecond on a page that never enters the feature.
+
+The tables above are not updated from these runs.

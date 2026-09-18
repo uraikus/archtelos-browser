@@ -339,7 +339,8 @@ bool docHasPositioned = false
 // its static position (CSS2 §10.3.7), which is what an `auto` inset
 // resolves to. The flow already walks past these boxes; this is the pen
 // at the moment it does. A document with nothing positioned never grows
-// it, because `docHasPositioned` guards both the writes and the read.
+// them, because `docHasPositioned` guards the writes, the read and the
+// reset alike.
 map[int] staticPosX = {}
 map[int] staticPosY = {}
 bool docHasFloats = false
@@ -5865,11 +5866,17 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // establishes one yet (todo.md); what matters for now is that a
     // second layout does not inherit the first one's floats.
     resetFloats()
+    // The static positions of the layout before this one, cleared only
+    // if it had any, so a document that positions nothing allocates
+    // nothing here. The flag is still the previous layout's until the
+    // line below clears it, which is what makes the test right.
+    if docHasPositioned {
+        map[int] emptyStaticX = {}
+        map[int] emptyStaticY = {}
+        staticPosX = emptyStaticX
+        staticPosY = emptyStaticY
+    }
     docHasPositioned = false
-    map[int] emptyStaticX = {}
-    map[int] emptyStaticY = {}
-    staticPosX = emptyStaticX
-    staticPosY = emptyStaticY
     anyRtlText = false
     docHasFloats = false
     inlineInkOverhang = 0
