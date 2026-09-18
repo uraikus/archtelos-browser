@@ -1492,3 +1492,27 @@ furthest any inline reaches outside its line is one addition against a
 number that a document without a padded or bordered inline leaves at
 zero, so the arithmetic is there but the pages that do not use the
 feature get the same answer they got before.
+
+`box-decoration-break` costs **200 bytes** (2,961,064 → 2,961,264) and
+nothing measurable. Twenty-five alternating paired samples of
+`generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (2674d33) | 104 ms | 111 ms | 123 ms |
+| after (b6899cd) | 105 ms | 110 ms | 141 ms |
+| paired, after less before | −7 ms | **−2 ms** | +21 ms |
+
+The new binary is the slower one in 8 pairs of 25. The paired mean is
++0.72 ms and comes entirely from the single +21 pair, a 141 ms sample
+where every other read 104 to 123; the median is where to read this one,
+as it was for the `int` on `Style`.
+
+Two hundred bytes is the smallest thing measured in this file, and the
+reason is structural. `clone` adds no pass and no field: the keyword
+goes in a map keyed by the computed style's serial, read once per
+distinct style; the opening edge is added where `beginLine` already
+re-opens the inlines that continue, which a page with no inline never
+enters; and the closing edge is added in a loop over the inlines open
+across a line break, which is empty on every line of a page that does
+not break one.
