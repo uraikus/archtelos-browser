@@ -406,6 +406,49 @@ makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.70, ex 0.55
 whose real proportions differ will trim to the wrong place. The numbers
 come from Chromium on the monospace family the tests use.
 
+### What an inline fragment's side border and padding were measured to be
+
+This is not a new property. `paintInlineBackground` in
+src/paint/paint.f paints a fragment's background and its **top and
+bottom** borders only, and the comment above it says an inline fragment
+"carries no padding or border of its own". So CSS2 §8.4 -- the opening
+border and padding on the first fragment, the closing ones on the last
+-- is not implemented, the **initial** `box-decoration-break: slice` is
+already incomplete, and layout reserves no advance for either. The
+border render suite is green because every border it tests is on a
+block.
+
+An inline with `padding: 6px; border: 4px solid` over the lines of a
+150px paragraph at 16px/24px monospace:
+
+| | fragment widths |
+|---|---|
+| `slice` | 135, 125, 58 |
+| `clone` | 145, 145, 68 |
+
+The opening edge is 10 -- border 4 plus padding 6 -- and the first
+character of the text starts at x = 10, so it really is on the first
+fragment and really does push the text across. The closing edge is the
+same 10 on the last fragment.
+
+Those two rows cross-check each other exactly: `clone` gives every
+fragment both edges, so each one gains 10 for each edge `slice` left
+off. The first fragment is missing one (135 + 10 = 145), the middle is
+missing both (125 + 20 = 145), the last is missing one (58 + 10 = 68).
+That relation is the check worth writing, since it does not depend on
+any of the six widths being known in advance.
+
+**The padding and border do not change the line height.** The lines sit
+at y = -8, 16 and 40, exactly 24 apart, while each fragment box is 39
+tall: the content area of 19 plus 12 of padding and 8 of border. So an
+inline's side edges take horizontal advance and paint outside the line
+box, and the block gets no taller for them.
+
+Do this before `box-decoration-break`, which is then the small
+remainder: `clone` puts both edges on every fragment, and in pixels it
+shows as four blue pixels at the end of the first line and the start of
+the second where `slice` puts none.
+
 ### After the official definition
 
 the media features about a user's own preferences that
