@@ -309,11 +309,11 @@ mix-blend-mode	multiply
 object-fit	cover
 object-position	left top
 object-view-box	inset(1px)
-offset-anchor	center
-offset-distance	10px
-offset-path	border-box
-offset-position	center
-offset-rotate	reverse
+offset-anchor	0% 0%; offset-path: ray(90deg); offset-distance: 50px
+offset-distance	50px; offset-path: ray(90deg)
+offset-path	ray(45deg)
+offset-position	30px 40px; offset-path: ray(90deg)
+offset-rotate	reverse; offset-path: ray(90deg)
 opacity	0.5
 order	2
 orphans	700

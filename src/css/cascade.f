@@ -172,6 +172,10 @@ void func cascadeReset() {
     anyAnchorName = false
     anyAnchorScope = false
     anchorInfos = []
+    anyOffsetPath = false
+    motionInfos = []
+    map[int] emptyMotion = {}
+    motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
     anchorHiddenIds = emptyHidden
     anyAnchorHidden = false
@@ -4672,6 +4676,93 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     return got
 }
 
+// ---- CSS Motion Path 1 ---------------------------------------------------
+
+// `offset-path: none | ray() | <basic-shape> | path()`. The basic
+// shapes are the ones `clip-path` already reads, so they are read the
+// same way; a ray and a path() are this property's own.
+void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
+    mi.pathKind = MPATH_NONE
+    if v == null { return }
+    ascii t = asciiTrim(v)
+    if t.length == 0 { return }
+    ascii lower = asciiLower(t)
+    if lower == 'none' { return }
+    if asciiStartsWith(lower, 'ray(', 0) {
+        int close = asciiMatchingParen(t, 3)
+        if close < 0 { return }
+        arr[ascii] parts = asciiSplitSpace(asciiLower(t.slice(4, close)))
+        bool sawAngle = false
+        mi.raySize = RAYSIZE_CLOSEST_SIDE
+        for int i = 0, i < parts.length, i++ {
+            ascii w = parts[i]
+            if w == 'closest-side' { mi.raySize = RAYSIZE_CLOSEST_SIDE }
+            else if w == 'closest-corner' { mi.raySize = RAYSIZE_CLOSEST_CORNER }
+            else if w == 'farthest-side' { mi.raySize = RAYSIZE_FARTHEST_SIDE }
+            else if w == 'farthest-corner' { mi.raySize = RAYSIZE_FARTHEST_CORNER }
+            else if w == 'sides' { mi.raySize = RAYSIZE_SIDES }
+            else if w == 'contain' { continue }
+            else {
+                arr[bool] ok = [false]
+                float deg = parseAngleDegrees(w, ok)
+                if ok[0] { mi.rayAngle = deg  sawAngle = true }
+            }
+        }
+        if !sawAngle { return }
+        mi.pathKind = MPATH_RAY
+        return
+    }
+    // `path()` carries SVG commands, which are case-sensitive: `m` is
+    // not `M`. So its argument is taken from the unlowered value.
+    if asciiStartsWith(lower, 'path(', 0) {
+        int close = asciiMatchingParen(t, 4)
+        if close < 0 { return }
+        ascii inner = asciiTrim(t.slice(5, close))
+        if inner.length >= 2 {
+            int q = inner.charCodeAt(0)
+            if (q == CH_QUOTE || q == CH_APOS) && inner.charCodeAt(inner.length - 1) == q {
+                inner = inner.slice(1, inner.length - 1)
+            }
+        }
+        if inner.length == 0 { return }
+        mi.pathData = inner.toText()
+        mi.pathKind = MPATH_PATH
+        return
+    }
+    ClipShape sh = parseClipPath(lower, fontSize)
+    if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE
+        || sh.kind == CLIPSHAPE_POLYGON {
+        mi.shape = sh
+        mi.pathKind = MPATH_SHAPE
+    }
+}
+
+// `offset-rotate: [ auto | reverse ] || <angle>`. There is no `none`,
+// so a declaration saying it is dropped and the initial `auto` stands
+// -- which is what the measurement's first round read as a control and
+// was not one.
+void func motionReadRotate(mi:MotionInfo, v:ascii) {
+    if v == null { return }
+    arr[ascii] parts = asciiSplitSpace(asciiLower(asciiTrim(v)))
+    if parts.length == 0 { return }
+    int mode = -1
+    float angle = 0.0
+    bool sawAngle = false
+    for int i = 0, i < parts.length, i++ {
+        ascii w = parts[i]
+        if w == 'auto' { mode = MROT_AUTO  continue }
+        if w == 'reverse' { mode = MROT_REVERSE  continue }
+        arr[bool] ok = [false]
+        float deg = parseAngleDegrees(w, ok)
+        if !ok[0] { return }
+        angle = deg
+        sawAngle = true
+    }
+    if mode < 0 && !sawAngle { return }
+    mi.rotateMode = mode < 0 ? MROT_ANGLE : mode
+    mi.rotateAngle = angle
+}
+
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
     Style s
     Style parent = parentIn
@@ -5591,6 +5682,46 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }
         if aScope != '' { anyAnchorScope = true }
+    }
+    // CSS Motion Path 1, held the same way: five properties behind one
+    // index, and no side table at all on a page that says none of them.
+    ascii mPath = styleProp(props, 'offset-path')
+    ascii mDist = styleProp(props, 'offset-distance')
+    ascii mRot = styleProp(props, 'offset-rotate')
+    ascii mAnch = styleProp(props, 'offset-anchor')
+    ascii mPos = styleProp(props, 'offset-position')
+    if mPath != null || mDist != null || mRot != null || mAnch != null || mPos != null {
+        MotionInfo mi
+        mi.pathKind = MPATH_NONE
+        mi.rotateMode = MROT_AUTO
+        mi.anchorAuto = true
+        mi.posNormal = true
+        motionReadPath(mi, mPath, s.fontSize)
+        motionReadRotate(mi, mRot)
+        if mDist != null { mi.distance = parseLength(asciiTrim(mDist), s.fontSize) }
+        if mAnch != null {
+            arr[ascii] a = asciiSplitSpace(asciiLower(asciiTrim(mAnch)))
+            if a.length == 1 && a[0] == 'auto' {
+            } else if a.length >= 1 {
+                mi.anchorAuto = false
+                mi.anchorX = parsePositionAxis(a[0], true, s.fontSize)
+                mi.anchorY = a.length > 1 ? parsePositionAxis(a[1], false, s.fontSize)
+                    : lenPercent(50.0)
+            }
+        }
+        if mPos != null {
+            arr[ascii] a = asciiSplitSpace(asciiLower(asciiTrim(mPos)))
+            if a.length == 1 && (a[0] == 'normal' || a[0] == 'auto') {
+            } else if a.length >= 1 {
+                mi.posNormal = false
+                mi.posX = parsePositionAxis(a[0], true, s.fontSize)
+                mi.posY = a.length > 1 ? parsePositionAxis(a[1], false, s.fontSize)
+                    : lenPercent(50.0)
+            }
+        }
+        motionInfos.push(mi)
+        motionOfSerial[`${s.serial}`] = motionInfos.length
+        if mi.pathKind != MPATH_NONE { anyOffsetPath = true }
     }
     s.cornerShapes = 0
     if cshTL != CORNER_K_ROUND || cshTR != CORNER_K_ROUND

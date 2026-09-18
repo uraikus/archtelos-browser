@@ -62,7 +62,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.borderLeftColor}`, `${s.borderStyle}`, `${s.borderRadius}`, `${lenKey(s.radiusTopLeftX)}`, `${lenKey(s.radiusTopLeftY)}`,
         `${lenKey(s.radiusTopRightX)}`, `${lenKey(s.radiusTopRightY)}`, `${lenKey(s.radiusBottomRightX)}`, `${lenKey(s.radiusBottomRightY)}`, `${lenKey(s.radiusBottomLeftX)}`, `${lenKey(s.radiusBottomLeftY)}`, 
         `${cornerKAt(s.cornerShapes, 0)}`, `${cornerKAt(s.cornerShapes, 1)}`, `${cornerKAt(s.cornerShapes, 2)}`, `${cornerKAt(s.cornerShapes, 3)}`, 
-        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, 
+        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, 
         `${s.borderSpacing}`, `${s.borderCollapse}`, `${s.borderTopStyle}`, 
         `${s.borderRightStyle}`, `${s.borderBottomStyle}`, 
         `${s.borderLeftStyle}`, `${s.textIndent}`, `${s.letterSpacing}`, 
@@ -120,6 +120,19 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`]
 }
 
+text func motionKeyPath(mi:MotionInfo) {
+    if mi.pathKind == MPATH_NONE { return '' }
+    if mi.pathKind == MPATH_RAY { return `ray ${mi.rayAngle} ${mi.raySize}` }
+    if mi.pathKind == MPATH_PATH { return `path ${mi.pathData}` }
+    ClipShape sh = mi.shape
+    text pts = ''
+    for int i = 0, i < sh.pointsX.length, i++ {
+        pts = pts + `${lenKey(sh.pointsX[i])},${lenKey(sh.pointsY[i])};`
+    }
+    return `shape ${sh.kind} ${lenKey(sh.centreX)} ${lenKey(sh.centreY)} `
+        + `${lenKey(sh.radiusX)} ${lenKey(sh.radiusY)} ${pts}`
+}
+
 text func styleDigest(s:Style) {
     return styleDigestFields(s).join('\u0001')
 }
@@ -149,6 +162,7 @@ arr[text] func styleDigestFieldNames() {
         'radiusBottomRightX', 'radiusBottomRightY', 'radiusBottomLeftX', 'radiusBottomLeftY',
         'cornerTopLeftShape', 'cornerTopRightShape', 'cornerBottomRightShape', 'cornerBottomLeftShape',
         'anchorName', 'positionAnchor', 'positionArea', 'positionTryFallbacks', 'positionTryOrder', 'positionVisibility', 'anchorScope',
+        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition',
         'borderSpacing', 'borderCollapse', 
         'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 
         'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 

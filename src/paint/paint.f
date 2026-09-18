@@ -5,6 +5,7 @@
 // document coordinates land where they should on screen.
 
 import ../layout/layout.f
+import ../css/motion.f
 
 // Boxes entirely outside [paintTop, paintBottom) in document
 // coordinates are skipped -- long pages stay cheap to scroll.
@@ -3026,15 +3027,80 @@ bool func anchorHides(b:Box) {
     return anyAnchorHidden && b.node != null && anchorHiddenIds[`${b.node.id}`] != null
 }
 
+// CSS Motion Path 1: the box is painted at a point on its own path
+// rather than where it was laid out. The whole effect is one
+// translation and one rotation:
+//
+//     painted top-left = laid-out top-left + P - offset-anchor
+//
+// with the turn taken about P itself. The path's percentages and a
+// ray's length want the containing block; the painter carries the
+// parent box rather than the containing block, so that is what they
+// resolve against, which is the same rectangle whenever the parent is
+// the containing block and is recorded where it is not (todo.md).
+bool func boxHasOffset(b:Box) {
+    return anyOffsetPath && b.style != null
+        && motionInfoOf(motionIndexOf(b.style)).pathKind != MPATH_NONE
+}
+
+// Leaves the offset's translation and turn on the canvas state. The
+// caller has saved it.
+void func applyBoxOffset(b:Box) {
+    MotionInfo mi = motionInfoOf(motionIndexOf(b.style))
+    Box up = parentBox(b)
+    int bw = up == null ? b.w : contentWidth(up)
+    int bh = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int ex = up == null ? 0 : b.x - contentX(up)
+    int ey = up == null ? 0 : b.y - contentY(up)
+    motionBuild(mi, ex, ey, bw, bh)
+    motionAt(motionDistance(mi))
+    // `offset-anchor: auto` is the transform origin, not the box's
+    // centre. The two coincide until a `transform-origin` says
+    // otherwise, and then they are 20 pixels apart: a box with
+    // `transform-origin: 0 0` moves the whole of `P`, where one with
+    // the default moves `P` less half its size.
+    int ax = resolveLen(b.style.transformOriginX, b.w, Math.floorDiv(b.w, 2))
+    int ay = resolveLen(b.style.transformOriginY, b.h, Math.floorDiv(b.h, 2))
+    if !mi.anchorAuto {
+        ax = resolveLen(mi.anchorX, b.w, 0)
+        ay = resolveLen(mi.anchorY, b.h, 0)
+    }
+    int px = roundPx(motionX)
+    int py = roundPx(motionY)
+    pTranslate(px - ax, py - ay)
+    float turn = motionRotation(mi)
+    if turn != 0.0 {
+        // The pivot is the anchor point where the box was laid out: the
+        // translation above carries it to P, so turning about it there
+        // is turning about P.
+        pTranslate(b.x + ax, b.y + ay)
+        pRotate(turn)
+        pTranslate(0 - (b.x + ax), 0 - (b.y + ay))
+    }
+}
+
 void func paintBox(b:Box) {
     if anyAnchorHidden && anchorHides(b) { return }
-    if !cascadeSawTransform || b.style.transforms.length == 0 {
+    bool offset = anyOffsetPath && boxHasOffset(b)
+    if !offset && (!cascadeSawTransform || b.style.transforms.length == 0) {
         paintBoxUntransformed(b)
         return
     }
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
     Style s = b.style
+    if offset {
+        // The offset goes on first, so the element's own `transform`
+        // applies inside it: a rotated box still moves the full
+        // distance, which is what Chromium does.
+        pSaveState()
+        applyBoxOffset(b)
+        if !cascadeSawTransform || s.transforms.length == 0 {
+            paintBoxUntransformed(b)
+            pRestoreState()
+            return
+        }
+    }
     // Every function is about the transform origin, which is the box's
     // centre unless it says otherwise. Moving the origin to (0,0),
     // transforming and moving back is what makes that so.
@@ -3069,6 +3135,7 @@ void func paintBox(b:Box) {
     pTranslate(-ox, -oy)
     paintBoxUntransformed(b)
     pRestoreState()
+    if offset { pRestoreState() }
 }
 
 void func paintBoxUntransformed(b:Box) {

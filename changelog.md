@@ -5,6 +5,48 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Motion Path, which was filed under things that need a clock
+
+`offset-path` gives a box a path, `offset-distance` a point along it,
+`offset-rotate` which way it faces there, `offset-anchor` which point of
+the box sits on the path and `offset-position` where a ray begins. None
+of it needs a clock: `offset-distance: 40%` places a box in a still
+frame. The specification was grouped in css-2026.md with Transitions and
+Animations under "an animation needs a clock and a repaint loop", which
+is true of those and not of this one.
+
+**The control was not a control.** The measurement's first round wrote
+`offset-rotate: none` to hold rotation still, and there is no such value
+-- the grammar is `[ auto | reverse ] || <angle>` -- so the declaration
+was dropped and every row measured the initial `auto`. Half the rows
+looked right anyway, because at those points the path's direction is
+zero. Asking `getComputedStyle` which declarations had survived is what
+found it, and `auto 0deg` came back.
+
+**The path's coordinates are the element's own**, not the containing
+block's: a `circle(50px at 100px 100px)` on a box laid out at (30, 40)
+has its centre at (130, 140). A box at the origin cannot tell the two
+apart, which is what the first round used. **A circle starts at three
+o'clock and runs clockwise**, not at twelve. **`offset-anchor: auto` is
+the transform origin**, not the box's centre, which only shows on a box
+whose `transform-origin` says otherwise -- and that was the one test of
+the hundred and fifty-four that failed before it was fixed.
+
+Every path becomes a polyline, because the point at an arc length is
+exact on one. A polygon and a `path()` of straight commands lose nothing
+by it; a circle and an ellipse are sampled at 720 steps, which is far
+below the pixel the painter rounds to. A ray is not a polyline at all:
+it answers distances past its end and before its start.
+
+**One `int` on `Style` cost the benchmark page 1.08 ms of layout** on a
+page with no `offset-path` on it, against a parent-against-parent
+control of -0.16 ms. The index moved to a map keyed by the computed
+style's serial, and the re-measurement matches the control.
+benchmarks.md has both, and the control beside them, because 14 of 25
+pairs slower is the sort of number that gets waved through without one.
+
+**253 of 405.**
+
 ### `anchor-scope`, and two rules of resolution it exposed
 
 `anchor-scope: none | all | <dashed-ident>#` scopes an anchor name to an

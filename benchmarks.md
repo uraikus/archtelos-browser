@@ -490,6 +490,58 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What one `int` on `Style` costs, and the control that proved it
+
+CSS Motion Path was first written the way the anchor properties are:
+five values in a side table, and one `int` on `Style` indexing it. The
+benchmark page has no `offset-path` anywhere on it, so the index is zero
+on every style and nothing reads it.
+
+Twenty-five alternating pairs against the rebuilt parent, layout and
+paint both, 2026-09-18:
+
+| | Min | Median | Max | Paired median | Paired mean | Slower in |
+|---|---|---|---|---|---|---|
+| layout, parent | 58 ms | 61 ms | 65 ms | | | |
+| layout, with the field | 59 ms | 61 ms | 66 ms | +1 ms | **+1.08 ms** | 14 of 25 |
+| paint, parent | 8 ms | 9 ms | 11 ms | | | |
+| paint, with the field | 8 ms | 9 ms | 10 ms | 0 ms | -0.04 ms | 5 of 25 |
+
+Fourteen of twenty-five is barely more than half, and a median of +1 ms
+on a 61 ms phase is the sort of number that gets waved through. **So the
+same script was run with the parent binary against a copy of itself**,
+which is the only way to know what this method's own noise is:
+
+| | Paired median | Paired mean | B slower in |
+|---|---|---|---|
+| layout, parent against parent | 0 ms | -0.16 ms | 6 of 25 |
+| paint, parent against parent | 0 ms | -0.24 ms | 4 of 25 |
+
+Against a floor of -0.16 and 6 of 25, +1.08 and 14 of 25 is real. It is
+the same finding `corner-shape` produced at four times the size -- four
+floats on `Style` cost 2 ms -- and this is what the small end of it
+looks like: one field, one machine word, one millisecond, and no test
+anywhere that would have objected.
+
+The index moved off `Style` into a map keyed by the computed style's own
+serial, which is the right grain anyway: a computed style is shared
+between every element that matched the same declarations, and the map is
+only ever read behind `anyOffsetPath`. Re-measured the same way:
+
+| | Min | Median | Max | Paired median | Slower in |
+|---|---|---|---|---|---|
+| layout, parent | 58 ms | 60 ms | 64 ms | | |
+| layout, after the move | 58 ms | 60 ms | 82 ms | 0 ms | 7 of 25 |
+| paint, after the move | 8 ms | 9 ms | 9 ms | 0 ms | 4 of 25 |
+
+Seven of twenty-five against the control's six. The paired differences
+are every one of them in [-3, +2] except a single +24, which is the 82 ms
+sample and a hiccup rather than a cost; dropping that one pair leaves a
+mean of -0.33 ms, which is the control's number. Reported with the
+outlier in the table rather than trimmed out of it, because a maximum
+that far from the median is the sort of thing a reader should get to
+judge.
+
 ## What `position-visibility` cost, and the measurement that missed it
 
 `position-visibility` puts a test at the top of `paintBox`, which every

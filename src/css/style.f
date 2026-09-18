@@ -442,6 +442,78 @@ AnchorInfo func anchorInfoOf(idx:int) {
     return anchorInfos[idx - 1]
 }
 
+// CSS Motion Path 1. `offset-path` gives a box a path; `offset-distance`
+// a point along it; `offset-rotate` which way the box faces there;
+// `offset-anchor` which point of the box sits on the path; and
+// `offset-position` where the path begins. None of it needs a clock --
+// the specification is grouped with the animations in css-2026.md and
+// this half of it renders in a still frame.
+const int MPATH_NONE = 0
+const int MPATH_RAY = 1
+const int MPATH_SHAPE = 2       // circle(), ellipse() or polygon()
+const int MPATH_PATH = 3        // path('M 0 0 L 100 0')
+
+// How long a ray is, which is what a percentage `offset-distance`
+// resolves against. Chromium answers these as though only the top and
+// left sides of the containing block existed, so they follow the
+// specification here rather than the browser (todo.md records both).
+const int RAYSIZE_CLOSEST_SIDE = 0
+const int RAYSIZE_CLOSEST_CORNER = 1
+const int RAYSIZE_FARTHEST_SIDE = 2
+const int RAYSIZE_FARTHEST_CORNER = 3
+const int RAYSIZE_SIDES = 4
+
+// offset-rotate. There is no `none`: the grammar is
+// `[ auto | reverse ] || <angle>`, so rotation is turned off by writing
+// `0deg`, and a declaration saying `none` is dropped.
+const int MROT_AUTO = 0
+const int MROT_REVERSE = 1
+const int MROT_ANGLE = 2
+
+struct MotionInfo {
+    pathKind:int
+    rayAngle:float          // degrees clockwise from up
+    raySize:int
+    shape:ClipShape         // MPATH_SHAPE
+    pathData:text           // MPATH_PATH, as written
+    distance:Len            // offset-distance
+    rotateMode:int
+    rotateAngle:float       // degrees, added to whatever the mode gives
+    anchorX:Len
+    anchorY:Len
+    anchorAuto:bool         // `auto`, which is the transform origin
+    posX:Len
+    posY:Len
+    posNormal:bool          // `normal`, which is the element's own place
+}
+
+// This page's offset declarations, found by the computed style's own
+// serial rather than by a field on `Style`. A field there is not free:
+// one `int` added to `Style` for this cost the benchmark page a
+// measured 1.08 ms of layout -- a page with no `offset-path` on it at
+// all -- against a parent-against-parent control of -0.16 ms. A
+// computed style is shared between every element that matched the same
+// declarations, which is exactly the right grain for this, and the map
+// is only ever read behind `anyOffsetPath`.
+arr[MotionInfo] motionInfos = []
+map[int] motionOfSerial = {}
+
+// Whether any element gave itself a path, so a document with none pays
+// one bool test rather than a walk.
+bool anyOffsetPath = false
+
+MotionInfo func motionInfoOf(idx:int) {
+    if idx <= 0 || idx > motionInfos.length {
+        MotionInfo none
+        none.pathKind = MPATH_NONE
+        none.rotateMode = MROT_AUTO
+        none.anchorAuto = true
+        none.posNormal = true
+        return none
+    }
+    return motionInfos[idx - 1]
+}
+
 const int SCROLLBAR_AUTO = 0
 const int SCROLLBAR_THIN = 1
 const int SCROLLBAR_NONE = 2
@@ -1180,6 +1252,13 @@ Len func lenPercent(pct:float) {
 }
 
 // Resolves a length against a containing size; `auto` answers `dflt`.
+int func motionIndexOf(s:Style) {
+    if s == null { return 0 }
+    text k = `${s.serial}`
+    if motionOfSerial[k] == null { return 0 }
+    return motionOfSerial[k]
+}
+
 int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }

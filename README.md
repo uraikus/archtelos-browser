@@ -428,12 +428,12 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, the preload scanner), twenty offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, the preload scanner), twenty-one offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text, box shadows,
-corner shapes, anchor visibility, first lines and printed pages — three conformance
+corner shapes, anchor visibility, motion paths, first lines and printed pages — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument
