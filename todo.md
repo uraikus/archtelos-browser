@@ -506,6 +506,67 @@ one line-height per line and the baseline lands on line `size` -- so
 that is what to assert, as `text-box-edge` does with the same four
 ratios.
 
+### How far `initial-letter` got, and where it stopped
+
+The measurement above is complete. An implementation was written
+against it and taken out again rather than left half working, because a
+drop cap painted over the text is worse than no drop cap. What follows
+is what was learnt, so the next attempt starts where this one stopped.
+
+**The cascade half works and is the easy half.** The size is applied to
+the ::first-letter style where it is computed, in `computeFirstLetterFor`
+in src/css/cascade.f, because that is the one place the paragraph's own
+font size and line height are both to hand. Setting
+`ps.fontSize = round((FONT_CAP * base + (size - 1) * lh) / FONT_CAP)`
+gave rasterised cap heights of 46, 77 and 110 at sizes 2, 3 and 4
+against 14 unscaled -- the right shape, and see the caveat below about
+the constant.
+
+**Setting the letter's own `line-height` to `size * lh` puts its
+baseline where it belongs, for free.** An inline is centred in its line
+box by half-leading, which is negative here, and the sum comes out at
+`(size - 1) * lh` below the first line's baseline to within a pixel at
+every size tried. No special-case baseline arithmetic is needed.
+
+**The letter has to be an atomic inline, not a block.** CSS2 §9.7 makes
+a float block-level, so the first attempt built the letter as
+`BOX_BLOCK` -- and the paragraph then wrapped its remaining text in an
+anonymous box, which put the float outside the inline formatting context
+that was supposed to see it. A `BOX_INLINE` is not painted at all, since
+the painter reaches a float through the box tree. `BOX_INLINE_BLOCK` is
+the one that works: `boxIsFloated` accepts it, `placeInline` routes
+floats before atomics, the painter draws it, and no anonymous box
+appears.
+
+**`newBox` will not raise `docHasFloats` for it.** The flag is set from
+the box's own node, and the letter is built from a *text* box whose node
+does not qualify, so the drop cap has to raise it itself.
+
+**What is still wrong, and is where to start.** With the letter as a
+floating atomic inline the lines nearest it are shortened correctly and
+the `size - sink` push works, but the block comes out about twice as
+tall as it should: a five-line paragraph with `initial-letter: 3`
+measured 381 pixels where it should measure about 150. The likely cause
+is that the letter is being counted twice -- once as the float it is and
+once on the line it also sits on -- or that its 90-pixel line box is
+being added to the block's height rather than overlapping it. That is
+one measurement away from an answer: print the block's `lines.length`
+and each line's `y` and `h` for a paragraph with and without the drop
+cap, and see which of the two it is.
+
+**The engine's `FONT_CAP` is not this font's cap ratio, and it shows
+here.** Rasterised, the unscaled `H` at 20px is 14 tall, which is
+exactly the 0.70 the constant assumes -- but at 63, 106 and 149 pixels
+the same letter measures 46, 77 and 110, which are ratios of 0.73, 0.726
+and 0.738. So inverting the constant to find a font size overshoots by
+about four per cent, and the cap height grows by 31 to 33 pixels a line
+where the standard asks for exactly 30. Two honest ways out: measure the
+ratio and correct `FONT_CAP` -- which is a change to `text-box-edge`'s
+numbers too, so it needs its own measurement and its own commit -- or
+keep the constant and say in the test that the step is 31 and why. The
+ratio is not constant across sizes either, which is worth writing down
+whichever way it goes.
+
 ### What CSS Inline 3 still needs
 
 `text-box-trim` and `text-box-edge` work, with the `text-box` shorthand.
