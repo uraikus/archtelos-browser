@@ -406,48 +406,52 @@ makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.70, ex 0.55
 whose real proportions differ will trim to the wrong place. The numbers
 come from Chromium on the monospace family the tests use.
 
-### What an inline fragment's side border and padding were measured to be
+### An inline fragment's side border is painted nowhere
 
-This is not a new property. `paintInlineBackground` in
-src/paint/paint.f paints a fragment's background and its **top and
-bottom** borders only, and the comment above it says an inline fragment
-"carries no padding or border of its own". So CSS2 §8.4 -- the opening
-border and padding on the first fragment, the closing ones on the last
--- is not implemented, the **initial** `box-decoration-break: slice` is
-already incomplete, and layout reserves no advance for either. The
-border render suite is green because every border it tests is on a
-block.
+CSS2 §8.4 puts the opening border and padding of a broken inline on its
+first fragment and the closing ones on its last. **Layout already does
+its half**: `placeInline` adds `b.ml + b.bl + b.pl` to the pen before an
+inline's content and `b.pr + b.br + b.mr` after it, so the advance is
+reserved and the text is pushed across.
 
-An inline with `padding: 6px; border: 4px solid` over the lines of a
-150px paragraph at 16px/24px monospace:
+What is missing is only the paint. `paintInlineBackground` draws a
+fragment's background and its **top and bottom** borders and stops
+there, so an inline's left and right borders are drawn nowhere --
+`paintBorders`, which draws all four, is the block path. The comment
+above it, that an inline fragment "carries no padding or border of its
+own", is true of the fragment rectangle and misleading about the
+element. The border render suite is green because every border it tests
+is on a block.
+
+Measured, an inline with `padding: 6px; border: 4px solid` over the
+lines of a 150px paragraph at 16px/24px monospace:
 
 | | fragment widths |
 |---|---|
-| `slice` | 135, 125, 58 |
-| `clone` | 145, 145, 68 |
+| Chromium, `slice` | 135, 125, 58 |
+| Chromium, `clone` | 145, 145, 68 |
+| this engine | 140, 130, 60 |
 
-The opening edge is 10 -- border 4 plus padding 6 -- and the first
-character of the text starts at x = 10, so it really is on the first
-fragment and really does push the text across. The closing edge is the
-same 10 on the last fragment.
+The engine is within 5, 5 and 2 of the `slice` row, and the residue is
+text advance rather than edges: its monospace metric differs from
+Chromium's, which is a separate and font-dependent matter. The opening
+edge is 10 -- border 4 plus padding 6 -- and Chromium's first character
+starts at x = 10.
 
-Those two rows cross-check each other exactly: `clone` gives every
-fragment both edges, so each one gains 10 for each edge `slice` left
-off. The first fragment is missing one (135 + 10 = 145), the middle is
-missing both (125 + 20 = 145), the last is missing one (58 + 10 = 68).
-That relation is the check worth writing, since it does not depend on
-any of the six widths being known in advance.
+The `clone` row cross-checks the `slice` one exactly: every fragment
+gains 10 for each edge `slice` left off, so 135 + 10, 125 + 20 and
+58 + 10 give 145, 145 and 68. That relation is the test worth writing,
+since it holds without any of the six widths being known in advance.
 
-**The padding and border do not change the line height.** The lines sit
-at y = -8, 16 and 40, exactly 24 apart, while each fragment box is 39
-tall: the content area of 19 plus 12 of padding and 8 of border. So an
-inline's side edges take horizontal advance and paint outside the line
-box, and the block gets no taller for them.
+**The side edges do not change the line height.** Chromium's lines sit
+24 apart while each fragment box is 39 tall -- the content area of 19
+plus 12 of padding and 8 of border -- so they take horizontal advance
+and paint outside the line box, and the block gets no taller.
 
-Do this before `box-decoration-break`, which is then the small
-remainder: `clone` puts both edges on every fragment, and in pixels it
-shows as four blue pixels at the end of the first line and the start of
-the second where `slice` puts none.
+So the work is: paint the opening border on a fragment that begins its
+inline and the closing one on a fragment that ends it, in the fragment's
+own rectangle, which already has room for both. `box-decoration-break`
+is then the choice of putting both on every fragment instead.
 
 ### After the official definition
 
