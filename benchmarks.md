@@ -490,6 +490,29 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What anchor positioning cost, with the lesson below applied first
+
+CSS Anchor Positioning adds two walks of the finished box tree -- one to
+collect the anchors' rectangles, one to place the boxes that name them
+-- and seven properties' worth of data per element. Written the obvious
+way that would be seven fields on `Style`, which the section below
+measures at two milliseconds for four.
+
+So it was not written that way. `Style` carries **one `int`**, an index
+into a side table that only elements mentioning an anchor appear in, and
+both walks sit behind `anyAnchorName`, which no page that never names an
+anchor sets. Twenty-five alternating samples against the revision
+before it:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 102 ms | 105 ms | 134 ms | |
+| after | 104 ms | 106 ms | 115 ms | 13 of 25 pairs |
+
+Paired mean -0.20 ms. Thirteen of twenty-five is what a coin gives, and
+the feature is free to the pages that do not use it -- which is the
+result the section below had to be paid for once to learn.
+
 ## What four fields on `Style` cost, and why `corner-shape` is a bitfield
 
 `corner-shape` was written with the obvious representation: one `float`
