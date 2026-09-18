@@ -4691,20 +4691,25 @@ void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
     if asciiStartsWith(lower, 'ray(', 0) {
         int close = asciiMatchingParen(t, 3)
         if close < 0 { return }
-        arr[ascii] parts = asciiSplitSpace(asciiLower(t.slice(4, close)))
+        // The lowered argument is held in a local and its words are
+        // indexed rather than bound: `ascii w = parts[i]` is an alias
+        // the runtime never retains and then releases twice, which
+        // valgrind sees and an ordinary run does not. See FINDINGS.md,
+        // "ascii aliases are not retained".
+        ascii rayLow = asciiLower(t.slice(4, close))
+        arr[ascii] parts = asciiSplitSpace(rayLow)
         bool sawAngle = false
         mi.raySize = RAYSIZE_CLOSEST_SIDE
         for int i = 0, i < parts.length, i++ {
-            ascii w = parts[i]
-            if w == 'closest-side' { mi.raySize = RAYSIZE_CLOSEST_SIDE }
-            else if w == 'closest-corner' { mi.raySize = RAYSIZE_CLOSEST_CORNER }
-            else if w == 'farthest-side' { mi.raySize = RAYSIZE_FARTHEST_SIDE }
-            else if w == 'farthest-corner' { mi.raySize = RAYSIZE_FARTHEST_CORNER }
-            else if w == 'sides' { mi.raySize = RAYSIZE_SIDES }
-            else if w == 'contain' { continue }
+            if parts[i] == 'closest-side' { mi.raySize = RAYSIZE_CLOSEST_SIDE }
+            else if parts[i] == 'closest-corner' { mi.raySize = RAYSIZE_CLOSEST_CORNER }
+            else if parts[i] == 'farthest-side' { mi.raySize = RAYSIZE_FARTHEST_SIDE }
+            else if parts[i] == 'farthest-corner' { mi.raySize = RAYSIZE_FARTHEST_CORNER }
+            else if parts[i] == 'sides' { mi.raySize = RAYSIZE_SIDES }
+            else if parts[i] == 'contain' { continue }
             else {
                 arr[bool] ok = [false]
-                float deg = parseAngleDegrees(w, ok)
+                float deg = parseAngleDegrees(parts[i], ok)
                 if ok[0] { mi.rayAngle = deg  sawAngle = true }
             }
         }
@@ -4717,15 +4722,23 @@ void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
     if asciiStartsWith(lower, 'path(', 0) {
         int close = asciiMatchingParen(t, 4)
         if close < 0 { return }
-        ascii inner = asciiTrim(t.slice(5, close))
-        if inner.length >= 2 {
-            int q = inner.charCodeAt(0)
-            if (q == CH_QUOTE || q == CH_APOS) && inner.charCodeAt(inner.length - 1) == q {
-                inner = inner.slice(1, inner.length - 1)
+        // The trimming and unquoting are indices into `t`, and the
+        // argument is cut from it once. Slicing a slice of a trim
+        // aliases a buffer that is then released twice (FINDINGS.md,
+        // "Slicing an ascii that came from a slice").
+        int from = 5
+        int to = close
+        while from < to && isSpaceCode(t.charCodeAt(from)) { from++ }
+        while to > from && isSpaceCode(t.charCodeAt(to - 1)) { to-- }
+        if to - from >= 2 {
+            int q = t.charCodeAt(from)
+            if (q == CH_QUOTE || q == CH_APOS) && t.charCodeAt(to - 1) == q {
+                from++
+                to--
             }
         }
-        if inner.length == 0 { return }
-        mi.pathData = inner.toText()
+        if to <= from { return }
+        mi.pathData = t.slice(from, to).toText()
         mi.pathKind = MPATH_PATH
         return
     }
@@ -4743,17 +4756,19 @@ void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
 // was not one.
 void func motionReadRotate(mi:MotionInfo, v:ascii) {
     if v == null { return }
-    arr[ascii] parts = asciiSplitSpace(asciiLower(asciiTrim(v)))
+    // Held in a local and indexed, never bound (FINDINGS.md, "ascii
+    // aliases are not retained").
+    ascii rotLow = asciiLower(asciiTrim(v))
+    arr[ascii] parts = asciiSplitSpace(rotLow)
     if parts.length == 0 { return }
     int mode = -1
     float angle = 0.0
     bool sawAngle = false
     for int i = 0, i < parts.length, i++ {
-        ascii w = parts[i]
-        if w == 'auto' { mode = MROT_AUTO  continue }
-        if w == 'reverse' { mode = MROT_REVERSE  continue }
+        if parts[i] == 'auto' { mode = MROT_AUTO  continue }
+        if parts[i] == 'reverse' { mode = MROT_REVERSE  continue }
         arr[bool] ok = [false]
-        float deg = parseAngleDegrees(w, ok)
+        float deg = parseAngleDegrees(parts[i], ok)
         if !ok[0] { return }
         angle = deg
         sawAngle = true
@@ -5700,7 +5715,10 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         motionReadRotate(mi, mRot)
         if mDist != null { mi.distance = parseLength(asciiTrim(mDist), s.fontSize) }
         if mAnch != null {
-            arr[ascii] a = asciiSplitSpace(asciiLower(asciiTrim(mAnch)))
+            // Held in a local and indexed, as every split here is
+            // (FINDINGS.md, "ascii aliases are not retained").
+            ascii anchLow = asciiLower(asciiTrim(mAnch))
+            arr[ascii] a = asciiSplitSpace(anchLow)
             if a.length == 1 && a[0] == 'auto' {
             } else if a.length >= 1 {
                 mi.anchorAuto = false
@@ -5710,7 +5728,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             }
         }
         if mPos != null {
-            arr[ascii] a = asciiSplitSpace(asciiLower(asciiTrim(mPos)))
+            ascii posLow = asciiLower(asciiTrim(mPos))
+            arr[ascii] a = asciiSplitSpace(posLow)
             if a.length == 1 && (a[0] == 'normal' || a[0] == 'auto') {
             } else if a.length >= 1 {
                 mi.posNormal = false
