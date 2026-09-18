@@ -322,12 +322,31 @@ shows by moving a box out of a `bottom` that fits.
 One property beside them is **not** implemented and stays uncounted,
 because nothing reads it:
 
-1. **`position-visibility`** hides a box rather than moving it, under
-   `always`, `anchors-visible` or `no-overflow`. It needs the same
-   overflow test the loop already has, and a way to hide a box that is
-   laid out -- `visibility: hidden` exists, so this is mostly a question
-   of what Chromium does when the anchor is partly visible, which has
-   not been probed.
+1. **`position-visibility`** is measured now. A 400x300 clipping block,
+   an anchor at its lower edge and a 40x30 box placed `bottom` so it
+   straddles the edge -- 20 of its 25 pixels on the sampled row fall
+   inside the block:
+
+   | | black pixels of 25 |
+   |---|---|
+   | `always` | 20 -- paints, clipped by the block |
+   | `no-overflow` | **0** -- the whole box is hidden |
+   | `anchors-visible` | 20 -- the anchor is visible, so it paints |
+
+   So `no-overflow` hides the **entire** box when it overflows, not
+   merely the part that does: an implementation that clipped harder
+   would leave those 20 pixels.
+
+   Two things this probe also settled. **None of it reaches computed
+   style** -- Chromium answers `visibility: visible` for every keyword,
+   so the effect is a paint-time state and a `getComputedStyle` probe
+   sees nothing; the first attempt here did exactly that and reported no
+   difference at all. And **`anchors-visible` could not be
+   discriminated**: making the anchor invisible while the box stays
+   visible needs the anchor scrolled out of a scrollport, and
+   `position-area` ties the box to the anchor, so both leave together.
+   In a static render there is no such state, which is a reason to treat
+   it as `always` and say so rather than a reason to guess.
 
 Neither is guessed at here. Both want a Chromium probe of their own
 first, the way every other feature in this file got one.
