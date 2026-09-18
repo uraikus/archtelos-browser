@@ -554,6 +554,12 @@ anchor was found. With no fallback and no anchor the declaration has no
 effect -- `left: anchor(--missing right)` leaves the box at its static
 position.
 
+**A margin sits between the anchor and the box.** It is the box's
+margin edge that lands on the anchor: `left: anchor(--a right)` with a
+10px left margin puts the border box at 230 rather than 220, and
+`right: anchor(--a left)` with a 10px right margin puts it at 60 rather
+than 70. Down the block axis the same, at 150 and 50.
+
 **Both are refused outside the places the standard allows.**
 `margin-left: anchor(--a right)` does nothing. `anchor-size()` on a
 `position: static` or `position: relative` box does nothing: the box

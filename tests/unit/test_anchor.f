@@ -482,6 +482,22 @@ checkEqInt(both.y, 160, 'and down')
 checkEqInt(insetX('left:anchor(right)'), 250,
            'a nameless anchor() takes the name position-anchor gave')
 
+// A margin sits between the anchor and the box, on whichever side the
+// inset names: the box's *margin* edge goes on the anchor, not its
+// border edge. Measured, and it is what an absolutely positioned box
+// does with an ordinary inset too.
+checkEqInt(insetX('left:anchor(--a right);margin-left:10px'),
+           insetX('left:anchor(--a right)') + 10,
+           'a left margin pushes the box further from the anchor')
+checkEqInt(insetX('right:anchor(--a left);margin-right:10px'),
+           insetX('right:anchor(--a left)') - 10,
+           'and a right margin pushes it the other way')
+checkEqInt(insetY('top:anchor(--a bottom);margin-top:10px'),
+           insetY('top:anchor(--a bottom)') + 10,
+           'a top margin does the same down the block axis')
+checkEqInt(insetY('bottom:anchor(--a top);margin-bottom:10px'),
+           insetY('bottom:anchor(--a top)') - 10, 'and a bottom margin')
+
 // The fallback is taken only when the anchor cannot be found.
 checkEqInt(insetX('left:anchor(--missing right, 7px)'), 7,
            'a missing anchor falls back to the length beside it')

@@ -5550,16 +5550,22 @@ int func anchorAreaRoom(area:int, order:int, ax:int, ay:int, aw:int, ah:int,
     return anchorBandRoom(area % PAREA_AXIS, ax, ax + aw, cbX, cbW)
 }
 
-// Where one `anchor()` inset puts the box's own edge, in the containing
-// block's coordinates -- or the fallback measured from the containing
-// block where the anchor was not found, or the position the box already
-// has where there is neither. `i` is which inset, in the order left,
-// right, top, bottom, and the side keyword has already become a
-// position along the anchor (src/css/style.f).
+// Where one `anchor()` inset puts the box, as the x or y of its border
+// box -- or the fallback measured from the containing block where the
+// anchor was not found, or where the box already is where there is
+// neither. `i` is which inset, in the order left, right, top, bottom,
+// and the side keyword has already become a position along the anchor
+// (src/css/style.f).
+//
+// It is the box's *margin* edge that lands on the anchor, which is
+// measured and is what an ordinary inset does too, so each side takes
+// its own margin back out to give the border box.
 int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
                          cbW:int, cbH:int, have:int) {
     bool vertical = i >= ANCHOR_INSET_TOP
     int size = vertical ? b.h : b.w
+    int near = vertical ? b.mt : b.ml
+    int far = vertical ? b.mb : b.mr
     text k = `${b.id}:${i}`
     if anchorInsetW[k] != null {
         int at = vertical ? anchorInsetY[k] : anchorInsetX[k]
@@ -5568,14 +5574,16 @@ int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
         // A near inset puts the box's near edge there and a far inset
         // its far edge, which is what makes `right: anchor(--a left)`
         // hang the box off the anchor's left rather than start there.
-        if i == ANCHOR_INSET_RIGHT || i == ANCHOR_INSET_BOTTOM { return edge - size }
-        return edge
+        if i == ANCHOR_INSET_RIGHT || i == ANCHOR_INSET_BOTTOM {
+            return edge - size - far
+        }
+        return edge + near
     }
     int fb = ai.insetFallbacks[i]
     if fb == ANCHOR_NO_FALLBACK { return have }
-    if i == ANCHOR_INSET_RIGHT { return cbX + cbW - fb - size }
-    if i == ANCHOR_INSET_BOTTOM { return cbY + cbH - fb - size }
-    return (vertical ? cbY : cbX) + fb
+    if i == ANCHOR_INSET_RIGHT { return cbX + cbW - fb - size - far }
+    if i == ANCHOR_INSET_BOTTOM { return cbY + cbH - fb - size - far }
+    return (vertical ? cbY : cbX) + fb + near
 }
 
 void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {

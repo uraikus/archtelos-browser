@@ -34,6 +34,13 @@ to another. A nameless one takes the name `position-anchor` gave.
 It is resolved where `position-area` is, after the tree has been laid
 out, because that is the first moment an anchor has a rectangle.
 
+**It is the box's margin edge that lands on the anchor, not its border
+edge.** The first version put the border edge there, which is
+indistinguishable on a box with no margin and wrong on one with any --
+so the margin was measured rather than reasoned about: a 10px left
+margin moves the box ten further from the anchor and a 10px right
+margin ten the other way, which is what an ordinary inset does too.
+
 **`anchor-size()` is measured and not implemented, and the reason is
 structural.** It sizes the box rather than placing it, and the size is
 needed before the box is laid out while the anchor's rectangle is not
