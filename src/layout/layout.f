@@ -295,7 +295,7 @@ int func textBoxOverEdge(s:Style) {
     int trim = Math.floorDiv(packed, 16)
     if trim != TBTRIM_START && trim != TBTRIM_BOTH { return -1 }
     int over = Math.floorDiv(packed % 16, 4)
-    if over == TBOVER_CAP { return roundPx(s.fontSize.toFloat() * FONT_CAP) }
+    if over == TBOVER_CAP { return capHeight(s) }
     if over == TBOVER_EX { return roundPx(s.fontSize.toFloat() * FONT_EX) }
     return roundPx(s.fontSize.toFloat() * FONT_ASCENT)
 }
@@ -308,6 +308,12 @@ int func textBoxUnderEdge(s:Style) {
     if trim != TBTRIM_END && trim != TBTRIM_BOTH { return -1 }
     if packed % 4 == TBUNDER_ALPHABETIC { return 0 }
     return roundPx(s.fontSize.toFloat() * FONT_DESCENT)
+}
+
+// The cap height, floored rather than rounded: see FONT_CAP in
+// src/css/style.f for the measurement that says so.
+int func capHeight(s:Style) {
+    return Math.floor(s.fontSize.toFloat() * FONT_CAP)
 }
 
 int func fontDescent(s:Style) {

@@ -538,10 +538,11 @@ dropped, which leaves `auto`, and that is what Chromium does with a
 single keyword too.
 
 **A `cap` or `ex` edge is the same approximation the rest of the engine
-makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.70, ex 0.55
--- stand in for metrics Festina cannot read out of a font, so a family
-whose real proportions differ will trim to the wrong place. The numbers
-come from Chromium on the monospace family the tests use.
+makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.733, ex
+0.55 -- stand in for metrics Festina cannot read out of a font, so a
+family whose real proportions differ will trim to the wrong place. The
+numbers are measured against Chromium on the monospace family the tests
+use, across a range of sizes; the table is below.
 
 **`initial-letter-align`.** The standard lets the letter's over edge
 align to `alphabetic`, `hanging`, `ideographic` or the `border-box`.
@@ -569,12 +570,11 @@ ask Chromium with the same second argument to `getComputedStyle`. That
 would move two properties into the count and make every future
 pseudo-element property gradeable.
 
-**What this font's four ratios actually measure.** `FONT_CAP` is 0.70
-and the cap height is about 0.733 of the em, which is the one of the four
-that is materially wrong. Two independent measurements agree, and neither
-was taken at a single size -- a ratio read off one font size is a ratio
-plus a rounding error of up to a pixel, which is 5% at 20px and 0.5% at
-180.
+**What this font's four ratios measure, and how they were taken.**
+Neither measurement was taken at a single size: a ratio read off one
+font size is a ratio plus a rounding error of up to a pixel, which is 5%
+at 20px and 0.5% at 180, and reading it at 20px alone is what let
+`FONT_CAP` sit at 0.70 rather than 0.733 for as long as it did.
 
 Rasterised through this engine, one `H` on a white canvas, ink rows
 scanned top and bottom:
@@ -600,18 +600,22 @@ Least squares over the same range: `0.733 x size - 0.41`. Chromium
 reports whole pixels up to 48 and fractions above it, which is a
 hinted-metrics threshold rather than a property of the font.
 
-**So 0.70 is right at 20px by coincidence and wrong everywhere else.**
-0.733 x 20 is 14.66, and Chromium answers 14 -- it is the *floor* of the
-ratio rather than the nearest integer, which is what the -0.41 intercept
-is. `0.733` floored reproduces Chromium's answer at every size in the
-table, to within half a pixel of the fractional ones; `0.70` rounded is
-six pixels short at 180.
+**0.70 was right at 20px by coincidence.** 0.733 x 20 is 14.66 and
+Chromium answers 14 -- the cap height is the *floor* of the ratio rather
+than the nearest integer, which is what the -0.41 intercept is. 0.733
+floored reproduces Chromium's answer at every size in the table, to
+within half a pixel of the fractional ones; 0.70 rounded was six pixels
+short at 180.
 
 The other three stand up. Measured the same way against Chromium, the
 ascent runs 0.921 to 0.938 against the constant's 0.93, the descent
 0.233 to 0.240 against 0.24, and the x-height 0.542 to 0.550 against
-0.55. None is off by as much as one part in a hundred, and none is
-changed.
+0.55. None is off by as much as one part in a hundred.
+
+**What is left here is a family other than this one.** All four ratios
+are constants, and a font with different proportions trims to the wrong
+place; reading them out of the font needs metrics Festina does not
+expose (FINDINGS.md, "no font metrics beyond an inked height").
 
 ### After the official definition
 

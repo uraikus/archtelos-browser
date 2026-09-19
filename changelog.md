@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `FONT_CAP` is 0.733, and the cap height is floored
+
+The engine models a font as four ratios per em, and one of them was
+wrong by five per cent. `FONT_CAP` was 0.70; the cap height is about
+0.733 of the em.
+
+**It survived because it had only ever been read at one size.** A ratio
+taken off a single font size is a ratio plus a rounding error of up to a
+pixel -- 5% at 20px, 0.5% at 180 -- and 20px is where it was taken.
+Measured across a range instead, two independent probes agree:
+rasterising an `H` through this engine gives a least-squares
+`0.7367 x size - 0.40` over 48 to 180 pixels, and asking Chromium for
+the height of a `text-box-edge: cap alphabetic` box on the same family
+gives `0.733 x size - 0.41`.
+
+**The intercept is the other half of it.** 0.733 x 20 is 14.66 and
+Chromium answers 14, so the cap height is the floor of the ratio rather
+than the nearest integer; `capHeight` floors. That is why 0.70 rounded
+looked right at 20px, and it was six pixels short at 180.
+
+Nothing else moves. `text-box-edge: cap` answers 14 at 20px as it did.
+The drop cap's font size is found by inverting the ratio, so its letters
+at sizes 3 and 4 are now 61 and 86 pixels wide, which is Chromium's
+answer exactly, against the 64 and 90 the old constant gave. At size 2
+it is 37 against Chromium's 36: the font size lands at 60.93 where
+Chromium's lands at 60, so the 0.6-em advance rounds up rather than
+down. One pixel is the floor of what this measurement resolves --
+Chromium's own three widths imply ratios of 0.750, 0.7347 and 0.7297,
+which is one ratio seen through three roundings -- and a ratio that
+pulled size 2 to 36 would put size 4 at 85.
+
+The other three ratios were measured the same way and stand: ascent
+0.921 to 0.938 against the constant's 0.93, descent 0.233 to 0.240
+against 0.24, x-height 0.542 to 0.550 against 0.55.
+
 ### `initial-letter`, a drop cap on ::first-letter
 
 `initial-letter: <size> <sink>?` on `::first-letter` makes a drop cap,

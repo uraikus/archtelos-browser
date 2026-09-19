@@ -17,15 +17,20 @@
 // at `3 1` and `4 2` -- and the lines indented are 2, 3, 1, 1 and 2.
 // That table is the assertion, and none of it depends on font metrics.
 //
-// The letter's ADVANCE does. Chromium's monospace cap ratio is 0.717
-// and this engine's FONT_CAP is 0.70, so inverting the constant to
-// find a font size overshoots by about four per cent and the letter
-// comes out a little wider than Chromium's 36, 61 and 86. What does
-// not depend on the constant is that the advance grows by the same
-// step for each line the letter spans, because the font size does --
-// so that is asserted exactly, and the step itself only within the
-// band the ratios imply. Correcting FONT_CAP is a separate
-// measurement, recorded in todo.md.
+// The letter's ADVANCE depends on the engine's cap ratio, because the
+// size is found by inverting it, and so it is what says the ratio is
+// right. Chromium's letters at sizes 2, 3 and 4 are 36, 61 and 86
+// pixels wide against 12 unscaled -- a step of 25 for each line the
+// letter spans.
+//
+// Sizes 3 and 4 land on those numbers exactly. Size 2 comes out one
+// pixel wide, and one pixel is the floor of what this measurement can
+// resolve rather than a ratio still out: Chromium's own three widths
+// imply cap ratios of 0.750, 0.7347 and 0.7297, which is one ratio seen
+// through three roundings. Here the size-2 font size lands at 60.93
+// where Chromium's lands at 60, so its 0.6-em advance is 36.6 and
+// rounds up rather than down. A ratio that pulled it to 36 would need
+// to be 0.7353 or more, which puts size 4 at 85.
 
 import ../../src/browser/page.f
 import ../assert.f
@@ -130,11 +135,10 @@ Box cap3 = capBox(c3)
 Box cap4 = capBox(boxById(capPage('4').root, 'p'))
 check(cap2 != null && cap3 != null && cap4 != null, 'each drop cap has a box')
 
-checkEqInt(cap3.w - cap2.w, cap4.w - cap3.w,
-           'the advance grows by the same step for each line the letter spans')
-int step = cap3.w - cap2.w
-check(step >= 22 && step <= 28,
-      `that step is Chromium's 25px within the cap-ratio band, got ${step}`)
+checkEqInt(cap3.w, 61, "the size 3 letter is as wide as Chromium's")
+checkEqInt(cap4.w, 86, 'and the size 4 letter')
+checkEqInt(cap4.w - cap3.w, 25, "so the step is Chromium's 25 pixels")
+checkNear(cap2.w, 36, 1, 'and the size 2 letter is within the pixel it rounds by')
 
 // The box is as tall as the lines it spans, which is what puts its
 // baseline on the baseline of line `size`.

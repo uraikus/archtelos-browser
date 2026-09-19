@@ -14,11 +14,16 @@ import ../util/color.f
 // no ascent/descent API, only the inked height of a string.
 const float FONT_ASCENT = 0.93
 const float FONT_DESCENT = 0.24
-// The other two edges `text-box-edge` can name, measured off Chromium
-// the same way: a 20px monospace cap height is 14 and its x-height 11.
-// The two above were evidently estimated rather than measured and land
-// within 0.02 of that measurement's 0.95 and 0.25.
-const float FONT_CAP = 0.70
+// The other two edges `text-box-edge` can name. Both are measured
+// across a range of font sizes rather than at one, because a ratio read
+// off a single size is a ratio plus a rounding error of up to a pixel:
+// 5% at 20px and 0.5% at 180. Rasterising an `H` through this engine
+// and asking Chromium for the same family's cap height both give a
+// least-squares `0.733 x size` with an intercept of -0.4; todo.md has
+// both tables. That intercept is why the cap height is FLOORED below
+// rather than rounded -- 0.733 x 20 is 14.66 and Chromium answers 14 --
+// and it is why 0.70 looked right at 20px for as long as it did.
+const float FONT_CAP = 0.733
 const float FONT_EX = 0.55
 
 const int DISPLAY_NONE = 0
