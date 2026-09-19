@@ -198,6 +198,15 @@ of the box, and may be an ellipse rather than a quarter circle — the
 after. Two radii that would overlap on one edge are scaled back
 together, so the shape keeps its proportions.
 
+**`corner-shape`** decides what curve that corner is drawn with, per
+corner or in one shorthand. A corner is the region the radius already
+resolves, and each value is that region under a different superellipse
+exponent, so `square` fills the corner, `notch` cuts it out, `bevel` is
+a straight cut, `scoop` bows away from the box and `squircle` hugs it;
+`superellipse()` takes any exponent, and the keywords are the exponents
+it names rather than a separate set of shapes. A shadow follows the
+shape its box has.
+
 `border-image` cuts an image into nine regions and lays them round the
 border: the corners at their own size, the edges between them, and the
 middle only if `fill` asks. Each edge image is scaled to the thickness
@@ -211,7 +220,16 @@ tiles with the leftover shared out around them.
 `scroll` and `auto` reserve fifteen pixels inside the padding box for a
 scrollbar and paint one there — always for `scroll`, and for `auto` only
 where the content overflows, the thumb being as long a share of the
-track as the box is of what it scrolls. **The wheel over such a box
+track as the box is of what it scrolls. `scrollbar-width` makes that ten
+pixels with `thin` and none at all with `none`, which hides the bar and
+leaves the box scrolling; `scrollbar-color` paints the thumb and the
+track in two colours of the page's choosing; and `scrollbar-gutter:
+stable` takes the room before there is anything to scroll, so a box's
+content does not change width the moment there is. A container that
+declares `scroll-snap-type` comes to rest on one of the positions its
+children's `scroll-snap-align` asks for rather than wherever the scroll
+left it, with `scroll-padding` and `scroll-margin` moving those
+positions and `proximity` snapping only what is already near. **The wheel over such a box
 scrolls it down**, and the page only once it has reached its end; a
 wheel tilted sideways scrolls it across, where the window system says
 one was tilted — X11 does, and Windows does not (FINDINGS.md, finding
@@ -232,7 +250,15 @@ paragraph's base level, `text-align`'s `start` and `end` follow it, and
 the bidirectional algorithm puts each finished line into the order it is
 read on the screen rather than the order it is stored — so a Hebrew or
 Arabic run comes out reversed while Latin or digits inside it keep their
-own order.
+own order. A document that needs to say what the implicit rules would
+get wrong says it with the nine directional formatting characters — the
+embeddings, the overrides and the isolates — which the explicit half of
+UAX #9 carries: a directional status stack with its depth limit, and the
+isolating run sequences the implicit rules then resolve one at a time.
+`unicode-bidi` is those same characters under a stylesheet's names, and
+is implemented as such: each of its six values is the pair the standard
+defines it to be, wrapped around the element's text and put through the
+one algorithm.
 
 **Columns** break one flow into several. `column-count` and
 `column-width` say how many and how wide, the content is laid out once
@@ -298,6 +324,17 @@ its quotation marks.
 block on its own, taking any punctuation in front of it along, skipping
 leading whitespace, and finding the letter inside a nested inline. Only
 the first of the block, not the first of every descendant.
+
+**`initial-letter`** on that pseudo-element makes it a drop cap. The
+size is where the letter's baseline sits: its cap top is the cap top of
+the block's first line and its baseline is the baseline of line `size`,
+so its cap height grows by one line-height for each line it spans. The
+sink is a second number, defaulting to the size rounded down, and it
+alone says how many lines are shortened; what is left over goes above
+the text, so the block grows by `size - sink` lines and its text begins
+that many lines down. The letter is a floating atomic inline, which is
+what lets the lines beside it shorten without an anonymous box coming
+between them.
 
 **`::first-line`** styles whichever characters end up on the first line,
 which is not known until the line has been broken. The standard
@@ -384,7 +421,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-28,348 lines of Festina in `src/` and `browser.f`.
+31,794 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -394,7 +431,7 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-six unit suites (utilities, HTML, CSS parser,
+The runner covers fifty unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
@@ -402,12 +439,12 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, the preload scanner), eighteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, the preload scanner), twenty-one offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text, box shadows,
-first lines and printed pages — three conformance
+corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour and printed pages — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

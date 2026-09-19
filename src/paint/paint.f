@@ -5,6 +5,7 @@
 // document coordinates land where they should on screen.
 
 import ../layout/layout.f
+import ../css/motion.f
 
 // Boxes entirely outside [paintTop, paintBottom) in document
 // coordinates are skipped -- long pages stay cheap to scroll.
@@ -124,7 +125,101 @@ float func radiusShrink(sum:int, side:int) {
     return side.toFloat() / sum.toFloat()
 }
 
+// The `corner-shape` exponent each corner of the next path is drawn
+// with, and whether any of them is not `round`. Globals rather than
+// four more arguments on a function that already takes twelve
+// (FINDINGS.md, "one value out of a function" is the same shape of
+// problem going the other way), set by `cornerShapesOf` and left at
+// `round` for every caller that does not have a shaped box.
+float pathKTL = CORNER_K_ROUND
+float pathKTR = CORNER_K_ROUND
+float pathKBR = CORNER_K_ROUND
+float pathKBL = CORNER_K_ROUND
+bool pathAnyShaped = false
+
+// How many straight segments a shaped corner is walked in. Sixteen is
+// what the render suite's comparison against Chromium's own corner
+// profile passes at, on a 40px radius across all six keywords; the
+// error is a pixel at the steepest part of a `bevel`, which is where
+// any polyline approximation is worst.
+const int CORNER_SLICES = 16
+
+const float HALF_PI = 1.5707963267948966
+
+// A point on one corner's superellipse, `i` of `CORNER_SLICES` of the
+// way round it. `cornerPA` is the distance travelled along the edge the
+// corner leaves and `cornerPB` the distance from the edge it meets, so
+// a caller places both without knowing which corner it is drawing. Two
+// values out of a function need globals (FINDINGS.md, "one value out of
+// a function").
+//
+// The angle, not either axis, is the parameter: at `i` of 0 the point
+// is where the first straight edge ended and at `i` of CORNER_SLICES it
+// is where the next begins, for every exponent. A positive exponent
+// gives the convex curve `border-radius` draws, a negative one its
+// concave reflection, which is what `scoop` and `notch` are.
+float cornerPA = 0.0
+float cornerPB = 0.0
+
+void func cornerPointAt(ra:int, rb:int, i:int, k:float) {
+    // The two ends are where the straight edges are, exactly. They are
+    // not computed, because an extreme exponent magnifies the error in
+    // them out of all proportion: `Math.cos` of half pi is 6e-17 rather
+    // than zero, and raising that to the 1/500 a `notch` asks for gives
+    // 0.93, which puts the end of the corner three pixels from the edge
+    // it is supposed to meet.
+    if i >= CORNER_SLICES { cornerPA = ra.toFloat()  cornerPB = rb.toFloat()  return }
+    if i <= 0 { cornerPA = 0.0  cornerPB = 0.0  return }
+    float th = HALF_PI * i.toFloat() / CORNER_SLICES.toFloat()
+    float c = Math.cos(th)
+    float sn = Math.sin(th)
+    if c < 0.0 { c = 0.0 }
+    if sn < 0.0 { sn = 0.0 }
+    if k < 0.0 {
+        float m = 0.0 - k
+        cornerPA = ra.toFloat() * (1.0 - Math.pow(c, 2.0 / m))
+        cornerPB = rb.toFloat() * Math.pow(sn, 2.0 / m)
+        return
+    }
+    cornerPA = ra.toFloat() * Math.pow(sn, 2.0 / k)
+    cornerPB = rb.toFloat() * (1.0 - Math.pow(c, 2.0 / k))
+}
+
+
+// Puts a box's four `corner-shape` exponents where the path builder
+// reads them. A box whose corners are all `round` -- which is every box
+// on a page that never says the property -- leaves the fast path in
+// `roundedRectPathEllipses` switched on.
+void func cornerShapesOf(s:Style) {
+    if s.cornerShapes == 0 {
+        if pathAnyShaped { cornerShapesRound() }
+        return
+    }
+    pathKTL = cornerKAt(s.cornerShapes, 0)
+    pathKTR = cornerKAt(s.cornerShapes, 1)
+    pathKBR = cornerKAt(s.cornerShapes, 2)
+    pathKBL = cornerKAt(s.cornerShapes, 3)
+    pathAnyShaped = true
+}
+
+void func cornerShapesRound() {
+    pathKTL = CORNER_K_ROUND
+    pathKTR = CORNER_K_ROUND
+    pathKBR = CORNER_K_ROUND
+    pathKBL = CORNER_K_ROUND
+    pathAnyShaped = false
+}
+
 void func resolveCornerRadii(s:Style, w:int, h:int) {
+    // The shape travels with the radii, because every place that needs
+    // one needs the other: one boolean on a page that never says
+    // `corner-shape`, and `shadowShapeRadii` reaches it through here
+    // too, so a shadow follows the same curve its box does.
+    // A page that says the property leaves the globals wherever the
+    // last box left them, so a later box with no shape has to put them
+    // back: the shapes are painter state, and stale state is what made
+    // an unshaped box come out bevelled.
+    if anyCornerShape { cornerShapesOf(s) } else if pathAnyShaped { cornerShapesRound() }
     radTLX = radiusPx(s.radiusTopLeftX, w)
     radTLY = radiusPx(s.radiusTopLeftY, h)
     radTRX = radiusPx(s.radiusTopRightX, w)
@@ -211,13 +306,65 @@ void func roundedRectPathEllipses(x:int, y:int, w:int, h:int,
     beginPath()
     moveTo(x + ax, y)
     lineTo(x + w - bx, y)
-    curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    if !pathAnyShaped {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+        lineTo(x + w, y + h - cy)
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+        lineTo(x + dx, y + h)
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+        lineTo(x, y + ay)
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+        closePath()
+        return
+    }
+    // A `corner-shape` other than `round` is walked rather than curved:
+    // a bezier is not a superellipse and the canvas has no primitive
+    // that is. A corner that IS round keeps its bezier even when the box
+    // has a shaped corner elsewhere, so `round` is the same pixels
+    // whatever its neighbours are -- an invariant the suite checks, and
+    // one worth having structurally rather than by convergence.
+    //
+    // Each corner runs from where one straight edge ends to where the
+    // next begins, and is walked in the angle rather than in either
+    // axis: `square` and `notch` put everything they do in the last
+    // thousandth of an axis parameter and would come out as a diagonal
+    // across the corner, where in the angle every exponent is sampled
+    // evenly along its own curve.
+    if pathKTR == CORNER_K_ROUND {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(bx, by, i, pathKTR)
+            lineTo(x + w - bx + roundPx(cornerPA), y + roundPx(by.toFloat() - cornerPB))
+        }
+    }
     lineTo(x + w, y + h - cy)
-    curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    if pathKBR == CORNER_K_ROUND {
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(cy, cx, i, pathKBR)
+            lineTo(x + w - roundPx(cornerPB), y + h - cy + roundPx(cornerPA))
+        }
+    }
     lineTo(x + dx, y + h)
-    curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    if pathKBL == CORNER_K_ROUND {
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(dx, dy, i, pathKBL)
+            lineTo(x + dx - roundPx(cornerPA), y + h - roundPx(dy.toFloat() - cornerPB))
+        }
+    }
     lineTo(x, y + ay)
-    curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    if pathKTL == CORNER_K_ROUND {
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(ay, ax, i, pathKTL)
+            lineTo(x + roundPx(cornerPB), y + ay - roundPx(cornerPA))
+        }
+    }
     closePath()
 }
 
@@ -402,14 +549,40 @@ float func cornerInset(rx:int, ry:int, dy:float) {
     return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
 }
 
+// The same question of a corner drawn with any `corner-shape`: the
+// superellipse `|x/rx|^k + |y/ry|^k = 1` for a positive exponent, and
+// its concave reflection for a negative one, which is what `scoop` and
+// `notch` are. `dy` is into the band as above -- nothing at the inner
+// end, the whole radius at the outer one.
+//
+// Every keyword is one exponent (CSS Borders 4 §5), so there is one
+// curve here and not six: 2 is `round`, 1 is `bevel` -- where the
+// formula collapses to `rx * t` and the corner is the straight cut it
+// should be -- 4 is `squircle`, -2 is `scoop`, and the two extremes are
+// `square` and `notch`. `round` keeps the square root, because it is
+// the value nearly every corner has and it is inside the shadow
+// painter's per-row loop.
+float func cornerInsetShaped(rx:int, ry:int, dy:float, k:float) {
+    if k == CORNER_K_ROUND { return cornerInset(rx, ry, dy) }
+    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
+    float fry = ry.toFloat()
+    float frx = rx.toFloat()
+    float t = dy >= fry ? 1.0 : dy / fry
+    if k < 0.0 {
+        float m = 0.0 - k
+        return frx * Math.pow(1.0 - Math.pow(1.0 - t, m), 1.0 / m)
+    }
+    return frx * (1.0 - Math.pow(1.0 - Math.pow(t, k), 1.0 / k))
+}
+
 void func shadowSpanAt(vc:float, w:int, h:int,
                        tlx:int, tly:int, trx:int, trys:int,
                        brx:int, brys:int, blx:int, blys:int) {
-    shadowSpanLo = maxFloat(cornerInset(tlx, tly, tly.toFloat() - vc),
-                            cornerInset(blx, blys, vc - (h - blys).toFloat()))
+    shadowSpanLo = maxFloat(cornerInsetShaped(tlx, tly, tly.toFloat() - vc, pathKTL),
+                            cornerInsetShaped(blx, blys, vc - (h - blys).toFloat(), pathKBL))
     shadowSpanHi = w.toFloat()
-        - maxFloat(cornerInset(trx, trys, trys.toFloat() - vc),
-                   cornerInset(brx, brys, vc - (h - brys).toFloat()))
+        - maxFloat(cornerInsetShaped(trx, trys, trys.toFloat() - vc, pathKTR),
+                   cornerInsetShaped(brx, brys, vc - (h - brys).toFloat(), pathKBR))
 }
 
 // One corner of a rounded shadow, as an image carrying the blurred
@@ -1805,8 +1978,14 @@ void func paintBorders(b:Box) {
     fillAlpha(1.0)
 }
 
+// A box is worth painting when it meets the window. Both culls are
+// widened by the furthest any inline box on the document reaches
+// outside its line, because that ink belongs to the box and is not in
+// its rectangle; on a document with no padded or bordered inline the
+// number is zero and the test is the plain one.
 bool func boxVisible(b:Box) {
-    return b.y + b.h >= paintTop && b.y <= paintBottom
+    return b.y + b.h + inlineInkOverhang >= paintTop
+        && b.y - inlineInkOverhang <= paintBottom
 }
 
 // The first line box inside a list item, for placing its marker.
@@ -2425,24 +2604,44 @@ void func paintWavyLine(x:int, y:int, w:int, thickness:int, c:int, opacity:float
     }
 }
 
+// One line's worth of an inline box. The top and bottom edges are on
+// every fragment; the opening side is on the fragment that begins the
+// inline and the closing side on the one that ends it, so a fragment
+// in the middle of a broken inline has neither (CSS2 8.4). A margin
+// takes no paint, so the fragment's rectangle is cut back by it on
+// whichever sides the fragment carries.
 void func paintInlineBackground(f:Fragment) {
     Box ib = f.box
     Style s = ib.style
     if s.hidden || f.w <= 0 { return }
-    // an inline fragment carries no padding or border of its own, so
-    // its three background areas are all the fragment's own rectangle
-    paintBackground(f.x, f.y, f.w, f.h, 0, 0, 0, 0, 0, 0, 0, 0, s)
-    if s.borderStyle != BORDER_NONE {
-        if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
-            paintFill(s.borderTopColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y, f.w, ib.bt)
-        }
-        if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-            paintFill(s.borderBottomColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
-        }
-        fillAlpha(1.0)
+    bool opens = fragOpens(f)
+    bool closes = fragCloses(f)
+    int lead = opens ? ib.ml : 0
+    int x = f.x + lead
+    int w = f.w - lead - (closes ? ib.mr : 0)
+    if w <= 0 { return }
+    int lw = opens ? ib.bl : 0
+    int rw = closes ? ib.br : 0
+    paintBackground(x, f.y, w, f.h, lw, ib.bt, rw, ib.bb,
+                    opens ? ib.pl : 0, ib.pt, closes ? ib.pr : 0, ib.pb, s)
+    if s.borderStyle == BORDER_NONE { return }
+    if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
+        paintBorderSide(x, f.y, w, ib.bt, true, true, s.borderTopStyle,
+                        s.borderTopColor, s.effectiveOpacity)
     }
+    if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
+        paintBorderSide(x, f.y + f.h - ib.bb, w, ib.bb, true, false,
+                        s.borderBottomStyle, s.borderBottomColor, s.effectiveOpacity)
+    }
+    if lw > 0 && colorIsPaintable(s.borderLeftColor) {
+        paintBorderSide(x, f.y, lw, f.h, false, true, s.borderLeftStyle,
+                        s.borderLeftColor, s.effectiveOpacity)
+    }
+    if rw > 0 && colorIsPaintable(s.borderRightColor) {
+        paintBorderSide(x + w - rw, f.y, rw, f.h, false, false,
+                        s.borderRightStyle, s.borderRightColor, s.effectiveOpacity)
+    }
+    fillAlpha(1.0)
 }
 
 // The concrete size object-fit gives a replaced element's content,
@@ -2654,7 +2853,8 @@ void func paintFormControl(b:Box) {
 void func paintLines(b:Box) {
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
-        if ln.y + ln.h < paintTop || ln.y > paintBottom { continue }
+        if ln.y + ln.h + inlineInkOverhang < paintTop
+            || ln.y - inlineInkOverhang > paintBottom { continue }
         // inline backgrounds first, outermost first
         for int j = 0, j < ln.frags.length, j++ {
             Fragment f = ln.frags[j]
@@ -2757,6 +2957,42 @@ void func paintClipped(b:Box) {
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
+    // `overflow-clip-margin` moves that edge outward, and only for
+    // `overflow: clip` -- a `hidden` box ignores it, which is what
+    // Chromium does (todo.md records the measurement). A page that
+    // never declares it pays one bool test here.
+    if anyClipMargin && (s.overflowX == OVERFLOW_CLIP || s.overflowY == OVERFLOW_CLIP) {
+        int packed = clipMarginPacked(s)
+        if packed >= 0 {
+            int mpx = Math.floorDiv(packed, 8)
+            int mbox = packed % 8
+            // Where the named box is, before the length pushes it out.
+            int cx = px
+            int cy = py
+            int cw = pw
+            int ch = ph
+            if mbox == GEOBOX_CONTENT {
+                cx = contentX(b)
+                cy = contentY(b)
+                cw = contentWidth(b)
+                ch = b.h - b.pt - b.pb - b.bt - b.bb
+            } else if mbox == GEOBOX_BORDER {
+                cx = b.x
+                cy = b.y
+                cw = b.w
+                ch = b.h
+            } else if mbox == GEOBOX_MARGIN {
+                cx = b.x - b.ml
+                cy = b.y - b.mt
+                cw = b.w + b.ml + b.mr
+                ch = b.h + b.mt + b.mb
+            }
+            px = cx - mpx
+            py = cy - mpx
+            pw = cw + mpx + mpx
+            ph = ch + mpx + mpx
+        }
+    }
     if pw <= 0 || ph <= 0 { return }
 
     img layer = blankImage(pw, ph)
@@ -2783,34 +3019,58 @@ void func paintClipped(b:Box) {
 // The thumb is as long a share of the track as the box is of the
 // content it scrolls, and never shorter than it can be seen at.
 
+// The two colours a scrollbar is drawn in: `scrollbar-color`'s pair
+// where a stylesheet gave one, and the browser's own otherwise (CSS
+// Scrollbars 1 §2). Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int sbTrackR = 252
+int sbTrackG = 252
+int sbTrackB = 252
+int sbThumbR = 139
+int sbThumbG = 139
+int sbThumbB = 139
+
+void func scrollbarColors(s:Style) {
+    // Chromium's classic scrollbar, so that the pixels can be compared
+    // with its own: a #fcfcfc track and a #8b8b8b thumb.
+    sbTrackR = 252  sbTrackG = 252  sbTrackB = 252
+    sbThumbR = 139  sbThumbG = 139  sbThumbB = 139
+    if s.scrollbarThumb == 0 { return }
+    sbThumbR = colorRed(s.scrollbarThumb)
+    sbThumbG = colorGreen(s.scrollbarThumb)
+    sbThumbB = colorBlue(s.scrollbarThumb)
+    sbTrackR = colorRed(s.scrollbarTrack)
+    sbTrackG = colorGreen(s.scrollbarTrack)
+    sbTrackB = colorBlue(s.scrollbarTrack)
+}
+
 void func paintScrollbars(b:Box) {
     if b.sbW <= 0 && b.sbH <= 0 { return }
+    scrollbarColors(b.style)
     int px = b.x + b.bl
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
     if pw <= 0 || ph <= 0 { return }
-    // Chromium's classic scrollbar, so that the pixels can be compared
-    // with its own: a #fcfcfc track and a #8b8b8b thumb.
     if b.sbW > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px + pw - b.sbW, py, b.sbW, scrollTrackHeight(b))
         // The thumb is drawn from the same four functions the pointer is
         // tested against, so what it looks like and what can be taken
         // hold of are one rectangle (layout.f).
         if scrollThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollThumbLeft(b), scrollThumbTop(b),
                       scrollThumbWidth(b), scrollThumbHeight(b))
         }
     }
     if b.sbH > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px, scrollHTrackTop(b), scrollHTrackWidth(b), b.sbH)
         if scrollHThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollHThumbLeft(b), scrollHThumbTop(b),
                       scrollHThumbWidth(b), scrollHThumbHeight(b))
         }
@@ -2823,14 +3083,87 @@ void func paintScrollbars(b:Box) {
 // is a matrix around the painting of the subtree and touches no
 // geometry. The question is asked once per document -- cascadeSawTransform
 // -- rather than of every box.
+// An anchored box `position-visibility: no-overflow` hid is laid out
+// like any other and simply not painted. The page-level flag is the one
+// test a document with no such box pays.
+bool func anchorHides(b:Box) {
+    return anyAnchorHidden && b.node != null && anchorHiddenIds[`${b.node.id}`] != null
+}
+
+// CSS Motion Path 1: the box is painted at a point on its own path
+// rather than where it was laid out. The whole effect is one
+// translation and one rotation:
+//
+//     painted top-left = laid-out top-left + P - offset-anchor
+//
+// with the turn taken about P itself. The path's percentages and a
+// ray's length want the containing block; the painter carries the
+// parent box rather than the containing block, so that is what they
+// resolve against, which is the same rectangle whenever the parent is
+// the containing block and is recorded where it is not (todo.md).
+bool func boxHasOffset(b:Box) {
+    return anyOffsetPath && b.style != null
+        && motionInfoOf(motionIndexOf(b.style)).pathKind != MPATH_NONE
+}
+
+// Leaves the offset's translation and turn on the canvas state. The
+// caller has saved it.
+void func applyBoxOffset(b:Box) {
+    MotionInfo mi = motionInfoOf(motionIndexOf(b.style))
+    Box up = parentBox(b)
+    int bw = up == null ? b.w : contentWidth(up)
+    int bh = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int ex = up == null ? 0 : b.x - contentX(up)
+    int ey = up == null ? 0 : b.y - contentY(up)
+    motionBuild(mi, ex, ey, bw, bh)
+    motionAt(motionDistance(mi))
+    // `offset-anchor: auto` is the transform origin, not the box's
+    // centre. The two coincide until a `transform-origin` says
+    // otherwise, and then they are 20 pixels apart: a box with
+    // `transform-origin: 0 0` moves the whole of `P`, where one with
+    // the default moves `P` less half its size.
+    int ax = resolveLen(b.style.transformOriginX, b.w, Math.floorDiv(b.w, 2))
+    int ay = resolveLen(b.style.transformOriginY, b.h, Math.floorDiv(b.h, 2))
+    if !mi.anchorAuto {
+        ax = resolveLen(mi.anchorX, b.w, 0)
+        ay = resolveLen(mi.anchorY, b.h, 0)
+    }
+    int px = roundPx(motionX)
+    int py = roundPx(motionY)
+    pTranslate(px - ax, py - ay)
+    float turn = motionRotation(mi)
+    if turn != 0.0 {
+        // The pivot is the anchor point where the box was laid out: the
+        // translation above carries it to P, so turning about it there
+        // is turning about P.
+        pTranslate(b.x + ax, b.y + ay)
+        pRotate(turn)
+        pTranslate(0 - (b.x + ax), 0 - (b.y + ay))
+    }
+}
+
 void func paintBox(b:Box) {
-    if !cascadeSawTransform || b.style.transforms.length == 0 {
+    if anyAnchorHidden && anchorHides(b) { return }
+    bool offset = anyOffsetPath && boxHasOffset(b)
+    if !offset && (!cascadeSawTransform || b.style.transforms.length == 0) {
         paintBoxUntransformed(b)
         return
     }
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
     Style s = b.style
+    if offset {
+        // The offset goes on first, so the element's own `transform`
+        // applies inside it: a rotated box still moves the full
+        // distance, which is what Chromium does.
+        pSaveState()
+        applyBoxOffset(b)
+        if !cascadeSawTransform || s.transforms.length == 0 {
+            paintBoxUntransformed(b)
+            pRestoreState()
+            return
+        }
+    }
     // Every function is about the transform origin, which is the box's
     // centre unless it says otherwise. Moving the origin to (0,0),
     // transforming and moving back is what makes that so.
@@ -2865,6 +3198,7 @@ void func paintBox(b:Box) {
     pTranslate(-ox, -oy)
     paintBoxUntransformed(b)
     pRestoreState()
+    if offset { pRestoreState() }
 }
 
 void func paintBoxUntransformed(b:Box) {
@@ -3087,6 +3421,25 @@ Box func hitTest(b:Box, x:int, y:int) {
 // The innermost scroll container under a point that has anything left
 // to scroll in the direction asked for, or null where there is none --
 // which is what hands the wheel back to the page.
+// Whether the wheel that `wheelTargetAt` could not place should go on
+// to the page. A scroll container that has reached its end normally
+// passes the wheel outward; `overscroll-behavior` stops it there and
+// sets this instead.
+bool wheelChainBlocked = false
+
+// The box a wheel at (x, y) scrolls, or null -- and then
+// `wheelChainBlocked` says whether the page may take what is left.
+Box func wheelTargetAt(root:Box, x:int, y:int, dy:int) {
+    wheelChainBlocked = false
+    return scrollContainerAt(root, x, y, dy)
+}
+
+// The same, across.
+Box func wheelTargetAcrossAt(root:Box, x:int, y:int, dx:int) {
+    wheelChainBlocked = false
+    return scrollContainerAcrossAt(root, x, y, dx)
+}
+
 Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     int scrolled = boxScrollTop(b)
@@ -3097,13 +3450,23 @@ Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
         if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAt(c, x, inner, dy)
             if found != null { return found }
+            // a descendant contained the chain: this box does not get
+            // the wheel and neither does anything outside it
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbW <= 0 { return null }
     int range = boxScrollRange(b)
-    if range <= 0 { return null }
-    if dy > 0 && scrolled >= range { return null }
-    if dy < 0 && scrolled <= 0 { return null }
+    // This container cannot take the wheel -- it has nothing to scroll,
+    // or it has reached its end in the direction asked for -- so the
+    // wheel would pass outward. `overscroll-behavior` on the axis asked
+    // for stops it here instead (CSS Overscroll Behavior 1 §3). A box
+    // with nothing to scroll is at both of its ends at once, so it
+    // contains the chain exactly as one scrolled to its end does.
+    if range <= 0 || (dy > 0 && scrolled >= range) || (dy < 0 && scrolled <= 0) {
+        if overscrollY(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 
@@ -3161,14 +3524,16 @@ Box func scrollContainerAcrossAt(b:Box, x:int, y:int, dx:int) {
         if innerX >= c.x && innerX < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAcrossAt(c, innerX, inner, dx)
             if found != null { return found }
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbH <= 0 { return null }
     int range = boxScrollLeftRange(b)
-    if range <= 0 { return null }
     int at = boxScrollLeft(b)
-    if dx > 0 && at >= range { return null }
-    if dx < 0 && at <= 0 { return null }
+    if range <= 0 || (dx > 0 && at >= range) || (dx < 0 && at <= 0) {
+        if overscrollX(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 

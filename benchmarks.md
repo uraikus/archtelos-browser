@@ -490,6 +490,229 @@ on it: the cost of looking for something is paid by the pages that do
 not have it, which is the failure the rule about features costing
 nothing is meant to catch, and it took a second page to see it.
 
+## What one `int` on `Style` costs, and the control that proved it
+
+CSS Motion Path was first written the way the anchor properties are:
+five values in a side table, and one `int` on `Style` indexing it. The
+benchmark page has no `offset-path` anywhere on it, so the index is zero
+on every style and nothing reads it.
+
+Twenty-five alternating pairs against the rebuilt parent, layout and
+paint both, 2026-09-18:
+
+| | Min | Median | Max | Paired median | Paired mean | Slower in |
+|---|---|---|---|---|---|---|
+| layout, parent | 58 ms | 61 ms | 65 ms | | | |
+| layout, with the field | 59 ms | 61 ms | 66 ms | +1 ms | **+1.08 ms** | 14 of 25 |
+| paint, parent | 8 ms | 9 ms | 11 ms | | | |
+| paint, with the field | 8 ms | 9 ms | 10 ms | 0 ms | -0.04 ms | 5 of 25 |
+
+Fourteen of twenty-five is barely more than half, and a median of +1 ms
+on a 61 ms phase is the sort of number that gets waved through. **So the
+same script was run with the parent binary against a copy of itself**,
+which is the only way to know what this method's own noise is:
+
+| | Paired median | Paired mean | B slower in |
+|---|---|---|---|
+| layout, parent against parent | 0 ms | -0.16 ms | 6 of 25 |
+| paint, parent against parent | 0 ms | -0.24 ms | 4 of 25 |
+
+Against a floor of -0.16 and 6 of 25, +1.08 and 14 of 25 is real. It is
+the same finding `corner-shape` produced at four times the size -- four
+floats on `Style` cost 2 ms -- and this is what the small end of it
+looks like: one field, one machine word, one millisecond, and no test
+anywhere that would have objected.
+
+The index moved off `Style` into a map keyed by the computed style's own
+serial, which is the right grain anyway: a computed style is shared
+between every element that matched the same declarations, and the map is
+only ever read behind `anyOffsetPath`. Re-measured the same way:
+
+| | Min | Median | Max | Paired median | Slower in |
+|---|---|---|---|---|---|
+| layout, parent | 58 ms | 60 ms | 64 ms | | |
+| layout, after the move | 58 ms | 60 ms | 82 ms | 0 ms | 7 of 25 |
+| paint, after the move | 8 ms | 9 ms | 9 ms | 0 ms | 4 of 25 |
+
+Seven of twenty-five against the control's six. The paired differences
+are every one of them in [-3, +2] except a single +24, which is the 82 ms
+sample and a hiccup rather than a cost; dropping that one pair leaves a
+mean of -0.33 ms, which is the control's number. Reported with the
+outlier in the table rather than trimmed out of it, because a maximum
+that far from the median is the sort of thing a reader should get to
+judge.
+
+## What `position-visibility` cost, and the measurement that missed it
+
+`position-visibility` puts a test at the top of `paintBox`, which every
+painted box on every page reaches. The first paired A/B said median 0,
+mean -0.40, slower in 11 of 25 pairs -- and measured nothing at all,
+because the harness these comparisons use sums **parse, stylesheets,
+cascade and layout**, and this change is in none of them. Paint is
+outside that sum.
+
+Asked of the paint phase, over the same twenty-five alternating samples:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 8 ms | 9 ms | 10 ms | |
+| after | 8 ms | 9 ms | 13 ms | 8 of 25 pairs |
+
+Median 0, paired mean +0.36 ms on a 9 ms phase. Free, for the reason
+the code is written that way: a document that hides no anchored box
+never sets `anyAnchorHidden`, so the test is one boolean that fails
+immediately.
+
+The lesson is the one this file keeps relearning in new costumes. The
+first measurement was not wrong about its own numbers; it was answering
+a question nobody asked, and it answered it confidently. A paired A/B is
+only as good as its agreement with the phase the change is in, and
+nothing in its output says which phase that is -- the same shape as a
+property row that computes to its initial value, or a
+`getComputedStyle` probe of a paint-time property.
+
+## What sorting the position-try candidates cost
+
+`position-try-order` builds the candidate list and sorts it, which
+sounds like more work than the retry loop it replaced a branch in. It is
+not: the list is built only for a box that names an anchor and declares
+either fallbacks or an order, so on every other page neither the build
+nor the sort is reached. Twenty-five alternating samples against the
+revision before it: median -1 ms, paired mean -2.08, slower in 8 of 25
+pairs.
+
+The sort itself is a selection sort over a list that is a handful of
+entries long, which is the right shape here: an allocation-free sort
+over four items beats anything cleverer, and it is stable, so candidates
+offering equal room keep their written order.
+
+## What the position-try retry loop cost
+
+The retry loop lays an anchored box out, tests it against its containing
+block and tries the next candidate. It runs only for a box that both
+names an anchor and overflows, so on a page with neither it is a
+comparison that fails immediately. Twenty-five alternating samples
+against the revision before it: median 0 ms, paired mean -0.64, slower
+in 12 of 25 pairs.
+
+The containing block it tests against is tracked down the recursion
+rather than stored on each box, for the reason the section below
+measured: a field on a per-box record costs more than a parameter does.
+
+## What anchor positioning cost, with the lesson below applied first
+
+CSS Anchor Positioning adds two walks of the finished box tree -- one to
+collect the anchors' rectangles, one to place the boxes that name them
+-- and seven properties' worth of data per element. Written the obvious
+way that would be seven fields on `Style`, which the section below
+measures at two milliseconds for four.
+
+So it was not written that way. `Style` carries **one `int`**, an index
+into a side table that only elements mentioning an anchor appear in, and
+both walks sit behind `anyAnchorName`, which no page that never names an
+anchor sets. Twenty-five alternating samples against the revision
+before it:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 102 ms | 105 ms | 134 ms | |
+| after | 104 ms | 106 ms | 115 ms | 13 of 25 pairs |
+
+Paired mean -0.20 ms. Thirteen of twenty-five is what a coin gives, and
+the feature is free to the pages that do not use it -- which is the
+result the section below had to be paid for once to learn.
+
+## What four fields on `Style` cost, and why `corner-shape` is a bitfield
+
+`corner-shape` was written with the obvious representation: one `float`
+per corner on `Style`, holding the superellipse exponent that corner is
+drawn with. The suite passed, the new render suite matched Chromium's
+corner profile row for row, and the paired benchmark said it cost **2 ms
+on `generated.html`** -- a page with no `corner-shape` in it and no
+corner shaped at all.
+
+Twenty-five alternating samples, parse through layout, at 800x600:
+
+| | Min | Median | Max | Slower in |
+|---|---|---|---|---|
+| before | 102 ms | 105 ms | 107 ms | |
+| four floats on `Style` | 104 ms | 106 ms | 111 ms | 21 of 25 pairs |
+| four codes in one int | 103 ms | 104 ms | 109 ms | 28 of 50 pairs |
+
+Twenty-one pairs of twenty-five is not a coin. The phase timings said
+where it was and where it was not:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| before | 9 | 1 | 36 | 57-58 | 8 |
+| four floats | 9 | 2 | 36 | 59-60 | 9 |
+
+All of it in **layout**, none in the cascade that parses the property or
+the paint that draws it. That rules out every line the feature runs,
+because layout does not run any of them.
+
+The cause is the struct, not the code. Compiling the revision *before*
+`corner-shape` with four `float` fields added to `Style` and **never
+read** reproduces it exactly: layout 59, 61, 61 against that same
+revision's 57-58. `Style` is dereferenced once per box throughout
+layout, and `generated.html` has 2,728 boxes sharing 24 of them, so
+thirty-two bytes of growth moves the fields a box reads apart from one
+another.
+
+Padding the same revision with one and with two `int` fields costs
+nothing -- 57, 58, 59, and 58, 59, 59 -- so the threshold is somewhere
+between eight bytes and thirty-two, not at any growth at all. The four
+exponents are therefore packed into one `int`, six bits a corner, with
+codes past the six keywords indexing a per-page list of the exponents
+`superellipse()` named. Re-measured, the new binary is slower in 28 of
+50 paired samples, which is within one standard deviation of the 25 a
+coin gives, and the median difference is 1 ms.
+
+What makes this worth writing down is that **no test could have caught
+it**. Every suite passed on the slow version; the new feature's own
+render suite matched Chromium exactly. The only instrument that noticed
+was a paired A/B against the previous revision, and the only reason the
+cause was findable was that the phase timers put the cost in a phase the
+feature does not touch. A readable four-member struct is the right
+default everywhere `Style` is not read once per box.
+
+## What UAX #9's explicit rules cost a page with no bidi in it
+
+The explicit half of the bidirectional algorithm reaches every page,
+because the question "is there anything here that could reorder" is
+asked of every text box, and the nine formatting characters are now part
+of that question. That is a test inside a loop over every character of
+the document, which is the shape the rule about features costing nothing
+exists to catch.
+
+Two things keep it off the pages that do not use it. `bidiClass` returns
+for ASCII before it reaches the nine, and asks for them behind a single
+range test rather than nine equalities; and `bidiNeedsReorder` asks
+`c >= BIDI_LRE` once, because every formatting class is numbered above
+every ordinary one.
+
+The run of 2026-09-18 read 104 ms on `generated.html` where the table
+above records 101, which on its own would look like a 3 ms regression.
+It is not: the revision before this one, rebuilt and run in the same
+minutes on the same machine, reads the same. Twenty-five alternating
+samples of the two binaries, parse through layout, `generated.html` at
+800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (43731f7) | 104 ms | 107 ms | 120 ms |
+| after (b7620bf) | 103 ms | 105 ms | 133 ms |
+| paired, after less before | -7 ms | **-2 ms** | +13 ms |
+
+The new binary is the slower one in 6 pairs of 25, and the paired mean
+is -0.96 ms. The change costs nothing measurable, and the 3 ms is the
+machine: Chromium's control row moved the other way on the same run,
+24.6 ms against the 26.0 recorded, 5.4% and inside the 15% the script
+allows. That the two engines drifted in opposite directions by similar
+fractions is what a day's difference in machine state looks like, and it
+is why the rendering table's large row is the middle of eight samples
+rather than one run of five -- one run of five is what produced the 104.
+
 ## What the preload scanner is worth
 
 The preload scanner reads the raw bytes for `<link rel=stylesheet>`,
@@ -1208,3 +1431,280 @@ at +2. And neither benchmark page paginates at all, so none of the
 pagination, the page-box resolution or the `@page` parsing is on their
 path -- which is why the only thing that could cost them anything was the
 one line that ran per declaration.
+
+CSS Scrollbars 1 and `scrollbar-gutter` cost **4,872 bytes** (2,874,536
+→ 2,879,408) and nothing measurable. Twenty-one paired samples of
+`generated.html` give the same 103 ms minimum and the same 106 ms median
+on each side, with a median paired difference of 0 and the individual
+differences running from −5 to +5 either way.
+
+The cost worth watching for was not the cascade's: three more fields
+read once per distinct computed style is nothing. It was the box tree's.
+Separating "does this box scroll" from "how much room did its bar take"
+put two more booleans on `Box`, and a `Box` is allocated per box rather
+than per distinct style -- 2,728 of them on this page against the 24
+styles they share. The measurement says those two booleans cost nothing
+that twenty-one samples can see, which is the answer, but the reason to
+take the samples was that this one could have gone the other way.
+
+CSS Scroll Snap 1 costs **5,056 bytes** (2,879,408 → 2,884,464) and
+nothing measurable. Twenty-one paired samples of `generated.html` give
+102 ms against the previous 104 as a minimum and 105 against 106 as a
+median, the median paired difference −1.
+
+It is free for a structural reason and not a lucky measurement: snapping
+runs from `boxScrollBy`, which a wheel or a dragged thumb calls and a
+layout never does. A page that is rendered and not scrolled -- every
+page the benchmark measures, and every page a screenshot takes -- does
+not reach the code at all. What it does pay for is the thirteen fields
+the snap properties put on `Style`, and those are read once per distinct
+computed style: 24 of them for this page's 2,728 elements.
+
+An inline box's own border and padding cost **4,352 bytes**
+(2,956,712 → 2,961,064) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (b7dc926) | 106 ms | 108 ms | 118 ms |
+| after (71251ad) | 105 ms | 108 ms | 127 ms |
+| paired, after less before | −12 ms | **0 ms** | +20 ms |
+
+The new binary is the slower one in 10 pairs of 25 and the paired mean
+is +0.64 ms. The noise floor was taken first, by running the parent
+against a byte-identical copy of itself: nine pairs gave 107 against
+108 as a minimum, so a 1 ms gap is what this machine calls "the same".
+
+**The tables above are not updated from this run, because the control
+says they would be measuring the machine.** The whole-run figures read
+106 ms on `generated.html` where the table records 101, and Chromium's
+control row read 24.0 ms where the table records 26.0 — the two engines
+drifting in opposite directions by similar fractions, both inside the
+15% the script allows. The parent, rebuilt and run in the same minutes,
+reads the same 106, which is what settles it.
+
+Two things could have cost something here and did not. The first is a
+field on `Fragment`, which is allocated per text run and per inline per
+line rather than per distinct style — nearer to `Box`'s 2,728 than to
+the 24 styles they share. The second is the painter's cull, which every
+line and every box on every page goes through: widening it by the
+furthest any inline reaches outside its line is one addition against a
+number that a document without a padded or bordered inline leaves at
+zero, so the arithmetic is there but the pages that do not use the
+feature get the same answer they got before.
+
+`box-decoration-break` costs **200 bytes** (2,961,064 → 2,961,264) and
+nothing measurable. Twenty-five alternating paired samples of
+`generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (2674d33) | 104 ms | 111 ms | 123 ms |
+| after (b6899cd) | 105 ms | 110 ms | 141 ms |
+| paired, after less before | −7 ms | **−2 ms** | +21 ms |
+
+The new binary is the slower one in 8 pairs of 25. The paired mean is
++0.72 ms and comes entirely from the single +21 pair, a 141 ms sample
+where every other read 104 to 123; the median is where to read this one,
+as it was for the `int` on `Style`.
+
+Two hundred bytes is the smallest thing measured in this file, and the
+reason is structural. `clone` adds no pass and no field: the keyword
+goes in a map keyed by the computed style's serial, read once per
+distinct style; the opening edge is added where `beginLine` already
+re-opens the inlines that continue, which a page with no inline never
+enters; and the closing edge is added in a loop over the inlines open
+across a line break, which is empty on every line of a page that does
+not break one.
+
+`overscroll-behavior` and its four longhands cost **4,656 bytes**
+(2,961,264 → 2,965,920) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (b05691b) | 105 ms | 109 ms | 122 ms |
+| after (ccbf5d1) | 105 ms | 108 ms | 122 ms |
+| paired, after less before | −10 ms | **0 ms** | +3 ms |
+
+The new binary is the slower one in 10 pairs of 25 and the paired mean
+is −0.68 ms. The two ends of the run are the same on both sides, which
+is the shape of a change that is not there.
+
+It is free for the same structural reason the last two were, and the
+reason is worth stating because it is now the pattern rather than a
+piece of luck. The keyword pair is one packed `int` in a map keyed by
+the computed style's serial, read once per distinct style — 24 of them
+for this page's 2,728 elements — and the two reads on the scrolling path
+are guarded by a per-document flag that a page never saying the property
+leaves false. Nothing here runs per box, per fragment or per
+declaration, and the benchmark pages do not scroll at all, so they never
+reach the walk the property changes.
+
+`anchor()` in the four inset properties costs **9,296 bytes**
+(2,965,920 → 2,975,216) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (edfce48) | 103 ms | 108 ms | 117 ms |
+| after (c108fbe) | 104 ms | 107 ms | 139 ms |
+| paired, after less before | −11 ms | **−2 ms** | +32 ms |
+
+The new binary is the slower one in 7 pairs of 25 and the paired mean
+is −0.04 ms. The one +32 pair is a 139 ms sample where every other read
+104 to 117; the median is where to read this, as it was for the `int`
+on `Style`.
+
+It is free because it runs where the feature already ran. The four
+references live on the `AnchorInfo` a page grows only when it says one
+of the anchor properties, not on `Style`; reading them costs four array
+lookups inside the walk that already resolves `position-anchor`, behind
+a flag a page that never says the function leaves false; and the
+resolution itself is in `placeAnchored`, which a page with no anchor
+never reaches. `generated.html` says none of it.
+
+The static position costs **4,592 bytes** (2,975,216 → 2,979,808) and
+about **one millisecond on `generated.html`, which runs none of it**.
+That sentence is the finding, and it took five binaries to be able to
+write it honestly.
+
+Twenty-five alternating paired samples each, parse through layout at
+800x600, all on an idle machine:
+
+| | Median | Mean | Slower in |
+|---|---|---|---|
+| the change | +1 ms | +0.72 ms | **17 of 25** |
+| the change, again | +1 ms | +0.44 ms | **17 of 25** |
+| the change, a third time | +2 ms | +1.56 ms | **17 of 25** |
+| the change with its two map resets guarded | +1 ms | +1.08 ms | 15 of 25 |
+| the two globals and the reset, none of the code | +1 ms | +0.92 ms | 16 of 25 |
+| that binary against the whole change | −1 ms | −1.44 ms | 7 of 25 |
+| **the parent against a copy of itself** | 0 ms | −1.96 ms | **6 of 25** |
+| the parent against itself, again | 0 ms | −0.12 ms | 12 of 25 |
+| the parent plus two *unused* global maps | 0 ms | −4.20 ms | 9 of 25 |
+
+Everything carrying the change is slower in 15 to 17 pairs of 25.
+Everything that does not carry it is slower in 6 to 12. The minimum
+moves from 103 ms to 104 in every binary that is not the parent. Five
+runs agree, so it is not the run.
+
+**And it cannot be work.** `generated.html` declares no `position:` at
+all; the engine's own `docHasPositioned` reads false on it, so the
+writes, the read and the reset are all behind a flag that is never
+raised. Two things that would have explained it do not: two unused
+global maps added to the parent cost nothing by the pair statistics, and
+guarding the resets — which does remove two allocations per layout —
+did not move the number either.
+
+So what is left is the shape of the binary rather than anything it does,
+which is the explanation this file ruled out once before for
+`corner-shape`, where 41 KB of never-called code cost nothing. It is not
+ruled out here. It is recorded as measured, unattributed, and the number
+is a millisecond on a page that never enters the feature.
+
+The tables above are not updated from these runs.
+
+A motion path's curve commands cost **4,360 bytes**
+(2,979,560 → 2,983,920) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (5bac95e) | 104 ms | 106 ms | 111 ms |
+| after (b8f17ee) | 105 ms | 107 ms | 108 ms |
+| paired, after less before | −6 ms | **0 ms** | +2 ms |
+
+The new binary is the slower one in 11 pairs of 25 and the paired mean
+is +0.12 ms. Eleven of twenty-five is inside the band the parent
+measured against a copy of itself — 6 and 12 of 25 — where the entry
+above it sat at 15 to 17 in five separate runs.
+
+It is free for the plainest of reasons: the sampling runs where the path
+is built, which is once per element that has an `offset-path`, and
+`generated.html` has none. The minimum moved from 104 to 105 here as it
+did there, which is the one part of that entry this run does not settle.
+
+A motion path's subpaths cost **80 bytes** (2,983,920 → 2,984,000) and
+nothing measurable. Twenty-five alternating paired samples of
+`generated.html`, parse through layout at 800x600:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (1abcb5b) | 103 ms | 106 ms | 110 ms |
+| after (520877e) | 103 ms | 106 ms | 115 ms |
+| paired, after less before | −4 ms | **0 ms** | +5 ms |
+
+The new binary is the slower one in 11 pairs of 25, the paired mean is
+exactly zero and the minimum does not move — the one entry in this file
+where it did not. Eighty bytes is the smallest change measured here: a
+`moveTo` that pushes a point without adding the gap to the running
+length, a counter, and two conditions.
+Restoring the inline formatting context's containing block, and
+`initial-letter` on top of it, cost **4,544 bytes**
+(2,984,000 → 2,988,544) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600,
+with a second round because the first carried one outlier:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (bc1b69e) | 114 ms | 116 ms | 119 ms |
+| after (9575d45) | 114 ms | 116 ms | 136 ms |
+| paired, after less before | −3 ms | **0 ms** | +20 ms |
+| before, second round | 113 ms | 115 ms | 119 ms |
+| after, second round | 114 ms | 116 ms | 120 ms |
+| paired, second round | −4 ms | **1 ms** | +5 ms |
+
+The new binary is the slower one in 11 pairs of 25 and then 13, against
+the 7 the parent measured against a byte-identical copy of itself in the
+same minutes — where the paired median was 0, the mean −0.40 and the
+spread −6 to +6. The paired mean is +1.08 in the first round, all of it
+the single +20 pair, and +0.16 in the second. `features.html` gives
+median 0, mean −0.56, slower in 6 of 25.
+
+That is what the guards are for. The drop cap's push is behind
+`anyInitialLetter`, which `generated.html` never raises, and the float
+branch asks `initialLetterPacked` only of a box that is already a float.
+The containing-block fix is two integers saved and restored once per
+formatting context, which is the one part of this that every page pays;
+it does not show.
+
+**The numbers in the tables above are not updated from this run, and
+this run says why.** It read 114 ms on `generated.html` where the table
+records 101, and Chromium read 23.1 ms where the table records 26.0 --
+the engine 13% slow and the browser 11% fast in the same five minutes,
+which is the machine rather than either of them. The control passed at
+11.2% of the 15% the script allows, which is the furthest out this file
+has recorded it. The paired comparison above is the measurement that
+settles the change, because both of its binaries ran in those same
+minutes.
+Correcting `FONT_CAP` to 0.733 and flooring the cap height cost **32
+bytes** (2,988,544 -> 2,988,576) and nothing measurable, on a noisier
+machine than the entries above it. Twenty-five alternating paired
+samples of `generated.html`, parse through layout at 800x600, with the
+noise floor taken twice in the same minutes:
+
+| | Min | Median | Max | Paired median | Mean | Slower in |
+|---|---|---|---|---|---|---|
+| parent against a copy of itself | 105 | 112 | 119 | 0 ms | +0.60 | 10 of 25 |
+| the same, again | 106 | 112 | 132 | 1 ms | 0.00 | 13 of 25 |
+| before (637eb26) | 95 | 113 | 118 | | | |
+| after (cde729e) | 107 | 114 | 124 | **0 ms** | +0.84 | 10 of 25 |
+
+`features.html` gives a paired median of 0, a mean of +1.12 and 11 of 25.
+
+**The floor is wider here than in any other entry in this file** -- the
+paired differences of a binary against a byte-identical copy of itself
+run from -14 to +25 ms, where the same control an hour earlier ran -6 to
++6. Two container restarts and a full valgrind run had just finished,
+and the machine had not settled. The medians are what carry the result:
+the change reads 0 against a floor of 0 and 1. A single-round reading of
+the means alone would not have been worth anything, which is the whole
+reason the floor is taken beside the measurement rather than remembered
+from last time.
+
+The change touches two functions, `textBoxOverEdge` and
+`applyInitialLetter`, and neither benchmark page declares
+`text-box-trim` or `initial-letter`, so nothing on either page reaches
+the changed code at all. That is a reason to expect the result, not a
+substitute for it.

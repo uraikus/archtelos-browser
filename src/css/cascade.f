@@ -4,6 +4,7 @@
 import parser.f
 import ../dom/node.f
 import ../util/color.f
+import ../util/bidi.f
 import ua.f
 
 const int ORIGIN_UA = 0
@@ -165,6 +166,35 @@ void func cascadeReset() {
     // would otherwise register every one of them twice.
     resetPageRules()
     anyPageBreak = false
+    anyUnicodeBidi = false
+    anyCornerShape = false
+    cornerCustomK = []
+    anyAnchorName = false
+    anyAnchorScope = false
+    anyAnchorInset = false
+    anchorInfos = []
+    anyOffsetPath = false
+    motionInfos = []
+    anyClipMargin = false
+    map[int] emptyClipMargin = {}
+    clipMarginOf = emptyClipMargin
+    anyTextBoxTrim = false
+    map[int] emptyTextBox = {}
+    textBoxOf = emptyTextBox
+    anyDecorationClone = false
+    map[int] emptyDecoClone = {}
+    decoCloneOf = emptyDecoClone
+    anyOverscrollBehavior = false
+    map[int] emptyOverscroll = {}
+    overscrollOf = emptyOverscroll
+    anyInitialLetter = false
+    map[int] emptyInitialLetter = {}
+    initialLetterOf = emptyInitialLetter
+    map[int] emptyMotion = {}
+    motionOfSerial = emptyMotion
+    map[bool] emptyHidden = {}
+    anchorHiddenIds = emptyHidden
+    anyAnchorHidden = false
     cssResetLayers()
     cascadeSawTransform = false
     cascadeSawClip = false
@@ -1421,6 +1451,46 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     }
 }
 
+// `initial-letter: normal | <number> <integer>?`. The size is a
+// baseline rather than a multiplier: the letter's cap top is the cap
+// top of the first line and its baseline is the baseline of line
+// `size`, so its cap height is `cap(1) + (size - 1) * line-height` and
+// its font size follows from that. The sink defaults to the size
+// rounded down. All of it is measured, in todo.md.
+//
+// The size is applied to the pseudo-element's own style here rather
+// than in layout, because this is where the paragraph's font size and
+// line height are both to hand and where the style is made.
+void func applyInitialLetter(ps:Style, own:Style, v:ascii) {
+    ascii low = asciiLower(asciiTrim(v))
+    if low == 'normal' { return }
+    arr[ascii] w = asciiSplitSpace(low)
+    if w.length == 0 || w.length > 2 { return }
+    float size = parseFloatAscii(w[0])
+    if size <= 1.0 { return }
+    int sink = Math.floor(size)
+    if w.length > 1 {
+        int asked = Math.floor(parseFloatAscii(w[1]))
+        if asked < 1 { return }
+        sink = asked
+    }
+    if sink < 1 || sink > 63 { return }
+    int lh = lineHeightOf(own)
+    float cap = FONT_CAP * own.fontSize.toFloat() + (size - 1.0) * lh.toFloat()
+    int scaled = roundPx(cap / FONT_CAP)
+    if scaled <= 0 { return }
+    ps.fontSize = scaled
+    refreshFontKey(ps)
+    // The letter's own line box is as tall as it spans, which puts its
+    // baseline on the baseline of line `size` by the same arithmetic
+    // that centres any other inline in its line: the half-leading is
+    // negative here and the sum comes out exactly right.
+    ps.lineHeight = roundPx(size * lh.toFloat())
+    ps.floatSide = FLOAT_LEFT
+    initialLetterOf[`${ps.serial}`] = roundPx(size * 100.0) * 64 + sink
+    anyInitialLetter = true
+}
+
 // ::first-letter carries no `content`: it restyles characters that are
 // already there, so the style is kept on its own without one.
 void func computeFirstLetterFor(n:Node, own:Style) {
@@ -1429,7 +1499,10 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
     applyMatches(props, matches)
-    pseudoStyles[pseudoKey(n.id, 'first-letter')] = computeStyleValues(n, own, false, props)
+    Style ps = computeStyleValues(n, own, false, props)
+    ascii il = styleProp(props, 'initial-letter')
+    if il != null { applyInitialLetter(ps, own, il) }
+    pseudoStyles[pseudoKey(n.id, 'first-letter')] = ps
     pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
 }
 
@@ -3161,6 +3234,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         applyBorderShorthand(props, ['left', 'right'], value)
         return
     }
+    if name == 'scroll-padding' || name == 'scroll-margin' {
+        applyFourSides(props, name, '', value)
+        return
+    }
     if name == 'margin' || name == 'padding' {
         applyFourSides(props, name, '', value)
         return
@@ -3353,6 +3430,25 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // aliases rather than a feature of their own.
     if name == 'padding-block-start' { name = 'padding-top' }
     if name == 'padding-block-end' { name = 'padding-bottom' }
+    // The scroll box's two families take the same aliases, because a
+    // snapport's padding and a snap area's margin are the box's own
+    // edges under other names (Scroll Snap 1 §6.2, §6.3).
+    if name == 'scroll-padding-block-start' { name = 'scroll-padding-top' }
+    if name == 'scroll-padding-block-end' { name = 'scroll-padding-bottom' }
+    if name == 'scroll-padding-inline-start' {
+        name = cascadeApplyRtl ? 'scroll-padding-right' : 'scroll-padding-left'
+    }
+    if name == 'scroll-padding-inline-end' {
+        name = cascadeApplyRtl ? 'scroll-padding-left' : 'scroll-padding-right'
+    }
+    if name == 'scroll-margin-block-start' { name = 'scroll-margin-top' }
+    if name == 'scroll-margin-block-end' { name = 'scroll-margin-bottom' }
+    if name == 'scroll-margin-inline-start' {
+        name = cascadeApplyRtl ? 'scroll-margin-right' : 'scroll-margin-left'
+    }
+    if name == 'scroll-margin-inline-end' {
+        name = cascadeApplyRtl ? 'scroll-margin-left' : 'scroll-margin-right'
+    }
     if name == 'inset-block-start' { name = 'top' }
     if name == 'inset-block-end' { name = 'bottom' }
     if name == 'inset-inline-start' { name = cascadeApplyRtl ? 'right' : 'left' }
@@ -3947,6 +4043,235 @@ int func breakKeyword(v:ascii) {
     return BRK_AUTO
 }
 
+// CSS Scroll Snap 1 §5. `scroll-snap-type` names an axis and, after it,
+// how strictly the container snaps; the standard's initial strictness is
+// `proximity`, so a bare axis is that. Three answers out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+bool snapAxisXOut = false
+bool snapAxisYOut = false
+int snapStrictOut = SNAP_NONE
+
+void func snapTypeProp(v:ascii) {
+    snapAxisXOut = false
+    snapAxisYOut = false
+    snapStrictOut = SNAP_NONE
+    if v == null { return }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return }
+    text axis = asciiLower(t[0]).toText()
+    // The logical axes are the physical ones in a horizontal writing
+    // mode, which is the only one this engine lays out in.
+    if axis == 'x' || axis == 'inline' { snapAxisXOut = true }
+    else if axis == 'y' || axis == 'block' { snapAxisYOut = true }
+    else if axis == 'both' { snapAxisXOut = true  snapAxisYOut = true }
+    else { return }
+    snapStrictOut = SNAP_PROXIMITY
+    if t.length > 1 && asciiLower(t[1]) == 'mandatory' { snapStrictOut = SNAP_MANDATORY }
+}
+
+int func snapAlignKeyword(t:ascii) {
+    if t == 'start' { return SNAPALIGN_START }
+    if t == 'center' { return SNAPALIGN_CENTER }
+    if t == 'end' { return SNAPALIGN_END }
+    return SNAPALIGN_NONE
+}
+
+// `scroll-snap-align` takes one value for both axes or two, the block
+// axis first (§4.1). Two answers out of a function need globals.
+int snapAlignBlockOut = SNAPALIGN_NONE
+int snapAlignInlineOut = SNAPALIGN_NONE
+
+void func snapAlignProp(v:ascii) {
+    snapAlignBlockOut = SNAPALIGN_NONE
+    snapAlignInlineOut = SNAPALIGN_NONE
+    if v == null { return }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return }
+    snapAlignBlockOut = snapAlignKeyword(asciiLower(t[0]))
+    snapAlignInlineOut = t.length > 1 ? snapAlignKeyword(asciiLower(t[1])) : snapAlignBlockOut
+}
+
+// `corner-shape`'s keywords and `superellipse()`, as the exponent each
+// one names (CSS Borders 4 §5). Zero is "not a shape", which no real
+// value is, because a superellipse of exponent zero is not a curve.
+float func cornerShapeKeyword(v:ascii) {
+    if v == null { return 0.0 }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'round' { return CORNER_K_ROUND }
+    if t == 'square' { return CORNER_K_SQUARE }
+    if t == 'bevel' { return CORNER_K_BEVEL }
+    if t == 'scoop' { return CORNER_K_SCOOP }
+    if t == 'notch' { return CORNER_K_NOTCH }
+    if t == 'squircle' { return CORNER_K_SQUIRCLE }
+    if asciiStartsWith(t, 'superellipse('.toAscii(), 0) && t[t.length - 1] == ')' {
+        ascii inner = asciiTrim(t.slice(13, t.length - 1))
+        if inner == 'infinity' { return CORNER_K_SQUARE }
+        if inner == '-infinity' { return CORNER_K_NOTCH }
+        float n = parseFloatAscii(inner)
+        // An exponent of zero is not a curve, and one past the extremes
+        // is the extreme.
+        if n == 0.0 { return 0.0 }
+        if n > CORNER_K_SQUARE { return CORNER_K_SQUARE }
+        if n < CORNER_K_NOTCH { return CORNER_K_NOTCH }
+        return n
+    }
+    return 0.0
+}
+
+// One `corner-*-shape` longhand, or the value already there when the
+// declaration is absent or unreadable.
+float func cornerShapeProp(props:map[text], name:text, fallback:float) {
+    ascii v = styleProp(props, name)
+    if v == null { return fallback }
+    float k = cornerShapeKeyword(v)
+    return k == 0.0 ? fallback : k
+}
+
+// `position-area`'s keywords (CSS Anchor Positioning 1 §3.1). A keyword
+// names a band, and some name an axis with it: `top` and `bottom` are
+// the block axis, `left` and `right` the inline one. `start`, `end`,
+// `center` and `span-all` name neither, and take the block axis first
+// and the inline second, which is what the standard's grammar means by
+// taking them in order.
+const int PAREA_AX_ANY = 0
+const int PAREA_AX_BLOCK = 1
+const int PAREA_AX_INLINE = 2
+
+int pareaBand = PAREA_NONE
+int pareaAxis = PAREA_AX_ANY
+
+void func pareaKeyword(v:ascii) {
+    pareaBand = PAREA_NONE
+    pareaAxis = PAREA_AX_ANY
+    if v == 'top' { pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_BLOCK  return }
+    if v == 'bottom' { pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_BLOCK  return }
+    if v == 'block-start' || v == 'y-start' || v == 'y-self-start' {
+        pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_BLOCK  return
+    }
+    if v == 'block-end' || v == 'y-end' || v == 'y-self-end' {
+        pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_BLOCK  return
+    }
+    if v == 'left' { pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_INLINE  return }
+    if v == 'right' { pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_INLINE  return }
+    if v == 'inline-start' || v == 'x-start' || v == 'x-self-start' {
+        pareaBand = PAREA_BEFORE  pareaAxis = PAREA_AX_INLINE  return
+    }
+    if v == 'inline-end' || v == 'x-end' || v == 'x-self-end' {
+        pareaBand = PAREA_AFTER  pareaAxis = PAREA_AX_INLINE  return
+    }
+    if v == 'start' || v == 'self-start' { pareaBand = PAREA_BEFORE  return }
+    if v == 'end' || v == 'self-end' { pareaBand = PAREA_AFTER  return }
+    if v == 'center' { pareaBand = PAREA_CENTER  return }
+    if v == 'span-all' { pareaBand = PAREA_SPAN  return }
+}
+
+// The whole value: one or two keywords, packed block then inline. A
+// keyword that names an axis goes to it and leaves the other spanning;
+// one that names neither fills the block axis first. A single keyword
+// naming neither applies to both, which is what makes `center` centre
+// in two directions rather than one.
+int func positionAreaValue(v:ascii) {
+    if v == null { return PAREA_NONE }
+    arr[ascii] t = cssTokens(asciiLower(v))
+    if t.length == 0 { return PAREA_NONE }
+    int blockBand = PAREA_NONE
+    int inlineBand = PAREA_NONE
+    // The keywords that name an axis are placed first, because one that
+    // names none takes whichever axis is left: in `top span-all` the
+    // span is the inline axis, and assigning in written order would
+    // give it the block axis the `top` had already claimed.
+    for int i = 0, i < t.length, i++ {
+        pareaKeyword(t[i])
+        if pareaBand == PAREA_NONE { return PAREA_NONE }
+        if pareaAxis == PAREA_AX_BLOCK { blockBand = pareaBand }
+        else if pareaAxis == PAREA_AX_INLINE { inlineBand = pareaBand }
+    }
+    int anyCount = 0
+    for int i = 0, i < t.length, i++ {
+        pareaKeyword(t[i])
+        if pareaAxis != PAREA_AX_ANY { continue }
+        anyCount++
+        if blockBand == PAREA_NONE { blockBand = pareaBand }
+        else if inlineBand == PAREA_NONE { inlineBand = pareaBand }
+    }
+    // One axis-agnostic keyword on its own covers both axes, which is
+    // what makes `center` centre in two directions rather than one.
+    if t.length == 1 && anyCount == 1 { inlineBand = blockBand }
+    if blockBand == PAREA_NONE { blockBand = PAREA_SPAN }
+    if inlineBand == PAREA_NONE { inlineBand = PAREA_SPAN }
+    return blockBand * PAREA_AXIS + inlineBand
+}
+
+// A dashed identifier as written, or '' -- an anchor name is compared
+// rather than parsed, so it keeps its dashes.
+text func anchorIdent(props:map[text], name:text) {
+    ascii v = styleProp(props, name)
+    if v == null { return '' }
+    return asciiTrim(v).toText()
+}
+
+// CSS Writing Modes 3 §2.2: which pair of formatting characters the
+// element's text is treated as being wrapped in.
+int func unicodeBidiKeyword(v:ascii) {
+    if v == null { return UBIDI_NORMAL }
+    if v == 'embed' { return UBIDI_EMBED }
+    if v == 'bidi-override' { return UBIDI_OVERRIDE }
+    if v == 'isolate' { return UBIDI_ISOLATE }
+    if v == 'isolate-override' { return UBIDI_ISOLATE_OVERRIDE }
+    if v == 'plaintext' { return UBIDI_PLAINTEXT }
+    return UBIDI_NORMAL
+}
+
+// CSS Scrollbars 1 §3: how wide a scroll container's bars are.
+int func scrollbarWidthKeyword(v:ascii) {
+    if v == null { return SCROLLBAR_AUTO }
+    ascii t = asciiLower(asciiTrim(v))
+    if t == 'thin' { return SCROLLBAR_THIN }
+    if t == 'none' { return SCROLLBAR_NONE }
+    return SCROLLBAR_AUTO
+}
+
+// CSS Overflow 4 §3.3. `both-edges` is only meaningful beside `stable`,
+// which is what the grammar says: the keyword on its own is not a value.
+int func scrollbarGutterKeyword(v:ascii) {
+    if v == null { return SCROLLBAR_GUTTER_AUTO }
+    arr[ascii] t = cssTokens(v)
+    if t.length == 0 { return SCROLLBAR_GUTTER_AUTO }
+    if asciiLower(t[0]) != 'stable' { return SCROLLBAR_GUTTER_AUTO }
+    if t.length > 1 && asciiLower(t[1]) == 'both-edges' { return SCROLLBAR_GUTTER_BOTH }
+    return SCROLLBAR_GUTTER_STABLE
+}
+
+// `scrollbar-color` is one colour for the thumb and one for the track,
+// in that order, and `auto` -- or anything that is not two colours --
+// leaves the painter its own. Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int scrollbarThumbOut = 0
+int scrollbarTrackOut = 0
+
+void func scrollbarColorProp(props:map[text], inheritThumb:int, inheritTrack:int) {
+    scrollbarThumbOut = inheritThumb
+    scrollbarTrackOut = inheritTrack
+    ascii v = styleProp(props, 'scrollbar-color')
+    if v == null { return }
+    if cssWideKeyword(v) != CSSWIDE_NONE { return }
+    if asciiLower(asciiTrim(v)) == 'auto' {
+        scrollbarThumbOut = 0
+        scrollbarTrackOut = 0
+        return
+    }
+    arr[ascii] t = cssTokens(v)
+    // One colour is not two: the standard takes the pair or nothing, so
+    // a half-written declaration leaves the pair alone rather than
+    // colouring the thumb and guessing at the track.
+    if t.length != 2 { return }
+    int a = parseCssColor(t[0], COLOR_BLACK)
+    int b = parseCssColor(t[1], COLOR_BLACK)
+    if a == COLOR_UNSET || b == COLOR_UNSET { return }
+    scrollbarThumbOut = a
+    scrollbarTrackOut = b
+}
+
 // `page` names the page an element belongs on, or nothing for `auto`.
 // The name is an identifier, so its case is its own.
 text func pageNameProp(v:ascii) {
@@ -4410,6 +4735,213 @@ Len func parsePositionAxis(t:ascii, horizontal:bool, fontSize:int) {
     return got
 }
 
+// ---- CSS Inline 3: text-box-trim and text-box-edge ------------------------
+
+// One `anchor()`, as the three things it says. Returned through
+// globals rather than a struct, for the reason FINDINGS.md records
+// about forwarded structs.
+text anchorInsetName = ''
+int anchorInsetPct = -1
+int anchorInsetFallback = ANCHOR_NO_FALLBACK
+
+// The position along the anchor a side keyword names, in hundredths of
+// a percent, or -1 for a word that is not one. Every keyword the
+// function takes is such a position: the physical near sides and their
+// logical spellings are 0, `center` is 5000, and the far sides 10000.
+// There is no `writing-mode` here to make the logical names anything
+// else, which is measured rather than assumed (todo.md).
+int func anchorSidePct(w:ascii) {
+    if w == 'left' || w == 'top' || w == 'start' || w == 'self-start' { return 0 }
+    if w == 'center' { return 5000 }
+    if w == 'right' || w == 'bottom' || w == 'end' || w == 'self-end' { return 10000 }
+    if w.length > 1 && w.charCodeAt(w.length - 1) == CH_PERCENT {
+        parseNumberAt(w, 0)
+        if numOk && numEnd == w.length - 1 { return roundPx(numValue * 100.0) }
+    }
+    return -1
+}
+
+// `[ <name>? <side> ] , <fallback>?` -- the inside of one `anchor()`.
+// Answers whether it parsed, and leaves what it said in the three
+// globals above. `axis` is which inset this is, which decides nothing
+// here: the side keywords are read the same way on both axes and it is
+// the resolver that knows which edge to measure from.
+bool func parseAnchorInset(inner:ascii, axis:int) {
+    anchorInsetName = ''
+    anchorInsetPct = -1
+    anchorInsetFallback = ANCHOR_NO_FALLBACK
+    arr[ascii] parts = asciiSplitChar(inner, CH_COMMA)
+    if parts.length == 0 || parts.length > 2 { return false }
+    arr[ascii] words = asciiSplitSpace(asciiTrim(parts[0]))
+    if words.length == 0 || words.length > 2 { return false }
+    int at = 0
+    if words.length == 2 {
+        if !asciiStartsWith(words[0], '--', 0) { return false }
+        anchorInsetName = words[0].toText()
+        at = 1
+    }
+    int pct = anchorSidePct(words[at])
+    if pct < 0 { return false }
+    anchorInsetPct = pct
+    if parts.length == 2 {
+        Len l = parseLength(asciiTrim(parts[1]), 16)
+        if l.kind == LEN_INVALID || lenIsAuto(l) { return false }
+        anchorInsetFallback = resolveLen(l, 0, 0)
+    }
+    return true
+}
+
+// `auto | contain | none`, or -1 for anything else.
+int func overscrollKeyword(w:ascii) {
+    if w == 'auto' { return OSB_AUTO }
+    if w == 'contain' { return OSB_CONTAIN }
+    if w == 'none' { return OSB_NONE }
+    return -1
+}
+
+int func textBoxTrimKeyword(w:ascii) {
+    if w == 'trim-both' { return TBTRIM_BOTH }
+    if w == 'trim-start' { return TBTRIM_START }
+    if w == 'trim-end' { return TBTRIM_END }
+    if w == 'none' { return TBTRIM_NONE }
+    return -1
+}
+
+// `text-box-edge: auto | <text-edge>`, where a bare over-edge keyword is
+// *not* a value: Chromium computes `cap` alone back to `auto`, and only
+// `auto`, `text` and a pair are taken (todo.md records the measurement).
+// Returns over * 4 + under, or -1 for a value that is none of those.
+int func textBoxEdgePair(words:arr[ascii], from:int) {
+    int n = words.length - from
+    if n <= 0 { return -1 }
+    if n == 1 {
+        if words[from] == 'auto' || words[from] == 'text' {
+            return TBOVER_TEXT * 4 + TBUNDER_TEXT
+        }
+        return -1
+    }
+    int over = -1
+    if words[from] == 'text' { over = TBOVER_TEXT }
+    else if words[from] == 'cap' { over = TBOVER_CAP }
+    else if words[from] == 'ex' { over = TBOVER_EX }
+    if over < 0 { return -1 }
+    int under = -1
+    if words[from + 1] == 'text' { under = TBUNDER_TEXT }
+    else if words[from + 1] == 'alphabetic' { under = TBUNDER_ALPHABETIC }
+    if under < 0 { return -1 }
+    return over * 4 + under
+}
+
+// ---- CSS Motion Path 1 ---------------------------------------------------
+
+// `offset-path: none | ray() | <basic-shape> | path()`. The basic
+// shapes are the ones `clip-path` already reads, so they are read the
+// same way; a ray and a path() are this property's own.
+void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
+    mi.pathKind = MPATH_NONE
+    if v == null { return }
+    ascii t = asciiTrim(v)
+    if t.length == 0 { return }
+    ascii lower = asciiLower(t)
+    if lower == 'none' { return }
+    if asciiStartsWith(lower, 'ray(', 0) {
+        int close = asciiMatchingParen(t, 3)
+        if close < 0 { return }
+        // The lowered argument is held in a local and its words are
+        // indexed rather than bound: `ascii w = parts[i]` is an alias
+        // the runtime never retains and then releases twice, which
+        // valgrind sees and an ordinary run does not. See FINDINGS.md,
+        // "ascii aliases are not retained".
+        ascii rayLow = asciiLower(t.slice(4, close))
+        arr[ascii] parts = asciiSplitSpace(rayLow)
+        bool sawAngle = false
+        mi.raySize = RAYSIZE_CLOSEST_SIDE
+        for int i = 0, i < parts.length, i++ {
+            if parts[i] == 'closest-side' { mi.raySize = RAYSIZE_CLOSEST_SIDE }
+            else if parts[i] == 'closest-corner' { mi.raySize = RAYSIZE_CLOSEST_CORNER }
+            else if parts[i] == 'farthest-side' { mi.raySize = RAYSIZE_FARTHEST_SIDE }
+            else if parts[i] == 'farthest-corner' { mi.raySize = RAYSIZE_FARTHEST_CORNER }
+            else if parts[i] == 'sides' { mi.raySize = RAYSIZE_SIDES }
+            else if parts[i] == 'contain' { continue }
+            else {
+                arr[bool] ok = [false]
+                float deg = parseAngleDegrees(parts[i], ok)
+                if ok[0] { mi.rayAngle = deg  sawAngle = true }
+            }
+        }
+        if !sawAngle { return }
+        mi.pathKind = MPATH_RAY
+        return
+    }
+    // `path()` carries SVG commands, which are case-sensitive: `m` is
+    // not `M`. So its argument is taken from the unlowered value.
+    if asciiStartsWith(lower, 'path(', 0) {
+        int close = asciiMatchingParen(t, 4)
+        if close < 0 { return }
+        // The trimming and unquoting are indices into `t`, and the
+        // argument is cut from it once. Slicing a slice of a trim
+        // aliases a buffer that is then released twice (FINDINGS.md,
+        // "Slicing an ascii that came from a slice").
+        int from = 5
+        int to = close
+        while from < to && isSpaceCode(t.charCodeAt(from)) { from++ }
+        while to > from && isSpaceCode(t.charCodeAt(to - 1)) { to-- }
+        if to - from >= 2 {
+            int q = t.charCodeAt(from)
+            if (q == CH_QUOTE || q == CH_APOS) && t.charCodeAt(to - 1) == q {
+                from++
+                to--
+            }
+        }
+        if to <= from { return }
+        mi.pathData = t.slice(from, to).toText()
+        mi.pathKind = MPATH_PATH
+        return
+    }
+    ClipShape sh = parseClipPath(lower, fontSize)
+    if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE
+        || sh.kind == CLIPSHAPE_POLYGON {
+        mi.shape = sh
+        mi.pathKind = MPATH_SHAPE
+    }
+}
+
+// `offset-rotate: [ auto | reverse ] || <angle>`. There is no `none`,
+// so a declaration saying it is dropped and the initial `auto` stands
+// -- which is what the measurement's first round read as a control and
+// was not one.
+void func motionReadRotate(mi:MotionInfo, v:ascii) {
+    if v == null { return }
+    // Held in a local and indexed, never bound (FINDINGS.md, "ascii
+    // aliases are not retained").
+    ascii rotLow = asciiLower(asciiTrim(v))
+    arr[ascii] parts = asciiSplitSpace(rotLow)
+    if parts.length == 0 { return }
+    int mode = -1
+    float angle = 0.0
+    bool sawAngle = false
+    for int i = 0, i < parts.length, i++ {
+        if parts[i] == 'auto' { mode = MROT_AUTO  continue }
+        if parts[i] == 'reverse' { mode = MROT_REVERSE  continue }
+        arr[bool] ok = [false]
+        float deg = parseAngleDegrees(parts[i], ok)
+        if !ok[0] { return }
+        angle = deg
+        sawAngle = true
+    }
+    if mode < 0 && !sawAngle { return }
+    mi.rotateMode = mode < 0 ? MROT_ANGLE : mode
+    mi.rotateAngle = angle
+}
+
+// The key the text measurer caches widths under. Anything that changes
+// the font after the style is computed has to rebuild it, or the cache
+// answers for the font the style used to have: `initial-letter` scaled
+// a drop cap to 106px and got the paragraph's 20px advance back.
+void func refreshFontKey(s:Style) {
+    s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+}
+
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
     Style s
     Style parent = parentIn
@@ -4482,7 +5014,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if t == 'normal' { s.fontItalic = false }
     }
     s.fontFamily = computeFontFamily(styleProp(props, 'font-family'), isRoot ? 'sans-serif' : parent.fontFamily)
-    s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+    refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a
     // colour, because a system colour name answers according to it.
@@ -4549,10 +5081,13 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if t == 'rtl' { s.directionRtl = true }
         else if t == 'ltr' { s.directionRtl = false }
     }
-    s.bidiOverride = false
+    // `unicode-bidi` does not inherit: an element opens an embedding of
+    // its own or it does not, and its children decide that again.
+    s.unicodeBidi = UBIDI_NORMAL
     ascii ubidi = styleProp(props, 'unicode-bidi')
     if ubidi != null {
-        s.bidiOverride = asciiIndexOf(asciiLower(ubidi), 'bidi-override'.toAscii(), 0) >= 0
+        s.unicodeBidi = unicodeBidiKeyword(asciiLower(asciiTrim(ubidi)))
+        if s.unicodeBidi != UBIDI_NORMAL { anyUnicodeBidi = true }
     }
     s.textAlignExplicit = isRoot ? false : parent.textAlignExplicit
     s.textAlign = isRoot ? ALIGN_LEFT : parent.textAlign
@@ -5252,6 +5787,157 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.radiusBottomLeftY = cornerRadiusY
     }
     s.borderRadius = radiusAny(s) ? 1 : 0
+    // `corner-shape` (CSS Borders 4 §5): the shorthand in the same
+    // one-to-four form as `border-radius`, then the four physical
+    // longhands, then the four logical ones -- which in the
+    // left-to-right horizontal mode this engine lays out in name the
+    // same four corners.
+    float cshTL = CORNER_K_ROUND
+    float cshTR = CORNER_K_ROUND
+    float cshBR = CORNER_K_ROUND
+    float cshBL = CORNER_K_ROUND
+    ascii csh = styleProp(props, 'corner-shape')
+    if csh != null {
+        arr[ascii] ct = cssTokens(csh)
+        arr[float] ks = []
+        for int i = 0, i < ct.length, i++ {
+            float k = cornerShapeKeyword(ct[i])
+            if k != 0.0 { ks.push(k) }
+        }
+        if ks.length > 0 {
+            cshTL = ks[0]
+            cshTR = ks.length > 1 ? ks[1] : ks[0]
+            cshBR = ks.length > 2 ? ks[2] : ks[0]
+            cshBL = ks.length > 3 ? ks[3] : (ks.length > 1 ? ks[1] : ks[0])
+        }
+    }
+    cshTL = cornerShapeProp(props, 'corner-top-left-shape', cshTL)
+    cshTR = cornerShapeProp(props, 'corner-top-right-shape', cshTR)
+    cshBR = cornerShapeProp(props, 'corner-bottom-right-shape', cshBR)
+    cshBL = cornerShapeProp(props, 'corner-bottom-left-shape', cshBL)
+    cshTL = cornerShapeProp(props, 'corner-start-start-shape', cshTL)
+    cshTR = cornerShapeProp(props, 'corner-start-end-shape', cshTR)
+    cshBL = cornerShapeProp(props, 'corner-end-start-shape', cshBL)
+    cshBR = cornerShapeProp(props, 'corner-end-end-shape', cshBR)
+    // CSS Anchor Positioning 1: the three properties that place a box,
+              // behind one index. The entry
+    // is only made when the element said something, so a page with no
+    // anchors carries no side table and every `Style` holds a zero.
+    s.anchorInfo = 0
+    text aName = anchorIdent(props, 'anchor-name')
+    text aAnchor = anchorIdent(props, 'position-anchor')
+    int aArea = positionAreaValue(styleProp(props, 'position-area'))
+    text aFall = anchorIdent(props, 'position-try-fallbacks')
+    if aFall == 'none' { aFall = '' }
+    int aOrder = TRYORDER_NORMAL
+    ascii ordv = styleProp(props, 'position-try-order')
+    if ordv != null {
+        ascii ot = asciiLower(asciiTrim(ordv))
+        if ot == 'most-height' || ot == 'most-block-size' { aOrder = TRYORDER_MOST_BLOCK }
+        else if ot == 'most-width' || ot == 'most-inline-size' { aOrder = TRYORDER_MOST_INLINE }
+    }
+    int aVis = POSVIS_ALWAYS
+    ascii visv = styleProp(props, 'position-visibility')
+    if visv != null && asciiLower(asciiTrim(visv)) == 'no-overflow' {
+        aVis = POSVIS_NO_OVERFLOW
+    }
+    text aScope = ''
+    ascii scopev = styleProp(props, 'anchor-scope')
+    if scopev != null {
+        ascii st = asciiLower(asciiTrim(scopev))
+        if st != 'none' && st != '' { aScope = st.toText() }
+    }
+    // `anchor()` in the four insets, read into one position along the
+    // anchor's box per side.
+    arr[text] inNames = ['', '', '', '']
+    arr[int] inPcts = [-1, -1, -1, -1]
+    arr[int] inFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+    bool anySaidInset = false
+    arr[text] insetProps = ['left', 'right', 'top', 'bottom']
+    for int i = 0, i < 4, i++ {
+        ascii raw = styleProp(props, insetProps[i])
+        if raw == null { continue }
+        ascii low = asciiLower(asciiTrim(raw))
+        if !asciiStartsWith(low, 'anchor(', 0) { continue }
+        int close = asciiMatchingParen(low, 6)
+        if close < 0 { continue }
+        if !parseAnchorInset(low.slice(7, close), i) { continue }
+        inNames[i] = anchorInsetName
+        inPcts[i] = anchorInsetPct
+        inFalls[i] = anchorInsetFallback
+        anySaidInset = true
+        anyAnchorInset = true
+    }
+    if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
+        || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != ''
+        || anySaidInset {
+        AnchorInfo ai
+        ai.name = aName
+        ai.anchor = aAnchor
+        ai.area = aArea
+        ai.fallbacks = aFall
+        ai.tryOrder = aOrder
+        ai.visibility = aVis
+        ai.scope = aScope
+        ai.insetNames = inNames
+        ai.insetPcts = inPcts
+        ai.insetFallbacks = inFalls
+        anchorInfos.push(ai)
+        s.anchorInfo = anchorInfos.length
+        if aName != '' { anyAnchorName = true }
+        if aScope != '' { anyAnchorScope = true }
+    }
+    // CSS Motion Path 1, held the same way: five properties behind one
+    // index, and no side table at all on a page that says none of them.
+    ascii mPath = styleProp(props, 'offset-path')
+    ascii mDist = styleProp(props, 'offset-distance')
+    ascii mRot = styleProp(props, 'offset-rotate')
+    ascii mAnch = styleProp(props, 'offset-anchor')
+    ascii mPos = styleProp(props, 'offset-position')
+    if mPath != null || mDist != null || mRot != null || mAnch != null || mPos != null {
+        MotionInfo mi
+        mi.pathKind = MPATH_NONE
+        mi.rotateMode = MROT_AUTO
+        mi.anchorAuto = true
+        mi.posNormal = true
+        motionReadPath(mi, mPath, s.fontSize)
+        motionReadRotate(mi, mRot)
+        if mDist != null { mi.distance = parseLength(asciiTrim(mDist), s.fontSize) }
+        if mAnch != null {
+            // Held in a local and indexed, as every split here is
+            // (FINDINGS.md, "ascii aliases are not retained").
+            ascii anchLow = asciiLower(asciiTrim(mAnch))
+            arr[ascii] a = asciiSplitSpace(anchLow)
+            if a.length == 1 && a[0] == 'auto' {
+            } else if a.length >= 1 {
+                mi.anchorAuto = false
+                mi.anchorX = parsePositionAxis(a[0], true, s.fontSize)
+                mi.anchorY = a.length > 1 ? parsePositionAxis(a[1], false, s.fontSize)
+                    : lenPercent(50.0)
+            }
+        }
+        if mPos != null {
+            ascii posLow = asciiLower(asciiTrim(mPos))
+            arr[ascii] a = asciiSplitSpace(posLow)
+            if a.length == 1 && (a[0] == 'normal' || a[0] == 'auto') {
+            } else if a.length >= 1 {
+                mi.posNormal = false
+                mi.posX = parsePositionAxis(a[0], true, s.fontSize)
+                mi.posY = a.length > 1 ? parsePositionAxis(a[1], false, s.fontSize)
+                    : lenPercent(50.0)
+            }
+        }
+        motionInfos.push(mi)
+        motionOfSerial[`${s.serial}`] = motionInfos.length
+        if mi.pathKind != MPATH_NONE { anyOffsetPath = true }
+    }
+    s.cornerShapes = 0
+    if cshTL != CORNER_K_ROUND || cshTR != CORNER_K_ROUND
+        || cshBR != CORNER_K_ROUND || cshBL != CORNER_K_ROUND {
+        s.cornerShapes = cornerShapesPacked(cshTL, cshTR, cshBR, cshBL)
+        anyCornerShape = true
+    }
     s.borderSpacing = 0
     ascii bs = styleProp(props, 'border-spacing')
     if bs != null {
@@ -5378,6 +6064,27 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.breakAfter = breakKeyword(styleProp(props, 'break-after'))
     s.breakInsideAvoid = breakKeyword(styleProp(props, 'break-inside')) == BRK_AVOID
     s.pageName = pageNameProp(styleProp(props, 'page'))
+    snapTypeProp(styleProp(props, 'scroll-snap-type'))
+    s.snapX = snapAxisXOut
+    s.snapY = snapAxisYOut
+    s.snapStrict = snapStrictOut
+    snapAlignProp(styleProp(props, 'scroll-snap-align'))
+    s.snapAlignBlock = snapAlignBlockOut
+    s.snapAlignInline = snapAlignInlineOut
+    s.scrollPaddingTop = parseLength(styleProp(props, 'scroll-padding-top'), s.fontSize)
+    s.scrollPaddingRight = parseLength(styleProp(props, 'scroll-padding-right'), s.fontSize)
+    s.scrollPaddingBottom = parseLength(styleProp(props, 'scroll-padding-bottom'), s.fontSize)
+    s.scrollPaddingLeft = parseLength(styleProp(props, 'scroll-padding-left'), s.fontSize)
+    s.scrollMarginTop = parseLength(styleProp(props, 'scroll-margin-top'), s.fontSize)
+    s.scrollMarginRight = parseLength(styleProp(props, 'scroll-margin-right'), s.fontSize)
+    s.scrollMarginBottom = parseLength(styleProp(props, 'scroll-margin-bottom'), s.fontSize)
+    s.scrollMarginLeft = parseLength(styleProp(props, 'scroll-margin-left'), s.fontSize)
+    s.scrollbarWidth = scrollbarWidthKeyword(styleProp(props, 'scrollbar-width'))
+    s.scrollbarGutter = scrollbarGutterKeyword(styleProp(props, 'scrollbar-gutter'))
+    scrollbarColorProp(props, isRoot ? 0 : parent.scrollbarThumb,
+                       isRoot ? 0 : parent.scrollbarTrack)
+    s.scrollbarThumb = scrollbarThumbOut
+    s.scrollbarTrack = scrollbarTrackOut
     s.orphans = countProp(props, 'orphans', isRoot ? 2 : parent.orphans)
     s.widows = countProp(props, 'widows', isRoot ? 2 : parent.widows)
     ascii cspan = styleProp(props, 'column-span')
@@ -5856,6 +6563,127 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     // Every value but `visible` clips what runs past the box.
     s.overflowHidden = s.overflowX != OVERFLOW_VISIBLE || s.overflowY != OVERFLOW_VISIBLE
+    // CSS Inline 3. The shorthand is read first so a longhand beside it
+    // wins, which is what the cascade already does for every other pair.
+    int tbTrim = TBTRIM_NONE
+    int tbEdge = TBOVER_TEXT * 4 + TBUNDER_TEXT
+    bool tbSaid = false
+    ascii tbShort = styleProp(props, 'text-box')
+    if tbShort != null {
+        ascii tbsLow = asciiLower(asciiTrim(tbShort))
+        arr[ascii] w = asciiSplitSpace(tbsLow)
+        if w.length > 0 {
+            int t = textBoxTrimKeyword(w[0])
+            if t >= 0 {
+                tbTrim = t
+                tbSaid = true
+                if w.length > 1 {
+                    int e = textBoxEdgePair(w, 1)
+                    if e >= 0 { tbEdge = e }
+                }
+            }
+        }
+    }
+    ascii tbTrimV = styleProp(props, 'text-box-trim')
+    if tbTrimV != null {
+        int t = textBoxTrimKeyword(asciiLower(asciiTrim(tbTrimV)))
+        if t >= 0 { tbTrim = t  tbSaid = true }
+    }
+    ascii tbEdgeV = styleProp(props, 'text-box-edge')
+    if tbEdgeV != null {
+        ascii tbeLow = asciiLower(asciiTrim(tbEdgeV))
+        arr[ascii] w = asciiSplitSpace(tbeLow)
+        int e = textBoxEdgePair(w, 0)
+        if e >= 0 { tbEdge = e  tbSaid = true }
+    }
+    if tbSaid {
+        textBoxOf[`${s.serial}`] = tbTrim * 16 + tbEdge
+        if tbTrim != TBTRIM_NONE { anyTextBoxTrim = true }
+    }
+    // `box-decoration-break: slice | clone`. Only `clone` is recorded:
+    // `slice` is the initial value and what an unrecorded style means.
+    ascii bdb = styleProp(props, 'box-decoration-break')
+    if bdb != null && asciiLower(asciiTrim(bdb)) == 'clone' {
+        decoCloneOf[`${s.serial}`] = 1
+        anyDecorationClone = true
+    }
+    // `overscroll-behavior: [ contain | none | auto ]{1,2}`, the first
+    // value the horizontal axis and the second the vertical, one value
+    // both. The logical longhands are the physical ones under other
+    // names -- `inline` is `x` and `block` is `y`, in either direction
+    // (todo.md) -- so they are read into the same pair. The shorthand is
+    // read before them, which resolves the two by a fixed order rather
+    // than by where they were written, as this file does elsewhere.
+    int osbX = OSB_AUTO
+    int osbY = OSB_AUTO
+    bool osbSaid = false
+    ascii osb = styleProp(props, 'overscroll-behavior')
+    if osb != null {
+        ascii osbLow = asciiLower(asciiTrim(osb))
+        arr[ascii] osbW = asciiSplitSpace(osbLow)
+        if osbW.length > 0 {
+            int first = overscrollKeyword(osbW[0])
+            if first >= 0 {
+                osbX = first
+                osbY = osbW.length > 1 ? overscrollKeyword(osbW[1]) : first
+                if osbY < 0 { osbY = first }
+                osbSaid = true
+            }
+        }
+    }
+    ascii osbI = styleProp(props, 'overscroll-behavior-inline')
+    if osbI != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbI)))
+        if v >= 0 { osbX = v  osbSaid = true }
+    }
+    ascii osbB = styleProp(props, 'overscroll-behavior-block')
+    if osbB != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbB)))
+        if v >= 0 { osbY = v  osbSaid = true }
+    }
+    ascii osbXv = styleProp(props, 'overscroll-behavior-x')
+    if osbXv != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbXv)))
+        if v >= 0 { osbX = v  osbSaid = true }
+    }
+    ascii osbYv = styleProp(props, 'overscroll-behavior-y')
+    if osbYv != null {
+        int v = overscrollKeyword(asciiLower(asciiTrim(osbYv)))
+        if v >= 0 { osbY = v  osbSaid = true }
+    }
+    if osbSaid && (osbX != OSB_AUTO || osbY != OSB_AUTO) {
+        overscrollOf[`${s.serial}`] = osbX * 4 + osbY
+        anyOverscrollBehavior = true
+    }
+    // `overflow-clip-margin: <visual-box> || <length [0,inf]>`. The box
+    // defaults to the padding box, which is what an unmoved clip edge
+    // already is, and the length to zero.
+    ascii ocm = styleProp(props, 'overflow-clip-margin')
+    if ocm != null {
+        ascii ocmLow = asciiLower(asciiTrim(ocm))
+        arr[ascii] ocmWords = asciiSplitSpace(ocmLow)
+        int ocmBox = GEOBOX_PADDING
+        int ocmPx = 0
+        bool ocmSaid = false
+        for int i = 0, i < ocmWords.length, i++ {
+            int gb = geometryBoxAt(ocmWords[i], 0, ocmWords[i].length)
+            if gb >= 0 {
+                ocmBox = gb
+                ocmSaid = true
+            } else {
+                Len l = parseLength(ocmWords[i], s.fontSize)
+                if l.kind != LEN_AUTO && l.kind != LEN_INVALID {
+                    int px = resolveLen(l, 0, 0)
+                    if px > 0 { ocmPx = px }
+                    ocmSaid = true
+                }
+            }
+        }
+        if ocmSaid {
+            clipMarginOf[`${s.serial}`] = ocmPx * 8 + ocmBox
+            anyClipMargin = true
+        }
+    }
     return s
 }
 

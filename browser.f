@@ -195,11 +195,14 @@ bool func isNavigableHref(href:text) {
 // scrollable box inside a page usable at all.
 void func wheelAt(x:int, y:int, dy:int) {
     if page != null && page.root != null && y >= TOOLBAR_H {
-        Box inner = scrollContainerAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
+        Box inner = wheelTargetAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
         if inner != null && boxScrollBy(inner, dy) {
             repaint()
             return
         }
+        // a container with `overscroll-behavior` other than `auto` has
+        // reached its end, so the page does not take what is left
+        if wheelChainBlocked { return }
     }
     scrollBy(dy)
 }
@@ -216,7 +219,7 @@ on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 // by the thumb.
 void func wheelAcrossAt(x:int, y:int, dx:int) {
     if page == null || page.root == null || y < TOOLBAR_H { return }
-    Box inner = scrollContainerAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
+    Box inner = wheelTargetAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
     if inner != null && boxScrollLeftBy(inner, dx) { repaint() }
 }
 

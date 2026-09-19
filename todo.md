@@ -235,11 +235,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than a property.
 14. **Writing Modes 3, completed**: `writing-mode` and
     `text-orientation`, which need a second layout axis rather than a
-    property; the explicit embedding and isolate codes (the X rules of
-    UAX #9) and the `unicode-bidi` values that use them; reordering
-    across two inline boxes on one line rather than within each; and
-    Arabic shaping, which needs contextual forms the toy font API does
-    not offer (FINDINGS.md, finding 31).
+    property; reordering across two inline boxes on one line rather than
+    within each, which is what would let an isolate differ from an
+    embedding here rather than only in its own content; rule W1, which
+    resolves a combining mark to the class of the character it sits on,
+    and rule N0, which mirrors a bracket inside a right-to-left run with
+    its partner — both want the Unicode database this repository does
+    not vendor, as the character classes themselves do; and Arabic
+    shaping, which needs contextual forms the toy font API does not
+    offer (FINDINGS.md, finding 31).
 
 ### Filter Effects 1, when the language allows it
 
@@ -283,6 +287,321 @@ either rule alone misses eight or eleven of them by one.
 `blur()` and `drop-shadow()` are a second question and stay out
 regardless: one is a convolution and the other wants the path API an
 image does not have.
+
+### What is left of CSS Scroll Snap 1
+
+`scroll-snap-type`, `scroll-snap-align`, `scroll-padding` and
+`scroll-margin` are in, and a scroll comes to rest on a snap position.
+Two things are not:
+
+**`scroll-snap-stop: always`**, which forbids a scroll from passing a
+snap point even when the gesture would carry it further. That needs a
+notion this engine has not got: one *gesture*. A wheel event here is a
+scroll position, not a movement with a magnitude that might skip several
+points, so there is nothing yet for `always` to stop.
+
+**Snap areas deeper than a child.** The positions come from the
+container's own children, which is the depth this engine fragments and
+measures at everywhere else. A grandchild carrying `scroll-snap-align`
+is not a snap point, where in the standard it is.
+
+### What CSS Anchor Positioning still needs
+
+All seven properties work. What sits beside them does not:
+
+**An anchor must be a descendant of the box's containing block**, and
+being that containing block is not enough. A box inside its own anchor,
+and a box in a `position: relative` block whose anchor is outside it,
+are both unanchored in Chromium and both find their anchor here. The
+placement pass carries a containing block's four numbers rather than its
+identity, so it cannot ask; giving it the identity is the work.
+
+`position-visibility` treats **`anchors-visible` as `always`**. Telling
+the two apart needs the anchor scrolled out of a scrollport while the
+box stays visible, and `position-area` ties the box to the anchor, so
+both leave together; a static render has no such state. That is a
+measurement that could not be made rather than one that was skipped,
+and it is recorded here for whoever can make it.
+
+Also missing: the `anchor()` and `anchor-size()` functions, which give
+an inset or a size from the anchor's own box rather than choosing a
+region; an anchor that is itself anchor-positioned, which would need a
+second round of the placement pass rather than the one this does; and
+`position-area`'s effect on a box whose `width` or `height` is `auto`,
+which should size the box to the region rather than shrink to fit.
+
+### What CSS Motion Path 1 still needs
+
+All five properties work. What is not done:
+
+**Curves.** Every path becomes a polyline, so `path()` reads `M`, `L`,
+`H`, `V` and `Z` and stops where a `C`, `Q`, `S`, `T` or `A` begins. A
+curve wants either a flattening step before the polyline or a numeric
+arc length over the segment; the first is the smaller change and the one
+to make.
+
+**A second subpath.** A `path()` with a second `M` ends there, because
+joining the two would invent a segment the path does not contain and
+count its length. The polyline would have to hold a break.
+
+**`url()`**, which names an SVG element this engine has no way to find.
+
+**The containing block.** A ray's length under a percentage distance,
+and a percentage inside a shape, resolve against the parent box here
+where the standard says the containing block. Those are the same
+rectangle whenever the parent is the containing block, and differ for a
+box whose containing block is further up. The painter carries the parent
+and not the containing block, which is the same gap the anchor placement
+has.
+
+**`inset()` is not a path here.** Chromium puts a start point on the
+inset rectangle's top-left corner and then never moves along it at any
+distance, which is not a rule worth copying either way. It waits for
+something to copy.
+
+**The ray sizing keywords follow the standard rather than the browser**,
+which is the one place in this engine that is true. From a ray origin at
+`(120, 80)` in a 400x300 block Chromium answers `closest-side` 80 and
+`closest-corner` 144.2 -- both right -- and then `farthest-side` 120
+where the right edge is 280 away, `farthest-corner` 144.2, which is the
+closest one, and `sides` 0 in every case tried. All of it fits one rule:
+the sizes come out as the `min` and `max` of the origin's own two
+coordinates, as though only the top and left sides existed. A
+`circle(25% at 50% 50%)` collapses to a point for the same reason. That
+is a defect rather than a decision, so it is written down here and not
+copied.
+
+### What `overscroll-behavior` leaves out
+
+All five work: the shorthand and `-x`, `-y`, `-inline`, `-block`. This
+is what they were measured against and what is left over.
+
+Chromium's computed values, for a 100x60 `overflow: scroll` box:
+
+| declaration | -x | -y | -inline | -block | shorthand |
+|---|---|---|---|---|---|
+| `overscroll-behavior: contain` | contain | contain | contain | contain | `contain` |
+| `overscroll-behavior: contain none` | contain | none | contain | none | `contain none` |
+| `overscroll-behavior: auto contain` | auto | contain | auto | contain | `auto contain` |
+| `overscroll-behavior-x: contain` | contain | auto | contain | auto | `contain auto` |
+| `overscroll-behavior-y: none` | auto | none | auto | none | `auto none` |
+| `overscroll-behavior-block: none` | auto | none | auto | none | `auto none` |
+| `overscroll-behavior-inline: contain` | contain | auto | contain | auto | `contain auto` |
+| `overscroll-behavior: scroll` | auto | auto | auto | auto | `auto` |
+
+So the shorthand is `<x> <y>` with one value applying to both, an
+invalid keyword leaves the initial `auto`, and **the two logical
+longhands are the two physical ones under other names**: `inline` reads
+back as `-x` and `block` as `-y`, and `dir="rtl"` changes neither. Only
+a `writing-mode` could swap those axes and this engine has none, so the
+logical pair is a spelling rather than a mapping to resolve. It computes
+on a box that does not scroll, too; it simply has no effect there. The
+root element's value is `auto`.
+
+**The behaviour cannot be measured from Chromium in this harness, and
+the control says so rather than the guess.** A synthetic `WheelEvent` is
+untrusted, so dispatching one over a nested scroller already at its end
+moves neither the scroller nor its ancestor -- with `contain` *and* with
+the default `auto`, where a real wheel would certainly chain. An
+instrument whose control cannot move is not measuring the thing.
+
+What the property changes here is therefore checked against this
+engine's own scrolling, which is written down and testable:
+`scrollContainerAt` in src/paint/paint.f walks outward from the box
+under the pointer to the nearest ancestor that can still scroll in the
+direction asked for, and `wheelAt` in browser.f gives what is left to
+the page. That walk is the chain `contain` and `none` stop, and
+`tests/render/overscroll.f` grades it.
+
+**What is left out is the scroll a wheel does not start.** A scroll
+this engine performs any other way -- the thumb dragged, a fragment
+navigated to -- never chains in the first place, so there is no chain
+for the property to stop there and nothing to test. The standard's
+affordance half is out for the reason below.
+
+**`contain` and `none` differ in nothing this browser does.** `none`
+additionally suppresses the overscroll affordance -- the rubber band, the
+pull to refresh -- and there is none to suppress. The two are
+distinguishable in the computed style and nowhere else, which is worth
+saying rather than implying that one of them does more.
+
+### An inline box's side edges are on the wrong side in right-to-left text
+
+An inline's opening margin, border and padding go on the fragment that
+begins it and the closing ones on the fragment that ends it. This
+engine puts the opening edge at the fragment's physical **left** and
+the closing one at its physical right, which is correct in left-to-right
+text and mirrored in right-to-left.
+
+Measured: the same inline in `direction: rtl`, 6px padding and a 4px
+border in a 150px paragraph. Chromium puts the opening edge at x 146
+to 149, the right-hand end of the first fragment, and the closing one
+at x 121 to 124, the left-hand end of the last.
+
+Fixing the side alone would give a half-mirrored result, because the
+engine does not reorder inline boxes on a line at all -- bidi
+reordering here is within each text fragment and not across two inline
+boxes (css-2026.md, CSS Writing Modes 3). The two belong together: the
+fragments go into visual order and then the opening edge follows the
+inline's start side rather than its left.
+
+### What is left of `anchor()` and `anchor-size()`
+
+`anchor()` works in the four inset properties. `anchor-size()` does
+not, and neither function composes inside `calc()`; both are measured
+and both are left out for the same structural reason, at the end.
+
+All of the following is Chromium 141, against an anchor whose border
+box is x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 --
+with the box absolutely positioned in the same containing block.
+
+**`anchor(<name>? <side>, <fallback>?)` in an inset property** resolves
+to a position on the anchor's border box, in the containing block's
+coordinates:
+
+| declaration | box | reading |
+|---|---|---|
+| `left: anchor(--a left)` | x = 100 | the anchor's left edge |
+| `left: anchor(--a right)` | x = 220 | its right edge |
+| `left: anchor(--a center)` | x = 160 | its centre |
+| `left: anchor(--a 25%)` | x = 130 | 100 + a quarter of 120 |
+| `left: anchor(--a 0%)` | x = 100 | the start side |
+| `left: anchor(--a 100%)` | x = 220 | the end side |
+| `right: anchor(--a left)` | x = 70 | the box's *right* edge at 100 |
+| `top: anchor(--a top)` | y = 80 | |
+| `top: anchor(--a bottom)` | y = 140 | |
+| `bottom: anchor(--a top)` | y = 60 | the box's bottom edge at 80 |
+
+**The logical side names are the physical ones here.** `top:
+anchor(--a start)` is 80 and `end` is 140, and `left: anchor(--a
+self-start)` is 100 -- the block axis runs down and the inline axis
+runs right, and this engine has no `writing-mode` to make them
+anything else.
+
+**`anchor-size(<name>? <dimension>, <fallback>?)`** gives the anchor's
+own size: `width: anchor-size(--a width)` is 120, `height:
+anchor-size(--a height)` is 60, and `self-inline` is 120 as well.
+
+**The name may be left out, and then `position-anchor` supplies it.**
+`left: anchor(right)` beside `position-anchor: --a` is 220. With no
+`position-anchor` either, it has no effect at all.
+
+**The fallback is taken only when the anchor cannot be found.**
+`anchor(--missing right, 7px)` gives 7; `anchor-size(--missing width,
+5px)` gives 5; `anchor-size(--a width, 5px)` gives 120, because the
+anchor was found. With no fallback and no anchor the declaration has no
+effect -- `left: anchor(--missing right)` leaves the box at its static
+position.
+
+**A margin sits between the anchor and the box.** It is the box's
+margin edge that lands on the anchor: `left: anchor(--a right)` with a
+10px left margin puts the border box at 230 rather than 220, and
+`right: anchor(--a left)` with a 10px right margin puts it at 60 rather
+than 70. Down the block axis the same, at 150 and 50.
+
+**Both are refused outside the places the standard allows.**
+`margin-left: anchor(--a right)` does nothing. `anchor-size()` on a
+`position: static` or `position: relative` box does nothing: the box
+came out 780 wide, which is `width: auto` against the body. So the
+functions need an absolutely positioned box, and `anchor()` needs an
+inset property.
+
+**`anchor()` composes inside `calc()`**: `left: calc(anchor(--a right)
++ 5px)` gives 225. Not implemented -- it needs the calc evaluator to
+carry a term that is not a length until the anchor is known, where the
+whole-value form needs only the rectangle the positioning pass already
+has.
+
+**`anchor-size()` is not implemented either, and the reason is the
+ordering.** A placement can wait: `anchor()` in an inset is resolved
+after the tree has been laid out, in the same pass as `position-area`,
+because moving a box that is already laid out is a shift. A *size*
+cannot -- the box has to be laid out at that size in the first place,
+and an anchor has no rectangle until the layout it would be measured
+from is finished. So it wants a second layout pass, which this engine
+already has the shape of for `@container`: lay out, resolve the sizes,
+lay out again. `Box.forcedWidthPx` is the hook the second pass would
+write to.
+
+### What CSS Inline 3 still needs
+
+`text-box-trim` and `text-box-edge` work, with the `text-box` shorthand,
+and `initial-letter` makes a drop cap on `::first-letter`: the size puts
+the letter's baseline on the baseline of line `size`, the sink says how
+many lines are shortened, and what is left over goes above the text.
+What is not done:
+
+**The ideographic edges.** `ideographic` and `ideographic-ink` are
+accepted nowhere here: the engine models a font's metrics as four ratios
+per em and has no notion of an ideographic box. A pair naming one is
+dropped, which leaves `auto`, and that is what Chromium does with a
+single keyword too.
+
+**A `cap` or `ex` edge is the same approximation the rest of the engine
+makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.733, ex
+0.55 -- stand in for metrics Festina cannot read out of a font, so a
+family whose real proportions differ will trim to the wrong place. The
+numbers are measured against Chromium on the monospace family the tests
+use, across a range of sizes; the table is below.
+
+**`initial-letter-align`.** The standard lets the letter's over edge
+align to `alphabetic`, `hanging`, `ideographic` or the `border-box`.
+Only the alphabetic default is implemented, and the other three need
+font metrics this engine does not have -- the same four-ratios-per-em
+limit that stops `text-box-edge`'s ideographic edges.
+
+**`initial-letter` on an ordinary inline box.** The property applies to
+inline-level boxes as well as to `::first-letter`, and only the
+pseudo-element is implemented. The layout is the same; what is missing
+is the path that turns a declared inline into the float, because
+`splitFirstLetter` is the only place that builds one.
+
+**What this font's four ratios measure, and how they were taken.**
+Neither measurement was taken at a single size: a ratio read off one
+font size is a ratio plus a rounding error of up to a pixel, which is 5%
+at 20px and 0.5% at 180, and reading it at 20px alone is what let
+`FONT_CAP` sit at 0.70 rather than 0.733 for as long as it did.
+
+Rasterised through this engine, one `H` on a white canvas, ink rows
+scanned top and bottom:
+
+| px | 20 | 48 | 63 | 80 | 100 | 106 | 120 | 149 | 180 |
+|---|---|---|---|---|---|---|---|---|---|
+| ink | 14 | 35 | 46 | 59 | 73 | 77 | 88 | 110 | 132 |
+| ratio | .700 | .729 | .730 | .738 | .730 | .726 | .733 | .738 | .733 |
+
+A least-squares line through the sizes from 48 up is
+`0.7367 x size - 0.40`.
+
+Chromium 141, asked for the height of a `text-box-trim: trim-both;
+text-box-edge: cap alphabetic` box on the same monospace family, which
+is the cap height by definition:
+
+| px | 20 | 48 | 63 | 80 | 100 | 106 | 120 | 149 | 180 |
+|---|---|---|---|---|---|---|---|---|---|
+| cap | 14 | 35 | 45.56 | 58.56 | 72.91 | 76.81 | 87.22 | 109.33 | 131.47 |
+| ratio | .700 | .729 | .723 | .732 | .729 | .725 | .727 | .734 | .730 |
+
+Least squares over the same range: `0.733 x size - 0.41`. Chromium
+reports whole pixels up to 48 and fractions above it, which is a
+hinted-metrics threshold rather than a property of the font.
+
+**0.70 was right at 20px by coincidence.** 0.733 x 20 is 14.66 and
+Chromium answers 14 -- the cap height is the *floor* of the ratio rather
+than the nearest integer, which is what the -0.41 intercept is. 0.733
+floored reproduces Chromium's answer at every size in the table, to
+within half a pixel of the fractional ones; 0.70 rounded was six pixels
+short at 180.
+
+The other three stand up. Measured the same way against Chromium, the
+ascent runs 0.921 to 0.938 against the constant's 0.93, the descent
+0.233 to 0.240 against 0.24, and the x-height 0.542 to 0.550 against
+0.55. None is off by as much as one part in a hundred.
+
+**What is left here is a family other than this one.** All four ratios
+are constants, and a font with different proportions trims to the wrong
+place; reading them out of the font needs metrics Festina does not
+expose (FINDINGS.md, "no font metrics beyond an inked height").
 
 ### After the official definition
 
@@ -353,7 +672,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(210; Chromium answers for 406, and one of them -- `overlay` -- only the
+(262; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

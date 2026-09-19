@@ -38,12 +38,6 @@ const int FRAG_TEXT = 1
 const int FRAG_ATOMIC = 2
 const int FRAG_INLINE_BG = 3
 
-// DejaVu Sans metrics (the fonts fontconfig serves for the generic
-// families here), in em: ascent 0.93, descent 0.24. Festina exposes
-// no ascent/descent API, only the inked height of a string.
-const float FONT_ASCENT = 0.93
-const float FONT_DESCENT = 0.24
-
 int nextBoxId = 1
 // every box of the current layout, indexed by id (parentBox looks parents up here)
 arr[Box] boxRegistry = [null]
@@ -104,8 +98,21 @@ struct Box {
     maxContent:int
     // The scrollbars this box reserves room for, and the content they
     // scroll, which is what sizes their thumbs.
+    //
+    // Whether the box *scrolls* on an axis is a separate question from
+    // how much room its bar took, because `scrollbar-width: none` takes
+    // no room and still scrolls: it hides the bar rather than the
+    // scrolling. Everything that draws a bar or is asked where one was
+    // clicked reads `sbW` and `sbH`; everything that scrolls reads these.
+    scrollsX:bool
+    scrollsY:bool
     sbW:int
     sbH:int
+    // The gutter `scrollbar-gutter: stable both-edges` reserves on the
+    // inline-start side, which no bar is ever drawn in: it is there so
+    // the content sits centred between two equal gutters. contentX adds
+    // it, which is the one place a box's content left edge is decided.
+    sbLeft:int
     scrollW:int
     scrollH:int
     // The min-content width of the contents alone, before a declared
@@ -124,6 +131,24 @@ struct Fragment {
     w:int
     h:int
     baseline:int
+    edges:int
+}
+
+// Which of its inline's own side edges a fragment carries. An inline
+// broken across lines puts its opening margin, border and padding on
+// the fragment that begins it and its closing ones on the fragment
+// that ends it; the fragments between carry neither (CSS2 8.4).
+const int FRAGEDGE_NONE = 0
+const int FRAGEDGE_START = 1
+const int FRAGEDGE_END = 2
+const int FRAGEDGE_BOTH = 3
+
+bool func fragOpens(f:Fragment) {
+    return f.edges == FRAGEDGE_START || f.edges == FRAGEDGE_BOTH
+}
+
+bool func fragCloses(f:Fragment) {
+    return f.edges == FRAGEDGE_END || f.edges == FRAGEDGE_BOTH
 }
 
 struct Line {
@@ -134,6 +159,15 @@ struct Line {
     baseline:int
     frags:arr[Fragment]
 }
+
+// How far any inline box on this document reaches outside the line box
+// it sits on. An inline's decorations go on its content area grown by
+// its padding and border, which can be taller than the line, so the
+// painter widens both of its culls by this rather than trusting a line
+// box or a block's own height to contain its ink. A document with no
+// padded or bordered inline leaves it at zero, and the culls are then
+// exactly what they were.
+int inlineInkOverhang = 0
 
 // Images the shell has loaded, keyed by resolved URL; buildBox reads
 // them through the node's 'data-resolved-src' attribute.
@@ -252,6 +286,36 @@ int func fontAscent(s:Style) {
     return roundPx(s.fontSize.toFloat() * FONT_ASCENT)
 }
 
+// How far above the baseline `text-box-trim` trims the first line to,
+// or -1 when this block does not trim that end. A trim removes all the
+// leading, so the answer is a font edge rather than a share of it.
+int func textBoxOverEdge(s:Style) {
+    int packed = textBoxPacked(s)
+    if packed < 0 { return -1 }
+    int trim = Math.floorDiv(packed, 16)
+    if trim != TBTRIM_START && trim != TBTRIM_BOTH { return -1 }
+    int over = Math.floorDiv(packed % 16, 4)
+    if over == TBOVER_CAP { return capHeight(s) }
+    if over == TBOVER_EX { return roundPx(s.fontSize.toFloat() * FONT_EX) }
+    return roundPx(s.fontSize.toFloat() * FONT_ASCENT)
+}
+
+// And how far below it trims the last line to, or -1.
+int func textBoxUnderEdge(s:Style) {
+    int packed = textBoxPacked(s)
+    if packed < 0 { return -1 }
+    int trim = Math.floorDiv(packed, 16)
+    if trim != TBTRIM_END && trim != TBTRIM_BOTH { return -1 }
+    if packed % 4 == TBUNDER_ALPHABETIC { return 0 }
+    return roundPx(s.fontSize.toFloat() * FONT_DESCENT)
+}
+
+// The cap height, floored rather than rounded: see FONT_CAP in
+// src/css/style.f for the measurement that says so.
+int func capHeight(s:Style) {
+    return Math.floor(s.fontSize.toFloat() * FONT_CAP)
+}
+
 int func fontDescent(s:Style) {
     return roundPx(s.fontSize.toFloat() * FONT_DESCENT)
 }
@@ -264,6 +328,15 @@ int func fontDescent(s:Style) {
 // neither. The flags are set once while the box tree is built and read
 // wherever a pass can be skipped whole.
 bool docHasPositioned = false
+
+// Where an out-of-flow box would have been in flow, keyed by box id --
+// its static position (CSS2 §10.3.7), which is what an `auto` inset
+// resolves to. The flow already walks past these boxes; this is the pen
+// at the moment it does. A document with nothing positioned never grows
+// them, because `docHasPositioned` guards the writes, the read and the
+// reset alike.
+map[int] staticPosX = {}
+map[int] staticPosY = {}
 bool docHasFloats = false
 // Set while the box tree is built when any text holds a right-to-left
 // character. A page with none never runs the bidirectional algorithm
@@ -682,7 +755,19 @@ bool func splitFirstLetter(b:Box, ps:Style) {
             if a == null { continue }
             Node lead = newTextNode(a.slice(0, end).toText())
             lead.style = ps
-            Box letter = newBox(BOX_INLINE, c.node, ps)
+            // A drop cap is a float (CSS Inline 3), and CSS2 §9.7 makes
+            // a float block-level -- but a `BOX_BLOCK` here makes the
+            // paragraph wrap the rest of its text in an anonymous box,
+            // which puts the float outside the formatting context that
+            // has to see it. An atomic inline floats without that:
+            // `boxIsFloated` accepts it, `placeInline` routes floats
+            // before atomics, and the painter reaches it.
+            bool drops = initialLetterPacked(ps) != 0
+            Box letter = newBox(drops ? BOX_INLINE_BLOCK : BOX_INLINE, c.node, ps)
+            // `newBox` raises `docHasFloats` from the box's own node's
+            // style, and this box is built from a text node, so the
+            // drop cap has to raise it itself.
+            if drops { docHasFloats = true }
             addChildBox(letter, buildTextBox(lead, ps))
             letter.parentId = b.id
             letter.depth = b.depth + 1
@@ -1199,7 +1284,7 @@ int func contentWidth(b:Box) {
 }
 
 int func contentX(b:Box) {
-    return b.x + b.bl + b.pl
+    return b.x + b.bl + b.pl + b.sbLeft
 }
 
 int func contentY(b:Box) {
@@ -1459,13 +1544,13 @@ void func boxScrollReset() {
 // How far a box can be scrolled: what its content comes to, less what
 // is visible of it.
 int func boxScrollRange(b:Box) {
-    if b.sbW <= 0 { return 0 }
+    if !b.scrollsY { return 0 }
     int visible = maxInt(b.h - b.bt - b.bb - b.pt - b.pb - b.sbH, 1)
     return maxInt(b.scrollH - visible, 0)
 }
 
 int func boxScrollTop(b:Box) {
-    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    if !b.scrollsY || b.node == null || b.node.id == 0 { return 0 }
     int v = boxScrollTops[b.node.id.toText()]
     if v == null { return 0 }
     return clampInt(v, 0, boxScrollRange(b))
@@ -1475,22 +1560,22 @@ int func boxScrollTop(b:Box) {
 // does not, and the two axes keep their offsets apart: a box may have
 // one bar, the other, or both.
 int func boxScrollLeftRange(b:Box) {
-    if b.sbH <= 0 { return 0 }
-    int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW, 1)
+    if !b.scrollsX { return 0 }
+    int visible = maxInt(b.w - b.bl - b.br - b.pl - b.pr - b.sbW - b.sbLeft, 1)
     return maxInt(b.scrollW - visible, 0)
 }
 
 int func boxScrollLeft(b:Box) {
-    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return 0 }
+    if !b.scrollsX || b.node == null || b.node.id == 0 { return 0 }
     int v = boxScrollLefts[b.node.id.toText()]
     if v == null { return 0 }
     return clampInt(v, 0, boxScrollLeftRange(b))
 }
 
 bool func boxScrollLeftBy(b:Box, dx:int) {
-    if b.sbH <= 0 || b.node == null || b.node.id == 0 { return false }
+    if !b.scrollsX || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollLeft(b)
-    int now = clampInt(was + dx, 0, boxScrollLeftRange(b))
+    int now = snapPosition(b, clampInt(was + dx, 0, boxScrollLeftRange(b)), false)
     if now == was { return false }
     boxScrollLefts[b.node.id.toText()] = now
     return true
@@ -1499,10 +1584,110 @@ bool func boxScrollLeftBy(b:Box, dx:int) {
 // Scrolls a box, and answers whether it moved -- which is what tells a
 // wheel over a box that has reached its end from one that scrolled, so
 // the page can take the rest.
+// ---- scroll snapping (CSS Scroll Snap 1) -------------------------------
+//
+// A scroll container with `scroll-snap-type` comes to rest on one of the
+// positions its children's `scroll-snap-align` declares, rather than
+// wherever the scroll left it. A position is one subtraction -- the
+// child's edge less the snapport's, per alignment -- with
+// `scroll-padding` insetting the snapport and `scroll-margin` outsetting
+// the child's snap area.
+//
+// The children looked at are the container's own, which is the depth
+// everything else here fragments and measures at.
+//
+// Where a child's snap area is larger than the snapport it is a *range*
+// of valid positions rather than a point (§6.1): a position inside it is
+// already showing that child and is left alone, and one past it is
+// pulled only as far as the child's own end. Chromium does this, and a
+// nearest-point implementation that did not would jump a tall child's
+// middle to its top.
+int snapBest = 0
+bool snapFound = false
+
+int func absInt(v:int) { return v < 0 ? 0 - v : v }
+
+// Keeps the nearer of the candidate and what is held, with a tie going
+// to the lower -- which Chromium does, and which the `end` alignment of
+// the suite's fixture pins at 35, where 20 and 50 are both fifteen away.
+void func snapConsider(want:int, pos:int) {
+    if !snapFound { snapBest = pos  snapFound = true  return }
+    int dNew = absInt(pos - want)
+    int dOld = absInt(snapBest - want)
+    if dNew < dOld || dNew == dOld && pos < snapBest { snapBest = pos }
+}
+
+int func snapAlignedPosition(align:int, areaStart:int, areaEnd:int,
+                             portStart:int, portEnd:int) {
+    if align == SNAPALIGN_START { return areaStart - portStart }
+    if align == SNAPALIGN_END { return areaEnd - portEnd }
+    // The two centres, which is the two midpoints subtracted. Doubling
+    // before halving keeps the odd case off the floor twice.
+    return Math.floorDiv(areaStart + areaEnd, 2) - Math.floorDiv(portStart + portEnd, 2)
+}
+
+// Where a scroll of this container should come to rest on one axis.
+// `want` is the position the scroll asked for, already clamped.
+int func snapPosition(b:Box, want:int, vertical:bool) {
+    Style s = b.style
+    if s.snapStrict == SNAP_NONE { return want }
+    if vertical ? !s.snapY : !s.snapX { return want }
+    int range = vertical ? boxScrollRange(b) : boxScrollLeftRange(b)
+    if range <= 0 { return want }
+
+    // The snapport: the container's content box, inset by scroll-padding.
+    int portStart = vertical ? contentY(b) : contentX(b)
+    int portSize = vertical ? scrollVisibleHeight(b) : scrollHVisibleWidth(b)
+    int padNear = vertical ? resolveLen(s.scrollPaddingTop, portSize, 0)
+                           : resolveLen(s.scrollPaddingLeft, portSize, 0)
+    int padFar = vertical ? resolveLen(s.scrollPaddingBottom, portSize, 0)
+                          : resolveLen(s.scrollPaddingRight, portSize, 0)
+    portStart = portStart + padNear
+    int portEnd = portStart + portSize - padNear - padFar
+    if portEnd <= portStart { return want }
+
+    snapFound = false
+    snapBest = 0
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        int align = vertical ? c.style.snapAlignBlock : c.style.snapAlignInline
+        if align == SNAPALIGN_NONE { continue }
+        int mNear = vertical ? resolveLen(c.style.scrollMarginTop, 0, 0)
+                             : resolveLen(c.style.scrollMarginLeft, 0, 0)
+        int mFar = vertical ? resolveLen(c.style.scrollMarginBottom, 0, 0)
+                            : resolveLen(c.style.scrollMarginRight, 0, 0)
+        int areaStart = (vertical ? c.y : c.x) - mNear
+        int areaEnd = (vertical ? c.y + c.h : c.x + c.w) + mFar
+        int pos = snapAlignedPosition(align, areaStart, areaEnd, portStart, portEnd)
+        if areaEnd - areaStart > portEnd - portStart {
+            // A snap area larger than the snapport is a range: anywhere
+            // that keeps the snapport inside it will do, so a position
+            // already inside asks for nothing.
+            int lo = clampInt(areaStart - portStart, 0, range)
+            int hi = clampInt(areaEnd - portEnd, 0, range)
+            if lo > hi { int t = lo  lo = hi  hi = t }
+            if want >= lo && want <= hi { return want }
+            snapConsider(want, want < lo ? lo : hi)
+            continue
+        }
+        snapConsider(want, clampInt(pos, 0, range))
+    }
+    if !snapFound { return want }
+    // `proximity` snaps only what is near, and near is a third of the
+    // snapport: Chromium snaps from 32 and not 34 in a hundred pixels,
+    // and from 66 and not 68 in two hundred (todo.md).
+    if s.snapStrict == SNAP_PROXIMITY
+        && absInt(snapBest - want) > Math.floorDiv(portEnd - portStart, 3) {
+        return want
+    }
+    return snapBest
+}
+
 bool func boxScrollBy(b:Box, dy:int) {
-    if b.sbW <= 0 || b.node == null || b.node.id == 0 { return false }
+    if !b.scrollsY || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollTop(b)
-    int now = clampInt(was + dy, 0, boxScrollRange(b))
+    int now = snapPosition(b, clampInt(was + dy, 0, boxScrollRange(b)), true)
     if now == was { return false }
     boxScrollTops[b.node.id.toText()] = now
     return true
@@ -1512,6 +1697,15 @@ bool func boxScrollBy(b:Box, dy:int) {
 // this one takes Chromium's classic fifteen pixels, so that a box's
 // content geometry can be compared with Chromium's directly.
 const int SCROLLBAR_PX = 15
+// `scrollbar-width: thin` is ten pixels and `none` is none at all,
+// which is what Chromium 141 reserves: a 200x100 `overflow: scroll` box
+// has a client width of 185, 190 and 200 for `auto`, `thin` and `none`.
+const int SCROLLBAR_THIN_PX = 10
+
+int func scrollbarPx(s:Style) {
+    if s.scrollbarWidth == SCROLLBAR_NONE { return 0 }
+    return s.scrollbarWidth == SCROLLBAR_THIN ? SCROLLBAR_THIN_PX : SCROLLBAR_PX
+}
 
 // The shortest a thumb gets, however long the content is, so that a very
 // long document still leaves something to take hold of.
@@ -1844,9 +2038,27 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // §3.2). `scroll` shows one whether or not there is anything to
     // scroll; `auto` shows it only where the content overflows, which
     // is not known until the content has been laid out once.
-    b.sbW = s.overflowY == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
-    b.sbH = s.overflowX == OVERFLOW_SCROLL ? SCROLLBAR_PX : 0
-    width = maxInt(width - b.sbW, 0)
+    int sbPx = scrollbarPx(s)
+    b.scrollsY = s.overflowY == OVERFLOW_SCROLL
+    b.scrollsX = s.overflowX == OVERFLOW_SCROLL
+    b.sbW = b.scrollsY ? sbPx : 0
+    b.sbH = b.scrollsX ? sbPx : 0
+    // `scrollbar-gutter: stable` reserves the inline-end gutter on a
+    // scroll container whether or not anything overflows (CSS Overflow 4
+    // §3.3), so the content box does not change width when it starts to.
+    // It is the inline axis's gutter only: Chromium answers an
+    // `overflow: auto` box with a client width of 185 and a client
+    // height of 100, where without it both are the full box.
+    if b.sbW == 0 && s.scrollbarGutter != SCROLLBAR_GUTTER_AUTO
+        && s.overflowY == OVERFLOW_AUTO {
+        b.sbW = sbPx
+    }
+    // `both-edges` reserves the same width again on the side no bar is
+    // drawn on, so the content sits between two equal gutters: Chromium
+    // answers a 200px box with a client width of 170 rather than 185.
+    bool scrollsOnY = s.overflowY == OVERFLOW_SCROLL || s.overflowY == OVERFLOW_AUTO
+    b.sbLeft = s.scrollbarGutter == SCROLLBAR_GUTTER_BOTH && scrollsOnY ? sbPx : 0
+    width = maxInt(width - b.sbW - b.sbLeft, 0)
 
     // children, with this box standing as their containing block: a
     // percentage height among them is a percentage of the height
@@ -1862,24 +2074,33 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // The second pass an `auto` axis needs. A vertical bar appears when
     // the content is taller than the box; a horizontal one when a child
     // box or a line of text reaches past its right edge.
-    if s.overflowY == OVERFLOW_AUTO && b.sbW == 0 && ownDefinite >= 0
+    if s.overflowY == OVERFLOW_AUTO && !b.scrollsY && ownDefinite >= 0
         && contentH > ownDefinite {
-        b.sbW = SCROLLBAR_PX
-        width = maxInt(width - SCROLLBAR_PX, 0)
-        contentH = layoutBlockContent(b, innerX, innerY, width)
-    }
-    if s.overflowX == OVERFLOW_AUTO && b.sbH == 0 && childrenReachPast(b, innerX + width) {
-        b.sbH = SCROLLBAR_PX
-        if ownDefinite >= 0 {
-            ownDefinite = maxInt(ownDefinite - SCROLLBAR_PX, 0)
-            layoutCBHeight = ownDefinite
+        b.scrollsY = true
+        // A bar of no width takes no room, so there is nothing to lay
+        // out again for: the box scrolls and the content stays where it
+        // was.
+        if b.sbW == 0 && sbPx > 0 {
+            b.sbW = sbPx
+            width = maxInt(width - sbPx, 0)
             contentH = layoutBlockContent(b, innerX, innerY, width)
+        }
+    }
+    if s.overflowX == OVERFLOW_AUTO && !b.scrollsX && childrenReachPast(b, innerX + width) {
+        b.scrollsX = true
+        if sbPx > 0 {
+            b.sbH = sbPx
+            if ownDefinite >= 0 {
+                ownDefinite = maxInt(ownDefinite - sbPx, 0)
+                layoutCBHeight = ownDefinite
+                contentH = layoutBlockContent(b, innerX, innerY, width)
+            }
         }
     }
     // Only a scroll container needs to know what it scrolls, and the
     // walk that measures the width is paid by nothing else: the flag is
     // asked first and `&&` does not evaluate what follows it.
-    if b.sbW > 0 || b.sbH > 0 {
+    if b.scrollsY || b.scrollsX {
         b.scrollH = contentH
         b.scrollW = childrenReach(b, innerX)
     }
@@ -2285,7 +2506,15 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
         // An absolutely positioned box is out of flow: it takes no
         // space here and is laid out by the positioning pass once the
         // containing block it resolves against is known (CSS2 §9.3).
-        if boxIsOutOfFlow(c) { continue }
+        // Where the flow had reached is its static position, which an
+        // `auto` inset resolves to, so it is noted on the way past.
+        if boxIsOutOfFlow(c) {
+            if docHasPositioned {
+                staticPosX[`${c.id}`] = cx
+                staticPosY[`${c.id}`] = y
+            }
+            continue
+        }
         if boxIsFloated(c) {
             placeFloat(c, cx, cx + cw, y)
             continue
@@ -2409,12 +2638,38 @@ Box func firstLineBoxFor(b:Box) {
     return fb
 }
 
+// The drop cap in this block's inline content, or null. Guarded by
+// `anyInitialLetter` at its one caller, so a page that names no
+// `initial-letter` never walks a child list for one.
+Box func initialLetterBox(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        // The drop cap's own text box carries the same style, so the
+        // test is that this box is the float, not merely that it has
+        // the property: otherwise the letter pushes its own content
+        // down by the space it is supposed to rise into.
+        if boxIsFloated(c) && initialLetterPacked(c.style) != 0 { return c }
+        if c.kind == BOX_INLINE || c.kind == BOX_ANON {
+            Box r = initialLetterBox(c)
+            if r != null { return r }
+        }
+    }
+    return null
+}
+
 int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     Box savedBox = ifcBox
     int savedX = ifcX
     int savedStart = ifcLineStart
     int savedRight = ifcLineRight
     int savedY = ifcY
+    // The containing block's edges belong to this formatting context
+    // and are restored with the rest of it. A float in inline content
+    // is laid out from inside the line it interrupts, so its own
+    // inline content runs through here and would otherwise leave the
+    // outer context wrapping its text in the FLOAT's containing block.
+    int savedCbLeft = ifcCbLeft
+    int savedCbRight = ifcCbRight
     arr[Fragment] savedFrags = ifcFrags
     bool savedPending = ifcPendingSpace
     bool savedHas = ifcLineHasContent
@@ -2443,6 +2698,20 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     ifcLineStart = cx
     ifcLineRight = cx + cw
     ifcY = cy
+    // CSS Inline 3: a drop cap spans `size` lines but only shortens
+    // `sink` of them, and what is left over goes ABOVE the text. So
+    // the block grows by `size - sink` lines and its text begins that
+    // many lines down; the letter itself is lifted back up into them
+    // in `placeDropCap`.
+    if anyInitialLetter {
+        Box cap = initialLetterBox(b)
+        if cap != null {
+            int capLh = lineHeightOf(b.style)
+            int above = Math.floorDiv(initialLetterSize100(cap.style) * capLh, 100)
+                        - initialLetterSink(cap.style) * capLh
+            if above > 0 { ifcY = ifcY + above }
+        }
+    }
     ifcLineCount = 0
     ifcOpenInlines = []
     ifcOpenBg = []
@@ -2451,6 +2720,19 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
         placeInline(b.children[i])
     }
     finishLine(false)
+    // The other half of `text-box-trim`: the last line's bottom, now
+    // that there is a last line. Trimming it shortens the block by what
+    // it removes, which is what the height below picks up.
+    if anyTextBoxTrim && b.lines.length > 0 {
+        int under = textBoxUnderEdge(b.style)
+        if under >= 0 {
+            int li = b.lines.length - 1
+            int lAbove = b.lines[li].baseline - b.lines[li].y
+            int lBelow = b.lines[li].h - lAbove
+            b.lines[li].h = lAbove + under
+            ifcY = ifcY - (lBelow - under)
+        }
+    }
     int h = ifcY - cy
     if b.lines.length > 0 {
         Line last = b.lines[b.lines.length - 1]
@@ -2462,6 +2744,8 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     ifcLineStart = savedStart
     ifcLineRight = savedRight
     ifcY = savedY
+    ifcCbLeft = savedCbLeft
+    ifcCbRight = savedCbRight
     ifcFrags = savedFrags
     ifcPendingSpace = savedPending
     ifcLineHasContent = savedHas
@@ -2559,6 +2843,16 @@ void func beginLine() {
         f.y = ifcY
         f.w = 0
         f.h = 0
+        // `box-decoration-break: clone` gives every fragment the whole
+        // box, so a continuation opens with the margin, border and
+        // padding the first fragment had, and its content starts after
+        // them.
+        if decorationIsClone(ib.style) {
+            int se = ib.ml + ib.bl + ib.pl
+            f.w = se
+            f.edges = FRAGEDGE_START
+            ifcX = ifcX + se
+        }
         ifcFrags.push(f)
         ifcOpenBg.push(f)
     }
@@ -2578,6 +2872,7 @@ Fragment func newFragment(kind:int, box:Box, t:text) {
     f.kind = kind
     f.box = box
     f.content = t
+    f.edges = FRAGEDGE_NONE
     return f
 }
 
@@ -2696,6 +2991,17 @@ void func finishLineUncounted(forced:bool) {
             }
         }
     }
+    // CSS Inline 3: `text-box-trim` takes the leading off the first
+    // line's top. The last line's bottom is trimmed once the block's
+    // lines are all in, since which one is last is not known here.
+    if anyTextBoxTrim && ifcLineCount == 0 {
+        // Set to the edge rather than shrink to it: at a line height
+        // below the content height the leading is negative, and
+        // trimming it then makes the line taller. That is what the
+        // measurement shows -- 24 at line-height 1, 2 and 3 alike.
+        int over = textBoxOverEdge(bs)
+        if over >= 0 { above = over }
+    }
     int lineH = above + below
     int baseline = ifcY + above
     // The bidirectional algorithm runs on the finished line, because it
@@ -2705,14 +3011,19 @@ void func finishLineUncounted(forced:bool) {
     // line for the ordinary case of a paragraph of one script; a line
     // that mixes two inline boxes is reordered within each of them and
     // not across the two, which css-2026.md records.
-    if bs.directionRtl || bs.bidiOverride || anyRtlText {
+    // `unicode-bidi` belongs to the element the text is in rather than
+    // to the block, so it is read off the fragment's own box -- a text
+    // box carries its element's style, which is where an inline's value
+    // is.
+    if bs.directionRtl || anyRtlText || anyUnicodeBidi {
+        int baseLevel = bs.directionRtl ? 1 : 0
         for int i = 0, i < ifcFrags.length, i++ {
             Fragment f = ifcFrags[i]
             if f.kind != FRAG_TEXT { continue }
-            if !bidiNeedsReorder(f.content) && !bs.directionRtl && !bs.bidiOverride { continue }
-            int baseLevel = bs.directionRtl ? 1 : 0
-            f.content = bs.bidiOverride ? bidiVisualOverride(f.content, baseLevel)
-                                        : bidiVisual(f.content, baseLevel)
+            int mode = f.box == null ? UBIDI_NORMAL : f.box.style.unicodeBidi
+            if mode == UBIDI_NORMAL && !bidiNeedsReorder(f.content) && !bs.directionRtl { continue }
+            bool rtl = f.box == null ? bs.directionRtl : f.box.style.directionRtl
+            f.content = bidiVisualStyled(f.content, baseLevel, mode, rtl)
         }
     }
     // text-overflow: ellipsis replaces the end of a line that runs out
@@ -2772,20 +3083,42 @@ void func finishLineUncounted(forced:bool) {
             f.h = total
             f.baseline = baseline
         } else {
-            f.y = ifcY
-            f.h = lineH
+            // An inline's decorations go on its content area -- the
+            // font's ascent and descent about the baseline, which is
+            // neither the line box nor the inline's own line-height --
+            // grown by its padding and border. None of that changes
+            // the line height: the box paints outside the line and the
+            // block is no taller for it.
+            Box ib = f.box
+            Style is = ib.style
             f.baseline = baseline
-            // shrink vertically to the inline's own font box when the
-            // line is taller than it, as CSS does for inline backgrounds
-            Style is = f.box.style
-            int own = lineHeightOf(is)
-            if own < lineH {
-                int content = fontAscent(is) + fontDescent(is)
-                int half = Math.floorDiv(own - content, 2)
-                f.y = baseline - half - fontAscent(is)
-                f.h = own
-            }
+            f.y = baseline - fontAscent(is) - ib.pt - ib.bt
+            f.h = fontAscent(is) + fontDescent(is) + ib.pt + ib.bt + ib.pb + ib.bb
+            // and how far outside the line box that reaches, which is
+            // what the painter widens its culls by
+            int above = ifcY - f.y
+            if above > inlineInkOverhang { inlineInkOverhang = above }
+            int below = f.y + f.h - (ifcY + lineH)
+            if below > inlineInkOverhang { inlineInkOverhang = below }
         }
+    }
+    // `clone` closes every fragment of an inline that breaks, and the
+    // closing edge overflows the line rather than forcing an earlier
+    // break -- which is what Chromium does: the same characters stay on
+    // the same lines. Innermost first, so an outer inline's box still
+    // ends outside the inner one's closing edge. A document with no
+    // inline open across this break never enters the loop.
+    int cloneEnd = 0
+    for int i = ifcOpenBg.length - 1, i >= 0, i-- {
+        Fragment f = ifcOpenBg[i]
+        if f.w <= 0 { continue }
+        f.w = f.w + cloneEnd
+        Box cb = f.box
+        if !decorationIsClone(cb.style) { continue }
+        int ee = cb.pr + cb.br + cb.mr
+        f.w = f.w + ee
+        cloneEnd = cloneEnd + ee
+        f.edges = f.edges == FRAGEDGE_START ? FRAGEDGE_BOTH : FRAGEDGE_END
     }
     // inline backgrounds were extended as content was placed; a
     // fragment that never got content (an inline that continued onto
@@ -2832,9 +3165,21 @@ void func hardBreakLine() {
 }
 
 void func placeInline(b:Box) {
-    if boxIsOutOfFlow(b) { return }
+    if boxIsOutOfFlow(b) {
+        // An inline-level out-of-flow box takes its static position
+        // from the pen on the line it was written on.
+        if docHasPositioned {
+            staticPosX[`${b.id}`] = ifcX
+            staticPosY[`${b.id}`] = ifcY
+        }
+        return
+    }
     if boxIsFloated(b) {
-        placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+        if initialLetterPacked(b.style) != 0 {
+            placeDropCap(b)
+        } else {
+            placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+        }
         // the float may have narrowed the line that is open
         applyFloatsToLine()
         return
@@ -2852,6 +3197,9 @@ void func placeInline(b:Box) {
         // start edge: margin + border + padding
         int startEdge = b.ml + b.bl + b.pl
         Fragment f = newFragment(FRAG_INLINE_BG, b, '')
+        // this fragment begins the inline, so it carries the opening
+        // margin, border and padding that startEdge just reserved
+        f.edges = FRAGEDGE_START
         if ifcPendingSpace && ifcLineHasContent {
             ifcX = ifcX + ifcPendingSpaceWidth
             ifcPendingSpace = false
@@ -2871,7 +3219,10 @@ void func placeInline(b:Box) {
         }
         int endEdge = b.pr + b.br + b.mr
         // the closing edge belongs to the line the content ended on:
-        // extend this inline's fragment on the current line
+        // extend this inline's fragment on the current line, and mark
+        // it as the one carrying the closing margin, border and padding
+        Fragment closing = ifcOpenBg[ifcOpenBg.length - 1]
+        closing.edges = closing.edges == FRAGEDGE_START ? FRAGEDGE_BOTH : FRAGEDGE_END
         ifcX = ifcX + endEdge
         extendOpenInlines(ifcX)
         ifcOpenInlines.pop()
@@ -4930,6 +5281,23 @@ void func placeFloat(b:Box, cbLeft:int, cbRight:int, startY:int) {
     }
 }
 
+// A drop cap floats like anything else, but only the bottom `sink`
+// lines of it exclude text: the rest of it rises above the first line,
+// into the space `layoutInlineContent` has already pushed the text
+// down by. So it is placed where the text starts, lifted back by that
+// difference, and the rectangle it excludes with is cut to the sink.
+void func placeDropCap(b:Box) {
+    placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+    if bfcFloats.length == 0 { return }
+    FloatRect r = bfcFloats[bfcFloats.length - 1]
+    int lh = ifcBox == null ? 0 : lineHeightOf(ifcBox.style)
+    int sinkH = initialLetterSink(b.style) * lh
+    int above = (r.bottom - r.top) - sinkH
+    if above <= 0 { return }
+    shiftBoxTree(b, 0, -above)
+    r.bottom = r.top + sinkH
+}
+
 bool func boxIsFloated(b:Box) {
     if !docHasFloats { return false }
     if b == null { return false }
@@ -4993,8 +5361,16 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
         Style s = b.style
         int w = b.w + b.ml + b.mr
         int h = b.h + b.mt + b.mb
+        // With both insets on an axis `auto` the box sits where it
+        // would have been in flow, which the flow noted on its way past
+        // (CSS2 §10.3.7). A fixed box has no such place: it resolves
+        // against the viewport and stays at its corner.
         int wantX = b.x
         int wantY = b.y
+        if b.style.position != POS_FIXED && staticPosX[`${b.id}`] != null {
+            wantX = staticPosX[`${b.id}`] + b.ml
+            wantY = staticPosY[`${b.id}`] + b.mt
+        }
         if !lenIsAuto(s.left) {
             wantX = useX + resolveLen(s.left, useW, 0) + b.ml
         } else if !lenIsAuto(s.right) {
@@ -5037,6 +5413,387 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
     for int i = 0, i < b.children.length, i++ {
         layoutPositioned(b.children[i], nx, ny, nw, nh, viewW, viewH)
     }
+}
+
+// ---- CSS Anchor Positioning 1 ---------------------------------------------
+//
+// `position-anchor` names another element's box to resolve against, and
+// `position-area` says which of nine regions around that box the
+// positioned one goes in. Each axis is one of three bands -- before the
+// anchor, its own extent, or after it -- or a span of all three.
+//
+// This runs after the ordinary positioning pass rather than inside it,
+// because an anchor may itself be absolutely positioned and so has no
+// final rectangle until that pass is done. An anchor that is itself
+// anchored would need a second round; the standard forbids the cycle
+// that would make one necessary.
+// The walk keeps, for each anchor name, the rectangle of the last
+// element carrying it that it has passed, and resolves each anchored
+// box against that as it reaches the box. So an anchor is a candidate
+// only when it comes before the box in tree order, and of the ones
+// that do, the last wins -- which is what Chromium does and what one
+// rectangle per name for the whole document cannot express, since the
+// document's last writer is the only answer such a registry has.
+map[int] anchorLiveX = {}
+map[int] anchorLiveY = {}
+map[int] anchorLiveW = {}
+map[int] anchorLiveH = {}
+// The answer, per box, so the placement pass does not resolve again.
+// The rectangle each `anchor()` inset resolved to, keyed by the box's
+// id and which inset it is. A named `anchor()` looks its own name up
+// rather than borrowing the one `position-anchor` found, which is what
+// lets one box anchor its left edge to one element and its top to
+// another. Grown only by a page that says the function.
+map[int] anchorInsetX = {}
+map[int] anchorInsetY = {}
+map[int] anchorInsetW = {}
+map[int] anchorInsetH = {}
+
+map[int] anchorBoxX = {}
+map[int] anchorBoxY = {}
+map[int] anchorBoxW = {}
+map[int] anchorBoxH = {}
+bool anchorBoxFound = false
+
+// `anchor-scope` makes a name mean different anchors in different parts
+// of the document, so the live rectangles are keyed by the scope a name
+// is in rather than by the name alone. The scope of a name at a point in
+// the walk is the nearest enclosing element that scopes it, itself
+// included, or nothing; an anchor and a box see each other only when
+// they agree on that element. That is a boundary in *both* directions:
+// a box inside a scope of `--a` is cut off from every `--a` outside it
+// as well, even when the scope holds none of its own (todo.md records
+// the measurement). A page that scopes nothing keys by the bare name and
+// never touches the stack below.
+map[int] scopeNameId = {}       // name -> the element scoping it
+map[int] scopeNameDepth = {}    // and how deep that element is
+// `all` is held under a key no dashed identifier can spell, so one
+// lookup pair serves both spellings of the property.
+const text SCOPE_ALL_KEY = '*'
+// The walk's undo log: what each push overwrote. A push returns how
+// many entries it added, and leaving the element pops exactly that many.
+arr[text] scopeSavedName = []
+arr[int] scopeSavedId = []
+arr[int] scopeSavedDepth = []
+
+int func anchorScopeDepthOf(name:text) {
+    if scopeNameDepth[name] == null { return -1 }
+    return scopeNameDepth[name]
+}
+
+// The deeper of the two candidates wins, which is what makes an inner
+// `anchor-scope: --a` override an outer `anchor-scope: all` and the
+// other way round.
+text func anchorScopeKey(name:text) {
+    if !anyAnchorScope { return name }
+    int byName = anchorScopeDepthOf(name)
+    int byAll = anchorScopeDepthOf(SCOPE_ALL_KEY)
+    if byName < 0 && byAll < 0 { return `0 ${name}` }
+    if byName > byAll { return `${scopeNameId[name]} ${name}` }
+    return `${scopeNameId[SCOPE_ALL_KEY]} ${name}`
+}
+
+void func anchorScopeEnter(name:text, id:int, depth:int) {
+    scopeSavedName.push(name)
+    scopeSavedId.push(scopeNameId[name] == null ? 0 : scopeNameId[name])
+    scopeSavedDepth.push(anchorScopeDepthOf(name))
+    scopeNameId[name] = id
+    scopeNameDepth[name] = depth
+}
+
+// How many names this element scopes, having entered each of them.
+int func anchorScopePush(sc:text, id:int, depth:int) {
+    if sc == 'all' {
+        anchorScopeEnter(SCOPE_ALL_KEY, id, depth)
+        return 1
+    }
+    int n = 0
+    arr[ascii] parts = asciiSplitChar(sc.toAscii(), CH_COMMA)
+    for int i = 0, i < parts.length, i++ {
+        ascii nm = asciiTrim(parts[i])
+        if nm == '' { continue }
+        anchorScopeEnter(nm.toText(), id, depth)
+        n = n + 1
+    }
+    return n
+}
+
+void func anchorScopePop(n:int) {
+    for int i = 0, i < n, i++ {
+        text nm = scopeSavedName.pop()
+        scopeNameId[nm] = scopeSavedId.pop()
+        scopeNameDepth[nm] = scopeSavedDepth.pop()
+    }
+}
+
+void func collectAnchors(b:Box, depth:int) {
+    if b == null { return }
+    int pushed = 0
+    if b.style != null && b.style.anchorInfo > 0 {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        // The scope covers the element declaring it, so it goes up
+        // before this element's own name and anchor are looked at.
+        if anyAnchorScope && ai.scope != '' {
+            pushed = anchorScopePush(ai.scope, b.id, depth)
+        }
+        // Resolving before declaring is what stops an element that both
+        // names an anchor and is one from anchoring to itself.
+        if ai.anchor != '' && boxIsOutOfFlow(b) {
+            text key = anchorScopeKey(ai.anchor)
+            if anchorLiveW[key] != null {
+                anchorBoxX[`${b.id}`] = anchorLiveX[key]
+                anchorBoxY[`${b.id}`] = anchorLiveY[key]
+                anchorBoxW[`${b.id}`] = anchorLiveW[key]
+                anchorBoxH[`${b.id}`] = anchorLiveH[key]
+                anchorBoxFound = true
+            }
+        }
+        // Each `anchor()` inset resolves its own name, against the
+        // anchors this walk has already passed -- the same rule
+        // `position-anchor` follows, and for the same reason.
+        if anyAnchorInset && boxIsOutOfFlow(b) {
+            for int i = 0, i < 4, i++ {
+                if ai.insetPcts[i] < 0 { continue }
+                // A box with an inset to resolve is a box to place,
+                // whether or not its anchor was found: a fallback is
+                // still an answer.
+                anchorBoxFound = true
+                text nm = ai.insetNames[i] != '' ? ai.insetNames[i] : ai.anchor
+                if nm == '' { continue }
+                text ikey = anchorScopeKey(nm)
+                if anchorLiveW[ikey] == null { continue }
+                anchorInsetX[`${b.id}:${i}`] = anchorLiveX[ikey]
+                anchorInsetY[`${b.id}:${i}`] = anchorLiveY[ikey]
+                anchorInsetW[`${b.id}:${i}`] = anchorLiveW[ikey]
+                anchorInsetH[`${b.id}:${i}`] = anchorLiveH[ikey]
+            }
+        }
+        if ai.name != '' {
+            text key = anchorScopeKey(ai.name)
+            anchorLiveX[key] = b.x
+            anchorLiveY[key] = b.y
+            anchorLiveW[key] = b.w
+            anchorLiveH[key] = b.h
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { collectAnchors(b.children[i], depth + 1) }
+    if pushed > 0 { anchorScopePop(pushed) }
+}
+
+// Where a box of `size` goes in one axis, given the anchor's two edges
+// on it. A band before the anchor end-aligns the box, so its far edge
+// meets the anchor's near one; a band after start-aligns it; and the
+// anchor's own band centres it. `span-all` centres on the anchor as
+// well, rather than on the region it spans -- which is what Chromium
+// does and what a region-first reading of the standard gets wrong
+// (todo.md records the measurement).
+int func anchorBandPos(band:int, a0:int, a1:int, size:int, fallback:int) {
+    if band == PAREA_BEFORE { return a0 - size }
+    if band == PAREA_AFTER { return a1 }
+    if band == PAREA_CENTER || band == PAREA_SPAN {
+        return a0 + Math.floorDiv(a1 - a0 - size, 2)
+    }
+    return fallback
+}
+
+// `position-try-fallbacks`: a candidate area, either named outright or
+// reached by flipping the one in force. A flip swaps a band for the one
+// opposite it rather than naming a region of its own, so `flip-block`
+// turns a `top` into a `bottom` whatever `top` was written as.
+int func flipBand(band:int) {
+    if band == PAREA_BEFORE { return PAREA_AFTER }
+    if band == PAREA_AFTER { return PAREA_BEFORE }
+    return band
+}
+
+int func tryCandidateArea(current:int, spec:ascii) {
+    int blockBand = Math.floorDiv(current, PAREA_AXIS)
+    int inlineBand = current % PAREA_AXIS
+    if spec == 'flip-block' { return flipBand(blockBand) * PAREA_AXIS + inlineBand }
+    if spec == 'flip-inline' { return blockBand * PAREA_AXIS + flipBand(inlineBand) }
+    if spec == 'flip-start' { return inlineBand * PAREA_AXIS + blockBand }
+    return positionAreaValue(spec)
+}
+
+// Whether a box at (x, y) would fall outside the containing block it
+// resolves against, which is the whole of the test Chromium applies
+// before moving on to the next candidate.
+bool func anchorOverflows(x:int, y:int, w:int, h:int,
+                          cbX:int, cbY:int, cbW:int, cbH:int) {
+    return x < cbX || y < cbY || x + w > cbX + cbW || y + h > cbY + cbH
+}
+
+// Where one area puts the box. Two values out of a function need
+// globals (FINDINGS.md, "one value out of a function").
+int anchorTryX = 0
+int anchorTryY = 0
+
+void func anchorPlaceAt(area:int, ax:int, ay:int, aw:int, ah:int, b:Box) {
+    anchorTryX = anchorBandPos(area % PAREA_AXIS, ax, ax + aw, b.w, b.x)
+    anchorTryY = anchorBandPos(Math.floorDiv(area, PAREA_AXIS), ay, ay + ah, b.h, b.y)
+}
+
+// How much room one band of one axis offers, which is what
+// `position-try-order` sorts the candidates by: the space between the
+// containing block's edge and the anchor's for a band beyond it, the
+// anchor's own extent for its band, and the whole block for a span.
+int func anchorBandRoom(band:int, a0:int, a1:int, cb0:int, cbSize:int) {
+    if band == PAREA_BEFORE { return a0 - cb0 }
+    if band == PAREA_AFTER { return cb0 + cbSize - a1 }
+    if band == PAREA_CENTER { return a1 - a0 }
+    return cbSize
+}
+
+int func anchorAreaRoom(area:int, order:int, ax:int, ay:int, aw:int, ah:int,
+                        cbX:int, cbY:int, cbW:int, cbH:int) {
+    if order == TRYORDER_MOST_BLOCK {
+        return anchorBandRoom(Math.floorDiv(area, PAREA_AXIS), ay, ay + ah, cbY, cbH)
+    }
+    return anchorBandRoom(area % PAREA_AXIS, ax, ax + aw, cbX, cbW)
+}
+
+// Where one `anchor()` inset puts the box, as the x or y of its border
+// box -- or the fallback measured from the containing block where the
+// anchor was not found, or where the box already is where there is
+// neither. `i` is which inset, in the order left, right, top, bottom,
+// and the side keyword has already become a position along the anchor
+// (src/css/style.f).
+//
+// It is the box's *margin* edge that lands on the anchor, which is
+// measured and is what an ordinary inset does too, so each side takes
+// its own margin back out to give the border box.
+int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
+                         cbW:int, cbH:int, have:int) {
+    bool vertical = i >= ANCHOR_INSET_TOP
+    int size = vertical ? b.h : b.w
+    int near = vertical ? b.mt : b.ml
+    int far = vertical ? b.mb : b.mr
+    text k = `${b.id}:${i}`
+    if anchorInsetW[k] != null {
+        int at = vertical ? anchorInsetY[k] : anchorInsetX[k]
+        int span = vertical ? anchorInsetH[k] : anchorInsetW[k]
+        int edge = at + Math.floorDiv(span * ai.insetPcts[i], 10000)
+        // A near inset puts the box's near edge there and a far inset
+        // its far edge, which is what makes `right: anchor(--a left)`
+        // hang the box off the anchor's left rather than start there.
+        if i == ANCHOR_INSET_RIGHT || i == ANCHOR_INSET_BOTTOM {
+            return edge - size - far
+        }
+        return edge + near
+    }
+    int fb = ai.insetFallbacks[i]
+    if fb == ANCHOR_NO_FALLBACK { return have }
+    if i == ANCHOR_INSET_RIGHT { return cbX + cbW - fb - size - far }
+    if i == ANCHOR_INSET_BOTTOM { return cbY + cbH - fb - size - far }
+    return (vertical ? cbY : cbX) + fb + near
+}
+
+void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
+    if b == null { return }
+    // `anchor()` in an inset, which is resolved here rather than where
+    // the insets usually are because an anchor's rectangle is not known
+    // until the whole tree has been laid out.
+    if anyAnchorInset && b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        int wantX = b.x
+        int wantY = b.y
+        // A near inset wins over the far one on its axis, as it does
+        // for any absolutely positioned box.
+        if ai.insetPcts[ANCHOR_INSET_LEFT] >= 0 {
+            wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_LEFT, cbX, cbY, cbW, cbH, b.x)
+        } else if ai.insetPcts[ANCHOR_INSET_RIGHT] >= 0 {
+            wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_RIGHT, cbX, cbY, cbW, cbH, b.x)
+        }
+        if ai.insetPcts[ANCHOR_INSET_TOP] >= 0 {
+            wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_TOP, cbX, cbY, cbW, cbH, b.y)
+        } else if ai.insetPcts[ANCHOR_INSET_BOTTOM] >= 0 {
+            wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_BOTTOM, cbX, cbY, cbW, cbH, b.y)
+        }
+        if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+    }
+    if b.style != null && b.style.anchorInfo > 0 && boxIsOutOfFlow(b) {
+        AnchorInfo ai = anchorInfoOf(b.style.anchorInfo)
+        if ai.area != PAREA_NONE && anchorBoxW[`${b.id}`] != null {
+            int ax = anchorBoxX[`${b.id}`]
+            int ay = anchorBoxY[`${b.id}`]
+            int aw = anchorBoxW[`${b.id}`]
+            int ah = anchorBoxH[`${b.id}`]
+            anchorPlaceAt(ai.area, ax, ay, aw, ah, b)
+            int wantX = anchorTryX
+            int wantY = anchorTryY
+            // The candidates: the area the element asked for, then the
+            // fallbacks in written order.
+            arr[int] areas = []
+            if ai.fallbacks != '' || ai.tryOrder != TRYORDER_NORMAL {
+                areas.push(ai.area)
+                arr[ascii] cands = asciiSplitChar(ai.fallbacks.toAscii(), CH_COMMA)
+                for int i = 0, i < cands.length, i++ {
+                    int area = tryCandidateArea(ai.area, asciiLower(asciiTrim(cands[i])))
+                    if area != PAREA_NONE { areas.push(area) }
+                }
+            }
+            // `position-try-order` sorts them by the room each region
+            // offers, most first, and that sort applies whether or not
+            // the original position overflows -- it is a choice among
+            // the candidates, not a repair of a bad one. A selection
+            // sort keeps it stable, so equal rooms hold their order.
+            if ai.tryOrder != TRYORDER_NORMAL && areas.length > 1 {
+                for int i = 0, i < areas.length - 1, i++ {
+                    int best = i
+                    int bestRoom = anchorAreaRoom(areas[i], ai.tryOrder, ax, ay, aw, ah,
+                                                  cbX, cbY, cbW, cbH)
+                    for int j = i + 1, j < areas.length, j++ {
+                        int room = anchorAreaRoom(areas[j], ai.tryOrder, ax, ay, aw, ah,
+                                                  cbX, cbY, cbW, cbH)
+                        if room > bestRoom { best = j  bestRoom = room }
+                    }
+                    if best != i {
+                        int t = areas[i]
+                        areas[i] = areas[best]
+                        areas[best] = t
+                    }
+                }
+            }
+            // Walk them and take the first that fits. Without an order
+            // the first candidate is the area the element asked for, so
+            // a position that fits is kept and the rest are never
+            // reached; when none fits, the original stands rather than
+            // the last one tried.
+            for int i = 0, i < areas.length, i++ {
+                anchorPlaceAt(areas[i], ax, ay, aw, ah, b)
+                if !anchorOverflows(anchorTryX, anchorTryY, b.w, b.h, cbX, cbY, cbW, cbH) {
+                    wantX = anchorTryX
+                    wantY = anchorTryY
+                    break
+                }
+            }
+            if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }
+            // `position-visibility: no-overflow` hides a box that still
+            // overflows once every candidate has been tried. It hides
+            // the whole box rather than clipping it harder, which is
+            // what Chromium does and what the render suite checks by
+            // straddling the box across the edge: a stricter clip would
+            // leave the part that falls inside.
+            if ai.visibility == POSVIS_NO_OVERFLOW && b.node != null
+                && anchorOverflows(b.x, b.y, b.w, b.h, cbX, cbY, cbW, cbH) {
+                anchorHiddenIds[`${b.node.id}`] = true
+                anyAnchorHidden = true
+            }
+        }
+    }
+    // The containing block for the descendants, tracked the way the
+    // positioning pass tracks it rather than stored on every box.
+    int nx = cbX
+    int ny = cbY
+    int nw = cbW
+    int nh = cbH
+    if boxIsPositioned(b) {
+        nx = b.x + b.bl
+        ny = b.y + b.bt
+        nw = b.w - b.bl - b.br
+        nh = b.h - b.bt - b.bb
+    }
+    for int i = 0, i < b.children.length, i++ { placeAnchored(b.children[i], nx, ny, nw, nh) }
 }
 
 // ---- entry points ----------------------------------------------------------------
@@ -5178,9 +5935,20 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // establishes one yet (todo.md); what matters for now is that a
     // second layout does not inherit the first one's floats.
     resetFloats()
+    // The static positions of the layout before this one, cleared only
+    // if it had any, so a document that positions nothing allocates
+    // nothing here. The flag is still the previous layout's until the
+    // line below clears it, which is what makes the test right.
+    if docHasPositioned {
+        map[int] emptyStaticX = {}
+        map[int] emptyStaticY = {}
+        staticPosX = emptyStaticX
+        staticPosY = emptyStaticY
+    }
     docHasPositioned = false
     anyRtlText = false
     docHasFloats = false
+    inlineInkOverhang = 0
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')
     if html == null { return null }
@@ -5207,6 +5975,47 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // with no positioned box skips the walk entirely.
     if docHasPositioned {
         layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
+        // An anchored box resolves against another element's finished
+        // rectangle, so it is placed after every other positioned box
+        // has one. A page that names no anchor never walks the tree.
+        if anyAnchorName {
+            map[int] emptyX = {}
+            map[int] emptyY = {}
+            map[int] emptyW = {}
+            map[int] emptyH = {}
+            map[int] emptyBX = {}
+            map[int] emptyBY = {}
+            map[int] emptyBW = {}
+            map[int] emptyBH = {}
+            anchorLiveX = emptyX
+            anchorLiveY = emptyY
+            anchorLiveW = emptyW
+            anchorLiveH = emptyH
+            map[int] emptyIX = {}
+            map[int] emptyIY = {}
+            map[int] emptyIW = {}
+            map[int] emptyIH = {}
+            anchorInsetX = emptyIX
+            anchorInsetY = emptyIY
+            anchorInsetW = emptyIW
+            anchorInsetH = emptyIH
+            anchorBoxX = emptyBX
+            anchorBoxY = emptyBY
+            anchorBoxW = emptyBW
+            anchorBoxH = emptyBH
+            anchorBoxFound = false
+            if anyAnchorScope {
+                map[int] emptySId = {}
+                map[int] emptySDepth = {}
+                scopeNameId = emptySId
+                scopeNameDepth = emptySDepth
+                scopeSavedName = []
+                scopeSavedId = []
+                scopeSavedDepth = []
+            }
+            collectAnchors(root, 0)
+            if anchorBoxFound { placeAnchored(root, 0, 0, width, root.h) }
+        }
     }
     return root
 }

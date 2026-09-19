@@ -5,6 +5,886 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The property instrument grades a pseudo-element
+
+A property whose whole effect is on `::first-letter` could not register
+however complete it was: the instrument set each row's declaration on an
+element and digested that element's computed style, and nothing
+`initial-letter` does reaches the element. It sat in `supportsExempt`,
+which silenced the `@supports` cross-check without making it
+measurable -- an instrument that cannot fail, kept quiet rather than
+fixed.
+
+A row may now name a pseudo-element in a fourth column. The declaration
+then goes into a `#t::<pseudo>` rule rather than a style attribute, and
+the digest is taken from `pseudoStyleOf` with the pseudo-element's
+`content` appended, because `content` lives outside `Style` here. The
+row carries a context declaration beside the property, because a
+pseudo-element with no declarations at all is not generated and there
+would be nothing to compare against; a row whose pseudo-element does not
+compute is reported as an instrument fault rather than read as a missing
+property.
+
+**`tests/chromium.py properties-audit` asks the same question**, through
+`getComputedStyle`'s second argument. Two instruments asking different
+questions of the same row can disagree without either one saying so, and
+the audit still fails the row if Chromium cannot tell the value from the
+initial one on the pseudo-element -- checked by putting `normal` in the
+row and watching it fail.
+
+`initial-letter` is what this moves into the count, at 262 of 405, and
+`--fields` says it moved `initialLetterPacked` rather than a neighbour's
+field: the digest gained that field so the reading would be unambiguous.
+
+**`content` was never in that bucket**, which putting it there turned up.
+It already registered through `contentUrl` on the element's own style,
+because this engine implements `content: url()` on an ordinary element;
+grading it on `::before` instead *lost* a property, since a `::before`
+with no content generates no pseudo-element to compare against. Its row
+is unchanged and `supportsExempt` is now empty.
+
+### `FONT_CAP` is 0.733, and the cap height is floored
+
+The engine models a font as four ratios per em, and one of them was
+wrong by five per cent. `FONT_CAP` was 0.70; the cap height is about
+0.733 of the em.
+
+**It survived because it had only ever been read at one size.** A ratio
+taken off a single font size is a ratio plus a rounding error of up to a
+pixel -- 5% at 20px, 0.5% at 180 -- and 20px is where it was taken.
+Measured across a range instead, two independent probes agree:
+rasterising an `H` through this engine gives a least-squares
+`0.7367 x size - 0.40` over 48 to 180 pixels, and asking Chromium for
+the height of a `text-box-edge: cap alphabetic` box on the same family
+gives `0.733 x size - 0.41`.
+
+**The intercept is the other half of it.** 0.733 x 20 is 14.66 and
+Chromium answers 14, so the cap height is the floor of the ratio rather
+than the nearest integer; `capHeight` floors. That is why 0.70 rounded
+looked right at 20px, and it was six pixels short at 180.
+
+Nothing else moves. `text-box-edge: cap` answers 14 at 20px as it did.
+The drop cap's font size is found by inverting the ratio, so its letters
+at sizes 3 and 4 are now 61 and 86 pixels wide, which is Chromium's
+answer exactly, against the 64 and 90 the old constant gave. At size 2
+it is 37 against Chromium's 36: the font size lands at 60.93 where
+Chromium's lands at 60, so the 0.6-em advance rounds up rather than
+down. One pixel is the floor of what this measurement resolves --
+Chromium's own three widths imply ratios of 0.750, 0.7347 and 0.7297,
+which is one ratio seen through three roundings -- and a ratio that
+pulled size 2 to 36 would put size 4 at 85.
+
+The other three ratios were measured the same way and stand: ascent
+0.921 to 0.938 against the constant's 0.93, descent 0.233 to 0.240
+against 0.24, x-height 0.542 to 0.550 against 0.55.
+
+### `initial-letter`, a drop cap on ::first-letter
+
+`initial-letter: <size> <sink>?` on `::first-letter` makes a drop cap,
+and the geometry is simpler than the property's reputation. The size is
+where the letter's baseline sits: its cap top is the cap top of the
+block's first line and its baseline is the baseline of line `size`, so
+its cap height grows by exactly one line-height for each line it spans.
+Setting the pseudo-element's own `font-size` to
+`(cap + (size - 1) x line-height) / cap-ratio` and its `line-height` to
+`size x line-height` puts it there, because an inline is centred in its
+line box by half-leading and the half-leading is negative here.
+
+**The sink is a separate number and it is not the size.** It defaults
+to `floor(size)` and it alone says how many lines are shortened:
+`initial-letter: 2 1` and `3 1` each indent exactly one. What is left
+over goes above the text -- the block grows by `size - sink` lines and
+its text begins that many lines down -- so the letter is placed where
+the text starts, lifted back by the difference, and the rectangle it
+excludes text with is cut to the sink. Five rows of Chromium's
+measurement fit that and nothing else: a five-line paragraph is 150
+tall at `2` and `3`, 180 at `2 1` and 210 at `3 1` and `4 2`.
+
+**The letter is a floating atomic inline.** CSS2 §9.7 makes a float
+block-level, and a `BOX_BLOCK` here makes the paragraph wrap the rest of
+its text in an anonymous box, which puts the float outside the
+formatting context that has to see it. `BOX_INLINE_BLOCK` floats
+without that; a `BOX_INLINE` is never painted, because the painter
+reaches a float through the box tree.
+
+**Two instruments answered wrongly on the way.** `getComputedStyle`
+reports `::first-letter`'s `font-size` as the paragraph's own under
+every value of `initial-letter`, including the ones where the letter is
+plainly seven times as wide, so the widths had to be rasterised. And
+the measurer's own width cache is keyed by a `fontKey` built when the
+style is computed: scaling the letter to 106px afterwards left the key
+saying 20px, so every drop cap after the first in a process got the
+first one's advance. `refreshFontKey` is called wherever the font
+changes after the fact now.
+
+**The property instrument cannot see this one.** It grades an element's
+computed style and a drop cap lives on a pseudo-element, so the count
+stays at 261 with the feature working. `tests/unit/test_initialletter.f`
+is the measurement instead, and todo.md carries the `::pseudo` row that
+would let the instrument reach it.
+
+`initial-letter-align`, and `initial-letter` on an ordinary inline box,
+are not implemented.
+
+### The inline formatting context's containing block is restored
+
+`layoutInlineContent` saves and restores thirteen globals when it enters
+a formatting context, and did not save the two that say where the
+containing block is. A float in inline content is laid out from inside
+the line it interrupts, so a float with text in it ran through there and
+left the outer context holding the float's own edges: every line after
+it was as wide as the float rather than as wide as the paragraph. A
+300px paragraph beside a 64px float wrapped its words in 64px, so four
+lines became thirteen and the block came out 390px instead of 120.
+
+An empty float has no inline content, takes no such detour and was
+always right, which is why the float suite passed: it never put anything
+inside one. It does now, and the test needs no number to make its point
+-- the same paragraph beside an empty float and beside a float with one
+letter in it must lay its lines out identically.
+
+### A motion path's subpaths
+
+A second `M` used to end the path. It begins a subpath now: the path's
+length is the sum of them and a distance walks them in order with
+nothing joining them, so half way along two equal legs is the end of
+the first and the next step is the start of the second. `Z` closes the
+subpath it is in rather than the path, and the coordinate pairs after
+an `M`'s first are a line rather than another move (SVG §8.3.2), which
+this engine had been dropping.
+
+**A distance wraps round a path that is a single closed subpath and
+clamps at the ends of anything else.** That is measured, not reasoned
+about: `M 0 60 L 100 60 Z` answers 0,60 at 400px and 20,60 at −20px,
+both taken modulo its 200, while the same path with a second subpath
+after it answers its own end at 400px. So the wrap this engine already
+did belongs to a lone closed subpath, and it is turned off the moment a
+second `M` appears.
+
+**The gap between two subpaths is a segment of no length**, which is
+what lets the existing arc-length lookup walk them unchanged. It cost
+one correction: the lookup takes the last point whose distance is not
+past the one asked for, which at a join is the *start* of the next
+subpath, where Chromium answers the end of the previous one. Stepping
+back over a zero-length segment — and only when the distance is exactly
+the join, or a point in the middle of the second subpath would step back
+too — is what puts it there.
+
+### A motion path's curve commands
+
+`path()` read `M`, `L`, `H`, `V` and `Z` and stopped at the first curve.
+It reads `C`, `S`, `Q`, `T` and `A` now, each flattened into the same
+polyline the arc-length lookup already walks — sixty-four segments a
+curve, which holds a hundred-pixel curve to well under a pixel.
+
+**A quadratic is the cubic whose controls are two thirds of the way
+from each end to it**, so there is one sampler rather than two. `S` and
+`T` reflect the previous curve's control point about the current point,
+and the current point itself where the command before was not of that
+kind. `A` is converted from its two endpoints to a centre and two
+angles, with radii too small for their chord scaled up until they fit,
+which is what the standard asks for rather than treating the arc as
+invalid.
+
+The checks that earn their place need no point known in advance: a
+relative cubic from the same start is the same curve as its absolute
+twin at every distance; `S` and `T` make a path symmetric about its
+middle, as far above the axis in the second half as below it in the
+first; and the two sweeps of a semicircular arc are mirror images.
+
+**The first version of those checks read −30 for everything that goes
+up**, which is the canvas edge and not a curve. The suite's box sits
+forty pixels from the top, so the upper half of every arc fell off the
+canvas and `boundsOf` reported where the ink was clipped. The paths
+start at y = 60 now, and each is measured against its own start rather
+than the fixture's.
+
+### The static position of an absolutely positioned box
+
+CSS2 §10.3.7: a box with `position: absolute` and an `auto` inset sits
+**where it would have been in flow**. This engine put it at the corner
+of its containing block, on both axes and in every case tried — 0, 0
+where Chromium answers 0, 50 for a box after a 50px block, 60, 0 for one
+inside an indented div, 0, 20 for a block-level one after text on a
+line, and 20, 70 in a containing block with 20px of padding.
+
+**The flow already walks past these boxes, so the position was there to
+be taken.** The block layout skips an out-of-flow child and
+`placeInline` returns for one immediately; the static position is the
+pen at exactly those two moments. It is recorded on the way past, in a
+map keyed by box id that a document with nothing positioned never grows,
+because `docHasPositioned` guards the writes as well as the read.
+
+That split is also what gets the two kinds right without a case for
+either. An **inline-level** box takes `ifcX`, `ifcY` and lands where the
+inline itself would have been. A **block-level** one among inline
+content is a sibling of the anonymous box holding that text, so the
+block loop hands it the line after — which is what Chromium does, and
+neither needed to be asked for.
+
+**The two axes are decided separately**, so `top: 5px` with `left: auto`
+puts the box at the declared 5 down and the static position across. A
+`fixed` box has no such place: it resolves against the viewport and
+stays at its corner.
+
+This was found while implementing `anchor()`. With no fallback and no
+anchor the declaration has no effect, and "no effect" means the static
+position — which turned out to be somewhere the engine did not compute.
+
+### `anchor()` in the inset properties
+
+CSS Anchor Positioning 1's placement function, in `left`, `right`,
+`top` and `bottom`. `left: anchor(--a right)` puts the box's left edge
+on the anchor's right, `right: anchor(--a left)` hangs its right edge
+off the anchor's left, and a fallback beside the name is used only when
+the anchor cannot be found.
+
+**Every side keyword is one number.** `left`, `top`, `start` and
+`self-start` are 0, `center` is 50, `right`, `bottom` and `end` are 100,
+and a percentage is itself — so the nine keywords and the percentage
+are the same value in hundredths of a percent along the anchor's box,
+and the resolver has one case rather than ten. That the logical names
+are the physical ones here is measured rather than assumed: there is no
+`writing-mode` to make them anything else.
+
+The checks that earn their place are the ones that do not depend on a
+position being known: `anchor(--a 0%)` must land where `anchor(--a
+left)` lands, `100%` where `right` lands, and `50%` where `center`
+lands, on both axes.
+
+**Each `anchor()` resolves its own name**, against the anchors the
+tree-order walk has already passed — the same rule `position-anchor`
+follows — so one box can anchor its left edge to one element and its top
+to another. A nameless one takes the name `position-anchor` gave.
+
+It is resolved where `position-area` is, after the tree has been laid
+out, because that is the first moment an anchor has a rectangle.
+
+**It is the box's margin edge that lands on the anchor, not its border
+edge.** The first version put the border edge there, which is
+indistinguishable on a box with no margin and wrong on one with any --
+so the margin was measured rather than reasoned about: a 10px left
+margin moves the box ten further from the anchor and a 10px right
+margin ten the other way, which is what an ordinary inset does too.
+
+**`anchor-size()` is measured and not implemented, and the reason is
+structural.** It sizes the box rather than placing it, and the size is
+needed before the box is laid out while the anchor's rectangle is not
+known until afterwards — so it wants a second layout pass, as
+`@container` already has. Written down in todo.md rather than
+half-built, along with `anchor()` inside `calc()`, which wants the calc
+evaluator to carry a term that is not yet a length.
+
+### `overscroll-behavior`
+
+All five: the shorthand and `-x`, `-y`, `-inline`, `-block`. A scroll
+container that has reached its end passes a wheel outward, to the
+nearest ancestor that can still take it and then to the page;
+`contain` and `none` stop that chain at the box that declares them.
+The count is **261 of 405**, and `--fields` says all four graded rows
+moved `overscrollBehavior`.
+
+**The probe that would have measured the behaviour could not fail, and
+the control is what said so.** A synthetic `WheelEvent` is untrusted, so
+dispatching one over a nested scroller already at its end moves neither
+the scroller nor its ancestor — with `contain`, and equally with the
+default `auto`, where a real wheel would certainly chain. So Chromium
+answers the computed values here and nothing else, and the chain is
+graded against this engine's own scrolling, which is written down:
+`scrollContainerAt` walks outward from the box under the pointer, and
+`wheelAt` gives the remainder to the page.
+
+The check that earns its place is the one that does not depend on the
+keyword doing anything: a container that can **still** scroll takes the
+wheel whatever it declares. `overscroll-behavior` acts at the boundary
+and nowhere else, so `contain` and `auto` must be indistinguishable
+until the scroller runs out.
+
+**The two logical longhands are the two physical ones under other
+names.** Chromium reads `-inline` back as `-x` and `-block` as `-y`, and
+`dir="rtl"` changes neither; only a `writing-mode` could swap those axes
+and there is none here. So they are read into the same pair rather than
+resolved against a direction.
+
+**`contain` and `none` differ in nothing this browser does.** `none`
+also suppresses the overscroll affordance and there is none to suppress.
+The checks ask both keywords and expect the same answer, which says
+where the two are alike rather than implying one does more.
+
+**A scroll container with nothing to scroll contains the chain too.**
+The first version passed the wheel straight on from a box whose content
+fits, because the walk returned before it reached the question. Such a
+box is at both of its ends at once, so it is at a boundary exactly as
+one scrolled to its end is, and the wheel reached it either way: having
+nothing to give back is not a reason to pass it outward.
+
+### `box-decoration-break`
+
+`slice`, the initial value, is what the engine does. `clone` gives every
+fragment of a broken inline the whole box: both side edges, each
+continuation's content starting after the opening one.
+
+**It changes no line break.** The natural reading is that cloning the
+edges takes room and so breaks the text earlier. Chromium does not: the
+same characters stay on the same lines, each continuation is pushed
+right by the opening edge, and the closing edge overflows the line. Both
+`slice` and `clone` put the first line's ink at x 11 to 143 in a 150px
+paragraph, and `clone`'s closing border then sits at 150 to 153 —
+outside the paragraph. So the closing edge is added to the fragment's
+width and never to the pen.
+
+The count is **257 of 405**, and `--fields` says the field that moved is
+`boxDecorationBreak`.
+
+The check counts the side borders alone: over three lines `clone` paints
+three times as many as `slice`, because `slice` paints two however many
+fragments there are — and the three is counted from the render, as the
+number of bands of ink, rather than assumed. On a single line, where
+there is one fragment either way, the two keywords must be
+indistinguishable, and that check does not depend on the count at all.
+
+**The first version of the multiplier check was measuring the overlap.**
+At the 24px line height the rest of the suite uses, a padded inline's
+box is 31 tall, so two consecutive fragments overlap by seven rows — and
+three opening edges, which all sit in the same four columns, cover fewer
+pixels than three of them. The fixture's line height is 40 for that
+reason, which is written beside it.
+
+**The properties floor in `tests/run.sh` was 210 against a count of
+257.** A floor left where it was cannot catch the regression it exists
+to catch, so it is raised with the count now and the rule is written
+next to it.
+
+### An inline box's own border and padding
+
+CSS2 §8.4 gives an inline box margin, border and padding on all four
+sides. The engine reserved the horizontal advance for them and painted
+none of them: `paintInlineBackground` drew a background and the top and
+bottom borders and stopped, so an inline's left and right borders were
+drawn nowhere and its vertical padding took no room. The border render
+suite was green because every border it tested was on a block.
+
+**The opening side goes on the fragment that begins the inline and the
+closing side on the fragment that ends it**, which is what the initial
+`box-decoration-break: slice` means. A fragment now records which of the
+two it carries, so a fragment in the middle of a broken inline gets
+neither, and a margin takes no paint on the sides it does carry. The
+four sides go through `paintBorderSide` rather than a filled rectangle,
+so an inline's border draws dashed, dotted, double or in relief exactly
+as a block's does.
+
+**The decorations go on the content area, not the line box.** Measured
+against Chromium, an inline's background covers the font's ascent and
+descent about the baseline -- 18 pixels of a 24-pixel line -- and its
+padding and border then grow that box outside the line. The engine used
+the line box, or the inline's own line height where that was shorter,
+which was two pixels high and five pixels tall out.
+
+**None of it changes the line height.** Chromium's lines sit 24 apart
+while each fragment box is 39 tall, so the box simply paints outside the
+line and the block is no taller for it.
+
+The check that earns its place counts the side borders alone, with the
+top and bottom given no width and the text no colour: the same inline
+over one line and over three must paint the same number of them, because
+`slice` puts each side edge on exactly one fragment however many
+fragments there are. Neither number is known in advance and neither is
+written down in the test.
+
+**A box taller than its line broke the painter's cull**, which skipped a
+line box and a block box outside the window it was drawing. An inline's
+border now reaches past both, so a border a few pixels from the edge
+vanished when the line itself scrolled out: the last scroll position
+that painted any of it was the line box's last row, 44, and not the
+border box's, 50. Both culls are widened by the furthest any inline on
+the document reaches outside its line, which is one number computed
+where the fragments are placed and left at zero by a document with no
+padded or bordered inline -- so the test is the plain one on every page
+that does not use the feature.
+
+The opening side is the physical left one. In right-to-left text
+Chromium mirrors it, and this engine does not; that is measured and
+written down in todo.md rather than half-fixed, because the fragments
+would have to go into visual order first.
+
+### `text-box-trim` and `text-box-edge`
+
+A line box is taller than its text by the leading, half above and half
+below. `text-box-trim` says which of those halves to drop, and
+`text-box-edge` which two of the font's edges the height then runs
+between. A 20px/2 block is 40 tall untrimmed, 24 under `trim-both`, and
+14 between the cap height and the baseline.
+
+**Trimming sets the edge; it does not shrink to it.** At a line height
+below the content height the leading is negative, and trimming it makes
+the line *taller*. That was the one check of twenty-three that failed
+before it was fixed, and it only exists because the measurement showed
+line-height 1, 2 and 3 all give 24 -- every ordinary line height hides
+the bug.
+
+**The engine needed no new capability.** It reads no font metrics --
+Festina exposes only a string's inked width -- so it already models them
+as ratios per em and already computes the half-leading this trims. Its
+existing constants give 19 + 5 = 24 at 20px, which is Chromium's own
+number, so only the `cap` and `ex` over-edges needed adding, at 0.70 and
+0.55 per em. The two already there were evidently estimated and land
+within 0.02 of the measurement.
+
+The trim splits across lines the way the standard asks: the over edge on
+the first line, and the under edge on the last once there is a last one.
+
+**The property instrument was lying about one of them, and the row was
+fixed rather than the count banked.** `text-box-edge: text` is the
+initial edge and changes nothing without a trim beside it; it registered
+only because storing the value made a map entry. Its row now reads
+`cap alphabetic; text-box-trim: trim-both`, so it can register on the
+edge alone -- and the count stayed the same, which is what says the
+property was implemented rather than propped up.
+
+**256 of 405.**
+
+### `overflow-clip-margin`, and where a clip box's edge actually is
+
+`overflow: clip` clips to the **padding** box, not the border box, and
+`overflow-clip-margin` moves that edge outward -- by a length, or by
+naming the box to start from. A clip box at left 100 with a 5px border
+keeps ink from 105 under the initial value, from 85 under `20px`, and
+from 115 under `content-box`. `overflow: hidden` ignores it.
+
+**A `getClientRects()` probe said there was no difference**, on all five
+cases, because it reports where the child was laid out rather than where
+its ink survived. That is the third instrument in this release to answer
+"no difference" confidently and wrongly about a paint-time property,
+after `getComputedStyle` on `position-visibility` and a paired benchmark
+that summed a phase the change was not in. Rasterising and reading the
+pixels separated the five cases immediately.
+
+The length and the box code are packed into one value in a page-level
+map keyed by the computed style's serial, not a field on `Style`, for
+the reason benchmarks.md records. Paint expands the clip rectangle only
+for `overflow: clip`, and a page that never declares the property pays
+one bool test.
+
+**254 of 405.**
+
+### CSS Motion Path, which was filed under things that need a clock
+
+`offset-path` gives a box a path, `offset-distance` a point along it,
+`offset-rotate` which way it faces there, `offset-anchor` which point of
+the box sits on the path and `offset-position` where a ray begins. None
+of it needs a clock: `offset-distance: 40%` places a box in a still
+frame. The specification was grouped in css-2026.md with Transitions and
+Animations under "an animation needs a clock and a repaint loop", which
+is true of those and not of this one.
+
+**The control was not a control.** The measurement's first round wrote
+`offset-rotate: none` to hold rotation still, and there is no such value
+-- the grammar is `[ auto | reverse ] || <angle>` -- so the declaration
+was dropped and every row measured the initial `auto`. Half the rows
+looked right anyway, because at those points the path's direction is
+zero. Asking `getComputedStyle` which declarations had survived is what
+found it, and `auto 0deg` came back.
+
+**The path's coordinates are the element's own**, not the containing
+block's: a `circle(50px at 100px 100px)` on a box laid out at (30, 40)
+has its centre at (130, 140). A box at the origin cannot tell the two
+apart, which is what the first round used. **A circle starts at three
+o'clock and runs clockwise**, not at twelve. **`offset-anchor: auto` is
+the transform origin**, not the box's centre, which only shows on a box
+whose `transform-origin` says otherwise -- and that was the one test of
+the hundred and fifty-four that failed before it was fixed.
+
+Every path becomes a polyline, because the point at an arc length is
+exact on one. A polygon and a `path()` of straight commands lose nothing
+by it; a circle and an ellipse are sampled at 720 steps, which is far
+below the pixel the painter rounds to. A ray is not a polyline at all:
+it answers distances past its end and before its start.
+
+**One `int` on `Style` cost the benchmark page 1.08 ms of layout** on a
+page with no `offset-path` on it, against a parent-against-parent
+control of -0.16 ms. The index moved to a map keyed by the computed
+style's serial, and the re-measurement matches the control.
+benchmarks.md has both, and the control beside them, because 14 of 25
+pairs slower is the sort of number that gets waved through without one.
+
+**253 of 405.**
+
+### `anchor-scope`, and two rules of resolution it exposed
+
+`anchor-scope: none | all | <dashed-ident>#` scopes an anchor name to an
+element's subtree. **It is a boundary in both directions**, which the
+property's own description does not say: a box inside a scope of `--a`
+is cut off from every `--a` outside it as well, even when the scope
+holds no anchor of that name at all. The rule is symmetric -- an anchor
+and a box see each other only when the nearest scope of the name
+enclosing each of them is the same element -- and the scope covers the
+element declaring it, so `anchor-scope` and `anchor-name` together hide
+an element from outside, and a box that scopes a name sees no anchor of
+it anywhere. An implementation that only stopped a scoped name leaking
+outward agrees with Chromium on every case tried but those.
+
+**Two resolution rules came out of the same measurement**, neither of
+them about scope. An anchor that comes after the box in tree order is
+not a candidate, and of the ones before it the last wins; this engine
+kept one rectangle per name and took the document's last writer, so a
+box between two anchors took the wrong one. And an anchor must be a
+descendant of the box's containing block -- a box inside its own anchor
+is unanchored -- which stays unimplemented and recorded, because the
+placement pass carries a containing block's four numbers rather than its
+identity.
+
+The first fell out of the fix for the scope. One tree-order walk now
+keeps the live rectangle of each name, resolves each anchored box
+against what it has passed, and stores the answer per box, so the
+placement pass no longer resolves anything. The names are keyed by the
+scope they are in; a page that scopes nothing keys by the bare name and
+never touches the scope stack, which is one bool test per box.
+
+**248 of 405.** All seven of the specification's properties work.
+
+### `position-visibility`, and a probe that asked the wrong question
+
+An anchored box that still overflows its containing block once every
+candidate has been tried is hidden under `no-overflow` and drawn under
+`always`. It hides the **whole** box rather than clipping it harder: a
+box straddling the block's edge paints 20 of the 25 pixels sampled on a
+row inside it under `always`, and none of them under `no-overflow`. A
+stricter clip would leave those twenty.
+
+**The first probe found nothing, confidently.** It read
+`getComputedStyle().visibility` under each keyword and got `visible`
+every time, because Chromium implements this as a paint-time state that
+never reaches computed style. That is worth recording beside the
+behaviour: an instrument asking the wrong question answers "no
+difference" exactly as firmly as one asking the right question, and the
+only reason it was caught is that a property doing nothing at all was
+the less likely of the two explanations.
+
+**`anchors-visible` is treated as `always`, and says so.** Telling them
+apart needs the anchor scrolled out of a scrollport while the box stays
+visible, and `position-area` ties the box to the anchor. A static render
+has no such state, so this is a measurement that could not be made
+rather than a guess dressed as one.
+
+The hidden boxes are a page-level map keyed by element id, consulted in
+paint behind a flag. `Style` is shared between identically-styled
+elements so it cannot carry a per-box decision, and `Box` is allocated
+per box -- 2,728 of them on the benchmark page -- where a field costs
+whether or not anything reads it.
+
+**247 of 405.** Six of the specification's seven properties work;
+`anchor-scope` alone is left.
+
+### `position-try-order`, which is not part of the retry loop
+
+The order sorts the candidates -- the area the element asked for, then
+its fallbacks -- by the room each region offers in the named axis, most
+first. `most-height` and `most-block-size` measure the block axis,
+`most-width` and `most-inline-size` the inline one, which coincide in
+the writing mode this engine lays out in.
+
+**The sort applies whether or not the original position overflows.**
+That is the row the probe existed for: with `position-area: bottom` and
+`position-try-order: most-height`, Chromium moves the box to `top` even
+though `bottom` fits. Adding an ordering step to the overflow retry --
+the obvious place for it -- would leave the box where it was and agree
+with Chromium on every other case tried.
+
+Making room for it simplified what was there. One candidate walk now
+covers both the plain retry and the ordered choice: the candidates are
+the declared area followed by the fallbacks, sorted when an order asks,
+and the first that fits wins. Without an order the declared area is
+simply first, so a fitting position is kept and the rest are never
+reached -- the behaviour the previous commit spelled out separately.
+
+**246 of 405**, and earned: layout sorts by it. `anchor-scope` and
+`position-visibility` are still neither counted nor stored.
+
+### CSS Anchor Positioning 1, and the retry loop `position-try-fallbacks` is
+
+An anchored box that overflows its containing block now walks the
+candidates `position-try-fallbacks` names and takes **the first that
+fits**, in written order, rather than the best-fitting one. A position
+that fits is kept and the list is never consulted; when no candidate
+fits either, the original position stands rather than the last one
+tried. `flip-block`, `flip-inline` and `flip-start` transform the area
+in force rather than naming a new one, and are not applied at all when
+the original fits.
+
+Both of those last two rules are why the nine cases were read off
+Chromium before anything was written: an implementation that kept the
+last candidate it tried, or the one that overflowed least, agrees with
+Chromium everywhere except exactly there.
+
+`position-try-fallbacks` is counted because layout reads it -- 245 of
+405. `position-try-order` and `position-visibility` are still not, and
+still are not stored: neither has been probed, and a property nothing
+reads is not implemented however faithfully it is kept.
+
+### CSS Anchor Positioning 1: `anchor-name`, `position-anchor`, `position-area`
+
+An absolutely positioned box resolves against the padding box of its
+nearest positioned ancestor. `position-anchor` names a second rectangle
+to resolve against instead -- another element's border box, found by the
+`anchor-name` it declared -- and `position-area` says which of nine
+regions around it the box goes in.
+
+Each axis is one of three bands. A band before the anchor end-aligns the
+box so its far edge meets the anchor's near one, a band after
+start-aligns it, and the anchor's own band centres it. **`span-all`
+centres on the anchor, not on the region it spans**: in a 300px
+containing block Chromium answers 120 where centring in the region would
+give 140, which is the case a region-first reading gets wrong and the
+reason the thirteen regions were measured before any of this was
+written.
+
+The placement runs after the ordinary positioning pass rather than
+inside it, because an anchor may itself be absolutely positioned and so
+has no final rectangle until that pass is done.
+
+**One bug the tests caught.** `top span-all` came out centred rather
+than above: `span-all` names no axis, and assigning the keywords in
+written order let it overwrite the block axis `top` had already claimed.
+The keywords that name an axis are placed first now, and the ones that
+name none fill whatever is left.
+
+**Four of the specification's properties are not implemented, and are
+not counted.** `anchor-scope`, `position-try-fallbacks`,
+`position-try-order` and `position-visibility` all registered on the
+instrument while they were merely stored in a field -- a property the
+cascade computes but nothing reads renders the same either way, so by
+this project's own definition it is not implemented. They are neither
+stored nor claimed by `@supports` now, and todo.md says what each needs:
+a scope tree for the first, and for the other three a retry loop that
+lays the box out, tests it for overflow and lays it out again.
+
+The count is therefore **244 of 405**, up from 241 by the three
+properties that move a box, rather than the 248 the digest would have
+given.
+
+The three are held off `Style` in a side table indexed by one `int`,
+because a field on `Style` costs time in layout whether or not anything
+reads it -- four floats cost two milliseconds on a page using none of
+them, measured the commit before this one.
+
+### CSS Borders 4: `corner-shape`
+
+A corner is the region the border radius already resolves, and every
+value this property takes is that region under a different superellipse
+exponent -- `|x/rx|^k + |y/ry|^k = 1`, with a negative exponent giving
+the concave reflection. So there is one curve in the painter and not
+six: `square` is a large k, `squircle` is 4, `round` is 2, `bevel` is 1,
+`scoop` is -2 and `notch` is a large negative one. `superellipse()`
+takes any of them, and the suite checks it against the keywords rather
+than against numbers worked out here -- `superellipse(1)` must be the
+same picture as `bevel`, or the keywords are a second table that happens
+to agree.
+
+The shorthand reads one to four values the way `border-radius` does, the
+four physical longhands override it, and the four logical ones name the
+same corners in the left-to-right horizontal mode this engine lays out
+in. **241 of 405** properties now change the computed style, up from
+233, and `--fields` says each of the eight moved its own corner's field.
+
+**Chromium 141 was measured first**, as a 100x100 box with a 40px radius
+read as the first fully black pixel on each row of the corner. `bevel`
+is what pins the parameterisation down: an exponent of 1 collapses the
+formula to a straight line, so all of its rows are exact rather than
+near, and an exponent wrong anywhere could not match every one.
+
+Three things the tests caught that the implementation had wrong:
+
+**Sampling a corner evenly in one axis is wrong for an extreme
+exponent.** `square` and `notch` put everything they do in the last
+thousandth of an axis parameter, so sixteen even steps drew a diagonal
+across the corner instead of the shape. The corner is walked in the
+angle now, which samples every exponent evenly along its own curve.
+
+**The shape was painter state, and stale state leaked between boxes.** A
+page that used the property left the globals set, so the next box with
+no shape came out bevelled. The check that caught it is the one that
+asks two ways of saying the same thing to agree: a box with no
+`corner-shape` must be the same picture as one asking for `round`.
+
+**`Math.cos` of half pi is 6e-17, and `notch` raises it to the 1/500.**
+That is 0.93 rather than 0, and it put the end of a corner three pixels
+from the edge it joins. Both ends of every corner are pinned to the
+straight edges exactly rather than computed.
+
+A corner that is `round` keeps the bezier the canvas draws natively even
+when another corner of the same box is shaped, so `round` is the same
+pixels whatever surrounds it -- an invariant worth having structurally
+rather than by watching a polyline converge to it. A page that never
+says the property never leaves that path at all: `anyCornerShape` is one
+boolean on the box's radius resolution, and `roundedRectPathEllipses`
+takes its old four-curve route whole.
+
+A shadow follows the shape its box has, because `resolveCornerRadii` is
+where both the radii and the shapes are read and `shadowShapeRadii` goes
+through it.
+
+**The four exponents are one packed `int` rather than four `float`
+fields, and the benchmark is why.** The readable version cost 2 ms on a
+page with no corner shaped at all -- slower in 21 paired samples of 25,
+all of it in layout, none of it in the cascade that parses the property
+or the paint that draws it. Compiling the revision before this one with
+four `float` fields added to `Style` and never read reproduces it
+exactly, so the cost is thirty-two bytes of struct growth rather than
+any line the feature runs: `Style` is dereferenced once per box
+throughout layout, and the benchmark page has 2,728 boxes sharing 24 of
+them. One and two `int` fields cost nothing on the same test, so four
+codes of six bits in one field do too -- slower in 28 of 50 pairs, which
+is what a coin gives. No test could have caught this; every suite passed
+on the slow version. benchmarks.md keeps the numbers and the padding
+experiment.
+
+### The explicit half of UAX #9, and `unicode-bidi`
+
+The bidirectional algorithm had its implicit half -- the W, N and I
+rules, which resolve a character's direction from its own class and its
+neighbours'. It now has the explicit half as well: the nine directional
+formatting characters a document uses to say what the implicit rules
+would get wrong. X1 to X8 maintain the directional status stack, the
+depth limit of 125 and the two overflow counters that make a PDF or a
+PDI undo an embedding that was dropped rather than nested; X9 removes
+the embeddings, the overrides and the PDFs; X10 and BD13 build the
+isolating run sequences, and the implicit rules run over one sequence at
+a time rather than over the whole string, which is what lets an
+isolate's content resolve without the text around it and the text around
+it resolve without the content. An FSI takes its direction from the
+first strong character between it and its matching PDI, which is P2 and
+P3 applied to a span. None of the nine is drawn, so none of them is in
+the visual order.
+
+`unicode-bidi` is those characters under the names a stylesheet gives
+them, and that is exactly how it is implemented. CSS Writing Modes 3
+§2.2 defines each value as the pair the element's text is wrapped in --
+`embed` an LRE or an RLE and a PDF, `bidi-override` an LRO or an RLO,
+`isolate` an LRI or an RLI and a PDI, `isolate-override` both pairs,
+`plaintext` an FSI and a PDI -- so the property wraps and calls the one
+algorithm rather than opening a second path through it. All six values
+work where only `bidi-override` did, and the value belongs to the
+element the text is in rather than to the block: a text box carries its
+element's computed style, which is where an inline's `unicode-bidi` is.
+
+`normal` is now what the standard says it is, which is a fix rather than
+an addition: an element with `direction: rtl` and no `unicode-bidi` does
+*not* open an embedding, so its own direction does not reach the
+ordering of its content -- the paragraph's stands. That is the
+difference between `normal` and `embed`, and Chromium agrees: on
+`ab` and a Hebrew word inside a `direction: rtl` inline, `normal`
+answers `ab` first and `embed` answers the Hebrew first.
+
+**Every expected order is Chromium 141's**, read by wrapping each
+character in a span of its own and sorting the spans by their left
+edges -- a character the browser gives no width, which is every one of
+the nine, drops out of the answer, which is what this returns as well.
+Thirteen explicit-code cases and eighteen property cases settled the
+behaviour before any of it was written.
+
+`@supports` answers yes for `unicode-bidi` now that every value it takes
+does something, and the property registers on the instrument against a
+field of its own: **233 of 405**, up from 232, with `unicodeBidi` the
+field that moved.
+
+Two rules of the standard are still out, and for the same reason the
+character classes come from script ranges rather than from a table: W1
+resolves a combining mark to the class of the character it sits on and
+N0 mirrors a bracket inside a right-to-left run with its partner, and
+both want the Unicode database this repository does not vendor.
+
+A page that mentions neither a right-to-left script nor `unicode-bidi`
+pays nothing: `anyUnicodeBidi` is set during the cascade beside
+`anyRtlText`, and the reordering pass over a finished line is skipped
+unless one of them is true.
+
+### CSS Scroll Snap 1
+
+A scroll container with `scroll-snap-type` comes to rest on one of the
+positions its children's `scroll-snap-align` declares, rather than
+wherever the scroll left it. `x`, `y`, `both` and the two logical axes,
+each `mandatory` or `proximity`, against `start`, `center` and `end`,
+with `scroll-padding` insetting the snapport and `scroll-margin`
+outsetting a child's snap area, all four sides of each.
+
+A snap position is one subtraction: the child's edge less the snapport's,
+per alignment. The nearest wins and a tie goes to the lower.
+
+**Chromium was measured before any of it was written**, which is why the
+implementation passed its suite on the first run. Four probes settled it:
+the subtraction each alignment is; that a tie goes to the lower, pinned
+by the `end` alignment at 35 where 20 and 50 are both fifteen away; that
+`proximity` is a third of the snapport rather than a fixed distance,
+which took snap points 500 apart to see at all and two snapport sizes to
+tell apart; and that a snap area larger than the snapport is a *range*
+rather than a point (§6.1), so a scroll already inside a tall child stays
+where it is instead of jumping to that child's top.
+
+That last one is the case a nearest-point implementation gets wrong, and
+the reason to measure first rather than write first: with four 100px
+children in an 85px snapport, Chromium leaves 10 at 10, pulls 40 back to
+15 -- the first child's own end -- and sends 60 on to 100.
+
+The eight logical longhands -- `scroll-padding-block-start` and its
+siblings -- are the physical eight under the names a writing mode gives
+them, so they are renamed where every other logical property here is
+renamed rather than implemented again. Each is checked against the
+physical one it stands for *and* against the undeclared case, because a
+pair of aliases that both did nothing would agree with each other
+perfectly.
+
+The property instrument goes from 214 to 232 of 405, and `--fields` says
+each of the eighteen moved its own field. All ten change where a scroll comes
+to rest, so none of them is a count that moved without anything else
+moving.
+
+### CSS Scrollbars 1, and a stable gutter
+
+`scrollbar-width` and `scrollbar-color`, which is the whole of CSS
+Scrollbars 1, and `scrollbar-gutter: stable` from CSS Overflow 4. The
+browser paints its own scrollbars, so all three are acted on rather than
+stored: the width decides how much room the bar takes from the content,
+the colours decide what it is drawn in, and the gutter decides whether
+the room is taken before there is anything to scroll.
+
+Chromium 141 is the yardstick. A 200x100 `overflow: scroll` box has a
+client width of 185, 190 and 200 under `auto`, `thin` and `none`, so
+`thin` is ten pixels and `none` is none; an `overflow: auto` box with a
+10x10 child has a client width of 200, and 185 once it declares
+`scrollbar-gutter: stable`, with the client height 100 either way --
+the gutter is the inline axis's and the block axis keeps nothing.
+
+**A bar of no width is still a scroll container.** `scrollbar-width:
+none` hides the bar; it does not take the scrolling away. The box tree
+had been answering both questions with one number -- `sbW` was the room
+the bar took *and* the test for whether the box scrolled -- so the first
+version of `none` produced a box that could not be scrolled at all. The
+two are separate fields now: everything that draws a bar or is asked
+where one was clicked reads the room, and everything that scrolls reads
+the scrolling.
+
+`scrollbar-color` takes two colours, thumb then track, and inherits. A
+declaration naming one colour is dropped whole rather than colouring the
+thumb and guessing at the track, because the standard takes the pair or
+nothing.
+
+`scrollbar-width` does not inherit here. The standard makes it
+inherited; Chromium does not, answering `auto` on the child of an
+element that declared `thin`, and this follows the browser it is
+measured against and says so rather than leaving the disagreement
+unrecorded.
+
+`scrollbar-gutter: both-edges` reserves the same width again on the side
+no bar is ever drawn on, so the content sits between two equal gutters:
+Chromium answers a 200px box with a client width of 170 rather than 185.
+It is the one value here that moves a box's content to the right --
+nothing else in this engine insets a box from that side -- so it is a
+field of its own on the box rather than a wider bar, added in `contentX`,
+which is the single place a content box's left edge is decided.
+
+The property instrument goes from 211 to 214 of 405, and `--fields`
+says each of the three moved its own field rather than a neighbour's.
+
 ### Paged media, and a browser that prints
 
 CSS2's last unimplemented chapter. `@page` declares the page box: `size`

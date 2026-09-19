@@ -384,4 +384,92 @@ check(scrollContainerAcrossAt(pacross.root, 50, 250, 1) == null,
 check(scrollContainerAcrossAt(pdrag.root, 50, 10, 1) == null,
       'a box with only a vertical bar takes no scroll across')
 
+// ---- scrollbar-color and scrollbar-width ------------------------------
+// The bar is painted in the two colours a stylesheet gave it, thumb
+// first and track second (CSS Scrollbars 1 §2), and `none` paints no bar
+// at all. Both are asked, because a painter that drew nothing would pass
+// a check that only looked for the absence of the default grey.
+color sbThumb = '#ff0000'
+color sbTrack = '#0000ff'
+color sbDefaultTrack = '#fcfcfc'
+
+Page sbc = pageFromHtml(head + '<div style="width:100px;height:60px;overflow:scroll;'
+    + 'scrollbar-color:#ff0000 #0000ff">'
+    + '<div style="width:300px;height:300px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(sbc, 0, 0, 300)
+check(getPixelColor(92, 5) == sbThumb, 'the thumb takes the first colour')
+check(getPixelColor(92, 40) == sbTrack, 'and the track the second')
+
+Page sbd = pageFromHtml(head + '<div style="width:100px;height:60px;overflow:scroll">'
+    + '<div style="width:300px;height:300px"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(sbd, 0, 0, 300)
+check(getPixelColor(92, 40) == sbDefaultTrack, 'and without the property the track is the browser own')
+
+// `scrollbar-width: none` reserves nothing, so the pixels the bar was in
+// belong to the content -- and the box still scrolls, which the unit
+// suite checks and a pixel cannot.
+Page sbn = pageFromHtml(head + '<div style="width:100px;height:60px;overflow:scroll;'
+    + 'scrollbar-width:none;background:#dddddd">'
+    + '<div style="width:300px;height:300px;background:green"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(sbn, 0, 0, 300)
+check(getPixelColor(92, 40) == green, 'scrollbar-width: none leaves the content where the bar was')
+check(!(getPixelColor(92, 40) == sbDefaultTrack), 'and paints no track there')
+
+// ---- overflow-clip-margin --------------------------------------------
+// The edge an `overflow: clip` box clips to is its **padding** box, and
+// this property moves that edge outward -- by a length, or by naming a
+// different box to start from. Chromium's numbers, read off a
+// rasterised row: a clip box at left 100 with a 5px border and 10px
+// padding keeps ink from x=105 under the initial value, from 85 under
+// `20px`, and from 115 under `content-box`.
+//
+// A `getClientRects()` probe of the same five cases reported no
+// difference on any of them, because it says where the child was laid
+// out rather than where its ink survived (todo.md records it). So this
+// is a pixel test, as it has to be.
+text clipHead = '<!doctype html><body style="margin:0">'
+    + '<div style="position:absolute;left:100px;top:40px;width:100px;height:60px;'
+    + 'padding:10px;border:5px solid #999999;overflow:clip;'
+
+// The leftmost x at which the spilling child still paints.
+int func clipLeftEdge(decl:text) {
+    Page p = pageFromHtml(clipHead + decl + '">'
+        + '<div style="position:absolute;left:-60px;top:0px;width:300px;height:60px;'
+        + 'background:red"></div></div></body>', 'test.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    for int x = 0, x < 400, x++ {
+        if getPixelColor(x, 75) == red { return x }
+    }
+    return -1
+}
+
+checkEqInt(clipLeftEdge(''), 105, 'a clip box clips to its padding box, not its border box')
+checkEqInt(clipLeftEdge('overflow-clip-margin:20px'), 85,
+           'and the margin pushes that edge outward')
+checkEqInt(clipLeftEdge('overflow-clip-margin:content-box'), 115,
+           'content-box starts from the content edge')
+checkEqInt(clipLeftEdge('overflow-clip-margin:padding-box'), 105,
+           'padding-box is what the initial value already does')
+// The two rows that must differ, or a property doing nothing would pass
+// three of the four above.
+check(clipLeftEdge('overflow-clip-margin:20px') != clipLeftEdge(''),
+      'a length moves the edge at all')
+check(clipLeftEdge('overflow-clip-margin:content-box') != clipLeftEdge(''),
+      'and so does naming a different box')
+// `overflow: hidden` ignores it, which is the row that says the margin
+// is read for `clip` and not for every clipping box.
+Page hid = pageFromHtml('<!doctype html><body style="margin:0">'
+    + '<div style="position:absolute;left:100px;top:40px;width:100px;height:60px;'
+    + 'padding:10px;border:5px solid #999999;overflow:hidden;overflow-clip-margin:20px">'
+    + '<div style="position:absolute;left:-60px;top:0px;width:300px;height:60px;'
+    + 'background:red"></div></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(hid, 0, 0, 300)
+check(getPixelColor(95, 75) == white, 'overflow: hidden ignores the clip margin')
+check(getPixelColor(110, 75) == red, 'while still painting inside its padding box')
+
 finish('overflow')

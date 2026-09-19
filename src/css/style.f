@@ -9,6 +9,23 @@
 import ../util/color.f
 
 // display
+// DejaVu Sans metrics (the fonts fontconfig serves for the generic
+// families here), in em: ascent 0.93, descent 0.24. Festina exposes
+// no ascent/descent API, only the inked height of a string.
+const float FONT_ASCENT = 0.93
+const float FONT_DESCENT = 0.24
+// The other two edges `text-box-edge` can name. Both are measured
+// across a range of font sizes rather than at one, because a ratio read
+// off a single size is a ratio plus a rounding error of up to a pixel:
+// 5% at 20px and 0.5% at 180. Rasterising an `H` through this engine
+// and asking Chromium for the same family's cap height both give a
+// least-squares `0.733 x size` with an intercept of -0.4; todo.md has
+// both tables. That intercept is why the cap height is FLOORED below
+// rather than rounded -- 0.733 x 20 is 14.66 and Chromium answers 14 --
+// and it is why 0.70 looked right at 20px for as long as it did.
+const float FONT_CAP = 0.733
+const float FONT_EX = 0.55
+
 const int DISPLAY_NONE = 0
 const int DISPLAY_BLOCK = 1
 const int DISPLAY_INLINE = 2
@@ -254,6 +271,308 @@ const int OBJECTFIT_SCALE_DOWN = 4
 // is not, so `page` and its `left`/`right`/`recto`/`verso` variants ask
 // for something this engine never makes and change nothing -- which is
 // what Chromium does with them on screen too.
+// CSS Scrollbars 1 §3: how wide a scroll container's bars are. `auto`
+// is whatever the browser's own is, `thin` is narrower, and `none`
+// reserves nothing and paints nothing -- the box still scrolls, because
+// hiding the bar is not the same as taking the scrolling away.
+// Chromium 141 answers a 200x100 `overflow: scroll` box with a client
+// width of 185, 190 and 200 for the three, so `thin` is ten pixels.
+// CSS Scroll Snap 1 §5: how strictly a scroll container comes to rest on
+// one of its snap positions, and §4: which edge of a child a position
+// lines up with. `proximity` snaps only when a position is near enough,
+// and near enough is a third of the snapport -- measured against
+// Chromium rather than chosen (todo.md).
+const int SNAP_NONE = 0
+const int SNAP_MANDATORY = 1
+const int SNAP_PROXIMITY = 2
+
+const int SNAPALIGN_NONE = 0
+const int SNAPALIGN_START = 1
+const int SNAPALIGN_CENTER = 2
+const int SNAPALIGN_END = 3
+
+// `corner-shape`'s keywords, as the superellipse exponents they name
+// (CSS Borders 4 §5). The two extremes are large finite numbers rather
+// than an infinity the language has no literal for, and they are large
+// enough that the curve is flat to well inside a pixel at any radius a
+// page uses: at k = 1000 the corner is square to within a thousandth of
+// its radius.
+// Whether any element on this page asked for a corner that is not
+// `round`, so that a page which never says the property never leaves
+// the curve the canvas draws natively (CLAUDE.md, "a feature must not
+// cost anything to the pages that do not use it").
+bool anyCornerShape = false
+
+const float CORNER_K_ROUND = 2.0
+const float CORNER_K_SQUARE = 1000.0
+const float CORNER_K_NOTCH = -1000.0
+const float CORNER_K_BEVEL = 1.0
+const float CORNER_K_SCOOP = -2.0
+const float CORNER_K_SQUIRCLE = 4.0
+
+// The codes those exponents are packed as. `round` is zero so that a
+// `Style` nobody assigned to is every corner round, which is what a box
+// with only a `border-radius` has always been.
+const int CORNER_CODE_ROUND = 0
+const int CORNER_CODE_SQUARE = 1
+const int CORNER_CODE_BEVEL = 2
+const int CORNER_CODE_SCOOP = 3
+const int CORNER_CODE_NOTCH = 4
+const int CORNER_CODE_SQUIRCLE = 5
+// Six bits a corner, so four fit in one field with room for the
+// exponents `superellipse()` names beyond the keywords.
+const int CORNER_CODE_CUSTOM = 6
+const int CORNER_CODE_BASE = 64
+
+// The arbitrary exponents this page's `superellipse()` declarations
+// asked for, in the order they were first seen; a code of
+// CORNER_CODE_CUSTOM or more indexes this.
+arr[float] cornerCustomK = []
+
+float func cornerKOfCode(code:int) {
+    if code == CORNER_CODE_ROUND { return CORNER_K_ROUND }
+    if code == CORNER_CODE_SQUARE { return CORNER_K_SQUARE }
+    if code == CORNER_CODE_BEVEL { return CORNER_K_BEVEL }
+    if code == CORNER_CODE_SCOOP { return CORNER_K_SCOOP }
+    if code == CORNER_CODE_NOTCH { return CORNER_K_NOTCH }
+    if code == CORNER_CODE_SQUIRCLE { return CORNER_K_SQUIRCLE }
+    int i = code - CORNER_CODE_CUSTOM
+    if i < 0 || i >= cornerCustomK.length { return CORNER_K_ROUND }
+    return cornerCustomK[i]
+}
+
+// The code for an exponent, adding it to the page's list when it is one
+// no keyword names. A page that runs out of codes gets `round` for the
+// rest, which is the initial value rather than a wrong shape.
+int func cornerCodeOfK(k:float) {
+    if k == CORNER_K_ROUND { return CORNER_CODE_ROUND }
+    if k == CORNER_K_SQUARE { return CORNER_CODE_SQUARE }
+    if k == CORNER_K_BEVEL { return CORNER_CODE_BEVEL }
+    if k == CORNER_K_SCOOP { return CORNER_CODE_SCOOP }
+    if k == CORNER_K_NOTCH { return CORNER_CODE_NOTCH }
+    if k == CORNER_K_SQUIRCLE { return CORNER_CODE_SQUIRCLE }
+    for int i = 0, i < cornerCustomK.length, i++ {
+        if cornerCustomK[i] == k { return CORNER_CODE_CUSTOM + i }
+    }
+    if CORNER_CODE_CUSTOM + cornerCustomK.length >= CORNER_CODE_BASE {
+        return CORNER_CODE_ROUND
+    }
+    cornerCustomK.push(k)
+    return CORNER_CODE_CUSTOM + cornerCustomK.length - 1
+}
+
+// Corner 0 is the top left, then clockwise.
+int func cornerCodeAt(packed:int, which:int) {
+    if which == 0 { return packed % CORNER_CODE_BASE }
+    if which == 1 { return Math.floorDiv(packed, CORNER_CODE_BASE) % CORNER_CODE_BASE }
+    if which == 2 {
+        return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE) % CORNER_CODE_BASE
+    }
+    return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE)
+        % CORNER_CODE_BASE
+}
+
+float func cornerKAt(packed:int, which:int) { return cornerKOfCode(cornerCodeAt(packed, which)) }
+
+int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
+    return cornerCodeOfK(tl)
+        + cornerCodeOfK(tr) * CORNER_CODE_BASE
+        + cornerCodeOfK(br) * CORNER_CODE_BASE * CORNER_CODE_BASE
+        + cornerCodeOfK(bl) * CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE
+}
+
+// `position-try-order` sorts the candidates by the room the region
+// offers in one axis. It is not a tie-break inside the overflow retry:
+// the sort applies whether or not the original position overflows,
+// which Chromium shows by moving a box out of a `bottom` that fits
+// (todo.md records the measurement).
+// `position-visibility` decides whether an anchored box is painted at
+// all, not where it goes. `anchors-visible` is treated as `always`,
+// because telling them apart needs the anchor scrolled out of a
+// scrollport while the box stays visible and `position-area` ties the
+// two together -- a static render has no such state, which todo.md
+// records rather than guesses at.
+const int POSVIS_ALWAYS = 0
+const int POSVIS_NO_OVERFLOW = 1
+
+// The anchored boxes this page hides, by the element id of the box.
+// Kept here rather than as a field on `Box`, which is allocated per box
+// and pays for a field whether or not anything reads it.
+map[bool] anchorHiddenIds = {}
+bool anyAnchorHidden = false
+
+const int TRYORDER_NORMAL = 0
+const int TRYORDER_MOST_BLOCK = 1
+const int TRYORDER_MOST_INLINE = 2
+
+// CSS Anchor Positioning 1. Each axis of `position-area` is one of
+// three bands around the anchor, or a span of all three.
+const int PAREA_NONE = 0
+const int PAREA_BEFORE = 1
+const int PAREA_CENTER = 2
+const int PAREA_AFTER = 3
+const int PAREA_SPAN = 4
+// The two axes in one number, block first.
+const int PAREA_AXIS = 8
+
+// What the five anchor properties this engine acts on say about one
+// element. `anchor-scope` and `position-visibility` are not here: nothing would read them, and a
+// property the cascade computes but neither layout nor paint reads is
+// not implemented however faithfully it is stored (todo.md says what
+// each of them needs). It is
+// held off `Style` and indexed from it, because `Style` is read once
+// per box throughout layout and a field on it costs time whether or not
+// anything reads it -- four floats cost two milliseconds on a page
+// using none of them (benchmarks.md). Anchored boxes are rare, so the
+// rare data goes in a side table and `Style` carries one int.
+struct AnchorInfo {
+    name:text            // anchor-name
+    anchor:text          // position-anchor
+    area:int             // position-area, block * PAREA_AXIS + inline
+    fallbacks:text       // position-try-fallbacks, as written
+    tryOrder:int         // position-try-order, as a TRYORDER_ value
+    visibility:int       // position-visibility, as a POSVIS_ value
+    // anchor-scope, lowercased and as written: '' for `none`, 'all',
+    // or the comma-separated list of names this element scopes.
+    scope:text
+    // `anchor()` in the four inset properties, in the order left,
+    // right, top, bottom.
+    //
+    // Every side keyword the function takes is a position along the
+    // anchor's box on the property's own axis, so one number carries
+    // all of them: `left` and `top` and `start` and `self-start` are 0,
+    // `center` is 50, `right` and `bottom` and `end` are 100, and a
+    // percentage is itself. It is kept in hundredths of a percent, and
+    // -1 means this inset said nothing. An empty name means the one
+    // `position-anchor` gave, and a fallback of ANCHOR_NO_FALLBACK
+    // means there was none.
+    insetNames:arr[text]
+    insetPcts:arr[int]
+    insetFallbacks:arr[int]
+}
+
+const int ANCHOR_INSET_LEFT = 0
+const int ANCHOR_INSET_RIGHT = 1
+const int ANCHOR_INSET_TOP = 2
+const int ANCHOR_INSET_BOTTOM = 3
+const int ANCHOR_NO_FALLBACK = -1000000
+
+// This page's anchor declarations; `Style.anchorInfo` is an index into
+// it, one past the entry, so that zero means the element said nothing.
+arr[AnchorInfo] anchorInfos = []
+
+// Whether any element on this page declared an anchor name at all, so
+// that a document with none skips both walks the feature would add.
+bool anyAnchorName = false
+
+// Whether any element put an `anchor()` in one of its insets. A page
+// with none does not grow the per-inset rectangles below and does not
+// test for them while it places its anchored boxes.
+bool anyAnchorInset = false
+
+// Whether any element scoped a name. A page with none resolves each
+// anchor under its bare name, as it did before the property existed,
+// and pays nothing for the scope stack -- one bool test per box.
+bool anyAnchorScope = false
+
+AnchorInfo func anchorInfoOf(idx:int) {
+    if idx <= 0 || idx > anchorInfos.length {
+        AnchorInfo none
+        none.area = PAREA_NONE
+        none.insetNames = ['', '', '', '']
+        none.insetPcts = [-1, -1, -1, -1]
+        none.insetFallbacks = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+        return none
+    }
+    return anchorInfos[idx - 1]
+}
+
+// CSS Motion Path 1. `offset-path` gives a box a path; `offset-distance`
+// a point along it; `offset-rotate` which way the box faces there;
+// `offset-anchor` which point of the box sits on the path; and
+// `offset-position` where the path begins. None of it needs a clock --
+// the specification is grouped with the animations in css-2026.md and
+// this half of it renders in a still frame.
+const int MPATH_NONE = 0
+const int MPATH_RAY = 1
+const int MPATH_SHAPE = 2       // circle(), ellipse() or polygon()
+const int MPATH_PATH = 3        // path('M 0 0 L 100 0')
+
+// How long a ray is, which is what a percentage `offset-distance`
+// resolves against. Chromium answers these as though only the top and
+// left sides of the containing block existed, so they follow the
+// specification here rather than the browser (todo.md records both).
+const int RAYSIZE_CLOSEST_SIDE = 0
+const int RAYSIZE_CLOSEST_CORNER = 1
+const int RAYSIZE_FARTHEST_SIDE = 2
+const int RAYSIZE_FARTHEST_CORNER = 3
+const int RAYSIZE_SIDES = 4
+
+// offset-rotate. There is no `none`: the grammar is
+// `[ auto | reverse ] || <angle>`, so rotation is turned off by writing
+// `0deg`, and a declaration saying `none` is dropped.
+const int MROT_AUTO = 0
+const int MROT_REVERSE = 1
+const int MROT_ANGLE = 2
+
+struct MotionInfo {
+    pathKind:int
+    rayAngle:float          // degrees clockwise from up
+    raySize:int
+    shape:ClipShape         // MPATH_SHAPE
+    pathData:text           // MPATH_PATH, as written
+    distance:Len            // offset-distance
+    rotateMode:int
+    rotateAngle:float       // degrees, added to whatever the mode gives
+    anchorX:Len
+    anchorY:Len
+    anchorAuto:bool         // `auto`, which is the transform origin
+    posX:Len
+    posY:Len
+    posNormal:bool          // `normal`, which is the element's own place
+}
+
+// This page's offset declarations, found by the computed style's own
+// serial rather than by a field on `Style`. A field there is not free:
+// one `int` added to `Style` for this cost the benchmark page a
+// measured 1.08 ms of layout -- a page with no `offset-path` on it at
+// all -- against a parent-against-parent control of -0.16 ms. A
+// computed style is shared between every element that matched the same
+// declarations, which is exactly the right grain for this, and the map
+// is only ever read behind `anyOffsetPath`.
+arr[MotionInfo] motionInfos = []
+map[int] motionOfSerial = {}
+
+// Whether any element gave itself a path, so a document with none pays
+// one bool test rather than a walk.
+bool anyOffsetPath = false
+
+MotionInfo func motionInfoOf(idx:int) {
+    if idx <= 0 || idx > motionInfos.length {
+        MotionInfo none
+        none.pathKind = MPATH_NONE
+        none.rotateMode = MROT_AUTO
+        none.anchorAuto = true
+        none.posNormal = true
+        return none
+    }
+    return motionInfos[idx - 1]
+}
+
+const int SCROLLBAR_AUTO = 0
+const int SCROLLBAR_THIN = 1
+const int SCROLLBAR_NONE = 2
+
+// CSS Overflow 4 §3.3: whether the inline-end gutter is reserved even
+// where nothing overflows. `stable` reserves it and `both-edges`
+// reserves the inline-start side as well, which is the one value that
+// moves a box's content to the right: nothing else here insets a box
+// from that side.
+const int SCROLLBAR_GUTTER_AUTO = 0
+const int SCROLLBAR_GUTTER_STABLE = 1
+const int SCROLLBAR_GUTTER_BOTH = 2
+
 const int BRK_AUTO = 0
 const int BRK_COLUMN = 1
 const int BRK_AVOID = 2
@@ -686,7 +1005,7 @@ struct Style {
     // each element's own direction, so they cannot be resolved once and
     // inherited; `left` and `right` can.
     textAlignExplicit:bool
-    bidiOverride:bool       // unicode-bidi: bidi-override
+    unicodeBidi:int         // unicode-bidi, as one of the UBIDI_ values
     width:Len
     height:Len
     minWidth:Len
@@ -746,6 +1065,30 @@ struct Style {
     // child of an element that named a page -- so a named page is the
     // elements that asked for it and the ones laid out between them.
     pageName:text
+    // CSS Scrollbars 1. The width and the gutter do not inherit and the
+    // colours do, which is what Chromium answers -- the standard makes
+    // the width inherited too, and this follows the browser it is
+    // measured against. A colour of zero is `auto`: no declared colour,
+    // so the painter uses its own.
+    // CSS Scroll Snap 1. The type and the padding belong to the scroll
+    // container; the align and the margin to the children it snaps to.
+    snapX:bool
+    snapY:bool
+    snapStrict:int
+    snapAlignBlock:int
+    snapAlignInline:int
+    scrollPaddingTop:Len
+    scrollPaddingRight:Len
+    scrollPaddingBottom:Len
+    scrollPaddingLeft:Len
+    scrollMarginTop:Len
+    scrollMarginRight:Len
+    scrollMarginBottom:Len
+    scrollMarginLeft:Len
+    scrollbarWidth:int
+    scrollbarGutter:int
+    scrollbarThumb:int
+    scrollbarTrack:int
     orphans:int
     widows:int
     justifyItems:int
@@ -895,6 +1238,16 @@ struct Style {
     radiusBottomRightY:Len
     radiusBottomLeftX:Len
     radiusBottomLeftY:Len
+    // `corner-shape` (CSS Borders 4): the four corners' shapes packed
+    // into one field, six bits each, because `Style` is read once per
+    // box in layout and four more floats on it cost two milliseconds on
+    // a page with no corner shaped at all -- measured, and the reason
+    // this is a bitfield rather than four readable members
+    // (benchmarks.md). Code zero is `round`, so an unset field is what
+    // `border-radius` has always drawn, and codes past the keywords
+    // index the exponents `superellipse()` named.
+    cornerShapes:int
+    anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool
     textIndent:int
@@ -945,6 +1298,139 @@ Len func lenPercent(pct:float) {
 }
 
 // Resolves a length against a containing size; `auto` answers `dflt`.
+// CSS Inline 3. A line box is taller than its text by the leading, half
+// above and half below. `text-box-trim` says which of those halves to
+// drop, and `text-box-edge` which two of the font's edges the height
+// then runs between. Measured: `trim-both` leaves ascent plus descent
+// whatever the line height is, so it removes all the leading rather
+// than a fixed amount (todo.md).
+const int TBTRIM_NONE = 0
+const int TBTRIM_START = 1
+const int TBTRIM_END = 2
+const int TBTRIM_BOTH = 3
+
+// The over edge, and the under edge. A single keyword is not a value of
+// `text-box-edge` -- Chromium computes `cap` alone back to `auto` --
+// so only `auto`, `text` and a pair are taken.
+const int TBOVER_TEXT = 0
+const int TBOVER_CAP = 1
+const int TBOVER_EX = 2
+const int TBUNDER_TEXT = 0
+const int TBUNDER_ALPHABETIC = 1
+
+// Packed as trim * 16 + over * 4 + under, in a map keyed by the
+// computed style's serial rather than a field on `Style`, for the
+// reason benchmarks.md records.
+map[int] textBoxOf = {}
+bool anyTextBoxTrim = false
+
+// CSS Overflow 4 §3.3. The edge an `overflow: clip` box clips to is its
+// padding box, and `overflow-clip-margin` moves that edge outward: by a
+// length, or by naming the box to start from. Held in a page-level map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records -- one `int` there cost the
+// benchmark page 1.08 ms of layout, on a page that used none of it.
+//
+// The value is the pixel length times eight plus the `GEOBOX_` code, so
+// one map carries both and a page that never says it carries nothing.
+map[int] clipMarginOf = {}
+bool anyClipMargin = false
+
+// The packed value, or -1 when this style said nothing.
+int func clipMarginPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if clipMarginOf[k] == null { return -1 }
+    return clipMarginOf[k]
+}
+
+// CSS Fragmentation 3 §4.2. `box-decoration-break: clone` puts the
+// whole box -- margin, border, padding and background -- on every
+// fragment of a broken box, where the initial `slice` puts the opening
+// edge on the first fragment and the closing one on the last. Kept in a
+// map keyed by the computed style's serial rather than a field on
+// `Style`, for the reason benchmarks.md records.
+map[int] decoCloneOf = {}
+bool anyDecorationClone = false
+
+// Whether this style asked for `clone`. The flag is false on every
+// document that never says the property, and `&&` short-circuits, so
+// such a document never reaches the map.
+bool func decorationIsClone(s:Style) {
+    if !anyDecorationClone || s == null { return false }
+    return decoCloneOf[`${s.serial}`] != null
+}
+
+// CSS Inline 3 §5. `initial-letter: <size> <sink>?` on ::first-letter.
+// The size is where the letter's baseline sits -- its cap top is the
+// cap top of the first line and its baseline is the baseline of line
+// `size` -- so the cap height grows by one line-height for each line
+// the letter spans. The sink defaults to the size rounded down, and it
+// is the sink that says how many lines are shortened; what is left over
+// goes above the text, making the block `size - sink` lines taller.
+// Every number of that is measured, in todo.md.
+//
+// Packed as the size in hundredths times 64 plus the sink, in a map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records.
+map[int] initialLetterOf = {}
+bool anyInitialLetter = false
+
+int func initialLetterPacked(s:Style) {
+    if !anyInitialLetter || s == null { return 0 }
+    text k = `${s.serial}`
+    if initialLetterOf[k] == null { return 0 }
+    return initialLetterOf[k]
+}
+
+// The size in hundredths of a line, or 0 where this style said nothing.
+int func initialLetterSize100(s:Style) {
+    return Math.floorDiv(initialLetterPacked(s), 64)
+}
+
+int func initialLetterSink(s:Style) { return initialLetterPacked(s) % 64 }
+
+// CSS Overscroll Behavior 1. A scroll container that has reached its
+// end normally passes the scroll outward, to the nearest ancestor that
+// can still take it and then to the page. `contain` and `none` stop
+// that chain at the box that declares them; they differ only in that
+// `none` also suppresses the overscroll affordance, and this browser
+// has none to suppress.
+const int OSB_AUTO = 0
+const int OSB_CONTAIN = 1
+const int OSB_NONE = 2
+
+// Packed as x * 4 + y, in a map keyed by the computed style's serial
+// rather than a field on `Style`, for the reason benchmarks.md records.
+map[int] overscrollOf = {}
+bool anyOverscrollBehavior = false
+
+int func overscrollPacked(s:Style) {
+    if !anyOverscrollBehavior || s == null { return 0 }
+    text k = `${s.serial}`
+    if overscrollOf[k] == null { return 0 }
+    return overscrollOf[k]
+}
+
+int func overscrollX(s:Style) { return Math.floorDiv(overscrollPacked(s), 4) }
+
+int func overscrollY(s:Style) { return overscrollPacked(s) % 4 }
+
+// The packed `text-box` value, or -1 when this style said nothing.
+int func textBoxPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if textBoxOf[k] == null { return -1 }
+    return textBoxOf[k]
+}
+
+int func motionIndexOf(s:Style) {
+    if s == null { return 0 }
+    text k = `${s.serial}`
+    if motionOfSerial[k] == null { return 0 }
+    return motionOfSerial[k]
+}
+
 int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }

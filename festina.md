@@ -664,6 +664,15 @@ non-ASCII constant that cannot survive a terminal that mangles it or a
 patch applied with the wrong encoding, and the language offers no way to
 spell it that does.
 
+The nine directional formatting characters of UAX #9 are the case where
+literal bytes are not an option at all, because they render as nothing:
+a literal holding one is a blank space in the source, and a test whose
+subject is an RLE would read as a test of an empty string. `bidi.f`
+names their code points as decimal constants and turns one into text
+with `cp.toChar()`, through a `bidiControl` function whose only purpose
+is to give the character a name a reader can see. `\u202b` would be
+that name.
+
 ---
 
 ## 3p Let a program read a pixel's channels
