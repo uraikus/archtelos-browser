@@ -569,19 +569,49 @@ ask Chromium with the same second argument to `getComputedStyle`. That
 would move two properties into the count and make every future
 pseudo-element property gradeable.
 
-**The engine's `FONT_CAP` is not this font's cap ratio.** Rasterised,
-the unscaled `H` at 20px is 14 tall, which is exactly the 0.70 the
-constant assumes -- but at 63, 106 and 149 pixels the same letter
-measures 46, 77 and 110, which are ratios of 0.73, 0.726 and 0.738. So
-inverting the constant to find a font size overshoots by about four per
-cent: the drop cap's advance grows by 26 pixels a line where Chromium's
-grows by 25, and its cap height by 31 to 33 where the standard asks for
-exactly 30. The ratio is not constant across sizes either. Correcting
-it is a change to `text-box-edge`'s numbers too, so it needs its own
-measurement and its own commit; until then
-tests/unit/test_initialletter.f asserts the relation -- that the
-advance grows by the same step for each line -- exactly, and the step
-itself only within the band the ratios imply.
+**What this font's four ratios actually measure.** `FONT_CAP` is 0.70
+and the cap height is about 0.733 of the em, which is the one of the four
+that is materially wrong. Two independent measurements agree, and neither
+was taken at a single size -- a ratio read off one font size is a ratio
+plus a rounding error of up to a pixel, which is 5% at 20px and 0.5% at
+180.
+
+Rasterised through this engine, one `H` on a white canvas, ink rows
+scanned top and bottom:
+
+| px | 20 | 48 | 63 | 80 | 100 | 106 | 120 | 149 | 180 |
+|---|---|---|---|---|---|---|---|---|---|
+| ink | 14 | 35 | 46 | 59 | 73 | 77 | 88 | 110 | 132 |
+| ratio | .700 | .729 | .730 | .738 | .730 | .726 | .733 | .738 | .733 |
+
+A least-squares line through the sizes from 48 up is
+`0.7367 x size - 0.40`.
+
+Chromium 141, asked for the height of a `text-box-trim: trim-both;
+text-box-edge: cap alphabetic` box on the same monospace family, which
+is the cap height by definition:
+
+| px | 20 | 48 | 63 | 80 | 100 | 106 | 120 | 149 | 180 |
+|---|---|---|---|---|---|---|---|---|---|
+| cap | 14 | 35 | 45.56 | 58.56 | 72.91 | 76.81 | 87.22 | 109.33 | 131.47 |
+| ratio | .700 | .729 | .723 | .732 | .729 | .725 | .727 | .734 | .730 |
+
+Least squares over the same range: `0.733 x size - 0.41`. Chromium
+reports whole pixels up to 48 and fractions above it, which is a
+hinted-metrics threshold rather than a property of the font.
+
+**So 0.70 is right at 20px by coincidence and wrong everywhere else.**
+0.733 x 20 is 14.66, and Chromium answers 14 -- it is the *floor* of the
+ratio rather than the nearest integer, which is what the -0.41 intercept
+is. `0.733` floored reproduces Chromium's answer at every size in the
+table, to within half a pixel of the fractional ones; `0.70` rounded is
+six pixels short at 180.
+
+The other three stand up. Measured the same way against Chromium, the
+ascent runs 0.921 to 0.938 against the constant's 0.93, the descent
+0.233 to 0.240 against 0.24, and the x-height 0.542 to 0.550 against
+0.55. None is off by as much as one part in a hundred, and none is
+changed.
 
 ### After the official definition
 
