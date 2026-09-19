@@ -1640,3 +1640,41 @@ exactly zero and the minimum does not move — the one entry in this file
 where it did not. Eighty bytes is the smallest change measured here: a
 `moveTo` that pushes a point without adding the gap to the running
 length, a counter, and two conditions.
+Restoring the inline formatting context's containing block, and
+`initial-letter` on top of it, cost **4,544 bytes**
+(2,984,000 → 2,988,544) and nothing measurable. Twenty-five alternating
+paired samples of `generated.html`, parse through layout at 800x600,
+with a second round because the first carried one outlier:
+
+| | Min | Median | Max |
+|---|---|---|---|
+| before (bc1b69e) | 114 ms | 116 ms | 119 ms |
+| after (9575d45) | 114 ms | 116 ms | 136 ms |
+| paired, after less before | −3 ms | **0 ms** | +20 ms |
+| before, second round | 113 ms | 115 ms | 119 ms |
+| after, second round | 114 ms | 116 ms | 120 ms |
+| paired, second round | −4 ms | **1 ms** | +5 ms |
+
+The new binary is the slower one in 11 pairs of 25 and then 13, against
+the 7 the parent measured against a byte-identical copy of itself in the
+same minutes — where the paired median was 0, the mean −0.40 and the
+spread −6 to +6. The paired mean is +1.08 in the first round, all of it
+the single +20 pair, and +0.16 in the second. `features.html` gives
+median 0, mean −0.56, slower in 6 of 25.
+
+That is what the guards are for. The drop cap's push is behind
+`anyInitialLetter`, which `generated.html` never raises, and the float
+branch asks `initialLetterPacked` only of a box that is already a float.
+The containing-block fix is two integers saved and restored once per
+formatting context, which is the one part of this that every page pays;
+it does not show.
+
+**The numbers in the tables above are not updated from this run, and
+this run says why.** It read 114 ms on `generated.html` where the table
+records 101, and Chromium read 23.1 ms where the table records 26.0 --
+the engine 13% slow and the browser 11% fast in the same five minutes,
+which is the machine rather than either of them. The control passed at
+11.2% of the 15% the script allows, which is the furthest out this file
+has recorded it. The paired comparison above is the measurement that
+settles the change, because both of its binaries ran in those same
+minutes.
