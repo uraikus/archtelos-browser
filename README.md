@@ -325,6 +325,17 @@ block on its own, taking any punctuation in front of it along, skipping
 leading whitespace, and finding the letter inside a nested inline. Only
 the first of the block, not the first of every descendant.
 
+**`initial-letter`** on that pseudo-element makes it a drop cap. The
+size is where the letter's baseline sits: its cap top is the cap top of
+the block's first line and its baseline is the baseline of line `size`,
+so its cap height grows by one line-height for each line it spans. The
+sink is a second number, defaulting to the size rounded down, and it
+alone says how many lines are shortened; what is left over goes above
+the text, so the block grows by `size - sink` lines and its text begins
+that many lines down. The letter is a floating atomic inline, which is
+what lets the lines beside it shorten without an anonymous box coming
+between them.
+
 **`::first-line`** styles whichever characters end up on the first line,
 which is not known until the line has been broken. The standard
 describes it as a fictional element wrapped around them, and that is
@@ -428,7 +439,7 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, the preload scanner), twenty-one offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, the preload scanner), twenty-one offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border

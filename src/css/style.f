@@ -9,6 +9,18 @@
 import ../util/color.f
 
 // display
+// DejaVu Sans metrics (the fonts fontconfig serves for the generic
+// families here), in em: ascent 0.93, descent 0.24. Festina exposes
+// no ascent/descent API, only the inked height of a string.
+const float FONT_ASCENT = 0.93
+const float FONT_DESCENT = 0.24
+// The other two edges `text-box-edge` can name, measured off Chromium
+// the same way: a 20px monospace cap height is 14 and its x-height 11.
+// The two above were evidently estimated rather than measured and land
+// within 0.02 of that measurement's 0.95 and 0.25.
+const float FONT_CAP = 0.70
+const float FONT_EX = 0.55
+
 const int DISPLAY_NONE = 0
 const int DISPLAY_BLOCK = 1
 const int DISPLAY_INLINE = 2
@@ -1343,6 +1355,35 @@ bool func decorationIsClone(s:Style) {
     if !anyDecorationClone || s == null { return false }
     return decoCloneOf[`${s.serial}`] != null
 }
+
+// CSS Inline 3 §5. `initial-letter: <size> <sink>?` on ::first-letter.
+// The size is where the letter's baseline sits -- its cap top is the
+// cap top of the first line and its baseline is the baseline of line
+// `size` -- so the cap height grows by one line-height for each line
+// the letter spans. The sink defaults to the size rounded down, and it
+// is the sink that says how many lines are shortened; what is left over
+// goes above the text, making the block `size - sink` lines taller.
+// Every number of that is measured, in todo.md.
+//
+// Packed as the size in hundredths times 64 plus the sink, in a map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records.
+map[int] initialLetterOf = {}
+bool anyInitialLetter = false
+
+int func initialLetterPacked(s:Style) {
+    if !anyInitialLetter || s == null { return 0 }
+    text k = `${s.serial}`
+    if initialLetterOf[k] == null { return 0 }
+    return initialLetterOf[k]
+}
+
+// The size in hundredths of a line, or 0 where this style said nothing.
+int func initialLetterSize100(s:Style) {
+    return Math.floorDiv(initialLetterPacked(s), 64)
+}
+
+int func initialLetterSink(s:Style) { return initialLetterPacked(s) % 64 }
 
 // CSS Overscroll Behavior 1. A scroll container that has reached its
 // end normally passes the scroll outward, to the nearest ancestor that

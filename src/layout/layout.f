@@ -38,18 +38,6 @@ const int FRAG_TEXT = 1
 const int FRAG_ATOMIC = 2
 const int FRAG_INLINE_BG = 3
 
-// DejaVu Sans metrics (the fonts fontconfig serves for the generic
-// families here), in em: ascent 0.93, descent 0.24. Festina exposes
-// no ascent/descent API, only the inked height of a string.
-const float FONT_ASCENT = 0.93
-const float FONT_DESCENT = 0.24
-// The other two edges `text-box-edge` can name, measured off Chromium
-// the same way: a 20px monospace cap height is 14 and its x-height 11.
-// The two above were evidently estimated rather than measured and land
-// within 0.02 of that measurement's 0.95 and 0.25.
-const float FONT_CAP = 0.70
-const float FONT_EX = 0.55
-
 int nextBoxId = 1
 // every box of the current layout, indexed by id (parentBox looks parents up here)
 arr[Box] boxRegistry = [null]
@@ -761,7 +749,19 @@ bool func splitFirstLetter(b:Box, ps:Style) {
             if a == null { continue }
             Node lead = newTextNode(a.slice(0, end).toText())
             lead.style = ps
-            Box letter = newBox(BOX_INLINE, c.node, ps)
+            // A drop cap is a float (CSS Inline 3), and CSS2 §9.7 makes
+            // a float block-level -- but a `BOX_BLOCK` here makes the
+            // paragraph wrap the rest of its text in an anonymous box,
+            // which puts the float outside the formatting context that
+            // has to see it. An atomic inline floats without that:
+            // `boxIsFloated` accepts it, `placeInline` routes floats
+            // before atomics, and the painter reaches it.
+            bool drops = initialLetterPacked(ps) != 0
+            Box letter = newBox(drops ? BOX_INLINE_BLOCK : BOX_INLINE, c.node, ps)
+            // `newBox` raises `docHasFloats` from the box's own node's
+            // style, and this box is built from a text node, so the
+            // drop cap has to raise it itself.
+            if drops { docHasFloats = true }
             addChildBox(letter, buildTextBox(lead, ps))
             letter.parentId = b.id
             letter.depth = b.depth + 1
@@ -2632,6 +2632,25 @@ Box func firstLineBoxFor(b:Box) {
     return fb
 }
 
+// The drop cap in this block's inline content, or null. Guarded by
+// `anyInitialLetter` at its one caller, so a page that names no
+// `initial-letter` never walks a child list for one.
+Box func initialLetterBox(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        // The drop cap's own text box carries the same style, so the
+        // test is that this box is the float, not merely that it has
+        // the property: otherwise the letter pushes its own content
+        // down by the space it is supposed to rise into.
+        if boxIsFloated(c) && initialLetterPacked(c.style) != 0 { return c }
+        if c.kind == BOX_INLINE || c.kind == BOX_ANON {
+            Box r = initialLetterBox(c)
+            if r != null { return r }
+        }
+    }
+    return null
+}
+
 int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     Box savedBox = ifcBox
     int savedX = ifcX
@@ -2673,6 +2692,20 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     ifcLineStart = cx
     ifcLineRight = cx + cw
     ifcY = cy
+    // CSS Inline 3: a drop cap spans `size` lines but only shortens
+    // `sink` of them, and what is left over goes ABOVE the text. So
+    // the block grows by `size - sink` lines and its text begins that
+    // many lines down; the letter itself is lifted back up into them
+    // in `placeDropCap`.
+    if anyInitialLetter {
+        Box cap = initialLetterBox(b)
+        if cap != null {
+            int capLh = lineHeightOf(b.style)
+            int above = Math.floorDiv(initialLetterSize100(cap.style) * capLh, 100)
+                        - initialLetterSink(cap.style) * capLh
+            if above > 0 { ifcY = ifcY + above }
+        }
+    }
     ifcLineCount = 0
     ifcOpenInlines = []
     ifcOpenBg = []
@@ -3136,7 +3169,11 @@ void func placeInline(b:Box) {
         return
     }
     if boxIsFloated(b) {
-        placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+        if initialLetterPacked(b.style) != 0 {
+            placeDropCap(b)
+        } else {
+            placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+        }
         // the float may have narrowed the line that is open
         applyFloatsToLine()
         return
@@ -5236,6 +5273,23 @@ void func placeFloat(b:Box, cbLeft:int, cbRight:int, startY:int) {
         if nb <= y { nb = y + 1 }
         y = nb
     }
+}
+
+// A drop cap floats like anything else, but only the bottom `sink`
+// lines of it exclude text: the rest of it rises above the first line,
+// into the space `layoutInlineContent` has already pushed the text
+// down by. So it is placed where the text starts, lifted back by that
+// difference, and the rectangle it excludes with is cut to the sink.
+void func placeDropCap(b:Box) {
+    placeFloat(b, ifcCbLeft, ifcCbRight, ifcY)
+    if bfcFloats.length == 0 { return }
+    FloatRect r = bfcFloats[bfcFloats.length - 1]
+    int lh = ifcBox == null ? 0 : lineHeightOf(ifcBox.style)
+    int sinkH = initialLetterSink(b.style) * lh
+    int above = (r.bottom - r.top) - sinkH
+    if above <= 0 { return }
+    shiftBoxTree(b, 0, -above)
+    r.bottom = r.top + sinkH
 }
 
 bool func boxIsFloated(b:Box) {

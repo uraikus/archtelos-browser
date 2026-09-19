@@ -445,67 +445,6 @@ boxes (css-2026.md, CSS Writing Modes 3). The two belong together: the
 fragments go into visual order and then the opening edge follows the
 inline's start side rather than its left.
 
-### What `initial-letter` was measured to be
-
-A drop cap: `initial-letter: <size> <sink>?`, on `::first-letter`. All
-of the following is Chromium 141 on a 300px paragraph at 20px/30px
-monospace, and the geometry is simpler than the property's reputation.
-
-**The size is where the letter's baseline sits.** Its cap top is the cap
-top of the first line and its baseline is the baseline of line `size`,
-so its cap height is one line-height taller for each line it spans.
-Rasterised, the ink of an `H`:
-
-| size | ink rows | cap height |
-|---|---|---|
-| 2 | 7 to 49 | 43 |
-| 3 | 7 to 79 | 73 |
-| 4 | 8 to 109 | 102 |
-
-Thirty apart each time, which is the line height exactly, and the ink
-top does not move. The unscaled `H` at 20px is 13 tall, so the rule is
-`cap(size) = cap(1) + (size - 1) x line-height` with nothing else in it.
-
-**The sink is how many lines are shortened, and it is not the size.**
-With the default sink -- `floor(size)` -- a size of 3 indents three
-lines by the letter's advance and a size of 2 indents two. Declared, it
-is the sink alone that counts: `initial-letter: 2 1` and
-`initial-letter: 3 1` each indent exactly **one** line, and the lines
-after it start at the paragraph's own edge.
-
-**What is left over goes above the text.** The paragraph grows by
-`size - sink` lines and the text begins that many lines down, so the
-letter's top rises out of the first line rather than its bottom sinking
-past the last one. A five-line paragraph is 150 tall at `2` and `3`, 180
-at `2 1`, 210 at `3 1` and `4 2`.
-
-| declaration | lines indented | paragraph | text starts |
-|---|---|---|---|
-| `2` | 2 | +0 lines | line 1 |
-| `3` | 3 | +0 | line 1 |
-| `2 1` | 1 | +1 | line 2 |
-| `3 1` | 1 | +2 | line 3 |
-| `4 2` | 2 | +2 | line 3 |
-
-The advance the lines are indented by is the letter's own: 36, 61 and 86
-pixels at sizes 2, 3 and 4, against 12 unscaled.
-
-**`getComputedStyle` cannot see the size, so it has to be rasterised.**
-Asked for the `font-size` of `::first-letter`, Chromium answers the
-paragraph's own `20px` under every value of `initial-letter`, including
-the ones where the letter is plainly seven times as wide. That is the
-fourth instrument this branch has caught answering a well-formed
-falsehood, and the widths above come from pixels for that reason.
-
-**The engine's cap ratio is not Chromium's, so the test must check the
-relation and not the widths.** Chromium's letter at size 2 is 60px with
-a 43px cap, which makes its monospace cap ratio 0.717; this engine's
-`FONT_CAP` is 0.70, so the same rule gives a letter about two per cent
-larger. What is the same in both is that the cap height grows by exactly
-one line-height per line and the baseline lands on line `size` -- so
-that is what to assert, as `text-box-edge` does with the same four
-ratios.
-
 ### What is left of `anchor()` and `anchor-size()`
 
 `anchor()` works in the four inset properties. `anchor-size()` does
@@ -584,70 +523,12 @@ already has the shape of for `@container`: lay out, resolve the sizes,
 lay out again. `Box.forcedWidthPx` is the hook the second pass would
 write to.
 
-### How far `initial-letter` got, and where it stopped
-
-The measurement above is complete. An implementation was written
-against it and taken out again rather than left half working, because a
-drop cap painted over the text is worse than no drop cap. What follows
-is what was learnt, so the next attempt starts where this one stopped.
-
-**The cascade half works and is the easy half.** The size is applied to
-the ::first-letter style where it is computed, in `computeFirstLetterFor`
-in src/css/cascade.f, because that is the one place the paragraph's own
-font size and line height are both to hand. Setting
-`ps.fontSize = round((FONT_CAP * base + (size - 1) * lh) / FONT_CAP)`
-gave rasterised cap heights of 46, 77 and 110 at sizes 2, 3 and 4
-against 14 unscaled -- the right shape, and see the caveat below about
-the constant.
-
-**Setting the letter's own `line-height` to `size * lh` puts its
-baseline where it belongs, for free.** An inline is centred in its line
-box by half-leading, which is negative here, and the sum comes out at
-`(size - 1) * lh` below the first line's baseline to within a pixel at
-every size tried. No special-case baseline arithmetic is needed.
-
-**The letter has to be an atomic inline, not a block.** CSS2 §9.7 makes
-a float block-level, so the first attempt built the letter as
-`BOX_BLOCK` -- and the paragraph then wrapped its remaining text in an
-anonymous box, which put the float outside the inline formatting context
-that was supposed to see it. A `BOX_INLINE` is not painted at all, since
-the painter reaches a float through the box tree. `BOX_INLINE_BLOCK` is
-the one that works: `boxIsFloated` accepts it, `placeInline` routes
-floats before atomics, the painter draws it, and no anonymous box
-appears.
-
-**`newBox` will not raise `docHasFloats` for it.** The flag is set from
-the box's own node, and the letter is built from a *text* box whose node
-does not qualify, so the drop cap has to raise it itself.
-
-**What is still wrong, and is where to start.** With the letter as a
-floating atomic inline the lines nearest it are shortened correctly and
-the `size - sink` push works, but the block comes out about twice as
-tall as it should: a five-line paragraph with `initial-letter: 3`
-measured 381 pixels where it should measure about 150. The likely cause
-is that the letter is being counted twice -- once as the float it is and
-once on the line it also sits on -- or that its 90-pixel line box is
-being added to the block's height rather than overlapping it. That is
-one measurement away from an answer: print the block's `lines.length`
-and each line's `y` and `h` for a paragraph with and without the drop
-cap, and see which of the two it is.
-
-**The engine's `FONT_CAP` is not this font's cap ratio, and it shows
-here.** Rasterised, the unscaled `H` at 20px is 14 tall, which is
-exactly the 0.70 the constant assumes -- but at 63, 106 and 149 pixels
-the same letter measures 46, 77 and 110, which are ratios of 0.73, 0.726
-and 0.738. So inverting the constant to find a font size overshoots by
-about four per cent, and the cap height grows by 31 to 33 pixels a line
-where the standard asks for exactly 30. Two honest ways out: measure the
-ratio and correct `FONT_CAP` -- which is a change to `text-box-edge`'s
-numbers too, so it needs its own measurement and its own commit -- or
-keep the constant and say in the test that the step is 31 and why. The
-ratio is not constant across sizes either, which is worth writing down
-whichever way it goes.
-
 ### What CSS Inline 3 still needs
 
-`text-box-trim` and `text-box-edge` work, with the `text-box` shorthand.
+`text-box-trim` and `text-box-edge` work, with the `text-box` shorthand,
+and `initial-letter` makes a drop cap on `::first-letter`: the size puts
+the letter's baseline on the baseline of line `size`, the sink says how
+many lines are shortened, and what is left over goes above the text.
 What is not done:
 
 **The ideographic edges.** `ideographic` and `ideographic-ink` are
@@ -661,6 +542,46 @@ makes.** The four ratios -- ascent 0.93, descent 0.24, cap 0.70, ex 0.55
 -- stand in for metrics Festina cannot read out of a font, so a family
 whose real proportions differ will trim to the wrong place. The numbers
 come from Chromium on the monospace family the tests use.
+
+**`initial-letter-align`.** The standard lets the letter's over edge
+align to `alphabetic`, `hanging`, `ideographic` or the `border-box`.
+Only the alphabetic default is implemented, and the other three need
+font metrics this engine does not have -- the same four-ratios-per-em
+limit that stops `text-box-edge`'s ideographic edges.
+
+**`initial-letter` on an ordinary inline box.** The property applies to
+inline-level boxes as well as to `::first-letter`, and only the
+pseudo-element is implemented. The layout is the same; what is missing
+is the path that turns a declared inline into the float, because
+`splitFirstLetter` is the only place that builds one.
+
+**The property instrument cannot grade a pseudo-element.** It sets the
+declaration on an element and digests that element's computed style, so
+a property whose whole effect is on `::first-letter` or `::before` can
+never register, however complete it is. Two rows are in that bucket
+already -- `content` and `initial-letter` -- and both sit in
+`supportsExempt` in tests/conformance/properties.f, which silences the
+`@supports` cross-check without making them measurable. The fix is a
+row that can name a pseudo-element: apply the declaration through a
+generated rule, digest `pseudoStyleOf(node.id, <pseudo>)` rather than
+the element's style, and teach `tests/chromium.py properties-audit` to
+ask Chromium with the same second argument to `getComputedStyle`. That
+would move two properties into the count and make every future
+pseudo-element property gradeable.
+
+**The engine's `FONT_CAP` is not this font's cap ratio.** Rasterised,
+the unscaled `H` at 20px is 14 tall, which is exactly the 0.70 the
+constant assumes -- but at 63, 106 and 149 pixels the same letter
+measures 46, 77 and 110, which are ratios of 0.73, 0.726 and 0.738. So
+inverting the constant to find a font size overshoots by about four per
+cent: the drop cap's advance grows by 26 pixels a line where Chromium's
+grows by 25, and its cap height by 31 to 33 where the standard asks for
+exactly 30. The ratio is not constant across sizes either. Correcting
+it is a change to `text-box-edge`'s numbers too, so it needs its own
+measurement and its own commit; until then
+tests/unit/test_initialletter.f asserts the relation -- that the
+advance grows by the same step for each line -- exactly, and the step
+itself only within the band the ratios imply.
 
 ### After the official definition
 

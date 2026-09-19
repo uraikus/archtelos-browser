@@ -187,6 +187,9 @@ void func cascadeReset() {
     anyOverscrollBehavior = false
     map[int] emptyOverscroll = {}
     overscrollOf = emptyOverscroll
+    anyInitialLetter = false
+    map[int] emptyInitialLetter = {}
+    initialLetterOf = emptyInitialLetter
     map[int] emptyMotion = {}
     motionOfSerial = emptyMotion
     map[bool] emptyHidden = {}
@@ -1448,6 +1451,46 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     }
 }
 
+// `initial-letter: normal | <number> <integer>?`. The size is a
+// baseline rather than a multiplier: the letter's cap top is the cap
+// top of the first line and its baseline is the baseline of line
+// `size`, so its cap height is `cap(1) + (size - 1) * line-height` and
+// its font size follows from that. The sink defaults to the size
+// rounded down. All of it is measured, in todo.md.
+//
+// The size is applied to the pseudo-element's own style here rather
+// than in layout, because this is where the paragraph's font size and
+// line height are both to hand and where the style is made.
+void func applyInitialLetter(ps:Style, own:Style, v:ascii) {
+    ascii low = asciiLower(asciiTrim(v))
+    if low == 'normal' { return }
+    arr[ascii] w = asciiSplitSpace(low)
+    if w.length == 0 || w.length > 2 { return }
+    float size = parseFloatAscii(w[0])
+    if size <= 1.0 { return }
+    int sink = Math.floor(size)
+    if w.length > 1 {
+        int asked = Math.floor(parseFloatAscii(w[1]))
+        if asked < 1 { return }
+        sink = asked
+    }
+    if sink < 1 || sink > 63 { return }
+    int lh = lineHeightOf(own)
+    float cap = FONT_CAP * own.fontSize.toFloat() + (size - 1.0) * lh.toFloat()
+    int scaled = roundPx(cap / FONT_CAP)
+    if scaled <= 0 { return }
+    ps.fontSize = scaled
+    refreshFontKey(ps)
+    // The letter's own line box is as tall as it spans, which puts its
+    // baseline on the baseline of line `size` by the same arithmetic
+    // that centres any other inline in its line: the half-leading is
+    // negative here and the sum comes out exactly right.
+    ps.lineHeight = roundPx(size * lh.toFloat())
+    ps.floatSide = FLOAT_LEFT
+    initialLetterOf[`${ps.serial}`] = roundPx(size * 100.0) * 64 + sink
+    anyInitialLetter = true
+}
+
 // ::first-letter carries no `content`: it restyles characters that are
 // already there, so the style is kept on its own without one.
 void func computeFirstLetterFor(n:Node, own:Style) {
@@ -1456,7 +1499,10 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
     applyMatches(props, matches)
-    pseudoStyles[pseudoKey(n.id, 'first-letter')] = computeStyleValues(n, own, false, props)
+    Style ps = computeStyleValues(n, own, false, props)
+    ascii il = styleProp(props, 'initial-letter')
+    if il != null { applyInitialLetter(ps, own, il) }
+    pseudoStyles[pseudoKey(n.id, 'first-letter')] = ps
     pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
 }
 
@@ -4888,6 +4934,14 @@ void func motionReadRotate(mi:MotionInfo, v:ascii) {
     mi.rotateAngle = angle
 }
 
+// The key the text measurer caches widths under. Anything that changes
+// the font after the style is computed has to rebuild it, or the cache
+// answers for the font the style used to have: `initial-letter` scaled
+// a drop cap to 106px and got the paragraph's 20px advance back.
+void func refreshFontKey(s:Style) {
+    s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+}
+
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
     Style s
     Style parent = parentIn
@@ -4960,7 +5014,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if t == 'normal' { s.fontItalic = false }
     }
     s.fontFamily = computeFontFamily(styleProp(props, 'font-family'), isRoot ? 'sans-serif' : parent.fontFamily)
-    s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+    refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a
     // colour, because a system colour name answers according to it.

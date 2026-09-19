@@ -318,7 +318,12 @@ arr[text] ungradeable = []
 // registers as changing nothing here: `content` works on `::before`
 // and `::after` and does nothing on a `<p>`. Each such property is
 // named here with its reason; every other disagreement fails the run.
-arr[text] supportsExempt = ['content']
+// Properties this engine implements on a PSEUDO-ELEMENT, which an
+// ordinary element's computed style cannot show however complete the
+// implementation is. `@supports` is right to say yes and the digest is
+// right not to move; the instrument simply does not reach them, and
+// todo.md carries the ::pseudo row that would.
+arr[text] supportsExempt = ['content', 'initial-letter']
 arr[text] supportsDenied = []
 arr[text] supportsOverclaimed = []
 

@@ -5,6 +5,71 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `initial-letter`, a drop cap on ::first-letter
+
+`initial-letter: <size> <sink>?` on `::first-letter` makes a drop cap,
+and the geometry is simpler than the property's reputation. The size is
+where the letter's baseline sits: its cap top is the cap top of the
+block's first line and its baseline is the baseline of line `size`, so
+its cap height grows by exactly one line-height for each line it spans.
+Setting the pseudo-element's own `font-size` to
+`(cap + (size - 1) x line-height) / cap-ratio` and its `line-height` to
+`size x line-height` puts it there, because an inline is centred in its
+line box by half-leading and the half-leading is negative here.
+
+**The sink is a separate number and it is not the size.** It defaults
+to `floor(size)` and it alone says how many lines are shortened:
+`initial-letter: 2 1` and `3 1` each indent exactly one. What is left
+over goes above the text -- the block grows by `size - sink` lines and
+its text begins that many lines down -- so the letter is placed where
+the text starts, lifted back by the difference, and the rectangle it
+excludes text with is cut to the sink. Five rows of Chromium's
+measurement fit that and nothing else: a five-line paragraph is 150
+tall at `2` and `3`, 180 at `2 1` and 210 at `3 1` and `4 2`.
+
+**The letter is a floating atomic inline.** CSS2 §9.7 makes a float
+block-level, and a `BOX_BLOCK` here makes the paragraph wrap the rest of
+its text in an anonymous box, which puts the float outside the
+formatting context that has to see it. `BOX_INLINE_BLOCK` floats
+without that; a `BOX_INLINE` is never painted, because the painter
+reaches a float through the box tree.
+
+**Two instruments answered wrongly on the way.** `getComputedStyle`
+reports `::first-letter`'s `font-size` as the paragraph's own under
+every value of `initial-letter`, including the ones where the letter is
+plainly seven times as wide, so the widths had to be rasterised. And
+the measurer's own width cache is keyed by a `fontKey` built when the
+style is computed: scaling the letter to 106px afterwards left the key
+saying 20px, so every drop cap after the first in a process got the
+first one's advance. `refreshFontKey` is called wherever the font
+changes after the fact now.
+
+**The property instrument cannot see this one.** It grades an element's
+computed style and a drop cap lives on a pseudo-element, so the count
+stays at 261 with the feature working. `tests/unit/test_initialletter.f`
+is the measurement instead, and todo.md carries the `::pseudo` row that
+would let the instrument reach it.
+
+`initial-letter-align`, and `initial-letter` on an ordinary inline box,
+are not implemented.
+
+### The inline formatting context's containing block is restored
+
+`layoutInlineContent` saves and restores thirteen globals when it enters
+a formatting context, and did not save the two that say where the
+containing block is. A float in inline content is laid out from inside
+the line it interrupts, so a float with text in it ran through there and
+left the outer context holding the float's own edges: every line after
+it was as wide as the float rather than as wide as the paragraph. A
+300px paragraph beside a 64px float wrapped its words in 64px, so four
+lines became thirteen and the block came out 390px instead of 120.
+
+An empty float has no inline content, takes no such detour and was
+always right, which is why the float suite passed: it never put anything
+inside one. It does now, and the test needs no number to make its point
+-- the same paragraph beside an empty float and beside a float with one
+letter in it must lay its lines out identically.
+
 ### A motion path's subpaths
 
 A second `M` used to end the path. It begins a subpath now: the path's

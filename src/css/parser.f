@@ -1076,6 +1076,7 @@ arr[text] supportedProperties = [
     'box-decoration-break',
     'overscroll-behavior', 'overscroll-behavior-x', 'overscroll-behavior-y',
     'overscroll-behavior-inline', 'overscroll-behavior-block',
+    'initial-letter',
     'offset-path', 'offset-distance', 'offset-rotate', 'offset-anchor', 'offset-position',
     'anchor-name', 'anchor-scope', 'position-anchor', 'position-area', 'position-try-fallbacks', 'position-try-order', 'position-visibility',
     'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
