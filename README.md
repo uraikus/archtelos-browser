@@ -421,7 +421,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-29,144 lines of Festina in `src/` and `browser.f`.
+31,794 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
