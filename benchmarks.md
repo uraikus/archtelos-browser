@@ -1678,3 +1678,33 @@ which is the machine rather than either of them. The control passed at
 has recorded it. The paired comparison above is the measurement that
 settles the change, because both of its binaries ran in those same
 minutes.
+Correcting `FONT_CAP` to 0.733 and flooring the cap height cost **32
+bytes** (2,988,544 -> 2,988,576) and nothing measurable, on a noisier
+machine than the entries above it. Twenty-five alternating paired
+samples of `generated.html`, parse through layout at 800x600, with the
+noise floor taken twice in the same minutes:
+
+| | Min | Median | Max | Paired median | Mean | Slower in |
+|---|---|---|---|---|---|---|
+| parent against a copy of itself | 105 | 112 | 119 | 0 ms | +0.60 | 10 of 25 |
+| the same, again | 106 | 112 | 132 | 1 ms | 0.00 | 13 of 25 |
+| before (637eb26) | 95 | 113 | 118 | | | |
+| after (cde729e) | 107 | 114 | 124 | **0 ms** | +0.84 | 10 of 25 |
+
+`features.html` gives a paired median of 0, a mean of +1.12 and 11 of 25.
+
+**The floor is wider here than in any other entry in this file** -- the
+paired differences of a binary against a byte-identical copy of itself
+run from -14 to +25 ms, where the same control an hour earlier ran -6 to
++6. Two container restarts and a full valgrind run had just finished,
+and the machine had not settled. The medians are what carry the result:
+the change reads 0 against a floor of 0 and 1. A single-round reading of
+the means alone would not have been worth anything, which is the whole
+reason the floor is taken beside the measurement rather than remembered
+from last time.
+
+The change touches two functions, `textBoxOverEdge` and
+`applyInitialLetter`, and neither benchmark page declares
+`text-box-trim` or `initial-letter`, so nothing on either page reaches
+the changed code at all. That is a reason to expect the result, not a
+substitute for it.
