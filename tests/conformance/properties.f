@@ -117,7 +117,8 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.objectViewBox.kind}:${lenKey(s.objectViewBox.t)}:${lenKey(s.objectViewBox.r)}:${lenKey(s.objectViewBox.b)}:${lenKey(s.objectViewBox.l)}`,
         `${shadowKey(s.shadows)}`,
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.counterSet}`, `${s.quotes}`,
-        `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`]
+        `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`,
+        `${initialLetterPacked(s)}`]
 }
 
 text func motionKeyPath(mi:MotionInfo) {
@@ -142,6 +143,14 @@ text func styleDigest(s:Style) {
 // against each other at startup rather than trusted: a field added to
 // one and not the other stops the instrument instead of silently
 // mislabelling every property after it.
+// The digest a pseudo-element row is graded on has one field more than
+// an element's, so the names do too.
+arr[text] func pseudoFieldNames() {
+    arr[text] names = styleDigestFieldNames()
+    names.push('content')
+    return names
+}
+
 arr[text] func styleDigestFieldNames() {
     return ['display', 'color', 'background', 'fontSize', 'fontBold', 
         'fontItalic', 'fontFamily', 'lineHeight', 'textAlign', 
@@ -198,7 +207,7 @@ arr[text] func styleDigestFieldNames() {
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'objectViewBox', 'shadows',
         'counterReset', 'counterIncrement', 'counterSet', 'quotes', 'colorSchemeDark',
-        'containerType', 'containerName']
+        'containerType', 'containerName', 'initialLetterPacked']
 }
 
 text func trackKey(list:arr[Track]) {
@@ -270,6 +279,38 @@ arr[text] func digestFieldsFor(decl:text) {
     return styleDigestFields(ps[0].style)
 }
 
+// A property whose whole effect is on a pseudo-element cannot register
+// against an element's computed style, however complete it is: nothing
+// the declaration does reaches the element. `initial-letter` is of
+// that shape -- it restyles `::first-letter` and touches nothing on the
+// element -- and it sat in `supportsExempt`, which silenced the
+// @supports cross-check without making it measurable.
+//
+// So a row may name a pseudo-element, and then the declaration goes
+// into a rule rather than a style attribute and the digest is taken
+// from the pseudo's own computed style. The content is digested beside
+// it, because `content` lives outside `Style` here and the row would
+// otherwise be graded on fields it does not set.
+arr[text] func digestFieldsForPseudo(decl:text, pseudo:text) {
+    cascadeReset()
+    Node doc = parseHtmlText(`<html><head><style>#t::${pseudo}{${decl}}</style></head><body><table><tr><td><p id="t">Hxy text</p></td></tr></table></body></html>`)
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    arr[Node] ps = []
+    collectElements(doc, 'p', ps)
+    arr[text] missing = ['MISSING']
+    if ps.length == 0 { return missing }
+    Style s = pseudoStyleOf(ps[0].id, pseudo)
+    // No style at all means the engine did not compute this
+    // pseudo-element for the rule, which is an instrument fault rather
+    // than a reading of the property. The caller says so.
+    if s == null { return ['NOPSEUDO'] }
+    arr[text] fields = styleDigestFields(s)
+    text c = pseudoContentOf(ps[0].id, pseudo)
+    fields.push(c == null ? '' : c)
+    return fields
+}
+
 bool verbose = false
 bool showFields = false
 int minimum = -1
@@ -298,6 +339,8 @@ if baseFields.length != fieldNames.length {
         + `styleDigestFieldNames lists ${fieldNames.length}; they must agree`)
     close(1)
 }
+arr[text] pseudoNames = pseudoFieldNames()
+
 arr[text] lines = blobLines(f)
 int total = 0
 int gradeable = 0
@@ -318,12 +361,10 @@ arr[text] ungradeable = []
 // registers as changing nothing here: `content` works on `::before`
 // and `::after` and does nothing on a `<p>`. Each such property is
 // named here with its reason; every other disagreement fails the run.
-// Properties this engine implements on a PSEUDO-ELEMENT, which an
-// ordinary element's computed style cannot show however complete the
-// implementation is. `@supports` is right to say yes and the digest is
-// right not to move; the instrument simply does not reach them, and
-// todo.md carries the ::pseudo row that would.
-arr[text] supportsExempt = ['content', 'initial-letter']
+// Nothing needs exempting from the @supports cross-check: a property
+// this engine implements but the digest cannot see is a row that should
+// name its pseudo-element instead.
+arr[text] supportsExempt = []
 arr[text] supportsDenied = []
 arr[text] supportsOverclaimed = []
 
@@ -335,6 +376,10 @@ for int i = 0, i < lines.length, i++ {
     if parts.length < 2 { continue }
     text prop = parts[0]
     text val = parts[1]
+    // A fourth column names the pseudo-element the row is graded on.
+    // The third already means "ungradeable, and here is why", so it is
+    // left empty on a pseudo row rather than overloaded.
+    text pseudo = parts.length >= 4 && parts[3] != '' ? parts[3] : null
     total++
     // A row that cannot show a difference is not a measurement of this
     // engine at all; it is a gap in the instrument. Counted in the
@@ -369,9 +414,25 @@ for int i = 0, i < lines.length, i++ {
         context = context + halves[hi] + ';'
     }
     arr[text] rowBaseFields = baseFields
-    if context != '' { rowBaseFields = digestFieldsFor(context) }
+    arr[text] gotFields = []
+    arr[text] rowFieldNames = fieldNames
+    if pseudo != null {
+        rowBaseFields = digestFieldsForPseudo(context, pseudo)
+        gotFields = digestFieldsForPseudo(`${prop}: ${own};${context}`, pseudo)
+        rowFieldNames = pseudoNames
+        // Either side missing its pseudo-element means the fixture did
+        // not produce one to grade, which is the instrument failing
+        // rather than the property.
+        if rowBaseFields[0] == 'NOPSEUDO' || gotFields[0] == 'NOPSEUDO' {
+            gradeable--
+            ungradeable.push(`${prop} (the ::${pseudo} did not compute; the row needs a context declaration that creates it)`)
+            continue
+        }
+    } else {
+        if context != '' { rowBaseFields = digestFieldsFor(context) }
+        gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
+    }
     text rowBaseline = rowBaseFields.join('\u0001')
-    arr[text] gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
     bool known = cssKnownProperty(prop.toAscii())
     if gotFields.join('\u0001') == rowBaseline {
         inert.push(prop)
@@ -395,8 +456,8 @@ for int i = 0, i < lines.length, i++ {
         // instrument cannot judge which field means which property, so
         // it prints the mapping and leaves the reading to a person.
         arr[text] moved = []
-        for int k = 0, k < fieldNames.length && k < gotFields.length, k++ {
-            if gotFields[k] != rowBaseFields[k] { moved.push(fieldNames[k]) }
+        for int k = 0, k < rowFieldNames.length && k < gotFields.length, k++ {
+            if gotFields[k] != rowBaseFields[k] { moved.push(rowFieldNames[k]) }
         }
         log(`    ${prop} -> ${moved.join(', ')}`)
     }

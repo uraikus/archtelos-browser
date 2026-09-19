@@ -556,20 +556,6 @@ pseudo-element is implemented. The layout is the same; what is missing
 is the path that turns a declared inline into the float, because
 `splitFirstLetter` is the only place that builds one.
 
-**The property instrument cannot grade a pseudo-element.** It sets the
-declaration on an element and digests that element's computed style, so
-a property whose whole effect is on `::first-letter` or `::before` can
-never register, however complete it is. Two rows are in that bucket
-already -- `content` and `initial-letter` -- and both sit in
-`supportsExempt` in tests/conformance/properties.f, which silences the
-`@supports` cross-check without making them measurable. The fix is a
-row that can name a pseudo-element: apply the declaration through a
-generated rule, digest `pseudoStyleOf(node.id, <pseudo>)` rather than
-the element's style, and teach `tests/chromium.py properties-audit` to
-ask Chromium with the same second argument to `getComputedStyle`. That
-would move two properties into the count and make every future
-pseudo-element property gradeable.
-
 **What this font's four ratios measure, and how they were taken.**
 Neither measurement was taken at a single size: a ratio read off one
 font size is a ratio plus a rounding error of up to a pixel, which is 5%
@@ -686,7 +672,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(210; Chromium answers for 406, and one of them -- `overlay` -- only the
+(262; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

@@ -5,6 +5,44 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The property instrument grades a pseudo-element
+
+A property whose whole effect is on `::first-letter` could not register
+however complete it was: the instrument set each row's declaration on an
+element and digested that element's computed style, and nothing
+`initial-letter` does reaches the element. It sat in `supportsExempt`,
+which silenced the `@supports` cross-check without making it
+measurable -- an instrument that cannot fail, kept quiet rather than
+fixed.
+
+A row may now name a pseudo-element in a fourth column. The declaration
+then goes into a `#t::<pseudo>` rule rather than a style attribute, and
+the digest is taken from `pseudoStyleOf` with the pseudo-element's
+`content` appended, because `content` lives outside `Style` here. The
+row carries a context declaration beside the property, because a
+pseudo-element with no declarations at all is not generated and there
+would be nothing to compare against; a row whose pseudo-element does not
+compute is reported as an instrument fault rather than read as a missing
+property.
+
+**`tests/chromium.py properties-audit` asks the same question**, through
+`getComputedStyle`'s second argument. Two instruments asking different
+questions of the same row can disagree without either one saying so, and
+the audit still fails the row if Chromium cannot tell the value from the
+initial one on the pseudo-element -- checked by putting `normal` in the
+row and watching it fail.
+
+`initial-letter` is what this moves into the count, at 262 of 405, and
+`--fields` says it moved `initialLetterPacked` rather than a neighbour's
+field: the digest gained that field so the reading would be unambiguous.
+
+**`content` was never in that bucket**, which putting it there turned up.
+It already registered through `contentUrl` on the element's own style,
+because this engine implements `content: url()` on an ordinary element;
+grading it on `::before` instead *lost* a property, since a `::before`
+with no content generates no pseudo-element to compare against. Its row
+is unchanged and `supportsExempt` is now empty.
+
 ### `FONT_CAP` is 0.733, and the cap height is floored
 
 The engine models a font as four ratios per em, and one of them was
