@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `ex`, `ch` and `cap` are measured rather than approximated
+
+The three were half an em, half an em and three quarters of one,
+because the runtime reports no x-height, no zero advance and no cap
+height. Chromium 141 on the same monospace face, `width: 10<unit>` at
+16, 20, 48, 100 and 180px, least squares: `ex` is `0.5473 x size`,
+`ch` is `0.6020 x size` with an intercept of zero, and `cap` is
+`0.7310 x size`. So `ch` was 17% low, `ex` 9% low and `cap` 2.6% high
+-- 35 pixels of a `10cap` at 180.
+
+**Each is read twice.** `ch`: this engine's own face measures a `0` at
+12px at 20, 60 at 100 and 108 at 180, which is exactly 0.6 of the size
+-- the face is monospaced, so every glyph has that advance -- and
+Chromium agrees to a third of a percent. `ex`: 0.5473 sits inside the
+0.542 to 0.550 that rasterised ink gave when `FONT_CAP` was corrected.
+`cap`: the two Chromium surfaces measure the same quantity, and
+`0.733 x size - 0.41` from `text-box-edge` and `0.7310 x size - 0.144`
+from the unit are within a tenth of a pixel of each other across the
+whole range.
+
+So `cap` takes `FONT_CAP` and `ex` takes `FONT_EX`, the constants
+`text-box-edge` already reads, rather than carrying numbers of their
+own: one cap height and one x-height, because two constants for one
+quantity is how a number goes stale in one place and not the other.
+`FONT_EX` is sharpened from 0.55 to 0.547 by this second reading.
+`ic` needed nothing -- Chromium measures it at exactly an em, at every
+size.
+
+**`10cap` was pinned at 120 at 16px, which is Chromium's answer at
+16px and nowhere else.** That is the same trap `FONT_CAP` fell into,
+in the same file, and it is why the three quarters survived: a ratio
+read off a single font size is a ratio plus a rounding error of up to
+a pixel. The checks now read five sizes, and the one that needs no
+number asserts each unit is linear in the font size -- ten of it at
+18px is one of it at 180px -- which is exactly how these answers
+differ from Chromium's, whose metrics are hinted per size.
+
 ### `min()`, `max()` and `clamp()`
 
 CSS Values and Units 4 §10, wherever this engine reads a length --

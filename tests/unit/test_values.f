@@ -227,8 +227,69 @@ checkEqInt(resolveLen(parseLength('50vb'.toAscii(), 16), 0, -1), halfTall,
 checkEqInt(resolveLen(parseLength('10ic'.toAscii(), 16), 0, -1),
            resolveLen(parseLength('10em'.toAscii(), 16), 0, -1),
            'an ideograph advance is an em')
-checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 16), 0, -1), 120,
-           'and a cap height three quarters of one, which is what Chromium measures here')
+// ---- the font-relative units, measured rather than assumed ----------
+//
+// `ex`, `ch` and `cap` were each half an em, half an em and three
+// quarters of one, because the runtime reports no x-height, no zero
+// advance and no cap height. Chromium 141 on the same monospace face,
+// `width: 10<unit>` at 16, 20, 48, 100 and 180px, least squares:
+//
+//   ex    0.5473 * size + 0.016
+//   ch    0.6020 * size - 0.000
+//   cap   0.7310 * size - 0.144
+//   ic    1.0000 * size            (an em, which is what it already was)
+//
+// `ch` has a second, independent reading: this engine's own face
+// measures a '0' at 12px at 20, 60 at 100 and 108 at 180, which is
+// exactly 0.6 of the size, and Chromium's 0.6020 agrees to a third of
+// a percent. `ex`'s 0.5473 agrees with the 0.542 to 0.550 the cap-ratio
+// work read off rasterised ink. So the constants are what two
+// measurements say rather than what one does.
+//
+// `cap` takes FONT_CAP, which is the same physical quantity the engine
+// already measured twice for `text-box-edge` -- and the two Chromium
+// surfaces agree: `0.733 * size - 0.41` and `0.7310 * size - 0.144`
+// are within a tenth of a pixel of each other across the whole range.
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 16), 0, -1), 88,
+           'ten ex at 16px, where Chromium measures 90')
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 180), 0, -1), 985,
+           'and 985 at 180px, where Chromium measures 986')
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 20), 0, -1), 120,
+           'ten ch at 20px is exactly what this engine measures ten zeroes at')
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 180), 0, -1), 1080,
+           'and at 180px, where Chromium measures 1084')
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 180), 0, -1), 1319,
+           'ten cap at 180px, where Chromium measures 1315')
+// Where the old three-quarters was right, and the only place it was:
+// Chromium's metric is hinted per size, so a single ratio cannot
+// reproduce it at the small sizes where the hinting departs most.
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 16), 0, -1), 117,
+           'and 117 at 16px, where Chromium measures 120')
+
+// The check that needs no number: a unit that is a ratio of the font
+// size is linear in it, so ten of it at one size must be the same as
+// one of it at ten times the size. That holds for each of the four and
+// fails for anything that quantises per size -- which is exactly how
+// Chromium's own answers differ from these.
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1ch'.toAscii(), 180), 0, -1),
+           'ten ch at 18px is one ch at 180px')
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1ex'.toAscii(), 180), 0, -1),
+           'and the same of ex')
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1cap'.toAscii(), 180), 0, -1),
+           'and of cap')
+
+// And they are four different ratios, which the half-an-em pair were
+// not: `ex` and `ch` gave the same answer under the old constants and
+// must not now.
+check(resolveLen(parseLength('10ex'.toAscii(), 100), 0, -1)
+      != resolveLen(parseLength('10ch'.toAscii(), 100), 0, -1),
+      'an x-height is not a zero advance')
+check(resolveLen(parseLength('10cap'.toAscii(), 100), 0, -1)
+      != resolveLen(parseLength('10ic'.toAscii(), 100), 0, -1),
+      'and a cap height is not an em')
 
 // ---- lh and rlh (Values and Units 4 §6.1) -----------------------------
 // `lh` is the element's own computed line height and `rlh` the root

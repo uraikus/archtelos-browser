@@ -3998,7 +3998,15 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if unit == 'in' { return lenPx(v * 96.0) }
     if unit == 'cm' { return lenPx(v * 37.8) }
     if unit == 'mm' { return lenPx(v * 3.78) }
-    if unit == 'ex' || unit == 'ch' { return lenPx(v * fontSize.toFloat() * 0.5) }
+    // Each of these is a ratio of the font size measured for the face
+    // this engine renders in, rather than an API answer: the runtime
+    // exposes no x-height, no zero advance and no cap height. The
+    // constants are in style.f beside the two `text-box-edge` reads
+    // them, because they are the same quantities -- one cap height,
+    // one x-height -- and two constants for one of them is how a
+    // number goes stale in one place and not the other.
+    if unit == 'ex' { return lenPx(v * fontSize.toFloat() * FONT_EX) }
+    if unit == 'ch' { return lenPx(v * fontSize.toFloat() * FONT_CH) }
     if unit == 'vw' { return lenPx(v * cssViewportWidth.toFloat() / 100.0) }
     if unit == 'vh' { return lenPx(v * cssViewportHeight.toFloat() / 100.0) }
     if unit == 'vmin' { return lenPx(v * minInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0) }
@@ -4029,12 +4037,9 @@ Len func parseLength(tok:ascii, fontSize:int) {
         return lenPx(v * maxInt(cssViewportWidth, cssViewportHeight).toFloat() / 100.0)
     }
     // An ideograph's advance is an em in every font this engine can
-    // load, and a cap height is taken as three quarters of one, which is
-    // what Chromium measures for the monospace face here -- the runtime
-    // reports neither, as it reports neither an x-height for `ex` nor a
-    // zero's advance for `ch`.
+    // load, and Chromium measures exactly that here at every size.
     if unit == 'ic' { return lenPx(v * fontSize.toFloat()) }
-    if unit == 'cap' { return lenPx(v * fontSize.toFloat() * 0.75) }
+    if unit == 'cap' { return lenPx(v * fontSize.toFloat() * FONT_CAP) }
     return l
 }
 

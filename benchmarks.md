@@ -1932,3 +1932,33 @@ is not a saving the benchmark can see, and it is not claimed as one:
 the guard is there because a test inside a loop over every box gets a
 per-document flag before it lands, which is a rule about what the code
 does.
+
+Correcting the `ex`, `ch` and `cap` units costs **32 bytes**
+(3,021,016 -> 3,021,048) and nothing attributable. On
+`generated.html` the change read *below* its floor in all four phases
+in one round and was left there. On `features.html` the cascade -- the
+phase `parseLength` runs in -- was asked three times:
+
+| `features.html`, cascade | Floor | The change |
+|---|---|---|
+| round one | 7 of 25 (-0.36) | 13 (+1.32) |
+| round two | 7 of 25 (-1.16) | 11 (+0.76) |
+| round three | 6 of 25 (-0.96) | 8 (+0.24) |
+
+**The counts converge on the floor and the first round is the
+outlier**: 13, 11, 8 against 7, 7, 6, with a paired median of 0 in
+every one. The means do not converge as fast, and the reason is
+visible in the floor's own column -- a binary paired against a
+byte-identical copy of itself reads -0.36, -1.16 and -0.96 on this
+page, so the *second* sample of each pair is systematically the faster
+one here. That bias is the opposite of what this file recorded for the
+same page when `anchor-size()` landed, where the second of each pair
+was the slower. A per-page pairing bias that flips between sessions is
+a reason to read the counts and the medians rather than the means, and
+to take the floor every time rather than remember it.
+
+The mechanism was checked rather than assumed, and there is not one.
+`parseLength` split `unit == 'ex' || unit == 'ch'` into two `if`s,
+which performs the same two comparisons on the path that falls through
+both; `cap` reads a global float where it read an immediate; and the
+three constants changed value. Nothing was added to any loop.

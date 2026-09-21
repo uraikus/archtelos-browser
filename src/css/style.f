@@ -24,7 +24,22 @@ const float FONT_DESCENT = 0.24
 // rather than rounded -- 0.733 x 20 is 14.66 and Chromium answers 14 --
 // and it is why 0.70 looked right at 20px for as long as it did.
 const float FONT_CAP = 0.733
-const float FONT_EX = 0.55
+// The x-height and the advance of a `0`, which are the `ex` and `ch`
+// units as well as two of `text-box-edge`'s keywords. Both are read
+// twice, across the same range and for the same reason.
+//
+// The x-height: rasterised ink through this engine gives 0.542 to
+// 0.550, and Chromium's `width: 10ex` at five sizes gives a
+// least-squares `0.5473 x size + 0.016`. The second is the sharper of
+// the two and sits inside the first, so it is what stands.
+//
+// The zero advance: this engine's own face measures a `0` at 12px at
+// 20, 60 at 100 and 108 at 180, which is exactly 0.6 of the size --
+// the face is monospaced, so every glyph has that advance -- and
+// Chromium's `width: 10ch` gives `0.6020 x size` with an intercept of
+// zero. Two readings a third of a percent apart.
+const float FONT_EX = 0.547
+const float FONT_CH = 0.6
 
 const int DISPLAY_NONE = 0
 const int DISPLAY_BLOCK = 1

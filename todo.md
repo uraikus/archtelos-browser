@@ -672,6 +672,33 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
+### `line-height: normal` is 1.2 here and about 1.16 in Chromium
+
+Measured while correcting the font-relative units. Chromium 141's `lh`
+unit under `line-height: normal`, on the monospace face this engine
+renders in, `width: 10lh` at five sizes:
+
+| size | Chromium | ratio | this engine |
+|---|---|---|---|
+| 16px | 190 | 1.1875 | 192 |
+| 20px | 240 | 1.2000 | 240 |
+| 48px | 560 | 1.1667 | 576 |
+| 100px | 1170 | 1.1700 | 1200 |
+| 180px | 2090 | 1.1611 | 2160 |
+
+Least squares: `1.1586 x size + 0.654`. This engine computes `normal`
+as `1.2 x fontSize`, which agrees at 16 and 20 -- where the existing
+check pins it at 19px -- and is 3% tall at 180. That is the same
+single-size trap `FONT_CAP` and the `cap` unit both fell into.
+
+**It is recorded rather than fixed, because `line-height: normal` sets
+every line box in the engine.** Changing it moves the geometry that the
+whole render suite and most of the layout suites assert, and the right
+way to do that is to re-derive those numbers from Chromium rather than
+to adjust them until they pass again -- which is its own task, and a
+large one. The ratio and the intercept above are what it would be
+built from.
+
 ### What `min()`, `max()` and `clamp()` still leave out
 
 All three work, wherever this engine reads a length. Two things they
