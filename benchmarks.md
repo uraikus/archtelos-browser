@@ -713,6 +713,37 @@ fractions is what a day's difference in machine state looks like, and it
 is why the rendering table's large row is the middle of eight samples
 rather than one run of five -- one run of five is what produced the 104.
 
+## What `text-wrap-style` cost, and the reversed pairing that read it
+
+2026-09-21, same machine and script as the entry below, 25 iterations
+a run. On a page that never says `text-wrap-style` the whole of it is
+one boolean in `layoutBlockContent`, one behind the cascade's flag,
+and one more comparison inside the declaration pass the entry below
+merged -- no new pass anywhere.
+
+| layout, paired median | generated.html | features.html |
+|---|---|---|
+| round one, parent first | +0, 8 of 25 | -1, 7 of 25 |
+| round two, parent first | +1, 13 of 25 | +1, 14 of 25 |
+| **reversed**, candidate first | **+2, 17 of 25** | **+1, 16 of 25** |
+| the floor, candidate against a copy of itself | | +0, 10 of 25 |
+
+**The reversed row is the answer.** Run the parent first and the
+candidate reads about a millisecond slower; run the candidate first
+and the *parent* reads one to two milliseconds slower. A reading and
+its mirror image that both come out positive are not measuring a
+difference between the binaries at all -- they are measuring the
+order, and whichever runs second on this machine pays. The forward
+rounds alone would have read as a real cost by this file's own rule of
+a median of +1 across two rounds.
+
+So the reversed pairing is worth running whenever a cost survives two
+rounds, and it goes in the method above beside the floor. It is what
+separated this entry, where the answer was "nothing", from the one
+below, where the forward reading was +1 and the reversed one was 0 --
+an order effect *plus* a real millisecond, which a third binary then
+pinned to one loop.
+
 ## What `resize` cost, and the eight older loops it uncovered
 
 2026-09-21, on the same machine as the entries above, paired with

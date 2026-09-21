@@ -1353,6 +1353,41 @@ which is why the widow rule in the first table outranks balancing: it
 is not part of balancing at all, it is the rule `pretty` is made of
 and `balance` inherits.
 
+### What `text-wrap-style` leaves out, and where it disagrees
+
+`balance` works, as a search over the **width** the greedy breaker is
+given rather than as a second line breaker. Two things follow, and
+both are measured rather than assumed.
+
+**Chromium redistributes words; a width search cannot.** On the
+six-line fixture above Chromium turns `183 ×5, 48` into
+`183, 183, 145, 145, 145, 164` -- five-word lines becoming four-word
+ones further down. No single measure produces that: a width narrow
+enough to make a line four words makes the *first* line four words
+too, and the paragraph runs to seven lines. So on a paragraph of equal
+words this engine's search runs, finds that the narrowest measure
+giving six lines is the one the greedy break already used, and changes
+nothing. Closing that means an optimal line breaker -- a pass over the
+break opportunities minimising the widest line, rather than the
+greedy one run again -- which is a piece of work in its own right and
+would serve `pretty` as well.
+
+**And `pretty` is not implemented.** Its widow rule -- refuse a
+one-word last line where another break avoids it -- is measured in the
+table above and needs the same optimal breaker, because the break that
+avoids the widow is not in general reachable by narrowing the measure:
+Chromium's `106, 116` becomes `67, 154`, which is *wider* at the
+widest line, and a width search only ever narrows. `stable` is the
+greedy break by definition and is complete. Both are kept apart in the
+computed style, so the day the breaker arrives they have somewhere to
+be read from.
+
+**A float in the content stops balancing.** The second pass would
+place the float a second time, since a float is registered with its
+formatting context as it is placed. Saving and restoring the float
+list around the search would lift that; the balancing this is for is
+a paragraph of text, so it has not been.
+
 ### A scroll offset outlives the document it belongs to
 
 Found by asking the same question of `resize`'s dragged sizes, which
@@ -1403,7 +1438,7 @@ css-2026.md already admits "has never had to show".
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(266; Chromium answers for 406, and one of them -- `overlay` -- only the
+(267; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

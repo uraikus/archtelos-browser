@@ -186,6 +186,10 @@ bool cascadeSawZoom = false
 // And for `resize`, which is one keyword read off the element that
 // says it.
 bool cascadeSawResize = false
+// And for `text-wrap-style`, which is one keyword and inherits, so an
+// element that says nothing still has to be asked about its parent --
+// but only on a document where something said it.
+bool cascadeSawTextWrapStyle = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -276,6 +280,7 @@ void func cascadeReset() {
     cascadeSawBaselineSource = false
     cascadeSawZoom = false
     cascadeSawResize = false
+    cascadeSawTextWrapStyle = false
     anyZoom = false
     cascadeZoomScale = 1.0
     map[int] emptyZoom = {}
@@ -286,6 +291,9 @@ void func cascadeReset() {
     anyResize = false
     map[int] emptyResize = {}
     resizeOfSerial = emptyResize
+    anyTextWrapStyle = false
+    map[int] emptyTextWrapStyle = {}
+    textWrapStyleOfSerial = emptyTextWrapStyle
     // A dragged size belongs to the document it was dragged in. The
     // node registry starts its ids again for every document, so an
     // override left behind would land on whichever element of the next
@@ -391,7 +399,8 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
         bool wantAnchor = !cascadeSawAnchorSize || !cascadeSawAnchorInset
         if anyCounters && anyQuotes && cascadeSawColorScheme && cascadeSawDirection
             && cascadeSawFontSizeAdjust && cascadeSawBaselineSource && cascadeSawZoom
-            && cascadeSawResize && anyRevert && !wantAnchor { continue }
+            && cascadeSawResize && cascadeSawTextWrapStyle && anyRevert
+            && !wantAnchor { continue }
         for int d = 0, d < rule.decls.length, d++ {
             text dn = rule.decls[d].name
             if !anyCounters && (dn == 'counter-reset' || dn == 'counter-increment'
@@ -407,6 +416,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawZoom && dn == 'zoom' { cascadeSawZoom = true }
             if !cascadeSawResize && dn == 'resize' { cascadeSawResize = true }
+            if !cascadeSawTextWrapStyle && (dn == 'text-wrap-style' || dn == 'text-wrap') {
+                cascadeSawTextWrapStyle = true
+            }
             if !anyRevert && declIsRevert(rule.decls[d].value) { anyRevert = true }
             // The scan is inside `cascadeNoteAnchorFns`, and does not
             // lower the value first: this runs on every declaration of
@@ -1040,6 +1052,8 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawZoom && decls[d].name == 'zoom' { cascadeSawZoom = true }
             if !cascadeSawResize && decls[d].name == 'resize' { cascadeSawResize = true }
+            if !cascadeSawTextWrapStyle && (decls[d].name == 'text-wrap-style'
+                || decls[d].name == 'text-wrap') { cascadeSawTextWrapStyle = true }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
             // stylesheet walk never sees an inline declaration, and the
@@ -5146,6 +5160,40 @@ bool func parseAnchorSize(inner:ascii) {
 }
 
 // `auto | contain | none`, or -1 for anything else.
+int func textWrapStyleKeyword(w:ascii) {
+    if w == 'balance' { return TWS_BALANCE }
+    if w == 'pretty' { return TWS_PRETTY }
+    if w == 'stable' { return TWS_STABLE }
+    return TWS_AUTO
+}
+
+// `text-wrap-style` inherits, and the `text-wrap` shorthand is
+// `<text-wrap-mode> || <text-wrap-style>` -- the two halves in either
+// order, either one alone. The mode half is applied where the rest of
+// `white-space` is; only the style half belongs here.
+void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
+    ascii tw = styleProp(props, 'text-wrap')
+    if tw != null {
+        arr[ascii] words = asciiSplitSpace(asciiLower(asciiTrim(tw)))
+        for int i = 0, i < words.length, i++ {
+            // Indexed rather than bound: an element of a split aliases
+            // the buffer it was cut from (FINDINGS.md, "ascii aliases
+            // are not retained").
+            if words[i] == 'auto' { v = TWS_AUTO }
+            else if words[i] == 'balance' { v = TWS_BALANCE }
+            else if words[i] == 'pretty' { v = TWS_PRETTY }
+            else if words[i] == 'stable' { v = TWS_STABLE }
+        }
+    }
+    ascii tws = styleProp(props, 'text-wrap-style')
+    if tws != null { v = textWrapStyleKeyword(asciiLower(asciiTrim(tws))) }
+    if v != TWS_AUTO {
+        textWrapStyleOfSerial[`${s.serial}`] = v
+        anyTextWrapStyle = true
+    }
+}
+
 int func resizeKeyword(w:ascii) {
     if w == 'both' { return RESIZE_BOTH }
     if w == 'horizontal' { return RESIZE_HORIZONTAL }
@@ -7167,6 +7215,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // it may be seen at all is a question about `overflow`, and it is
     // asked where the grabber is painted rather than here, since the
     // computed value does not depend on it.
+    if cascadeSawTextWrapStyle { applyTextWrapStyle(s, parent, isRoot, props) }
     if cascadeSawResize {
         ascii rsz = styleProp(props, 'resize')
         if rsz != null {

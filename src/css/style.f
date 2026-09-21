@@ -782,6 +782,13 @@ const int BSRC_LAST = 2
 // `resize`'s six keywords. The two logical ones are kept apart from
 // the physical pair they resolve to, because the computed value is the
 // keyword that was declared.
+// `text-wrap-style` (CSS Text 4 §6.2): which of the breaks that fit
+// the line breaker chooses. Measured in todo.md.
+const int TWS_AUTO = 0
+const int TWS_BALANCE = 1
+const int TWS_PRETTY = 2
+const int TWS_STABLE = 3
+
 const int RESIZE_NONE = 0
 const int RESIZE_BOTH = 1
 const int RESIZE_HORIZONTAL = 2
@@ -1625,6 +1632,19 @@ int func resizeOf(s:Style) {
     if !anyResize || s == null { return RESIZE_NONE }
     int v = resizeOfSerial[`${s.serial}`]
     return v == null ? RESIZE_NONE : v
+}
+
+// `text-wrap-style`, kept by the computed style's serial for the
+// reason above. Unlike everything else here it INHERITS, so the
+// applier reads the parent's value out of this same map before it
+// looks at the element's own declaration.
+map[int] textWrapStyleOfSerial = {}
+bool anyTextWrapStyle = false
+
+int func textWrapStyleOf(s:Style) {
+    if !anyTextWrapStyle || s == null { return TWS_AUTO }
+    int v = textWrapStyleOfSerial[`${s.serial}`]
+    return v == null ? TWS_AUTO : v
 }
 
 // Whether this box may be resized across and down, in that order, in

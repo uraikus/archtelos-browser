@@ -2054,8 +2054,60 @@ int func layoutBlockContent(b:Box, innerX:int, innerY:int, width:int) {
     // is the walk that moves the content, not a second layout.
     int usedColumns = usedColumnCount(b.style, width)
     if usedColumns > 1 { return layoutColumns(b, innerX, innerY, width, usedColumns) }
-    if hasInlineContent(b) { return layoutInlineContent(b, innerX, innerY, width) }
+    if hasInlineContent(b) {
+        if anyTextWrapStyle && textWrapStyleOf(b.style) == TWS_BALANCE {
+            return layoutBalanced(b, innerX, innerY, width)
+        }
+        return layoutInlineContent(b, innerX, innerY, width)
+    }
     return layoutBlockChildren(b, innerX, innerY, width)
+}
+
+// `text-wrap-style: balance` (CSS Text 4 §6.2). The standard leaves
+// the algorithm to the user agent and asks only that the difference
+// between the longest and the shortest line be minimised, so this is a
+// search over the WIDTH the greedy breaker is given rather than a
+// second line breaker: the narrowest width that still breaks into the
+// same number of lines. The block keeps its own width -- only the
+// lines inside it get shorter -- so the line count and the height
+// cannot change, which is what the measurement says they must not.
+//
+// On the cases Chromium's own widow rule does not drive, that lands on
+// Chromium's answer: `mmm mmm mmm mmm mmm mm mm` in 200px is 183 + 48
+// greedily and 106 + 125 balanced in both engines. The widow rule
+// itself belongs to `pretty` and is not implemented (todo.md).
+const int TWS_BALANCE_MAX_LINES = 6
+
+// Balancing runs the breaker again, and a float is registered with its
+// formatting context as it is placed, so a second pass would place it
+// twice. Inline content holding one is left alone.
+bool func inlineContentIsPlain(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if boxIsFloated(c) || boxIsOutOfFlow(c) { return false }
+        if c.kind == BOX_INLINE && !inlineContentIsPlain(c) { return false }
+    }
+    return true
+}
+
+int func layoutBalanced(b:Box, x:int, y:int, w:int) {
+    int h = layoutInlineContent(b, x, y, w)
+    int want = b.lines.length
+    if want < 2 || want > TWS_BALANCE_MAX_LINES { return h }
+    if !inlineContentIsPlain(b) { return h }
+    // Narrowing the width can only add lines, never remove one, so the
+    // widths that still give `want` lines are exactly those at or above
+    // some threshold -- which is what makes this a binary search rather
+    // than a scan.
+    int lo = 1
+    int hi = w
+    while lo < hi {
+        int mid = Math.floorDiv(lo + hi, 2)
+        layoutInlineContent(b, x, y, mid)
+        if b.lines.length <= want { hi = mid } else { lo = mid + 1 }
+    }
+    if lo >= w { return layoutInlineContent(b, x, y, w) }
+    return layoutInlineContent(b, x, y, lo)
 }
 
 // How far the children reach past a point, and how far they reach at

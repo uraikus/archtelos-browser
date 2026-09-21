@@ -233,6 +233,20 @@ a band that gets ignored. A new reference browser is a new control, so
 raise `CONTROL_MS` and record the new spread; do not widen the
 tolerance to make a bad run pass.
 
+**A cost that survives two rounds still has to survive its own
+mirror image.** Pair the two binaries the other way round as well: if
+the candidate reads a millisecond slower running second, and the
+parent reads a millisecond slower running second, neither number is a
+difference between them — both are measuring the order, and on this
+machine whichever binary runs second pays. `text-wrap-style` read +1
+of layout across two forward rounds, which this file's own rule calls
+real, and +1 to +2 reversed, which says it was nothing. The rule is
+that a reading and its mirror image must add to about zero; when they
+do not, the question goes to the code rather than to another round.
+That is also what caught the one real cost beside it — a forward +1
+against a reversed 0 is an order effect *plus* a millisecond, and a
+third binary then pinned the millisecond to one loop.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.
@@ -343,7 +357,7 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and the worker threads that prefetch what it finds) |
 | `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f`, `bidi.f` (UAX #9) |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, the preload scanner |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, text wrapping, the preload scanner |
 | `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, conic gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, borders, border images, text decoration, transforms, right-to-left text, box shadows, corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour, printed pages, the resize grabber |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance, speed and painting have a yardstick; its `pixels` mode rasterizes a page and prints a row of it |

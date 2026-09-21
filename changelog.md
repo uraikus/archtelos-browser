@@ -5,6 +5,72 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `text-wrap-style`
+
+266 -> 267 properties. `balance` breaks a paragraph of six lines or
+fewer so that its lines come out as even as the greedy breaker can
+make them, **without changing the line count or the block's height** --
+which is the first thing the suite asserts, against `auto` rather than
+against numbers, so it holds whatever this engine's advances are.
+
+**It is a search over the width, not a second line breaker.** CSS Text
+4 §6.2 leaves the algorithm to the user agent and asks only that the
+difference between the longest and the shortest line be minimised, so
+balancing here is: lay the inline content out again at narrower and
+narrower measures, and keep the narrowest one that still breaks into
+the same number of lines. Narrowing can only add lines and never
+remove one, so the widths that give the same count are exactly those
+at or above a threshold -- which is what makes it a binary search
+rather than a scan, and what bounds it at nine or ten passes over one
+paragraph. The block keeps its own width; only the lines inside it get
+shorter.
+
+On a two-line paragraph that lands on Chromium's answer:
+`mmm mmm mmm mmm mmm mm mm` in 200px is 190 + 50 greedily and 110 +
+130 balanced here, against Chromium's 183 + 48 and 106 + 125 -- the
+ratio between them being the whole-pixel advance this engine rounds to
+where Chromium's monospace is 9.633.
+
+**Where it is weaker, and why, measured rather than assumed.** On a
+paragraph of equal words the narrowest measure that still gives six
+lines is the one the greedy break already used, so the search runs,
+finds nothing better, and changes nothing; Chromium redistributes the
+words between the lines there, 183 ×5 + 48 becoming 183, 183, 145,
+145, 145, 164, which no width can produce. And Chromium's `balance`
+carries a **widow rule that outranks balancing**: it refuses a
+one-word last line even where avoiding it makes the widest line wider,
+turning 106 + 116 into 67 + 154. That rule is what `pretty` is made of
+rather than part of balancing, so it is not implemented and `pretty`
+breaks as `auto` does. Both disagreements are in todo.md with the
+tables they were read from.
+
+**The threshold is six lines**, which is where Chromium stops too. A
+one-line paragraph and a seven-line one never run the search at all,
+and the suite asserts that by reading the *measure* the breaker was
+given rather than the break it produced -- the two answer different
+questions, and separating them is what let the six-line row say
+"balancing ran and found nothing" rather than "balancing did not run".
+
+The property **inherits**, which no other side-mapped value in this
+engine does, so the applier reads the parent's value out of the same
+map before it looks at the element's own declaration. The `text-wrap`
+shorthand sets it, in either order and with either half alone.
+
+And inline content holding a **float** is left alone: a float is
+registered with its formatting context as it is placed, so a second
+pass would place it twice. The suite says so rather than the comment
+alone.
+
+It measured **free** on both benchmark pages -- and the run is in
+benchmarks.md for what it took to say so. Two forward rounds read a
+paired median of +1 ms of layout, which this project's own rule calls
+real; the **reversed** pairing read +1 to +2 the other way, which says
+both numbers were the order rather than the code. A reading and its
+mirror image that are both positive are measuring which binary ran
+second. CLAUDE.md has the rule now.
+
+52 checks in `tests/unit/test_textwrap.f`.
+
 ### `resize`
 
 265 -> 266 properties, and the last of Basic User Interface 3 this
