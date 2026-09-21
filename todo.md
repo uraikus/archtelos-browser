@@ -672,6 +672,38 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
+### `baseline-source`, measured
+
+CSS Inline 3 §5.1. Which of an atomic inline's baselines the line it
+sits on aligns to. Chromium 141, a 60px-wide inline-block holding two
+lines of 20px each, beside a one-line span, inside a 400px block:
+
+| declaration | the span's top | the inline-block's computed value |
+|---|---|---|
+| (control) | 20 | `auto` |
+| `baseline-source: auto` | 20 | `auto` |
+| **`baseline-source: first`** | **0** | `first` |
+| `baseline-source: last` | 20 | `last` |
+| `display: inline-flex` | **0** | `auto` |
+| `display: inline-flex; baseline-source: first` | 0 | `first` |
+
+**`auto` is not one answer.** An inline-block's `auto` baseline is its
+*last* line, so the span beside it drops to the second line's baseline
+at 20; an inline-flex's `auto` baseline is its *first*, so the span
+stays at 0. The keyword only has to override that default, which is
+what makes `first` on an inline-block and `last` on an inline-flex the
+two rows that do anything.
+
+The inline-block's own box does not move under any of them -- its top
+is 0 and its height 40 throughout -- and neither does the containing
+block's height. What moves is the sibling, which is what the test
+asserts rather than anything about the declaring element.
+
+**The engine already computes the last-line baseline** --
+`b.baseline = last.baseline - b.y` at the end of the inline layout --
+so `first` is `b.lines[0]` in the same place, and `auto` is a question
+about the box's display type rather than about the property.
+
 ### `font-size-adjust` is done; this is what it was built from
 
 All five metrics work and the adjustment is applied at the end of the
