@@ -1962,3 +1962,24 @@ The mechanism was checked rather than assumed, and there is not one.
 which performs the same two comparisons on the path that falls through
 both; `cap` reads a global float where it read an immediate; and the
 three constants changed value. Nothing was added to any loop.
+
+`font-size-adjust` costs **4,240 bytes** (3,021,048 -> 3,025,288) and
+nothing measurable. On `generated.html` the change read at or below
+its floor in all four phases. On `features.html`:
+
+| `features.html`, layout | Floor | The change |
+|---|---|---|
+| round one | 10 of 25 (-0.60) | 14 (+1.04) |
+| round two | **13 of 25 (+0.96)** | **10 (+0.76)** |
+
+The first round's 14 against 10 inverted completely on the second: the
+floor came back at 13 and the change at 10, *below* it, with a paired
+median of 0 where the floor's was +1. That is the third time in this
+file's recent entries that a first-round reading on this page has been
+taken back by a second, and it is the reason the floor is taken every
+time rather than remembered.
+
+Neither page declares `font-size-adjust`, so
+`cascadeSawFontSizeAdjust` never rises and the one map lookup the
+property needs is never made -- the flag is why that lookup is not
+paid by every element of every page that will never use it.

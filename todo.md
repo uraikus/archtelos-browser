@@ -672,7 +672,14 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
-### `font-size-adjust`, measured
+### `font-size-adjust` is done; this is what it was built from
+
+All five metrics work and the adjustment is applied at the end of the
+cascade, where every `em` has already resolved. What it does not do is
+follow Chromium's hinted metric, which moves with the size: this
+engine carries one ratio per metric, so the used size is 2.8% out at
+16px and 14% at 8px. Closing that needs the runtime to report a font's
+x-height at a given size, which it does not (FINDINGS.md).
 
 Chromium 141, a monospace `<span>` of ten `M`s at 16px inside a 400px
 block. The control is 96.33 wide, which is ten advances of 0.6021 em.
@@ -1014,7 +1021,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(262; Chromium answers for 406, and one of them -- `overlay` -- only the
+(263; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

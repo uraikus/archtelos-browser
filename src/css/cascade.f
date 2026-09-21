@@ -174,6 +174,10 @@ bool cascadeSawShape = false
 // two milliseconds of cascade on features.html before this flag, which
 // is what a paired benchmark found and what this exists to stop.
 bool cascadeSawAnchorSize = false
+// And for `font-size-adjust`, which is read at the very end of
+// `computeStyleValues` and would otherwise be one map lookup for every
+// element of every page.
+bool cascadeSawFontSizeAdjust = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -260,6 +264,7 @@ void func cascadeReset() {
     cascadeSawShape = false
     cascadeSawAnchorSize = false
     cascadeSawAnchorInset = false
+    cascadeSawFontSizeAdjust = false
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -364,6 +369,14 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawDirection {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'direction' { cascadeSawDirection = true  break }
+                }
+            }
+            if !cascadeSawFontSizeAdjust {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'font-size-adjust' {
+                        cascadeSawFontSizeAdjust = true
+                        break
+                    }
                 }
             }
             if !anyRevert {
@@ -957,6 +970,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
+            }
+            if !cascadeSawFontSizeAdjust && decls[d].name == 'font-size-adjust' {
+                cascadeSawFontSizeAdjust = true
             }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
@@ -7046,7 +7062,62 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             anyClipMargin = true
         }
     }
+    // LAST, because the adjustment changes the font actually used and
+    // nothing else: `font-size` still computes to the specified value
+    // and every `em` above has already resolved against it, which is
+    // measured -- `width: 2em` under `font-size-adjust: 1` is 32px and
+    // not 57 (todo.md). A `line-height: normal` follows the used size
+    // instead, and does so for free, because `normal` is stored as 0
+    // and worked out from `fontSize` when it is read.
+    if cascadeSawFontSizeAdjust { applyFontSizeAdjust(s, props) }
     return s
+}
+
+// The aspect of each metric this engine can answer -- the metric as a
+// fraction of the em -- from the constants the `ex`, `ch` and `cap`
+// units read. Chromium's are the HINTED metrics and move with the
+// size; these do not, so the used size differs by 2.8% at 16px and
+// more below it, which todo.md records with both numbers.
+float func fontSizeAdjustAspect(metric:ascii) {
+    if metric == 'ex-height' { return FONT_EX }
+    if metric == 'cap-height' { return FONT_CAP }
+    if metric == 'ch-width' { return FONT_CH }
+    // An ideograph's advance is an em, and so is its height in every
+    // font this engine can load, which is what Chromium measures here.
+    if metric == 'ic-width' || metric == 'ic-height' { return 1.0 }
+    return 0.0
+}
+
+void func applyFontSizeAdjust(s:Style, props:map[text]) {
+    ascii raw = styleProp(props, 'font-size-adjust')
+    if raw == null { return }
+    arr[ascii] words = asciiSplitSpace(asciiLower(asciiTrim(raw)))
+    if words.length == 0 || words.length > 2 { return }
+    // The words are INDEXED rather than bound to locals: an element of
+    // a split aliases the buffer it was cut from, and an `ascii` bound
+    // to a local is released at scope exit without ever having been
+    // retained (FINDINGS.md, "ascii aliases are not retained"). Writing
+    // `ascii amount = words[at]` here passed every check natively and
+    // failed under valgrind with an invalid read of size 8 in
+    // `festina_ascii_release`, which is the same shape as the bug this
+    // branch already records.
+    int at = words.length - 1
+    // `from-font` asks for the font's own aspect, which by definition
+    // leaves the size where it is.
+    if words[at] == 'from-font' || words[at] == 'none' { return }
+    // `ex-height` is the default, so a bare number means it.
+    float aspect = words.length == 2 ? fontSizeAdjustAspect(words[0]) : FONT_EX
+    if aspect <= 0.0 { return }
+    // A bare number and nothing else. A percentage, a negative and a
+    // second number are all invalid, measured rather than assumed.
+    parseNumberAt(words[at], 0)
+    if !numOk || numEnd != words[at].length || numValue < 0.0 { return }
+    s.fontSize = roundPx(s.fontSize.toFloat() * numValue / aspect)
+    // The width cache keys on the font, so a font changed after the
+    // style was computed has to rebuild the key or every string at the
+    // new size gets the old size's advance (changelog.md, the drop cap
+    // that measured 38 pixels at three different font sizes).
+    refreshFontKey(s)
 }
 
 // Computes the style of every element in the tree; text nodes share

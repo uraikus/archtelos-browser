@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `font-size-adjust`
+
+The used font size is the specified one times `<number> / aspect`,
+where the aspect is the named metric as a fraction of the em, so text
+set in two families comes out the same visual size. All five metrics
+are taken -- `ex-height`, which a bare number means, `cap-height`,
+`ch-width`, `ic-width` and `ic-height` -- and `from-font` asks for the
+font's own aspect, which by definition leaves the size where it is.
+
+**It changes the font actually used and nothing else**, which is three
+separate measurements. `font-size` still computes to the specified
+value. An `em` beside the declaration resolves against *that*, so
+`width: 2em` under an adjust of 1 is 32px and not 57. And a
+`line-height: normal` follows the *used* size, growing a 19px line box
+to 33. So the adjustment is applied at the very end of the cascade,
+after every length has resolved its `em` -- and the line height
+follows for free, because `normal` is stored as zero and worked out
+from the font size when it is read.
+
+The aspects come from the constants the `ex`, `ch` and `cap` units
+read, which is one ratio per metric where Chromium's are the hinted
+metrics and move with the size. The divergence is known rather than
+discovered: 2.8% at 16px, and 14% at 8px, where Chromium's x-height
+has moved from 9/16 of the em to 5/8.
+
+**The aliasing bug this branch already records happened again, and
+valgrind caught it again.** `ascii amount = words[at]` binds an element
+of a split to a local, which is released at scope exit without ever
+having been retained; the 25 checks passed natively and the same suite
+failed under valgrind with an invalid read of size 8 in
+`festina_ascii_release`. The words are indexed in place now, as the
+engine's twenty other callers of `asciiSplitSpace` already do.
+
 ### `ex`, `ch` and `cap` are measured rather than approximated
 
 The three were half an em, half an em and three quarters of one,
