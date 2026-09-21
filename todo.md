@@ -672,7 +672,7 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
-### An inline-flex holding text lays out at zero height
+### A flex container does not wrap its text in an anonymous item
 
 Found by writing `baseline-source`'s fixture, which is the only reason
 it was found at all: the check that would have agreed with Chromium
@@ -687,13 +687,38 @@ height of 20:
 | its baseline | its first line | 0 |
 | the containing block's height | 40 | 20 |
 
-The same markup as an `inline-block` is 40 tall here and matches
-Chromium exactly, so it is the flex path rather than the content. A
-flex container blockifies its children, so `A<br>B` is one anonymous
-item two lines tall, and the container's height should follow it.
-`layoutFlex` ends in `b.baseline = b.h`, which is right for a
-container whose height is right and says nothing when the height is
-zero.
+**Chromium 141, nine flex containers 200px wide at a line height of
+20.** The third column is each *element* child's used size, so an
+anonymous item shows up only as the height it gives the container:
+
+| the container's content | its height | element children |
+|---|---|---|
+| `ABC` | 20 | none |
+| `A<br>B` | **40** | the `<br>`, 0x19 |
+| `A<div>B</div>` | 20 | 10x20 |
+| `A<div>B</div>C` | 20 | 10x20 |
+| `<div>A</div>` | 20 | 10x20 |
+| `<div>A</div><div>B</div>` | 20 | 10x20, 10x20 |
+| `A<span style="display:inline-block">B</span>` | 20 | 10x20 |
+| whitespace only | **0** | none |
+| `A <div>B</div>` | 20 | 10x20 |
+
+**Three rules.** Each maximal run of inline-level children becomes one
+anonymous *block* flex item. A run that is entirely whitespace
+produces no item at all, which is why the whitespace-only container is
+zero tall rather than one line tall. And this happens whether or not
+there are block-level siblings -- `ABC` alone is one item, and
+`A<div>B</div>` is two items side by side in the row, which is why
+that container is 20 tall and not 40.
+
+**This engine has exactly that function already**: `wrapInlineRuns`
+builds anonymous block boxes out of runs of inline children and drops
+all-blank runs. It is guarded by `hasBlock && hasInline`, because for
+an ordinary block container a run of inline children with no block
+sibling needs no anonymous box -- the block lays them out itself. A
+flex container cannot: its children are items, and a text box is not
+one. So the guard is what has to change for flex and grid, not the
+wrapping.
 
 **This is why the `baseline-source` suite has no inline-flex rows.**
 Chromium's answer there is "the span beside it stays at 0", and this
