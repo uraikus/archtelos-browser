@@ -672,6 +672,72 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
+### `font-size-adjust`, measured
+
+Chromium 141, a monospace `<span>` of ten `M`s at 16px inside a 400px
+block. The control is 96.33 wide, which is ten advances of 0.6021 em.
+
+| declaration | width | computed value |
+|---|---|---|
+| `0.5` | 85.61 | `0.5` |
+| `0.547` | 93.61 | `0.547` |
+| `1` | 171.22 | `1` |
+| `2` | 342.42 | `2` |
+| `0` | 0 | `0` |
+| `none` | 96.33 | `none` |
+| `from-font` | 96.33 | **`0.5625`** |
+| `ex-height 0.5` | 85.61 | `0.5` |
+| `cap-height 0.5` | 64.16 | `cap-height 0.5` |
+| `ch-width 0.5` | 79.88 | `ch-width 0.5` |
+| `ic-width 0.5` | 48.17 | `ic-width 0.5` |
+| `ic-height 0.5` | 48.17 | `ic-height 0.5` |
+| `cap-height from-font` | 96.33 | **`cap-height 0.75`** |
+| `ch-width from-font` | 96.33 | **`ch-width 0.602051`** |
+| `ic-width from-font` | 96.33 | **`ic-width 1`** |
+| `font-size: 32px; font-size-adjust: 0.5` | 171.22 | `0.5` |
+| `font-size: 8px; font-size-adjust: 1` | 77.05 | `1` |
+| `-1` | 96.33 | `none` |
+| `0.5 0.5` | 96.33 | `none` |
+| `ex-height` alone | 96.33 | `none` |
+| `50%` | 96.33 | `none` |
+
+**The rule is one line**: the used font size is the specified one times
+`<number> / aspect`, where the aspect is the named metric as a fraction
+of the em. `from-font` answers the font's own, which is why it changes
+nothing and why it is the cheapest way to read the aspect out of
+Chromium -- it prints it in the computed value. Four of them, for this
+face at 16px: **ex-height 0.5625, cap-height 0.75, ch-width 0.602051,
+ic-width and ic-height 1**. `ex-height` is the default, so a bare
+number means it.
+
+**The aspect is the hinted metric, not a design constant**, which the
+8px row is what shows: `font-size: 8px; font-size-adjust: 1` is 77.05,
+which is 12.80px of used size, which is 8 / 0.625 -- an aspect of 5/8
+rather than 9/16. At 16px the x-height is 9 pixels and at 8px it is 5,
+and the ratio follows. That is the same per-size hinting the `ex` and
+`cap` units show, from the same source: 0.5625 is 9/16 and 0.75 is
+12/16, which is exactly what `width: 10ex` and `width: 10cap` measure
+at 16px.
+
+**So this engine will diverge, and by how much is known.** It carries
+one ratio per metric rather than a hinted metric per size, so
+`font-size-adjust: 1` at 16px gives 16 / 0.547 = 29.25 where Chromium
+gives 16 / 0.5625 = 28.44, 2.8% apart; at 8px it gives 14.6 where
+Chromium gives 12.8, 14% apart, because the hinting has moved further
+by then and the engine cannot follow it.
+
+**The adjustment changes the used font size and nothing else.**
+`font-size` still computes to the specified value, and `width: 2em`
+under `font-size-adjust: 1` is 32px rather than 57 -- so `em` resolves
+against the specified size. But `line-height: normal` follows the
+*adjusted* size: the control's line box is 19 tall and
+`font-size-adjust: 1` makes it 33. So the adjustment belongs at the
+end of the cascade, after every length has resolved its `em`, with the
+line height recomputed where it was `normal`.
+
+**Invalid, all computing to `none`**: a negative number, two numbers, a
+metric keyword with no number after it, and a percentage.
+
 ### `line-height: normal` is 1.2 here and about 1.16 in Chromium
 
 Measured while correcting the font-relative units. Chromium 141's `lh`
