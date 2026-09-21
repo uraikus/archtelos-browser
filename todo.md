@@ -1271,6 +1271,65 @@ computed `resize` is still `both`: that is the specification's own
 "applies to: elements with `overflow` other than `visible`", and it
 is the one place the two readings disagree.
 
+### `text-wrap-style`, measured
+
+Chromium 141, a `<p>` of a given width at 16px/20px monospace, read
+two ways: the widths `getClientRects` gives a `Range` over the whole
+paragraph, and the text each line holds, grouped by the rect top of a
+one-character range at each offset. The second reading is what the
+first one needed -- a row of widths does not say which words moved.
+
+**`balance` never changes the line count or the block's height.** It
+is the same paragraph, broken differently. That holds in every case
+below and is the first thing to implement.
+
+**The dominant effect in the obvious fixture is not balancing at
+all.** A run of equal words ending in one long one:
+
+| words | `auto` | `balance` |
+|---|---|---|
+| 3 short + 1 long | `106, 116` | `67, 154` |
+| 4 short + 1 long | `145, 116` | `106, 154` |
+| 5 short + 1 long | `183, 116` | `145, 154` |
+| 6 short + 1 long | `183, 154` | unchanged |
+| 8 short + 1 long | `183, 106, 116` | `145, 106, 154` |
+| 13 short + 1 long | `183, 183, 106, 116` | `145, 145, 145, 154` |
+
+Every row that moved had a **one-word last line** under `auto`, and
+`balance` pulled a word down onto it; every row that did not move
+already had two. The three-word row makes the point sharpest: the
+widest line went from 116 to **154**, which is worse by every measure
+of evenness there is. So Chromium's `balance` carries a widow rule,
+and that rule outranks balancing.
+
+**Where the last line already holds two words, balancing is what is
+left, and it minimises the widest line.** Thirty random paragraphs of
+five to twelve words, twenty-two of them with a two-word last line:
+eighteen came back unchanged and the ones that moved improved the
+maximum.
+
+| | `auto` | `balance` |
+|---|---|---|
+| a very short last line | `164, 173, 193, 58` (max 193) | `164, 135, 135, 154` (**max 164**) |
+| five lines | `183, 145, 145, 125, 116` (max 183) | `145, 125, 145, 125, 173` (**max 173**) |
+
+So the model to implement is: **the same line count as the greedy
+break, and among the assignments with that count the one whose widest
+line is narrowest**, with a widow rule that refuses a one-word last
+line where another assignment avoids it. CSS Text 4 §6.2 leaves the
+algorithm to the user agent and asks only that the difference between
+the longest and the shortest line be minimised, so this follows the
+standard and Chromium's answers are recorded beside it rather than
+copied: the three-word row above is one this engine should *not*
+reproduce, because there the widow rule and the standard's own
+sentence point opposite ways.
+
+Two more readings the fixture owes before any code. `pretty` gave the
+same answer as `balance` in every case measured here, which is a
+reason to grade them apart deliberately rather than by accident.
+And a block of more than a few lines is where the search has to be
+bounded; the threshold Chromium uses has not been read yet.
+
 ### A scroll offset outlives the document it belongs to
 
 Found by asking the same question of `resize`'s dragged sizes, which
