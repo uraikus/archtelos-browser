@@ -1138,6 +1138,74 @@ not settled is not one to ship for the sake of a count. The probe is
 `document.elementFromPoint` at each pixel's centre, which is how
 `clip-path`'s own expectations were read.
 
+### `zoom`, measured
+
+Twenty declarations in Chromium 141. The box under test is a block in
+a containing block 400 wide and 200 tall at 16px/20px monospace, and
+its content is ten `M`s, so an unzoomed line of it is 96.33 wide and
+20 tall. `x`, `width` and `height` are `getBoundingClientRect`, which
+is **device** pixels; `cs.*` is `getComputedStyle`.
+
+| declaration | x | width | height | cs.width | cs.font-size |
+|---|---|---|---|---|---|
+| (control) | 0 | 400 | 20 | 400px | 16px |
+| `zoom: 2` | 0 | **400** | 40 | **200px** | 16px |
+| `zoom: 0.5` | 0 | **400** | 10 | **800px** | 16px |
+| `zoom: normal` | 0 | 400 | 20 | 400px | 16px |
+| `zoom: 2; width: 100px` | 0 | 200 | 40 | 100px | 16px |
+| `zoom: 2; width: 50%` | 0 | 200 | 40 | 100px | 16px |
+| `zoom: 2; width: 100px; padding: 10px` | 0 | 240 | 80 | 100px | 16px |
+| `zoom: 2; width: 100px; border: 4px` | 0 | 216 | 56 | 100px | 16px |
+| `zoom: 2; width: 100px; margin-left: 10px` | **20** | 200 | 40 | 100px | 16px |
+| `zoom: 2; width: 10em` | 0 | 320 | 40 | 160px | 16px |
+| `zoom: 2; font-size: 10px; width: 10em` | 0 | 200 | 40 | 100px | **10px** |
+| `zoom: 2; width: 10vw` | 0 | 156 | 40 | 78px | 16px |
+| `zoom: 2; width: 10rem` | 0 | 320 | 40 | 160px | 16px |
+| `zoom: 2; height: 50px` | 0 | 200 | 100 | 100px | 16px |
+| `zoom: 2; line-height: 30px` | 0 | 400 | 60 | 200px | 16px (`cs.line-height` 30px) |
+| **`zoom: 0`** | 0 | 100 | 20 | 100px | computed `zoom` is **1** |
+| **`zoom: -1`** | 0 | 100 | 20 | 100px | computed `zoom` is **1** |
+
+And nested, a child inside the zoomed box:
+
+| parent / child | the child's width |
+|---|---|
+| `zoom: 2` / `zoom: 2; width: 50px` | **200** |
+| `zoom: 2` / `zoom: 0.5; width: 50px` | **50** |
+| `zoom: 2; width: 100px` / `width: 50%` | 100 |
+
+**The model is one sentence: every length zooms exactly once.** A
+declared `100px` is 200 device pixels at zoom 2; so are the paddings,
+the borders, the margins and the height. `em`, `rem` and `vw` resolve
+against the *unzoomed* font size, root font size and viewport and then
+zoom, which is why `10em` at 16px is 320 and `10vw` of a 780px
+viewport is 156. A **percentage needs nothing**: the containing block
+is already in device pixels, so `50%` of a 400-device-pixel block is
+200 device pixels and comes out right for free. An `auto` width fills
+its containing block in device pixels, which is why the first two rows
+are still 400 wide.
+
+**`zoom` compounds down the tree**, so a child of a `zoom: 2` box that
+says `zoom: 2` itself is at four, and one that says `0.5` is back at
+one. **Zero and a negative are invalid**, computing to `1`.
+
+**And the computed style reports the UNZOOMED value**, which is the
+part that decides where this belongs. `cs.width` under `zoom: 2` is
+half the device width, `cs.font-size` is the specified 16px or 10px,
+and `cs.line-height` is the specified 30px. So the zoom is a *used*
+value transform, not a computed one.
+
+**What that costs here.** Scaling every parsed pixel length would be
+one line in `lenPx` behind a per-document flag -- percentages, `em`,
+`rem` and `vw` all fall out correctly, because each already resolves
+to pixels before `lenPx` sees them. The font size cannot join them:
+it is an `int` on `Style` that a child's `em` resolves against, so
+zooming it there would zoom a child's `em` twice. It has to stay
+unzoomed in the computed style and be zoomed where the font is
+actually selected and measured -- `setFontFor` and `measureWidth`,
+with the effective zoom in the `fontKey` so the width cache does not
+serve one zoom's advance at another.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
