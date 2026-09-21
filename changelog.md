@@ -55,6 +55,18 @@ pointer is tested against, which is what the scroll thumb already
 does: what it looks like and what can be taken hold of are one square
 rather than two formulas that agree.
 
+**And the benchmark found a cost that was mostly not this change's.**
+The flag `resize` needed -- one scan of a rule's
+declarations for the word, so that a page without it pays nothing --
+read a paired median of **+1 ms of cascade on both benchmark pages,
+across two rounds**, against a floor of 0. The scan was the eighth of
+nine such loops, and all nine sat *inside the loop over the rule's
+selectors*: a rule with five selectors read its declarations
+forty-five times over, and every flag that stayed false read all of
+them. They are one pass now, once per rule, and the same two rounds on
+both pages read the cascade at or below its floor -- so the cost this
+change was about to add is gone and eight loops went with it.
+
 51 checks in `tests/render/resize.f`.
 
 ### `zoom`

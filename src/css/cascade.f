@@ -354,6 +354,7 @@ void func addToBucket(key:text, ref:RuleRef) {
 void func indexSheet(sheet:Stylesheet, origin:int) {
     for int r = 0, r < sheet.rules.length, r++ {
         Rule rule = sheet.rules[r]
+        bool ruleHasSupportedSelector = false
         for int i = 0, i < rule.selectors.length, i++ {
             Selector sel = rule.selectors[i]
             if sel.unsupported || sel.parts.length == 0 { continue }
@@ -375,72 +376,47 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                     pseudoTagSet[pk] = true
                 }
             }
-            if !anyCounters {
-                for int d = 0, d < rule.decls.length, d++ {
-                    text dn = rule.decls[d].name
-                    if dn == 'counter-reset' || dn == 'counter-increment'
-                        || dn == 'counter-set' { anyCounters = true  break }
-                }
-            }
-            if !anyQuotes {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'quotes' { anyQuotes = true  break }
-                }
-            }
-            if !cascadeSawColorScheme {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'color-scheme' { cascadeSawColorScheme = true  break }
-                }
-            }
-            if !cascadeSawDirection {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'direction' { cascadeSawDirection = true  break }
-                }
-            }
-            if !cascadeSawFontSizeAdjust {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'font-size-adjust' {
-                        cascadeSawFontSizeAdjust = true
-                        break
-                    }
-                }
-            }
-            if !cascadeSawBaselineSource {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'baseline-source' {
-                        cascadeSawBaselineSource = true
-                        break
-                    }
-                }
-            }
-            if !cascadeSawZoom {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'zoom' { cascadeSawZoom = true  break }
-                }
-            }
-            if !cascadeSawResize {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if rule.decls[d].name == 'resize' { cascadeSawResize = true  break }
-                }
-            }
-            if !anyRevert {
-                for int d = 0, d < rule.decls.length, d++ {
-                    if declIsRevert(rule.decls[d].value) { anyRevert = true  break }
-                }
-            }
-            if !cascadeSawAnchorSize || !cascadeSawAnchorInset {
-                // The scan is inside `cascadeNoteAnchorFns`, and does
-                // not lower the value first: this runs on every
-                // declaration of every rule, and an `asciiLower` there
-                // allocates a string per declaration. That cost six
-                // milliseconds of cascade on generated.html, which a
-                // paired benchmark read as 22 of 25 pairs slower.
-                for int d = 0, d < rule.decls.length, d++ {
-                    cascadeNoteAnchorFns(rule.decls[d].value)
-                    if cascadeSawAnchorSize && cascadeSawAnchorInset { break }
-                }
-            }
             addToBucket(selectorKey(sel), ref)
+            ruleHasSupportedSelector = true
+        }
+        // Every per-document flag here is a question about this rule's
+        // DECLARATIONS, so it is asked once per rule and in ONE pass
+        // over them. It used to be nine passes, inside the loop over
+        // the rule's selectors -- a rule with five selectors read its
+        // declarations forty-five times, and each flag that stayed
+        // false read all of them. The question is still only asked of
+        // a rule that can match something, which is what the flag from
+        // the loop above says.
+        if !ruleHasSupportedSelector { continue }
+        bool wantAnchor = !cascadeSawAnchorSize || !cascadeSawAnchorInset
+        if anyCounters && anyQuotes && cascadeSawColorScheme && cascadeSawDirection
+            && cascadeSawFontSizeAdjust && cascadeSawBaselineSource && cascadeSawZoom
+            && cascadeSawResize && anyRevert && !wantAnchor { continue }
+        for int d = 0, d < rule.decls.length, d++ {
+            text dn = rule.decls[d].name
+            if !anyCounters && (dn == 'counter-reset' || dn == 'counter-increment'
+                || dn == 'counter-set') { anyCounters = true }
+            if !anyQuotes && dn == 'quotes' { anyQuotes = true }
+            if !cascadeSawColorScheme && dn == 'color-scheme' { cascadeSawColorScheme = true }
+            if !cascadeSawDirection && dn == 'direction' { cascadeSawDirection = true }
+            if !cascadeSawFontSizeAdjust && dn == 'font-size-adjust' {
+                cascadeSawFontSizeAdjust = true
+            }
+            if !cascadeSawBaselineSource && dn == 'baseline-source' {
+                cascadeSawBaselineSource = true
+            }
+            if !cascadeSawZoom && dn == 'zoom' { cascadeSawZoom = true }
+            if !cascadeSawResize && dn == 'resize' { cascadeSawResize = true }
+            if !anyRevert && declIsRevert(rule.decls[d].value) { anyRevert = true }
+            // The scan is inside `cascadeNoteAnchorFns`, and does not
+            // lower the value first: this runs on every declaration of
+            // every rule, and an `asciiLower` there allocates a string
+            // per declaration. That cost six milliseconds of cascade on
+            // generated.html, which a paired benchmark read as 22 of 25
+            // pairs slower.
+            if !cascadeSawAnchorSize || !cascadeSawAnchorInset {
+                cascadeNoteAnchorFns(rule.decls[d].value)
+            }
         }
     }
 }

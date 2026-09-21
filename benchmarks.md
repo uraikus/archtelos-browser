@@ -713,6 +713,51 @@ fractions is what a day's difference in machine state looks like, and it
 is why the rendering table's large row is the middle of eight samples
 rather than one run of five -- one run of five is what produced the 104.
 
+## What `resize` cost, and the eight older loops it uncovered
+
+2026-09-21, on the same machine as the entries above, paired with
+`$S/abphase.sh` at 25 iterations a run: each iteration runs the parent
+binary and then the candidate, so a machine that drifts drifts under
+both halves of one pair.
+
+`resize` puts no field on `Style` and no pass over the box tree. Its
+only cost to a page that never says it is one boolean in the painter,
+one in `collectMatches`, one in `applyStyle`, and **one scan of a
+rule's declarations for the word `resize`** in `indexSheet`, so that
+the flag can be raised before any element is styled. The first three
+are free. The fourth read:
+
+| cascade, paired median | features.html | generated.html |
+|---|---|---|
+| the floor (parent against a byte-identical copy) | +0, 7 of 25 | -1, 8 of 25 |
+| the floor, round two | +0, 9 of 25 | +1, 14 of 25 |
+| `resize` with its own scan | **+1, 15 of 25** | **+1, 13 of 25** |
+| the same, round two | **+1, 13 of 25** | **+1, 14 of 25** |
+| with the nine scans merged | +0, 9 of 25 | +0, 11 of 25 |
+| the same, round two | +0, 12 of 25 | +0, 8 of 25 |
+
+A paired median of +1 in both rounds on both pages, against a floor of
+0, is the shape this file calls real. **A reversed pairing disagreed**
+-- running the candidate first and the parent second read 0 in every
+phase -- which is what sent the question to the code rather than to
+another round: if a reading and its mirror image do not add to zero,
+one of them is measuring the order.
+
+The code answered it. The scan was the eighth of **nine** such loops
+over a rule's declarations, one per per-document flag, and every one of
+them sat *inside the loop over the rule's selectors*. A rule with five
+selectors read its declarations forty-five times, and a flag that
+stayed false -- which is every flag, on a page that never uses the
+feature -- read all of them every time. They are one pass now, once per
+rule, guarded by one test that skips the pass entirely when every flag
+is already set. The last two rows are that binary.
+
+So the cost this change was about to add is gone, and eight older ones
+went with it. The lesson is the file's own, arriving from the other
+direction: **a per-document flag is only free if asking the question is
+free**, and the ninth copy of a cheap question is what made the first
+eight visible.
+
 ## What the preload scanner is worth
 
 The preload scanner reads the raw bytes for `<link rel=stylesheet>`,
