@@ -1708,3 +1708,37 @@ The change touches two functions, `textBoxOverEdge` and
 `text-box-trim` or `initial-letter`, so nothing on either page reaches
 the changed code at all. That is a reason to expect the result, not a
 substitute for it.
+`anchor-size()` costs **9,136 bytes** (2,988,576 -> 2,997,712) and
+nothing measurable, on two pages, each measured twice against its own
+noise floor taken in the same minutes. Twenty-five alternating paired
+samples, parse through layout at 800x600:
+
+| `generated.html` | Median | Mean | Slower in |
+|---|---|---|---|
+| parent against a copy of itself | 1 ms | -0.04 | 13 of 25 |
+| the same, again | 0 ms | -0.80 | 9 of 25 |
+| after (66fe055), round one | **0 ms** | +2.64 | 10 of 25 |
+| after, round two | **-1 ms** | -2.16 | 6 of 25 |
+
+| `features.html` | Median | Mean | Slower in |
+|---|---|---|---|
+| parent against a copy of itself | 1 ms | +1.08 | **14 of 25** |
+| after, round one | 2 ms | +2.00 | **18 of 25** |
+| after, round two | 0 ms | +1.00 | 12 of 25 |
+
+**The eighteen of twenty-five is why this entry has two rounds.** That
+is the sort of number this file has twice found a real cost behind --
+the `int` on `Style` was fourteen of twenty-five -- so the floor was
+taken on that page rather than borrowed from the other, and it came
+back at *fourteen*. The statistic has a per-page baseline: the harness
+runs the two binaries alternately and the second of each pair is
+systematically a touch slower on this page, whichever binary it is. A
+second round then gave twelve, below that floor. The paired means swing
++2.64 and -2.16 on one page and +2.00 and +1.00 on the other, which is
+what says neither is a measurement of the change.
+
+The read sites are in the width and height of every box on every page,
+which is why each one asks `anyAnchorSize` before calling the helper
+rather than leaving the test to the helper's first line: a call that
+returns -1 is still a call. The second layout pass itself is behind the
+same flag and runs on no page that does not say `anchor-size()`.
