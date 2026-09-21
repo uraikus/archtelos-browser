@@ -297,6 +297,18 @@ bool func wsDropsBlank(s:Style, content:text) {
     return content.split('\n').length == 1
 }
 
+// The size the text is actually SET in: the computed font size times
+// the element's effective zoom. The computed one stays unzoomed --
+// a child's `em` resolves against it, and zooming it there would zoom
+// that `em` twice -- so the multiplication happens here, at the one
+// place the font is chosen, and in the key the width cache uses.
+int func usedFontSize(s:Style) {
+    if !anyZoom { return s.fontSize }
+    float z = zoomOf(s)
+    if z == 1.0 { return s.fontSize }
+    return maxInt(roundPx(s.fontSize.toFloat() * z), 0)
+}
+
 void func setFontFor(s:Style) {
     if s.fontKey == currentFontKey { return }
     profFontSwitches++
@@ -305,7 +317,7 @@ void func setFontFor(s:Style) {
     if s.fontBold && s.fontItalic { styleText = 'bold italic' }
     else if s.fontBold { styleText = 'bold' }
     else if s.fontItalic { styleText = 'italic' }
-    changeFont(s.fontSize, styleText, s.fontFamily)
+    changeFont(usedFontSize(s), styleText, s.fontFamily)
 }
 
 int func measureWidth(s:Style, t:text) {

@@ -2051,3 +2051,36 @@ floor in both phases. The rule this serves is the file's own -- a
 feature must not cost anything to the pages that do not use it -- and
 the point of the entry is that the rule was checked rather than
 assumed, and the check failed the first time.
+
+**And it failed again, on the next feature, for a different reason.**
+`zoom` scales every pixel length as `lenPx` builds it, which is one
+line in the function that builds *every* length of every declaration.
+Written as a branch -- `cascadeZoomScale == 1.0 ? px : px *
+cascadeZoomScale` -- it cost a millisecond of cascade on **both**
+pages:
+
+| cascade | Floor | The change |
+|---|---|---|
+| `generated.html`, round one | 0 ms, 7 of 25 | **+1 ms, 13 of 25** |
+| `generated.html`, round two | 0 ms, 8 of 25 | **+1 ms, 14 of 25** |
+| `features.html` | 0 ms, 11 of 25 | **+1 ms, 15 of 25** |
+
+A third binary attributed it: the same head with that one line reverted
+to `l.v = px` read a median of 0 and 11 of 25 against a floor of 12.
+
+**The fix was to take the branch out, not the work.** The scale is
+1.0 on every page that never says `zoom`, so `l.v = px *
+cascadeZoomScale` is a no-op multiply there -- and one predictable
+multiply beats a compare and a branch:
+
+| | Floor | The change |
+|---|---|---|
+| `generated.html` cascade, round one | 0 ms, 9 of 25 | 0 ms, 11 of 25 |
+| `generated.html` cascade, round two | 0 ms, 12 of 25 | **-1 ms, 4 of 25** |
+| `features.html` cascade | 0 ms, 4 of 25 | 0 ms, 9 of 25 |
+
+Every median is 0 or better, and the second round reads *below* its
+floor. Two entries in a row have now been found, attributed to a line,
+and removed -- and the lesson of this one is narrower than the last:
+**in the hottest function, the test that avoids the work can cost more
+than the work.**

@@ -5,6 +5,49 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `zoom`
+
+264 -> 265 properties. Every length zooms exactly once: a declared
+`100px` is 200 device pixels at `zoom: 2`, and so are the paddings,
+the borders, the margins and the height. `em`, `rem` and `vw` resolve
+against the *unzoomed* font size, root font size and viewport and then
+zoom. A **percentage needs nothing**, because the containing block it
+resolves against is already in device pixels -- which is also why an
+`auto` width still fills its containing block and only the height
+changes. It compounds down the tree, and zero, a negative and
+`normal` all leave it alone.
+
+**One multiply in `lenPx` is the whole of it for lengths**, because
+every relative unit has already become pixels by the time it gets
+there. That is worth more than the line count suggests: there is no
+list of properties to keep in sync, so a length added to the engine
+tomorrow zooms without anyone remembering to make it.
+
+**The font could not join them.** A child's `em` resolves against its
+parent's computed `fontSize`, so zooming that would zoom the child's
+`em` twice -- and Chromium keeps the computed font size unzoomed for
+exactly this reason, reporting `16px` under `zoom: 2`. The zoom is
+applied where the font is chosen instead, in `setFontFor`, and folded
+into the `fontKey` so the width cache cannot serve one zoom's advance
+at another. That is the drop cap's stale-key bug in a different coat,
+avoided rather than repeated.
+
+**And an inherited length arrives carrying the parent's zoom.** Every
+declared length is scaled as `lenPx` builds it, but an inherited one
+is copied rather than parsed, so it needs the ratio between the two
+zooms. The inherited properties that carry a length are few and all of
+them are handled: `line-height`, `letter-spacing`, `word-spacing`,
+`text-indent` and `tab-size`. `border-spacing` would belong with them
+and does not inherit in this engine at all, which is its own gap.
+
+Two checks earn their place without a number. A zoom of two on a box
+is the same box as every length doubled -- which holds for the width,
+the padding and the border at once. And a zoom of two is the same ink
+as twice the font size. Twice the *width* is not, and cannot be: this
+engine rounds a glyph's advance to whole pixels, so ten of them are
+100 at 16px and 190 at 32px where Chromium's 96.33 and 192.66 are
+exactly double.
+
 ### `attr()` was implemented, untested, and documented as missing
 
 css-2026.md's Values and Units 3 row said "`attr()` is missing". It

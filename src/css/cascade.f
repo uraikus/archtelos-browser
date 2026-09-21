@@ -180,6 +180,9 @@ bool cascadeSawAnchorSize = false
 bool cascadeSawFontSizeAdjust = false
 // And for `baseline-source`.
 bool cascadeSawBaselineSource = false
+// And for `zoom`, which multiplies every pixel length of the element
+// that says it and of everything under it.
+bool cascadeSawZoom = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -268,6 +271,11 @@ void func cascadeReset() {
     cascadeSawAnchorInset = false
     cascadeSawFontSizeAdjust = false
     cascadeSawBaselineSource = false
+    cascadeSawZoom = false
+    anyZoom = false
+    cascadeZoomScale = 1.0
+    map[int] emptyZoom = {}
+    zoomOfSerial = emptyZoom
     anyBaselineSource = false
     map[int] emptyBaselineSource = {}
     baselineSourceOfSerial = emptyBaselineSource
@@ -391,6 +399,11 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                         cascadeSawBaselineSource = true
                         break
                     }
+                }
+            }
+            if !cascadeSawZoom {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'zoom' { cascadeSawZoom = true  break }
                 }
             }
             if !anyRevert {
@@ -991,6 +1004,7 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawBaselineSource && decls[d].name == 'baseline-source' {
                 cascadeSawBaselineSource = true
             }
+            if !cascadeSawZoom && decls[d].name == 'zoom' { cascadeSawZoom = true }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
             // stylesheet walk never sees an inline declaration, and the
@@ -5259,7 +5273,15 @@ arr[int] anchorSizeNoFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_
 // answers for the font the style used to have: `initial-letter` scaled
 // a drop cap to 106px and got the paragraph's 20px advance back.
 void func refreshFontKey(s:Style) {
+    // The zoom is in the key because the font the text is SET in is
+    // the computed size times it, and the width cache is keyed on this
+    // -- without it one zoom's advance is served at another, which is
+    // the drop cap's stale-key bug in a different coat.
     s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+    if anyZoom {
+        int zk = zoomOfSerial[`${s.serial}`]
+        if zk != null { s.fontKey = s.fontKey + `|${zk}` }
+    }
 }
 
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
@@ -5315,6 +5337,10 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // `rem` multiplies this, and the root is computed before anything
     // that can refer to it.
     if isRoot { cssRootFontSize = s.fontSize }
+    // `zoom` goes up HERE: after the font size, which stays unzoomed so
+    // that a child's `em` resolves against it once, and before every
+    // other length, each of which is multiplied as `lenPx` builds it.
+    if cascadeSawZoom { applyZoom(s, parent, isRoot, props) }
     s.fontBold = isRoot ? false : parent.fontBold
     ascii fw = styleProp(props, 'font-weight')
     if fw != null {
@@ -5362,7 +5388,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         cssSchemeIsDark = s.colorSchemeDark
     }
     s.color = colorProp(props, 'color', isRoot ? COLOR_BLACK : parent.color, isRoot ? COLOR_BLACK : parent.color)
-    s.lineHeight = isRoot ? 0 : parent.lineHeight
+    s.lineHeight = isRoot ? 0 : zoomInherit(parent.lineHeight, parent)
     // `lh` inside `line-height` itself is the parent's, the way `em`
     // inside `font-size` is: the value being computed cannot be its own
     // unit. So the global carries the inherited line height across the
@@ -5378,11 +5404,11 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             parseNumberAt(t, 0)
             if numOk {
                 ascii unit = t.slice(numEnd, t.length)
-                if unit == '' { s.lineHeight = roundPx(numValue * s.fontSize.toFloat()) }
+                if unit == '' { s.lineHeight = zoomHere(roundPx(numValue * s.fontSize.toFloat())) }
                 else {
                     Len l = parseLength(t, s.fontSize)
                     if l.kind == LEN_PX { s.lineHeight = roundPx(l.v) }
-                    else if l.kind == LEN_PERCENT { s.lineHeight = roundPx(s.fontSize.toFloat() * l.v / 100.0) }
+                    else if l.kind == LEN_PERCENT { s.lineHeight = zoomHere(roundPx(s.fontSize.toFloat() * l.v / 100.0)) }
                 }
             }
         }
@@ -5672,7 +5698,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // tab-size: a number of spaces, or a length saying the advance
     // outright. Both inherit; the initial value is eight spaces.
     s.tabSize = isRoot ? 8 : parent.tabSize
-    s.tabSizePx = isRoot ? -1 : parent.tabSizePx
+    s.tabSizePx = isRoot || parent.tabSizePx < 0 ? -1 : zoomInherit(parent.tabSizePx, parent)
     ascii ts = styleProp(props, 'tab-size')
     if ts != null {
         arr[ascii] tst = cssTokens(ts)
@@ -5757,7 +5783,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if t == 'hidden' || t == 'collapse' { s.hidden = true }
         else if t == 'visible' { s.hidden = false }
     }
-    s.letterSpacing = isRoot ? 0 : parent.letterSpacing
+    s.letterSpacing = isRoot ? 0 : zoomInherit(parent.letterSpacing, parent)
     s.letterSpacing = pxProp(props, 'letter-spacing', s.fontSize, s.letterSpacing)
     // opacity is not inherited either. The element's own value is its
     // computed value; effectiveOpacity is that multiplied by every
@@ -6346,7 +6372,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.borderCollapse = bc != null && asciiLower(bc) == 'collapse'
     if isRoot { s.borderCollapse = false }
     else if bc == null && (n.tag == 'td' || n.tag == 'th' || n.tag == 'tr' || n.tag == 'tbody' || n.tag == 'thead' || n.tag == 'tfoot') { s.borderCollapse = parent.borderCollapse }
-    s.textIndent = pxProp(props, 'text-indent', s.fontSize, isRoot ? 0 : parent.textIndent)
+    s.textIndent = pxProp(props, 'text-indent', s.fontSize,
+                          isRoot ? 0 : zoomInherit(parent.textIndent, parent))
     s.verticalAlign = VALIGN_BASELINE
     ascii va = styleProp(props, 'vertical-align')
     if va != null {
@@ -6623,7 +6650,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.captionSide = CAPTION_TOP
     ascii cs2 = styleProp(props, 'caption-side')
     if cs2 != null && asciiLower(cs2) == 'bottom' { s.captionSide = CAPTION_BOTTOM }
-    s.wordSpacing = isRoot ? 0 : parent.wordSpacing
+    s.wordSpacing = isRoot ? 0 : zoomInherit(parent.wordSpacing, parent)
     s.wordSpacing = pxProp(props, 'word-spacing', s.fontSize, s.wordSpacing)
     // An outline has a style of its own, like a border side: the
     // keyword used to decide only whether the outline existed, so every
@@ -7087,6 +7114,9 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // instead, and does so for free, because `normal` is stored as 0
     // and worked out from `fontSize` when it is read.
     if cascadeSawFontSizeAdjust { applyFontSizeAdjust(s, props) }
+    // Back to no zoom, so nothing outside this element's declarations
+    // is scaled: `lenPx` is called from layout and paint as well.
+    cascadeZoomScale = 1.0
     if cascadeSawBaselineSource {
         ascii bsrc = styleProp(props, 'baseline-source')
         if bsrc != null {
@@ -7114,6 +7144,62 @@ float func fontSizeAdjustAspect(metric:ascii) {
     // font this engine can load, which is what Chromium measures here.
     if metric == 'ic-width' || metric == 'ic-height' { return 1.0 }
     return 0.0
+}
+
+// The element's effective zoom: its parent's times its own, because
+// `zoom` compounds down the tree -- a `zoom: 2` inside a `zoom: 2` is
+// at four and a `zoom: 0.5` inside one is back at one, both measured.
+// `normal`, zero, a negative and anything that is not a number all
+// leave it at the parent's, which is what Chromium computes.
+// An INHERITED length, brought from the parent's zoom into this
+// element's. Every declared length is zoomed as `lenPx` builds it, but
+// an inherited one is copied rather than parsed, so it arrives
+// carrying the PARENT's zoom and needs the ratio. Chromium's model is
+// the same seen from the other side: it keeps computed values unzoomed
+// and multiplies at use, where this multiplies once and converts on
+// the way down.
+//
+// The inherited properties that carry a length are few and this is all
+// of them: `line-height`, `letter-spacing`, `word-spacing`,
+// `text-indent` and `tab-size`. `border-spacing` would belong here too
+// and does not inherit in this engine at all, which is its own gap.
+int func zoomInherit(v:int, parent:Style) {
+    if !cascadeSawZoom { return v }
+    float pz = zoomOf(parent)
+    if pz == cascadeZoomScale { return v }
+    return roundPx(v.toFloat() * cascadeZoomScale / pz)
+}
+
+// A length computed HERE from the unzoomed font size rather than
+// parsed -- a unitless or percentage `line-height` -- which `lenPx`
+// therefore never sees.
+int func zoomHere(v:int) {
+    if !cascadeSawZoom || cascadeZoomScale == 1.0 { return v }
+    return roundPx(v.toFloat() * cascadeZoomScale)
+}
+
+void func applyZoom(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    float eff = isRoot ? 1.0 : zoomOf(parent)
+    ascii raw = styleProp(props, 'zoom')
+    if raw != null {
+        ascii z = asciiLower(asciiTrim(raw))
+        if z != 'normal' {
+            // A percentage is the number over a hundred, which is what
+            // makes `zoom: 50%` and `zoom: 0.5` the same.
+            bool pct = z.length > 1 && z.charCodeAt(z.length - 1) == CH_PERCENT
+            ascii num = pct ? z.slice(0, z.length - 1) : z
+            parseNumberAt(num, 0)
+            if numOk && numEnd == num.length {
+                float v = pct ? numValue / 100.0 : numValue
+                if v > 0.0 { eff = eff * v }
+            }
+        }
+    }
+    cascadeZoomScale = eff
+    if eff != 1.0 {
+        zoomOfSerial[`${s.serial}`] = roundPx(eff * 10000.0)
+        anyZoom = true
+    }
 }
 
 void func applyFontSizeAdjust(s:Style, props:map[text]) {

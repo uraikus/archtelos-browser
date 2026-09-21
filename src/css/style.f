@@ -1398,10 +1398,32 @@ int func decoUnion(a:int, b:int) {
     return out
 }
 
+// The effective `zoom` of the element whose declarations are being
+// computed right now, or 1.0 outside the cascade. Every pixel length
+// is multiplied by it as it is built, which is the whole of `zoom` for
+// lengths: a percentage keeps its own kind and needs nothing, because
+// the containing block it resolves against is already in device
+// pixels, and `em`, `rem` and `vw` have already become pixels by the
+// time they reach here, so each zooms exactly once. Measured, in
+// todo.md.
+//
+// It is NOT applied to the font size. A child's `em` resolves against
+// its parent's computed `fontSize`, so zooming that would zoom the
+// child's `em` twice -- Chromium keeps the computed font size unzoomed
+// for the same reason. The font is zoomed where it is selected and
+// measured instead.
+float cascadeZoomScale = 1.0
+
 Len func lenPx(px:float) {
     Len l
     l.kind = LEN_PX
-    l.v = px
+    // Multiplied unconditionally rather than behind `!= 1.0`: the
+    // scale is 1.0 on every page that never says `zoom`, so the
+    // multiply is a no-op there, and one predictable multiply is
+    // cheaper than a compare and a branch. The branch version cost a
+    // millisecond of cascade on both benchmark pages, which a third
+    // binary attributed to exactly this line (benchmarks.md).
+    l.v = px * cascadeZoomScale
     return l
 }
 
@@ -1543,6 +1565,20 @@ int func textBoxPacked(s:Style) {
     text k = `${s.serial}`
     if textBoxOf[k] == null { return -1 }
     return textBoxOf[k]
+}
+
+// The effective zoom a computed style was built under, by its serial.
+// A page that never says `zoom` keeps the map empty and every read
+// short-circuits on the flag.
+map[int] zoomOfSerial = {}
+bool anyZoom = false
+
+float func zoomOf(s:Style) {
+    if s == null { return 1.0 }
+    int v = zoomOfSerial[`${s.serial}`]
+    if v == null { return 1.0 }
+    // Kept in ten-thousandths, because the map holds ints.
+    return v.toFloat() / 10000.0
 }
 
 int func motionIndexOf(s:Style) {
