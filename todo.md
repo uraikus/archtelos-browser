@@ -323,12 +323,17 @@ both leave together; a static render has no such state. That is a
 measurement that could not be made rather than one that was skipped,
 and it is recorded here for whoever can make it.
 
-Also missing: the `anchor()` and `anchor-size()` functions, which give
-an inset or a size from the anchor's own box rather than choosing a
-region; an anchor that is itself anchor-positioned, which would need a
-second round of the placement pass rather than the one this does; and
-`position-area`'s effect on a box whose `width` or `height` is `auto`,
-which should size the box to the region rather than shrink to fit.
+Also missing: an anchor that is itself anchor-positioned, which would
+need a second round of the placement pass rather than the one this
+does; and `position-area`'s effect on a box whose `width` or `height`
+is `auto`, which should size the box to the region rather than shrink
+to fit.
+
+Both functions are done, in every place the standard puts them and
+inside `calc()`. What they still cannot be written inside is `min()`,
+`max()` and `clamp()` -- and that is not a gap in this specification,
+because this engine has none of the three for any value at all. It is
+in the Values and Units section below.
 
 ### What CSS Motion Path 1 still needs
 
@@ -445,12 +450,13 @@ boxes (css-2026.md, CSS Writing Modes 3). The two belong together: the
 fragments go into visual order and then the opening edge follows the
 inline's start side rather than its left.
 
-### What is left of `anchor()` and `anchor-size()`
+### The measurements `anchor()` and `anchor-size()` were built from
 
 `anchor()` works in the four inset properties and `anchor-size()` in
 the fourteen that take it -- the six sizing properties, the four
-margins and the four insets. What is left is that neither function
-composes inside `calc()`, which is measured, at the end.
+margins and the four insets -- and both compose inside `calc()`. This
+section is the Chromium ground truth all of that was built against,
+kept because the next change to either function is graded against it.
 
 All of the following is Chromium 141, against an anchor whose border
 box is x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 --
@@ -618,29 +624,30 @@ declaration, not just the term -- and `calc(anchor(--missing right) +
 1px)` has **no effect** at all, leaving the box at its static position.
 That is the same difference the two functions show when written alone.
 
-**`anchor-size()` composes; `anchor()` does not yet.** What the
-standard means by "the function resolves to a length" is taken
-literally: the length is substituted into the expression and the
-ordinary length parser is run over the result, so `calc()`'s
-arithmetic, precedence and nesting come from the parser that already
-has them rather than being written a second time. A percentage survives
-that substitution as the `Len`'s own percentage part and is resolved at
-the property's own read site, against the base a percentage there would
-have used -- the containing block's width for a width or any margin,
-its height for a height.
+**Both compose, by one substitution each.** What the standard means by
+"the function resolves to a length" is taken literally: the length is
+substituted into the expression and the ordinary length parser is run
+over the result, so `calc()`'s arithmetic, precedence and nesting come
+from the parser that already has them rather than being written a
+second time.
 
-**`anchor()` inside an expression is the piece left.** It resolves
-against the containing block rather than against the anchor alone --
-`anchor(--a right)` in a `left` is the anchor's right edge in the
-containing block's coordinates -- and the containing block is known in
-the positioning pass, where `anchorInsetEdge` already is, rather than
-where the anchors' rectangles are collected. So it wants the same
-substitution driven from that pass.
+The two differ only in where the substitution can be made.
+`anchor-size()` resolves to the anchor's own dimension and is done in
+the walk that collects the rectangles; its percentage survives as the
+`Len`'s own percentage part and is resolved at the property's read
+site, against the base a percentage there would have used.
+`anchor()` resolves against the *containing block* -- `anchor(--a
+right)` in a `left` is the anchor's right edge measured from the
+containing block's left -- so its expressions are resolved in the
+positioning pass, where `anchorInsetEdge` is. The collecting walk still
+records one rectangle per occurrence there, because an expression may
+name several anchors and each takes the ones tree order has passed.
 
-**`min()` and `max()` take both functions in Chromium and are not the
-gap here.** This engine implements neither for any value at all: there
-is no `min(`, `max(` or `clamp(` in its length parser, so there is
-nothing about anchors in that hole. It belongs to CSS Values 4.
+**`min()`, `max()` and `clamp()` take both functions in Chromium and
+are not the gap here.** This engine implements none of the three for
+any value at all: there is no `min(`, `max(` or `clamp(` in its length
+parser, so there is nothing about anchors in that hole. It belongs to
+CSS Values 4, and has its own section below.
 
 **`anchor-size()` works in the six sizing properties** -- `width`,
 `height` and their minima and maxima -- on a second layout pass. A
@@ -661,6 +668,34 @@ does not. They need no second layout pass of their own -- a margin or an
 inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
+
+### `min()`, `max()` and `clamp()` are absent from the length parser
+
+CSS Values and Units 4 §10. This engine has none of the three, for any
+value at all: `parseLength` knows `calc()` and its arithmetic, and
+there is no `min(`, `max(` or `clamp(` anywhere in it. That is why
+neither anchor function can be written inside one, and why that is not
+a gap in Anchor Positioning.
+
+**The hard part is not the arithmetic.** A `Len` carries a pixel part
+and a percentage part separately, so that `calc(100% - 2em)` can wait
+for the containing block. A comparison cannot wait the same way:
+`min(50%, 200px)` has no answer until the containing block is known,
+and the two operands cannot be folded into one pixel-and-percentage
+pair beforehand. So either the `Len` gains a deferred comparison --
+which every read site would then have to resolve -- or the cases that
+mix a percentage with a length are refused, and that refusal is
+written down here as measured rather than assumed.
+
+**Probe Chromium first** for each shape and commit the measurement on
+its own: the all-length case, the all-percentage case, the mixed case,
+`clamp()`'s three arguments, a nested `calc()` inside one and one
+inside a `calc()`, and what a single argument or an empty one does.
+
+The property instrument cannot grade a function, so
+`tests/unit/test_values.f` is the instrument. The check that earns its
+place asserts `min(10px, 20px)` lands where `10px` lands, rather than
+matching a number of its own.
 
 ### What CSS Inline 3 still needs
 

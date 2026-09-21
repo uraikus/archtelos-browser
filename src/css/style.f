@@ -449,6 +449,10 @@ struct AnchorInfo {
     insetNames:arr[text]
     insetPcts:arr[int]
     insetFallbacks:arr[int]
+    // The inset's whole value, kept as written, where `anchor()`
+    // appears inside an expression rather than as the value itself.
+    // Empty where this side said nothing, or said the bare form.
+    insetExprs:arr[text]
     // `anchor-size()` in the fourteen properties that take it, in the
     // order `width`, `height`, `min-width`, `max-width`, `min-height`,
     // `max-height`, the four margins and the four insets. `padding-*`
@@ -535,6 +539,7 @@ AnchorInfo func anchorInfoOf(idx:int) {
         none.area = PAREA_NONE
         none.insetNames = ['', '', '', '']
         none.insetPcts = [-1, -1, -1, -1]
+        none.insetExprs = ['', '', '', '']
         none.insetFallbacks = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
                                ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
         return none

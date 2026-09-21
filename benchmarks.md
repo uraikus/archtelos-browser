@@ -1853,3 +1853,46 @@ number is a reading of the engine. The paired measurements above are
 what carry this entry: they compare two binaries alternately, in the
 same minutes, on the same machine, and a machine that drifts under both
 of them drifts out of the difference.
+
+`anchor()` inside `calc()` costs **4,512 bytes** (3,007,200 ->
+3,011,712) and nothing measurable, on both pages, each measured twice
+against its own per-phase floor taken in the same minutes. Twenty-five
+alternating paired samples at 800x600, paired mean in brackets:
+
+| `generated.html` | Floor | The change | Floor again | The change again |
+|---|---|---|---|---|
+| parse | 9 of 25 (+0.12) | 9 (+0.40) | 9 (-0.04) | 7 (+0.20) |
+| stylesheets | 1 of 25 (-0.12) | 2 (-0.16) | 2 (-0.08) | 2 (+0.08) |
+| cascade | 10 of 25 (+0.52) | 12 (+1.04) | 11 (+0.72) | **8 (-0.76)** |
+| layout | 9 of 25 (-1.36) | 13 (-1.12) | 12 (+1.44) | **7 (-1.24)** |
+
+| `features.html` | Floor | The change | Floor again | The change again |
+|---|---|---|---|---|
+| parse | 5 of 25 (-0.20) | 9 (+0.08) | 6 (-0.28) | 7 (-0.08) |
+| stylesheets | 5 of 25 (0.00) | 6 (-0.04) | 5 (-0.12) | 9 (+0.16) |
+| cascade | 8 of 25 (-0.48) | 10 (**+2.24**) | 8 (-0.64) | 10 (-0.24) |
+| layout | 9 of 25 (-0.68) | 9 (-0.48) | 12 (-0.04) | 11 (-0.32) |
+
+**Two readings in the first round would have been worth chasing on
+their own, and the second round took both back.** On `generated.html`
+the change read 12 and 13 of 25 in cascade and layout against a floor
+of 10 and 9; asked again it read **8 and 7**, *below* a floor that had
+meanwhile moved to 11 and 12. On `features.html` the cascade's paired
+mean read +2.24 ms, the largest single number in this comparison; asked
+again it read -0.24 against a floor of -0.64. A mean that swings from
++2.24 to -0.24 across two rounds of the same two binaries is not a
+measurement of either of them.
+
+The +2.24 was worth ruling out rather than waving through, because this
+change does add a scan to the declaration walk -- and `features.html`
+is the page that exercises everything. It rules itself out: that page
+contains no `anchor` anywhere, so `cascadeSawAnchorInset` never rises
+and the scan the expression form needs never runs. It declares exactly
+one `left` and one `bottom`, which is the whole population the inset
+loop could have charged for.
+
+What the change does to the walk it cannot avoid is strictly less work
+than before, not more. Both function names begin `anchor`, so the two
+flags are raised by **one** scan for that prefix rather than two scans
+for the full names, with the character after it saying which -- a
+shorter needle over the same bytes, once instead of twice.

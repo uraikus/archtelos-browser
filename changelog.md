@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `anchor()` composes inside `calc()`, completing Anchor Positioning 1
+
+The other function resolves to a length too, so the same substitution
+works -- but what it resolves to is not a length until the *containing
+block* is known. `anchor(--a right)` in a `left` is the anchor's right
+edge measured from the containing block's left, and in a `right` it is
+measured back from its right, which is what makes `right: anchor(--a
+left)` hang the box off the anchor's left. So the expression is
+resolved in the positioning pass, where the containing block already
+is, rather than in the walk that collects the anchors' rectangles.
+
+That walk still does the half only it can do. An expression may name
+several anchors -- `calc(anchor(--a left) + anchor-size(--a width))`
+names two -- and each resolves against the anchors the tree-order walk
+has passed at the moment it is reached. So the walk records one
+rectangle per *occurrence*, and one function numbers the occurrences
+for both passes, so neither has to agree with the other about anything
+else.
+
+The failure is the one `anchor()` shows outside an expression rather
+than the one `anchor-size()` shows inside it: a fallback is taken
+before the arithmetic, so `calc(anchor(--missing right, 7px) + 1px)` is
+8, and with no fallback the whole declaration has no effect, leaving
+the box at its static position. `anchor-size()` zeroes its declaration
+in the same case, and the two keep that difference inside an expression
+as outside one.
+
+A percentage beside the function is the containing block's on the
+inset's own axis, and goes through `resolveLen`, which is what every
+written-out inset resolves one against -- so the two land on the same
+pixel by construction rather than by agreeing about a convention.
+
+`min()`, `max()` and `clamp()` take both functions in Chromium. They
+are not a gap in anchors here: this engine implements none of the three
+for any value at all, which is a CSS Values 4 hole with nothing about
+anchors in it.
+
 ### `anchor-size()` composes inside `calc()`
 
 The standard says the function resolves to a length, and that is taken

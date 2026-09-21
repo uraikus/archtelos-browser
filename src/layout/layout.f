@@ -5662,6 +5662,42 @@ float func anchorExprValue(inner:ascii, ownName:text) {
     return 0.0
 }
 
+// ---- an expression holding either anchor function ---------------------
+//
+// One walk finds both, in the order they are written, so the two passes
+// that need it -- the collecting walk that records each occurrence's
+// anchor, and the placement that turns each into a length -- number the
+// occurrences identically without either having to agree with the
+// other about anything but this function.
+//
+// The two names are told apart by the character after `anchor`, which
+// is why searching for `anchor(` never matches an `anchor-size(`.
+int anchorOccInner0 = 0
+int anchorOccInner1 = 0
+int anchorOccEnd = 0
+bool anchorOccIsSize = false
+
+bool func anchorExprNext(src:ascii, from:int) {
+    int hitA = asciiIndexOf(src, 'anchor(', from)
+    int hitS = asciiIndexOf(src, 'anchor-size(', from)
+    int hit = -1
+    bool isSize = false
+    if hitA >= 0 && (hitS < 0 || hitA < hitS) { hit = hitA }
+    else if hitS >= 0 {
+        hit = hitS
+        isSize = true
+    }
+    if hit < 0 { return false }
+    int openAt = isSize ? hit + 11 : hit + 6
+    int close = asciiMatchingParen(src, openAt)
+    if close < 0 { return false }
+    anchorOccIsSize = isSize
+    anchorOccInner0 = openAt + 1
+    anchorOccInner1 = close
+    anchorOccEnd = close + 1
+    return true
+}
+
 // An expression with every `anchor-size()` in it replaced by the length
 // it resolves to, parsed by the ordinary length parser. That parser
 // already does `calc()`'s arithmetic, precedence and nesting, so none
@@ -5732,6 +5768,45 @@ void func collectAnchors(b:Box, depth:int) {
                 anchorInsetY[`${b.id}:${i}`] = anchorLiveY[ikey]
                 anchorInsetW[`${b.id}:${i}`] = anchorLiveW[ikey]
                 anchorInsetH[`${b.id}:${i}`] = anchorLiveH[ikey]
+            }
+            // An inset holding a function inside an expression records
+            // one anchor per occurrence instead, under a three-part
+            // key, because an expression may name several. The lengths
+            // themselves cannot be worked out here: `anchor()` measures
+            // from the containing block, which is the positioning
+            // pass's to know.
+            for int i = 0, i < 4, i++ {
+                if ai.insetExprs[i] == '' { continue }
+                anchorBoxFound = true
+                ascii src = ai.insetExprs[i].toAscii()
+                if src == null { continue }
+                int occ = 0
+                int at = 0
+                int guard = 0
+                while guard < 64 && anchorExprNext(src, at) {
+                    guard++
+                    at = anchorOccEnd
+                    ascii inner = src.slice(anchorOccInner0, anchorOccInner1)
+                    text onm = ''
+                    if anchorOccIsSize {
+                        if parseAnchorSize(inner) {
+                            onm = anchorSizeName != '' ? anchorSizeName : ai.anchor
+                        }
+                    } else if parseAnchorInset(inner, i) {
+                        onm = anchorInsetName != '' ? anchorInsetName : ai.anchor
+                    }
+                    if onm != '' {
+                        text okey = anchorScopeKey(onm)
+                        if anchorLiveW[okey] != null {
+                            text sl = `${b.id}:${i}:${occ}`
+                            anchorInsetX[sl] = anchorLiveX[okey]
+                            anchorInsetY[sl] = anchorLiveY[okey]
+                            anchorInsetW[sl] = anchorLiveW[okey]
+                            anchorInsetH[sl] = anchorLiveH[okey]
+                        }
+                    }
+                    occ++
+                }
             }
         }
         // What each `anchor-size()` resolves to, for the layout after
@@ -5877,12 +5952,93 @@ int func anchorAreaRoom(area:int, order:int, ax:int, ay:int, aw:int, ah:int,
 // It is the box's *margin* edge that lands on the anchor, which is
 // measured and is what an ordinary inset does too, so each side takes
 // its own margin back out to give the border box.
+// The length one inset expression resolves to, measured from the
+// containing block's own near edge the way a written-out inset is.
+// `anchor()` gives a position on the page, so it is turned into that
+// length here and nowhere else -- which is the whole reason this
+// function's expressions are resolved in the positioning pass rather
+// than beside `anchor-size()`'s in the collecting walk: only here is
+// the containing block known.
+//
+// Set to false where an occurrence named an anchor that is not there
+// and carried no fallback. An `anchor()` that fails takes the whole
+// declaration with it, leaving the box at its static position, which
+// is the opposite of what `anchor-size()` does and is measured
+// (todo.md).
+bool anchorInsetExprOk = false
+
+int func anchorInsetExprLength(b:Box, ai:AnchorInfo, i:int,
+                               cbX:int, cbY:int, cbW:int, cbH:int) {
+    anchorInsetExprOk = false
+    bool vertical = i >= ANCHOR_INSET_TOP
+    bool far = i == ANCHOR_INSET_RIGHT || i == ANCHOR_INSET_BOTTOM
+    ascii src = ai.insetExprs[i].toAscii()
+    if src == null { return 0 }
+    text out = ''
+    int occ = 0
+    int at = 0
+    int guard = 0
+    while guard < 64 && anchorExprNext(src, at) {
+        guard++
+        ascii inner = src.slice(anchorOccInner0, anchorOccInner1)
+        text sl = `${b.id}:${i}:${occ}`
+        bool found = anchorInsetW[sl] != null
+        int v = 0
+        if anchorOccIsSize {
+            if !parseAnchorSize(inner) { return 0 }
+            if found {
+                v = anchorSizeDim == ANCHOR_DIM_WIDTH ? anchorInsetW[sl] : anchorInsetH[sl]
+            } else if anchorSizeFallback != ANCHOR_NO_FALLBACK {
+                v = anchorSizeFallback
+            } else { return 0 }
+        } else {
+            if !parseAnchorInset(inner, i) { return 0 }
+            if found {
+                // The side keyword is a position along the anchor's
+                // own box, and the containing block's near edge on
+                // this axis is what an inset counts from -- the far
+                // sides counting back from its far edge, which is what
+                // makes `right:` measure the other way.
+                int a0 = vertical ? anchorInsetY[sl] : anchorInsetX[sl]
+                int span = vertical ? anchorInsetH[sl] : anchorInsetW[sl]
+                int edge = a0 + Math.floorDiv(span * anchorInsetPct, 10000)
+                v = far ? (vertical ? cbY + cbH - edge : cbX + cbW - edge)
+                        : (vertical ? edge - cbY : edge - cbX)
+            } else if anchorInsetFallback != ANCHOR_NO_FALLBACK {
+                // A fallback is already a length in the inset's own
+                // frame, so it needs none of that conversion.
+                v = anchorInsetFallback
+            } else { return 0 }
+        }
+        out = out + src.slice(at, anchorOccInner0 - (anchorOccIsSize ? 12 : 7)).toText()
+            + `${v}px`
+        at = anchorOccEnd
+        occ++
+    }
+    out = out + src.slice(at, src.length).toText()
+    Len l = parseLength(out.toAscii(), b.style == null ? 16 : b.style.fontSize)
+    if l.kind == LEN_INVALID || lenIsAuto(l) { return 0 }
+    // A percentage beside the function is the containing block's, on
+    // the inset's own axis, and `resolveLen` is what every other inset
+    // resolves one against -- so the two land on the same pixel by
+    // construction rather than by agreeing about a convention.
+    anchorInsetExprOk = true
+    return resolveLen(l, vertical ? cbH : cbW, 0)
+}
+
 int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
                          cbW:int, cbH:int, have:int) {
     bool vertical = i >= ANCHOR_INSET_TOP
     int size = vertical ? b.h : b.w
     int near = vertical ? b.mt : b.ml
     int far = vertical ? b.mb : b.mr
+    if ai.insetExprs[i] != '' {
+        int v = anchorInsetExprLength(b, ai, i, cbX, cbY, cbW, cbH)
+        if !anchorInsetExprOk { return have }
+        if i == ANCHOR_INSET_RIGHT { return cbX + cbW - v - size - far }
+        if i == ANCHOR_INSET_BOTTOM { return cbY + cbH - v - size - far }
+        return (vertical ? cbY : cbX) + v + near
+    }
     text k = `${b.id}:${i}`
     if anchorInsetW[k] != null {
         int at = vertical ? anchorInsetY[k] : anchorInsetX[k]
@@ -5903,6 +6059,13 @@ int func anchorInsetEdge(b:Box, ai:AnchorInfo, i:int, cbX:int, cbY:int,
     return (vertical ? cbY : cbX) + fb + near
 }
 
+// Whether this side said `anchor()` at all, in either of its two
+// forms. A near inset wins over the far one on its axis whichever form
+// each of them took.
+bool func anchorInsetSaid(ai:AnchorInfo, i:int) {
+    return ai.insetPcts[i] >= 0 || ai.insetExprs[i] != ''
+}
+
 void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
     if b == null { return }
     // `anchor()` in an inset, which is resolved here rather than where
@@ -5914,14 +6077,14 @@ void func placeAnchored(b:Box, cbX:int, cbY:int, cbW:int, cbH:int) {
         int wantY = b.y
         // A near inset wins over the far one on its axis, as it does
         // for any absolutely positioned box.
-        if ai.insetPcts[ANCHOR_INSET_LEFT] >= 0 {
+        if anchorInsetSaid(ai, ANCHOR_INSET_LEFT) {
             wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_LEFT, cbX, cbY, cbW, cbH, b.x)
-        } else if ai.insetPcts[ANCHOR_INSET_RIGHT] >= 0 {
+        } else if anchorInsetSaid(ai, ANCHOR_INSET_RIGHT) {
             wantX = anchorInsetEdge(b, ai, ANCHOR_INSET_RIGHT, cbX, cbY, cbW, cbH, b.x)
         }
-        if ai.insetPcts[ANCHOR_INSET_TOP] >= 0 {
+        if anchorInsetSaid(ai, ANCHOR_INSET_TOP) {
             wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_TOP, cbX, cbY, cbW, cbH, b.y)
-        } else if ai.insetPcts[ANCHOR_INSET_BOTTOM] >= 0 {
+        } else if anchorInsetSaid(ai, ANCHOR_INSET_BOTTOM) {
             wantY = anchorInsetEdge(b, ai, ANCHOR_INSET_BOTTOM, cbX, cbY, cbW, cbH, b.y)
         }
         if wantX != b.x || wantY != b.y { shiftBoxTree(b, wantX - b.x, wantY - b.y) }

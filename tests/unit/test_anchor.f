@@ -683,4 +683,62 @@ checkEqInt(sizeW('width:calc(anchor-size(--missing width) + 1px)'), 0,
 checkEqInt(insetX('margin-left:calc(anchor-size(--a width) + 5px)'), insetX('') + 105,
            'a margin of the anchor plus a length')
 
+// ---- anchor() inside an expression ---------------------------------------
+//
+// `anchor()` resolves against the *containing block*, not against the
+// anchor alone: what `left: anchor(--a right)` means is the anchor's
+// right edge measured from the containing block's left, and that is the
+// length an expression around it operates on. The fixture's containing
+// block starts at x 0 and y 0 and is 400 by 300, so the lengths below
+// are the anchor's own edges.
+
+checkEqInt(insetX('left:calc(anchor(--a right) + 5px)'), 255,
+           'anchor() plus a length, five past the anchor\'s right edge')
+checkEqInt(insetX('left:calc(anchor(--a right) - 5px)'), 245,
+           'and minus one, five short of it')
+checkEqInt(insetX('left:calc(anchor(--a left) + anchor-size(--a width))'), 250,
+           'the two functions in one expression')
+checkEqInt(insetX('left:calc(anchor(--a center) - anchor-size(--a width) / 2)'), 150,
+           'with the division binding before the subtraction')
+checkEqInt(insetX('left:calc(calc(anchor(--a right)) + 5px)'), 255,
+           'and a calc() nested inside one')
+
+// The checks that earn their place: the whole-value form and the
+// one-term expression are two ways of saying one thing, on each of the
+// four sides, and must land on the same box whatever that box's
+// coordinates turn out to be.
+checkEqInt(insetX('left:calc(anchor(--a right))'), insetX('left:anchor(--a right)'),
+           'calc() of one term is the term, on the left')
+checkEqInt(insetX('right:calc(anchor(--a left))'), insetX('right:anchor(--a left)'),
+           'and on the right, which measures from the other edge')
+checkEqInt(insetY('top:calc(anchor(--a bottom))'), insetY('top:anchor(--a bottom)'),
+           'and on the top')
+checkEqInt(insetY('bottom:calc(anchor(--a top))'), insetY('bottom:anchor(--a top)'),
+           'and on the bottom')
+
+// The box's margin edge is what lands on the anchor, inside an
+// expression as outside one.
+checkEqInt(insetX('margin-left:10px;left:calc(anchor(--a right))'),
+           insetX('margin-left:10px;left:anchor(--a right)'),
+           'the margin edge lands on the anchor either way')
+
+// A percentage beside the function is the containing block's, and this
+// containing block is 400 wide and 300 tall -- so the two spellings of
+// a tenth of it must agree without either number being known.
+checkEqInt(insetX('left:calc(anchor(--a left) + 10%)'),
+           insetX('left:calc(anchor(--a left) + 40px)'),
+           'a percentage of the containing block beside the function')
+checkEqInt(insetY('top:calc(anchor(--a top) + 10%)'),
+           insetY('top:calc(anchor(--a top) + 30px)'),
+           'and down the block axis, against its height')
+
+// It fails inside the expression the way it fails outside it: the
+// fallback is taken before the arithmetic, and with no fallback the
+// declaration has no effect at all -- which is the static position,
+// and is the opposite of what `anchor-size()` does.
+checkEqInt(insetX('left:calc(anchor(--missing right, 7px) + 1px)'), 8,
+           'the fallback is taken before the arithmetic')
+checkEqInt(insetX('left:calc(anchor(--missing right) + 1px)'), insetX(''),
+           'and with none the declaration has no effect, leaving the static position')
+
 finish('anchor positioning')

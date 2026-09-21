@@ -174,6 +174,28 @@ bool cascadeSawShape = false
 // two milliseconds of cascade on features.html before this flag, which
 // is what a paired benchmark found and what this exists to stop.
 bool cascadeSawAnchorSize = false
+// The same question for `anchor(` inside an expression. The four
+// insets are read of every element already, so this guards only the
+// scan that tells a bare `anchor()` from one inside a `calc()`.
+bool cascadeSawAnchorInset = false
+
+// Raises whichever of the two flags a declaration value mentions, in
+// ONE scan rather than two: both function names begin `anchor`, and
+// the character after it says which. Lowercasing is done by the
+// comparison rather than by rewriting the value, because this runs on
+// every declaration of every rule and an `asciiLower` there allocates
+// a string per declaration.
+void func cascadeNoteAnchorFns(v:ascii) {
+    int at = 0
+    while true {
+        int hit = asciiIndexOfLower(v, 'anchor', at)
+        if hit < 0 { return }
+        at = hit + 6
+        if at < v.length && v.charCodeAt(at) == CH_LPAREN { cascadeSawAnchorInset = true }
+        else if asciiStartsWithLower(v, '-size(', at) { cascadeSawAnchorSize = true }
+        if cascadeSawAnchorSize && cascadeSawAnchorInset { return }
+    }
+}
 
 void func cascadeReset() {
     // The `@page` rules come out of the same stylesheets, so they are
@@ -227,6 +249,7 @@ void func cascadeReset() {
     cssSchemeIsDark = false
     cascadeSawShape = false
     cascadeSawAnchorSize = false
+    cascadeSawAnchorInset = false
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -338,18 +361,16 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                     if declIsRevert(rule.decls[d].value) { anyRevert = true  break }
                 }
             }
-            if !cascadeSawAnchorSize {
+            if !cascadeSawAnchorSize || !cascadeSawAnchorInset {
+                // The scan is inside `cascadeNoteAnchorFns`, and does
+                // not lower the value first: this runs on every
+                // declaration of every rule, and an `asciiLower` there
+                // allocates a string per declaration. That cost six
+                // milliseconds of cascade on generated.html, which a
+                // paired benchmark read as 22 of 25 pairs slower.
                 for int d = 0, d < rule.decls.length, d++ {
-                    // `asciiIndexOfLower` rather than lowering the
-                    // value first: this runs on every declaration of
-                    // every rule, and an `asciiLower` there allocates a
-                    // string per declaration. That cost six milliseconds
-                    // of cascade on generated.html, which a paired
-                    // benchmark read as 22 of 25 pairs slower.
-                    if asciiIndexOfLower(rule.decls[d].value, 'anchor-size(', 0) >= 0 {
-                        cascadeSawAnchorSize = true
-                        break
-                    }
+                    cascadeNoteAnchorFns(rule.decls[d].value)
+                    if cascadeSawAnchorSize && cascadeSawAnchorInset { break }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -932,9 +953,8 @@ arr[Match] func collectMatches(n:Node) {
             // stylesheet walk never sees an inline declaration, and the
             // guarded loop would then read none of it. The anchor suite
             // is written that way and said so at once.
-            if !cascadeSawAnchorSize
-                && asciiIndexOfLower(decls[d].value, 'anchor-size(', 0) >= 0 {
-                cascadeSawAnchorSize = true
+            if !cascadeSawAnchorSize || !cascadeSawAnchorInset {
+                cascadeNoteAnchorFns(decls[d].value)
             }
             // A style attribute is parsed per element rather than
             // indexed, so this is where its `revert` is noticed -- in
@@ -5951,6 +5971,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // anchor's box per side.
     arr[text] inNames = ['', '', '', '']
     arr[int] inPcts = [-1, -1, -1, -1]
+    arr[text] inExprs = ['', '', '', '']
     arr[int] inFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
                         ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
     bool anySaidInset = false
@@ -5959,13 +5980,26 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii raw = styleProp(props, insetProps[i])
         if raw == null { continue }
         ascii low = asciiLower(asciiTrim(raw))
-        if !asciiStartsWith(low, 'anchor(', 0) { continue }
-        int close = asciiMatchingParen(low, 6)
-        if close < 0 { continue }
-        if !parseAnchorInset(low.slice(7, close), i) { continue }
-        inNames[i] = anchorInsetName
-        inPcts[i] = anchorInsetPct
-        inFalls[i] = anchorInsetFallback
+        // The bare form -- the function and nothing else -- keeps its
+        // own path: it needs no arithmetic and no second parse.
+        if asciiStartsWith(low, 'anchor(', 0) {
+            int close = asciiMatchingParen(low, 6)
+            if close == low.length - 1 {
+                if !parseAnchorInset(low.slice(7, close), i) { continue }
+                inNames[i] = anchorInsetName
+                inPcts[i] = anchorInsetPct
+                inFalls[i] = anchorInsetFallback
+                anySaidInset = true
+                anyAnchorInset = true
+                continue
+            }
+        }
+        // Anything else holding the function is an expression, kept
+        // whole so each occurrence's length can be substituted into it
+        // once the anchors and the containing block are both known.
+        if !cascadeSawAnchorInset { continue }
+        if asciiIndexOf(low, 'anchor(', 0) < 0 { continue }
+        inExprs[i] = low.toText()
         anySaidInset = true
         anyAnchorInset = true
     }
@@ -6038,6 +6072,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ai.scope = aScope
         ai.insetNames = inNames
         ai.insetPcts = inPcts
+        ai.insetExprs = inExprs
         ai.insetFallbacks = inFalls
         ai.sizeNames = szNames
         ai.sizeDims = szDims
