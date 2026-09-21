@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `baseline-source`
+
+CSS Inline 3 §5.1: which of an atomic inline's baselines the line it
+sits on aligns to. `first` and `last` work on a box that has its own
+line boxes, which is what an inline-block is; CSS2 §10.8.1 already
+said the default there is the *last* line, and that is what this
+engine already did, so `first` is the whole of the new behaviour and
+it is one index at the end of the inline layout.
+
+**What the declaration moves is the sibling, not the declaring
+element.** The inline-block keeps its top and its height under every
+value; the line it sits on realigns around it, and the span beside it
+moves by exactly one line height. The suite asserts that distance
+rather than either position, which holds whatever the line height is.
+
+`auto` on a flex container is not implemented, and the reason is its
+own finding: a `display: inline-flex` span holding two lines of text
+lays out at **zero height** here where Chromium gives 40. Chromium's
+answer for the sibling there is 0, and this engine also answers 0 --
+from a box that contributes nothing to the line rather than from a
+first-line baseline. A check written against it would have passed on
+both sides of this implementation. It is in todo.md with the numbers,
+and the suite has no inline-flex rows because of it.
+
+Two Festina notes came out of writing the instrument. **A laid-out
+inline's position is on the fragment the line holds, not on the box**:
+the span's own box and the text box beneath it are both zero tall at
+zero, so the first instrument answered 0 for all seven rows. And **two
+struct references do not compare with `==`** -- the LLVM backend
+rejects it with "defined with type 'ptr' but expected 'i64'" -- so a
+fragment is matched to its box by the box's id.
+
 ### `font-size-adjust`
 
 The used font size is the specified one times `<number> / aspect`,

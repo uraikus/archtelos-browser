@@ -1091,7 +1091,7 @@ arr[text] supportedProperties = [
     'direction', 'unicode-bidi',
     'text-emphasis', 'text-emphasis-style', 'text-emphasis-color',
     'text-emphasis-position', 'text-underline-position',
-    'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
+    'text-indent', 'letter-spacing', 'white-space', 'vertical-align', 'baseline-source',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
     'word-break', 'line-break', 'overflow-wrap', 'tab-size', 'all',
     'hyphens', 'hyphenate-character',

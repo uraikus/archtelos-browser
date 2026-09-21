@@ -770,6 +770,16 @@ const int LEN_CALC = 3
 // `resolveLen` is called.
 const int LEN_MINMAX = 4
 
+// `baseline-source` (CSS Inline 3 §5.1): which of an atomic inline's
+// baselines the line it sits on aligns to. `auto` is not one answer --
+// an inline-block's is its LAST line and an inline-flex's its FIRST --
+// so the keywords only override a default that belongs to the display
+// type. Measured, in todo.md.
+const int BSRC_AUTO = 0
+const int BSRC_FIRST = 1
+const int BSRC_LAST = 2
+
+
 struct Len {
     kind:int
     v:float     // pixels, the percentage for LEN_PERCENT, or the
@@ -1540,6 +1550,20 @@ int func motionIndexOf(s:Style) {
     text k = `${s.serial}`
     if motionOfSerial[k] == null { return 0 }
     return motionOfSerial[k]
+}
+
+// `baseline-source`, kept by the computed style's serial rather than as
+// a field on `Style`, for the reason benchmarks.md has measured twice.
+// It lives HERE rather than beside its constants at the top of this
+// file because a global is not hoisted in Festina and `Style` is
+// declared between the two.
+map[int] baselineSourceOfSerial = {}
+bool anyBaselineSource = false
+
+int func baselineSourceOf(s:Style) {
+    if s == null { return BSRC_AUTO }
+    int v = baselineSourceOfSerial[`${s.serial}`]
+    return v == null ? BSRC_AUTO : v
 }
 
 int func resolveLen(l:Len, base:int, dflt:int) {

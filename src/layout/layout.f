@@ -2827,8 +2827,14 @@ int func layoutInlineContent(b:Box, cx:int, cy:int, cw:int) {
     }
     int h = ifcY - cy
     if b.lines.length > 0 {
-        Line last = b.lines[b.lines.length - 1]
-        b.baseline = last.baseline - b.y
+        // CSS2 §10.8.1: an atomic inline's baseline is the baseline of
+        // its LAST line box. `baseline-source: first` overrides that
+        // with the first, which is the whole of what the property does
+        // on a box that has its own lines -- the declaring box does not
+        // move, the line it sits on realigns around it.
+        int li = b.lines.length - 1
+        if anyBaselineSource && baselineSourceOf(b.style) == BSRC_FIRST { li = 0 }
+        b.baseline = b.lines[li].baseline - b.y
     }
 
     ifcBox = savedBox

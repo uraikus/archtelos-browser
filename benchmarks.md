@@ -1983,3 +1983,24 @@ Neither page declares `font-size-adjust`, so
 `cascadeSawFontSizeAdjust` never rises and the one map lookup the
 property needs is never made -- the flag is why that lookup is not
 paid by every element of every page that will never use it.
+
+`baseline-source` costs **400 bytes** (3,025,288 -> 3,025,688) and
+read below its floor in every phase of both pages, in one round:
+
+| Phase | `generated.html` floor / change | `features.html` floor / change |
+|---|---|---|
+| parse | 6 of 25 / 9 | 6 of 25 / 5 |
+| stylesheets | 5 of 25 / 6 | 11 of 25 / 8 |
+| cascade | 8 of 25 / 12 | 7 of 25 / 9 |
+| layout | **14 of 25 (+2.00) / 10 (-2.48)** | **13 of 25 (+0.52) / 8 (-1.28)** |
+
+Layout is the phase the change is in, and on both pages the floor read
+*higher* than the change did -- 14 against 10 and 13 against 8, with
+the floor's paired mean positive and the change's negative on each.
+There is nothing here to ask a second round about.
+
+What layout gained is one test per block that has line boxes, not per
+box: `anyBaselineSource && baselineSourceOf(b.style) == BSRC_FIRST`,
+at the single place the inline layout finishes a box's baseline.
+Neither page declares the property, so the flag stays false and the
+right-hand side never runs.

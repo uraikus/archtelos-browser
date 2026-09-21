@@ -178,6 +178,8 @@ bool cascadeSawAnchorSize = false
 // `computeStyleValues` and would otherwise be one map lookup for every
 // element of every page.
 bool cascadeSawFontSizeAdjust = false
+// And for `baseline-source`.
+bool cascadeSawBaselineSource = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -265,6 +267,10 @@ void func cascadeReset() {
     cascadeSawAnchorSize = false
     cascadeSawAnchorInset = false
     cascadeSawFontSizeAdjust = false
+    cascadeSawBaselineSource = false
+    anyBaselineSource = false
+    map[int] emptyBaselineSource = {}
+    baselineSourceOfSerial = emptyBaselineSource
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -375,6 +381,14 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'font-size-adjust' {
                         cascadeSawFontSizeAdjust = true
+                        break
+                    }
+                }
+            }
+            if !cascadeSawBaselineSource {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'baseline-source' {
+                        cascadeSawBaselineSource = true
                         break
                     }
                 }
@@ -973,6 +987,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawFontSizeAdjust && decls[d].name == 'font-size-adjust' {
                 cascadeSawFontSizeAdjust = true
+            }
+            if !cascadeSawBaselineSource && decls[d].name == 'baseline-source' {
+                cascadeSawBaselineSource = true
             }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
@@ -7070,6 +7087,17 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // instead, and does so for free, because `normal` is stored as 0
     // and worked out from `fontSize` when it is read.
     if cascadeSawFontSizeAdjust { applyFontSizeAdjust(s, props) }
+    if cascadeSawBaselineSource {
+        ascii bsrc = styleProp(props, 'baseline-source')
+        if bsrc != null {
+            ascii bw = asciiLower(asciiTrim(bsrc))
+            int bv = bw == 'first' ? BSRC_FIRST : (bw == 'last' ? BSRC_LAST : BSRC_AUTO)
+            if bv != BSRC_AUTO {
+                baselineSourceOfSerial[`${s.serial}`] = bv
+                anyBaselineSource = true
+            }
+        }
+    }
     return s
 }
 

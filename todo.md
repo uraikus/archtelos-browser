@@ -672,7 +672,42 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
-### `baseline-source`, measured
+### An inline-flex holding text lays out at zero height
+
+Found by writing `baseline-source`'s fixture, which is the only reason
+it was found at all: the check that would have agreed with Chromium
+was agreeing for the wrong reason.
+
+A `display: inline-flex` span holding `A<br>B`, 60px wide, at a line
+height of 20:
+
+| | Chromium | this engine |
+|---|---|---|
+| the span's height | 40 | **0** |
+| its baseline | its first line | 0 |
+| the containing block's height | 40 | 20 |
+
+The same markup as an `inline-block` is 40 tall here and matches
+Chromium exactly, so it is the flex path rather than the content. A
+flex container blockifies its children, so `A<br>B` is one anonymous
+item two lines tall, and the container's height should follow it.
+`layoutFlex` ends in `b.baseline = b.h`, which is right for a
+container whose height is right and says nothing when the height is
+zero.
+
+**This is why the `baseline-source` suite has no inline-flex rows.**
+Chromium's answer there is "the span beside it stays at 0", and this
+engine also answers 0 -- from a zero-tall box that contributes nothing
+to the line rather than from a first-line baseline. A check written
+against it would have passed on both sides of the implementation and
+measured nothing, which is the shape of instrument this project has
+found eight of.
+
+### `baseline-source` is done; this is what it was built from
+
+`first` and `last` work on an atomic inline that has its own line
+boxes, which is what an inline-block is. `auto` on a flex container is
+not implemented and cannot be graded until the finding above is fixed.
 
 CSS Inline 3 §5.1. Which of an atomic inline's baselines the line it
 sits on aligns to. Chromium 141, a 60px-wide inline-block holding two
@@ -1053,7 +1088,7 @@ not settled is not one to ship for the sake of a count. The probe is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(263; Chromium answers for 406, and one of them -- `overlay` -- only the
+(264; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
