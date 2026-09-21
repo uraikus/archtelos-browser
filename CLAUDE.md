@@ -294,6 +294,21 @@ valgrind -q ./x
 whenever valgrind is involved and never otherwise — the generic build
 is slower, and the numbers in benchmarks.md are native builds.
 
+**A pipeline eats valgrind's exit status.** `valgrind -q
+--error-exitcode=9 ./x | tail -20; echo $?` reports *tail's* success,
+which is 0 whatever valgrind found. A use-after-free in
+`applyFontSizeAdjust` read as clean that way and was caught only
+because its stack trace happened to land inside the last twenty lines.
+Redirect to a file and check the status of valgrind itself:
+
+```bash
+valgrind -q --error-exitcode=9 ./x > vg.log 2>&1; echo "VGEXIT=$?"
+```
+
+The same applies to any command whose exit status is the result --
+`tests/run.sh`, the conformance runners. `$?` after a pipe is the last
+stage's.
+
 **Valgrind is the tool that finds Festina's memory bugs, so use it.**
 Both memory-safety findings in FINDINGS.md were invisible in ordinary
 runs: the programs printed the right answers and exited 0, while
