@@ -672,16 +672,20 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
-### A flex container does not wrap its text in an anonymous item
+### A flex container's text and baseline, and what they were built from
+
+Both are done. A flex container wraps each run of its text in an
+anonymous block item and takes its baseline from its first item's
+first baseline. This section is the Chromium ground truth that was
+built against, kept because the next change to either is graded
+against it.
 
 Found by writing `baseline-source`'s fixture, which is the only reason
 it was found at all: the check that would have agreed with Chromium
-was agreeing for the wrong reason.
+was agreeing for the wrong reason. A `display: inline-flex` span
+holding `A<br>B`, 60px wide, at a line height of 20:
 
-A `display: inline-flex` span holding `A<br>B`, 60px wide, at a line
-height of 20:
-
-| | Chromium | this engine |
+| | Chromium | this engine, before |
 |---|---|---|
 | the span's height | 40 | **0** |
 | its baseline | its first line | 0 |
@@ -757,8 +761,8 @@ found eight of.
 ### `baseline-source` is done; this is what it was built from
 
 `first` and `last` work on an atomic inline that has its own line
-boxes, which is what an inline-block is. `auto` on a flex container is
-not implemented and cannot be graded until the finding above is fixed.
+boxes and on a flex container, whose `auto` is the opposite default --
+first rather than last.
 
 CSS Inline 3 §5.1. Which of an atomic inline's baselines the line it
 sits on aligns to. Chromium 141, a 60px-wide inline-block holding two

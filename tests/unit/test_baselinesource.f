@@ -99,12 +99,16 @@ checkEqInt(bsSpanTop('inline-block', ''), 20,
            'an inline-block aligns on its LAST line, so the span drops to the second')
 checkEqInt(bsSpanTop('inline-block', 'baseline-source:auto'), 20,
            'which is what `auto` means there')
-// The inline-flex half of Chromium's table is NOT reproduced here, and
-// deliberately so: this engine lays a `display: inline-flex` span
-// holding `A<br>B` out at ZERO height where Chromium gives 40, so a
-// check against it would agree with Chromium's "span at 0" for a
-// reason that has nothing to do with this property. That is its own
-// finding and todo.md records it with the numbers.
+checkEqInt(bsSpanTop('inline-flex', ''), 0,
+           'an inline-flex aligns on its FIRST item, so the span stays put')
+
+// The inline-flex rows were left out of this suite once, because the
+// engine laid such a span out at ZERO height and agreed with
+// Chromium's "span at 0" for a reason that had nothing to do with this
+// property. A flex container wraps its text in an anonymous item now
+// and takes its baseline from its first item, so the rows measure what
+// they claim to -- and the fixture is pinned below so they cannot go
+// back to agreeing by accident.
 
 // ---- the keyword overriding it --------------------------------------
 checkEqInt(bsSpanTop('inline-block', 'baseline-source:first'), 0,
@@ -112,12 +116,23 @@ checkEqInt(bsSpanTop('inline-block', 'baseline-source:first'), 0,
 checkEqInt(bsSpanTop('inline-block', 'baseline-source:last'), 20,
            'and `last` is what it already did')
 
+checkEqInt(bsSpanTop('inline-flex', 'baseline-source:last'), 20,
+           '`last` on an inline-flex takes the last item instead')
+checkEqInt(bsSpanTop('inline-flex', 'baseline-source:first'), 0,
+           'and `first` is what it already did')
+
 // ---- the checks that need no number of their own --------------------
-// `auto` is a default rather than a value, so it must land exactly
-// where the keyword naming that default lands.
+// `auto` is a default rather than a value, so on each display type it
+// must land exactly where the keyword naming that default lands -- and
+// the two defaults are OPPOSITE, which is the point of the pair.
 checkEqInt(bsSpanTop('inline-block', 'baseline-source:auto'),
            bsSpanTop('inline-block', 'baseline-source:last'),
            'auto on an inline-block is last, written out')
+checkEqInt(bsSpanTop('inline-flex', 'baseline-source:auto'),
+           bsSpanTop('inline-flex', 'baseline-source:first'),
+           'and auto on an inline-flex is first')
+check(bsSpanTop('inline-block', '') != bsSpanTop('inline-flex', ''),
+      'so the two display types disagree about what auto means')
 // And the two keywords must DISAGREE, which is what says the property
 // is read at all: a declaration that fell through to the default would
 // make these equal and every check above pass but this one.
@@ -144,6 +159,9 @@ checkEqInt(bsOwnHeight('inline-block', 'baseline-source:first'),
 // than a rounding.
 checkEqInt(bsOwnHeight('inline-block', ''), 40, 'the atomic inline really is two lines tall')
 checkEqInt(bsOwnHeight('inline-block', 'baseline-source:first'), 40, 'under either keyword')
+// And the inline-flex fixture is the same two lines tall, which is
+// what stops its rows agreeing with Chromium by being empty.
+checkEqInt(bsOwnHeight('inline-flex', ''), 40, 'and so is the inline-flex one')
 
 // An invalid value leaves the default in force.
 checkEqInt(bsSpanTop('inline-block', 'baseline-source:banana'), 20,

@@ -5,6 +5,52 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A flex container's text becomes an anonymous item, and its baseline its first item's
+
+Two halves of one bug, found by writing `baseline-source`'s fixture.
+
+**Flexbox 1 §4: each contiguous run of a flex container's text is
+wrapped in an anonymous block flex item.** Without it a text box is an
+item with no layout and no height, so a container holding nothing but
+text collapsed to nothing -- which `display: inline-flex` made
+visible, at zero height where Chromium gives 40.
+
+The run is text and forced breaks and nothing else, which is narrower
+than the wrapping a block container does: every other element child is
+an item in its own right, so `A<span>B</span>C` is **three** items and
+`A<img>B` is three. A `<br>` does *not* break a run -- `A<br>B` is one
+item forty pixels tall, not three items of twenty, nineteen and twenty
+-- because a forced line break belongs to the inline content around it
+rather than being a box the flex algorithm can place. Both are
+measured against a `flex-direction: column` container, which counts
+the items by stacking them.
+
+**And an anonymous box's margins were `auto`.** A `Style` built fresh
+has every `Len` at kind 0, which is `auto`, and the initial value of
+`margin` is zero. On a block container the two are indistinguishable,
+because an auto margin beside an auto width resolves to nothing; in a
+flex container auto margins absorb the free space, so the first
+anonymous item centred itself and pushed the next item to the far
+edge -- 155 pixels either side of a 30-pixel text item in a 400-pixel
+row.
+
+Zeroing them for *every* anonymous box cost **two milliseconds** on
+`generated.html`, which is a page of headings and paragraphs and
+tables and therefore a page of anonymous boxes: four `Len` writes
+each, a paired median of +1 in both cascade and layout across two
+rounds. A third binary with the four writes taken back out read on the
+floor, which attributed it exactly. Only a flex item can tell an auto
+margin from a zero one, so only a flex item pays for one now, and the
+cost measures away.
+
+**Flexible Box 1 §8.5: a flex container's baseline is its first item's
+first baseline**, where this engine synthesised one from the bottom
+edge. That is the opposite default from an inline-block, whose
+baseline is its *last* line, and it is why `baseline-source: auto`
+means different things on the two. A container's last baseline is its
+last item's last, so only the first needs asking for: an item's own
+baseline is already its last line.
+
 ### `baseline-source`
 
 CSS Inline 3 §5.1: which of an atomic inline's baselines the line it
@@ -20,14 +66,19 @@ value; the line it sits on realigns around it, and the span beside it
 moves by exactly one line height. The suite asserts that distance
 rather than either position, which holds whatever the line height is.
 
-`auto` on a flex container is not implemented, and the reason is its
-own finding: a `display: inline-flex` span holding two lines of text
-lays out at **zero height** here where Chromium gives 40. Chromium's
-answer for the sibling there is 0, and this engine also answers 0 --
-from a box that contributes nothing to the line rather than from a
-first-line baseline. A check written against it would have passed on
-both sides of this implementation. It is in todo.md with the numbers,
-and the suite has no inline-flex rows because of it.
+`auto` on a flex container is the **opposite** default -- its first
+item's first baseline rather than its last line -- so the two display
+types disagree about what `auto` means, which the suite asserts
+directly.
+
+That half was not implementable when this landed, and finding out why
+is what led to the next entry: a `display: inline-flex` span holding
+two lines of text laid out at **zero height** here where Chromium
+gives 40, and Chromium's answer for the sibling there is 0, which this
+engine also answered -- from a box that contributed nothing to the
+line rather than from a first-line baseline. The inline-flex rows were
+left out of the suite until that was fixed, rather than left in
+agreeing by accident.
 
 Two Festina notes came out of writing the instrument. **A laid-out
 inline's position is on the fragment the line holds, not on the box**:

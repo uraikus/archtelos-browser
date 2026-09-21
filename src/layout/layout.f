@@ -467,6 +467,29 @@ Style func anonymousStyle(parent:Style) {
     return s
 }
 
+// The four margins of an anonymous box, set to what the initial value
+// of `margin` actually is: ZERO. A `Style` built fresh has every `Len`
+// at kind 0, which is `auto`, and on a block container the two are
+// indistinguishable -- an auto margin beside an auto width resolves to
+// nothing. A flex container's auto margins absorb its free space, so
+// there an anonymous item would centre itself and push the next item
+// to the far edge: measured at 155 either side of a 30px text item in
+// a 400px row.
+//
+// It is here rather than in `anonymousStyle` because it is not free.
+// Four `Len` writes per anonymous box cost about a millisecond of
+// cascade and a millisecond of layout on `generated.html`, which is a
+// page of headings and paragraphs and tables and therefore a page of
+// anonymous boxes -- measured over two rounds and confirmed by a
+// third binary with the four writes taken back out (benchmarks.md).
+// Only a flex item can tell the difference, so only a flex item pays.
+void func zeroAnonymousMargins(s:Style) {
+    s.marginLeft = lenPx(0.0)
+    s.marginRight = lenPx(0.0)
+    s.marginTop = lenPx(0.0)
+    s.marginBottom = lenPx(0.0)
+}
+
 // Whether this box is taken out of the flow. A text box shares the
 // computed style of the element around it, so `position` reads through
 // to it: only a box with a real element of its own can be out of flow,
@@ -731,6 +754,7 @@ Box func buildBox(n:Node, parentStyle:Style) {
 // This is the same conversion an inline that turns out to contain
 // block-level content goes through in buildBox.
 void func blockifyItems(b:Box) {
+    wrapFlexTextRuns(b)
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind != BOX_INLINE { continue }
@@ -738,6 +762,61 @@ void func blockifyItems(b:Box) {
         c.blockLevel = true
         wrapInlineRuns(c)
     }
+}
+
+// Flexbox 1 §4: each contiguous run of a flex container's TEXT is
+// wrapped in an anonymous block flex item. Without it a text box is an
+// item with no layout and no height, so a container holding nothing
+// but text collapses to nothing -- which `display: inline-flex` made
+// visible and `baseline-source`'s fixture found.
+//
+// The run is text and forced breaks and nothing else, which is
+// narrower than `wrapInlineRuns`: every other element child is an item
+// in its own right, so `A<span>B</span>C` is three items and not one.
+// A `<br>` does NOT break the run -- `A<br>B` is one item two lines
+// tall rather than three items of twenty, nineteen and twenty. Both
+// are measured (todo.md).
+bool func isFlexTextRunBox(c:Box) {
+    return c.kind == BOX_TEXT || c.kind == BOX_BR
+}
+
+void func wrapFlexTextRuns(b:Box) {
+    bool any = false
+    for int i = 0, i < b.children.length, i++ {
+        if isFlexTextRunBox(b.children[i]) {
+            any = true
+            break
+        }
+    }
+    if !any { return }
+    arr[Box] out = []
+    Box run = null
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if isFlexTextRunBox(c) {
+            // A run that is nothing but whitespace makes no item at
+            // all, so a blank never starts one: the container is then
+            // empty rather than one line tall.
+            if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) && run == null { continue }
+            if run == null {
+                run = newBox(BOX_ANON, b.node, anonymousStyle(b.style))
+                zeroAnonymousMargins(run.style)
+                run.node = newDocument()
+                run.parentId = b.id
+                run.depth = b.depth + 1
+                run.blockLevel = true
+            }
+            addChildBox(run, c)
+        } else {
+            if run != null {
+                out.push(run)
+                run = null
+            }
+            out.push(c)
+        }
+    }
+    if run != null { out.push(run) }
+    b.children = out
 }
 
 void func buildChildren(b:Box, n:Node, s:Style) {
@@ -5198,7 +5277,32 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
         }
     }
     applyContainerAspect(b)
+    // Flexible Box 1 §8.5: a flex container's baseline is its FIRST
+    // item's, which is the opposite default from an inline-block --
+    // `baseline-source: auto` means first here and last there, and
+    // both are measured (todo.md). Synthesised from the bottom edge
+    // where the first item has no baseline of its own, which is what
+    // the standard says to do and what this always did.
     b.baseline = b.h
+    if count > 0 {
+        bool wantLast = anyBaselineSource && baselineSourceOf(s) == BSRC_LAST
+        Box bItem = items[wantLast ? count - 1 : 0]
+        // A container's FIRST baseline is its first item's first, and
+        // its LAST is its last item's last. An item's own `baseline` is
+        // already its last line (CSS2 §10.8.1), so only the first needs
+        // asking for -- which is the same question `baseline-source`
+        // asks of an inline-block, one level down.
+        int ib = wantLast ? bItem.baseline : boxFirstBaseline(bItem)
+        if ib > 0 { b.baseline = bItem.y - b.y + ib }
+    }
+}
+
+// The first baseline of a box that has line boxes, or its own baseline
+// where it has none -- which is already its LAST line, so the two
+// differ exactly when the box is more than one line tall.
+int func boxFirstBaseline(x:Box) {
+    if x.lines.length > 0 { return x.lines[0].baseline - x.y }
+    return x.baseline
 }
 
 // ---- floats -----------------------------------------------------------

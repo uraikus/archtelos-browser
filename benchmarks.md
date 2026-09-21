@@ -2004,3 +2004,50 @@ box: `anyBaselineSource && baselineSourceOf(b.style) == BSRC_FIRST`,
 at the single place the inline layout finishes a box's baseline.
 Neither page declares the property, so the flag stays false and the
 right-hand side never runs.
+
+**Four struct writes per anonymous box cost two milliseconds**, and
+this is the first entry in this file where a cost was found,
+attributed to the line that caused it, and removed.
+
+Giving a flex container's anonymous text item the margins the standard
+says it has -- zero, where a `Style` built fresh has `auto` -- meant
+four `Len` writes in `anonymousStyle`, which every anonymous box on
+every page goes through. `generated.html` is headings and paragraphs
+and tables, so it is a page of anonymous boxes. Twenty-five
+alternating paired samples:
+
+| `generated.html` | Floor | The change |
+|---|---|---|
+| cascade, round one | -1 ms, 6 of 25 | **+1 ms, 13 of 25** |
+| layout, round one | -1 ms, 7 of 25 | **+1 ms, 13 of 25** |
+| cascade, round two | 0 ms, 11 of 25 | **+1 ms, 16 of 25** |
+| layout, round two | -1 ms, 10 of 25 | **+1 ms, 15 of 25** |
+
+Two rounds, the same direction, a paired median of +1 in all four --
+which is what this file has learned to treat as real rather than as
+the page's own bias, because the bias shows up as a count without a
+median.
+
+**A third binary attributed it.** The same head with the four writes
+taken back out, against the same parent in the same minutes, read
+cascade at 9 of 25 against a floor of 8 and layout at 12 against 11,
+with a median of 0 in both -- so the cost is those four writes and
+nothing else on the diff.
+
+**Moving them costs nothing.** Only a flex item can tell an auto
+margin from a zero one, so the four writes moved out of
+`anonymousStyle` and into the one place that builds an anonymous flex
+item. Measured again, twice, and on the other page:
+
+| | Floor | The change |
+|---|---|---|
+| `generated.html` cascade | 8, then 9 of 25 | 10, then 12 |
+| `generated.html` layout | 6, then 8 of 25 | 12, then 10 |
+| `features.html` cascade | 14 of 25 (+1.84) | **8 (+0.40)** |
+| `features.html` layout | 12 of 25 (+3.16) | **10 (+1.28)** |
+
+Every median is 0, and on `features.html` the change reads below its
+floor in both phases. The rule this serves is the file's own -- a
+feature must not cost anything to the pages that do not use it -- and
+the point of the entry is that the rule was checked rather than
+assumed, and the check failed the first time.
