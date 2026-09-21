@@ -3213,6 +3213,33 @@ void func paintBoxUntransformed(b:Box) {
         return
     }
     paintBoxInner(b)
+    // The grabber goes over the box's own content, reserving nothing,
+    // which is what the measurement says it does. A page that never
+    // says `resize` pays one boolean here.
+    if anyResize { paintResizeGrabber(b) }
+}
+
+// `resize`'s grabber, drawn from the same three functions the pointer
+// is tested against in layout.f, so what it looks like and what can be
+// taken hold of are one square rather than two formulas that agree.
+// Its colour is Chromium's own, read off the rasterised corner.
+const int RESIZE_GRAB_GREY = 102
+
+void func paintResizeGrabber(b:Box) {
+    if !resizeGrabberShown(b) { return }
+    int cx = resizeGrabberX(b)
+    int cy = resizeGrabberY(b)
+    fillAlpha(1.0)
+    fillStyle(RESIZE_GRAB_GREY, RESIZE_GRAB_GREY, RESIZE_GRAB_GREY)
+    int left = cx - RESIZE_GRAB_PX
+    int top = cy - RESIZE_GRAB_PX
+    for int k = 0, k < RESIZE_GRAB_PX, k++ {
+        // the long diagonal, and the short one four pixels nearer the
+        // corner, which the same inset cuts to three pixels
+        pDrawRect(cx - 1 - k, top + k, 1, 1)
+        int sx = cx - 1 - k + 4
+        if sx <= cx - 1 && sx > left { pDrawRect(sx, top + k, 1, 1) }
+    }
 }
 
 void func paintBoxInner(b:Box) {

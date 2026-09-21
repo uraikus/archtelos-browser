@@ -118,7 +118,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${shadowKey(s.shadows)}`,
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.counterSet}`, `${s.quotes}`,
         `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`,
-        `${initialLetterPacked(s)}`, `${baselineSourceOf(s)}`]
+        `${initialLetterPacked(s)}`, `${baselineSourceOf(s)}`, `${resizeOf(s)}`]
 }
 
 text func motionKeyPath(mi:MotionInfo) {
@@ -207,7 +207,8 @@ arr[text] func styleDigestFieldNames() {
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'objectViewBox', 'shadows',
         'counterReset', 'counterIncrement', 'counterSet', 'quotes', 'colorSchemeDark',
-        'containerType', 'containerName', 'initialLetterPacked', 'baselineSource']
+        'containerType', 'containerName', 'initialLetterPacked', 'baselineSource',
+        'resize']
 }
 
 text func trackKey(list:arr[Track]) {

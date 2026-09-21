@@ -229,10 +229,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     one piece of work for paged media as well.
 13. The remainder of the official definition, lower value for this
    renderer but still part of the definition: Basic User Interface 3's
-   `cursor`, `resize` and `appearance`, which need window APIs Festina
-   does not expose, and Easing 1, which describes the timing functions
-   of transitions and animations and needs a clock and a repaint loop
-   rather than a property.
+   `cursor`, which needs a window API Festina does not expose -- the
+   pointer's shape is the window system's to set, and nothing here can
+   ask it to; and Easing 1, which describes the timing functions of
+   transitions and animations and needs a clock and a repaint loop
+   rather than a property. `resize` and `appearance` were on this list
+   under the same heading and neither belonged there: the grabber is
+   painted by this engine and dragged through the mouse events it
+   already receives, and a control's chrome is this engine's to draw
+   or not to draw.
 14. **Writing Modes 3, completed**: `writing-mode` and
     `text-orientation`, which need a second layout axis rather than a
     property; reordering across two inline boxes on one line rather than
@@ -1266,6 +1271,24 @@ computed `resize` is still `both`: that is the specification's own
 "applies to: elements with `overflow` other than `visible`", and it
 is the one place the two readings disagree.
 
+### A scroll offset outlives the document it belongs to
+
+Found by asking the same question of `resize`'s dragged sizes, which
+are kept the same way. `boxScrollTops` and `boxScrollLefts` are keyed
+by **node id**, because a box tree lasts one layout and a scroll
+position has to outlive several. Node ids start again at 1 for every
+document -- `pageFromHtml` and the shell's `navigate` both call
+`nodeRegistryReset` -- and nothing clears the two maps, so a scroll
+container on the next page inherits whatever the element with its id
+was scrolled to on the previous one. `boxScrollReset` exists and is
+called from the suite only.
+
+`resize` clears its own two maps in `cascadeReset`, which is the fix
+this wants as well: one line, in the one function every document load
+goes through. It is not made here because the suite scrolls boxes
+across pages deliberately in places and each of those would want
+reading first, which is a task rather than a line.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
@@ -1277,11 +1300,12 @@ missing", of a function that has worked in `content` since generated
 content landed.
 
 The audit that found it swept css-2026.md's negative claims. The rest
-hold up: `cursor`, `resize`, `user-select`, `mix-blend-mode`,
+hold up: `cursor`, `user-select`, `mix-blend-mode`,
 `isolation`, `background-blend-mode`, `text-wrap-style`,
 `text-decoration-skip-ink`, `shape-image-threshold`, `writing-mode`,
 `text-orientation` and the four font ones are all *properties*, so the
-instrument already grades them and agrees. The claims with no
+instrument already grades them and agrees. `resize` was on that list
+and is on it no longer. The claims with no
 instrument are the ones to keep an eye on, and they now have suites:
 `attr()` in `tests/unit/test_counters.f`, `min()`/`max()`/`clamp()`
 and the `ex`, `ch`, `cap` and `ic` units in `test_values.f`, the two
@@ -1297,7 +1321,7 @@ css-2026.md already admits "has never had to show".
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(265; Chromium answers for 406, and one of them -- `overlay` -- only the
+(266; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and

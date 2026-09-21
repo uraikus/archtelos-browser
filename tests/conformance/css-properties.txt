@@ -8,7 +8,9 @@
 # check measures nothing: the property could be implemented perfectly
 # and the row would still read as missing. A row may carry two
 # declarations where one is not enough -- a border width needs a border
-# style beside it or it computes to zero.
+# style beside it or it computes to zero, and `resize` needs an
+# `overflow` that is not `visible` or nothing it does is painted,
+# though its computed value moves either way.
 #
 # A row is `property<TAB>value`. A third column declares the row
 # ungradeable and says why. A FOURTH column names a pseudo-element, and
@@ -368,7 +370,7 @@ quotes	'<' '>'
 r	10px
 reading-flow	source-order
 reading-order	2
-resize	both
+resize	both;overflow:hidden
 right	11px
 rotate	3deg
 row-gap	10px

@@ -183,6 +183,9 @@ bool cascadeSawBaselineSource = false
 // And for `zoom`, which multiplies every pixel length of the element
 // that says it and of everything under it.
 bool cascadeSawZoom = false
+// And for `resize`, which is one keyword read off the element that
+// says it.
+bool cascadeSawResize = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -272,6 +275,7 @@ void func cascadeReset() {
     cascadeSawFontSizeAdjust = false
     cascadeSawBaselineSource = false
     cascadeSawZoom = false
+    cascadeSawResize = false
     anyZoom = false
     cascadeZoomScale = 1.0
     map[int] emptyZoom = {}
@@ -279,6 +283,14 @@ void func cascadeReset() {
     anyBaselineSource = false
     map[int] emptyBaselineSource = {}
     baselineSourceOfSerial = emptyBaselineSource
+    anyResize = false
+    map[int] emptyResize = {}
+    resizeOfSerial = emptyResize
+    // A dragged size belongs to the document it was dragged in. The
+    // node registry starts its ids again for every document, so an
+    // override left behind would land on whichever element of the next
+    // page happened to take that id.
+    resizeUsedReset()
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -404,6 +416,11 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawZoom {
                 for int d = 0, d < rule.decls.length, d++ {
                     if rule.decls[d].name == 'zoom' { cascadeSawZoom = true  break }
+                }
+            }
+            if !cascadeSawResize {
+                for int d = 0, d < rule.decls.length, d++ {
+                    if rule.decls[d].name == 'resize' { cascadeSawResize = true  break }
                 }
             }
             if !anyRevert {
@@ -959,6 +976,46 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
     }
 }
 
+// What a `resize` drag has made a box, by the id of the element it
+// belongs to. The box tree is rebuilt on every layout and the size has
+// to outlive it, exactly as a scroll offset does (layout.f), and the
+// node registry is what lasts. A page nobody has dragged never touches
+// either map.
+//
+// The size is a BORDER box, because that is the rectangle the pointer
+// took hold of a corner of. It reaches layout as a declaration rather
+// than as a field the layout code reads: a computed `Style` is shared
+// between elements that matched the same rules and is never written to
+// after it is computed, so a used size that belongs to one element has
+// to change what that element MATCHED -- which is also what keeps it
+// out of every other element's cache entry.
+map[int] resizeUsedW = {}
+map[int] resizeUsedH = {}
+bool anyResizeUsed = false
+
+void func resizeUsedReset() {
+    map[int] emptyW = {}
+    map[int] emptyH = {}
+    resizeUsedW = emptyW
+    resizeUsedH = emptyH
+    anyResizeUsed = false
+}
+
+void func resizeUsedMatches(n:Node, matches:arr[Match]) {
+    int w = resizeUsedW[`${n.id}`]
+    int h = resizeUsedH[`${n.id}`]
+    if w == null && h == null { return }
+    // An important inline declaration, which is the weight a user's own
+    // drag deserves: it beats anything the page can have written about
+    // this element's size.
+    int weight = matchWeight(true, ORIGIN_INLINE, CASCADE_NO_LAYER, 999999, 999999)
+    // The dragged rectangle is the border box whatever the element's
+    // own `box-sizing` says, so that is declared beside it.
+    addMatch(matches, 'box-sizing', 'border-box', weight)
+    if w != null { addMatch(matches, 'width', `${w}px`.toAscii(), weight) }
+    if h != null { addMatch(matches, 'height', `${h}px`.toAscii(), weight) }
+}
+
 arr[Match] func collectMatches(n:Node) {
     arr[Match] matches = []
     int th = archtelosTiming ? now() : 0
@@ -972,6 +1029,7 @@ arr[Match] func collectMatches(n:Node) {
     for int i = 0, i < classes.length, i++ {
         collectFromBucket(n, `.${classes[i]}`, matches)
     }
+    if anyResizeUsed { resizeUsedMatches(n, matches) }
     text inline = getAttr(n, 'style')
     if inline != null {
         ascii ia = inline.toAscii()
@@ -1005,6 +1063,7 @@ arr[Match] func collectMatches(n:Node) {
                 cascadeSawBaselineSource = true
             }
             if !cascadeSawZoom && decls[d].name == 'zoom' { cascadeSawZoom = true }
+            if !cascadeSawResize && decls[d].name == 'resize' { cascadeSawResize = true }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
             // stylesheet walk never sees an inline declaration, and the
@@ -5111,6 +5170,15 @@ bool func parseAnchorSize(inner:ascii) {
 }
 
 // `auto | contain | none`, or -1 for anything else.
+int func resizeKeyword(w:ascii) {
+    if w == 'both' { return RESIZE_BOTH }
+    if w == 'horizontal' { return RESIZE_HORIZONTAL }
+    if w == 'vertical' { return RESIZE_VERTICAL }
+    if w == 'block' { return RESIZE_BLOCK }
+    if w == 'inline' { return RESIZE_INLINE }
+    return RESIZE_NONE
+}
+
 int func overscrollKeyword(w:ascii) {
     if w == 'auto' { return OSB_AUTO }
     if w == 'contain' { return OSB_CONTAIN }
@@ -7117,6 +7185,22 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // Back to no zoom, so nothing outside this element's declarations
     // is scaled: `lenPx` is called from layout and paint as well.
     cascadeZoomScale = 1.0
+    // `resize` is stored as the keyword that was declared, because
+    // that is what it computes to: Chromium reports `block` for
+    // `resize: block` rather than resolving it to `vertical`. Whether
+    // it may be seen at all is a question about `overflow`, and it is
+    // asked where the grabber is painted rather than here, since the
+    // computed value does not depend on it.
+    if cascadeSawResize {
+        ascii rsz = styleProp(props, 'resize')
+        if rsz != null {
+            int rv = resizeKeyword(asciiLower(asciiTrim(rsz)))
+            if rv != RESIZE_NONE {
+                resizeOfSerial[`${s.serial}`] = rv
+                anyResize = true
+            }
+        }
+    }
     if cascadeSawBaselineSource {
         ascii bsrc = styleProp(props, 'baseline-source')
         if bsrc != null {

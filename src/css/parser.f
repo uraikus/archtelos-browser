@@ -1093,6 +1093,7 @@ arr[text] supportedProperties = [
     'text-emphasis-position', 'text-underline-position',
     'text-indent', 'letter-spacing', 'white-space', 'vertical-align', 'baseline-source',
     'zoom',
+    'resize',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
     'word-break', 'line-break', 'overflow-wrap', 'tab-size', 'all',
     'hyphens', 'hyphenate-character',

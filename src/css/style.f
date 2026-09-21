@@ -779,6 +779,15 @@ const int BSRC_AUTO = 0
 const int BSRC_FIRST = 1
 const int BSRC_LAST = 2
 
+// `resize`'s six keywords. The two logical ones are kept apart from
+// the physical pair they resolve to, because the computed value is the
+// keyword that was declared.
+const int RESIZE_NONE = 0
+const int RESIZE_BOTH = 1
+const int RESIZE_HORIZONTAL = 2
+const int RESIZE_VERTICAL = 3
+const int RESIZE_BLOCK = 4
+const int RESIZE_INLINE = 5
 
 struct Len {
     kind:int
@@ -1600,6 +1609,33 @@ int func baselineSourceOf(s:Style) {
     if s == null { return BSRC_AUTO }
     int v = baselineSourceOfSerial[`${s.serial}`]
     return v == null ? BSRC_AUTO : v
+}
+
+// `resize` (CSS Basic User Interface 3 §5.1, with Level 4's two
+// logical keywords), kept by the computed
+// style's serial for the reason above. The keyword is stored as
+// declared rather than resolved, because the computed value IS the
+// keyword: Chromium reports `block` for `resize: block` and does not
+// turn it into `vertical` (todo.md). The two logical values are
+// resolved where the drag is constrained instead.
+map[int] resizeOfSerial = {}
+bool anyResize = false
+
+int func resizeOf(s:Style) {
+    if !anyResize || s == null { return RESIZE_NONE }
+    int v = resizeOfSerial[`${s.serial}`]
+    return v == null ? RESIZE_NONE : v
+}
+
+// Whether this box may be resized across and down, in that order, in
+// the one writing mode this engine has. Two values out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+bool resizeAcross = false
+bool resizeDown = false
+
+void func resizeAxes(v:int) {
+    resizeAcross = v == RESIZE_BOTH || v == RESIZE_HORIZONTAL || v == RESIZE_INLINE
+    resizeDown = v == RESIZE_BOTH || v == RESIZE_VERTICAL || v == RESIZE_BLOCK
 }
 
 int func resolveLen(l:Len, base:int, dflt:int) {

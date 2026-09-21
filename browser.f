@@ -237,6 +237,32 @@ int dragThumbGrab = 0
 // hold of one of them.
 bool dragThumbAcross = false
 
+// The box whose `resize` grabber the pointer took hold of, where the
+// pointer was when it last moved, and the size the drag has taken the
+// box to. Held by node id for the same reason as above.
+//
+// The drag is driven by the pointer's DELTAS rather than by its
+// position, for two reasons: a grabber inside a scrolled container is
+// hit at a point in that container's coordinates and not the page's,
+// and a pointer held past the minimum size would otherwise lose the
+// distance it went and grow the box the moment it came back.
+int dragResizeNode = 0
+int dragResizeLastX = 0
+int dragResizeLastY = 0
+int dragResizeW = 0
+int dragResizeH = 0
+
+// The box a resize drag is on, found again in the tree laid out most
+// recently -- which for this drag is a tree laid out since it began.
+Box func dragResizeBox(b:Box) {
+    if b.node != null && b.node.id == dragResizeNode && resizeGrabberShown(b) { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box found = dragResizeBox(b.children[i])
+        if found != null { return found }
+    }
+    return null
+}
+
 // The box a drag is on, found again in the tree laid out most recently.
 Box func dragThumbBox(b:Box) {
     if b.node != null && b.node.id == dragThumbNode
@@ -270,6 +296,19 @@ on mouseDown(x:int, y:int, button:int) {
     // A press on a scrollbar's thumb takes hold of it, and nothing else
     // happens with that press: it is not a click on what is behind it.
     int docY = y - TOOLBAR_H + scrollY
+    // The grabber is drawn over the corner between the two scrollbars,
+    // so the pointer is tested against it first.
+    if anyResize {
+        Box grab = resizeGrabberAt(page.root, x, docY)
+        if grab != null {
+            dragResizeNode = grab.node.id
+            dragResizeLastX = x
+            dragResizeLastY = docY
+            dragResizeW = grab.w
+            dragResizeH = grab.h
+            return
+        }
+    }
     Box thumb = scrollThumbAt(page.root, x, docY)
     if thumb != null {
         dragThumbNode = thumb.node.id
@@ -291,11 +330,37 @@ on mouseDown(x:int, y:int, button:int) {
 }
 
 on mouseUp(x:int, y:int, button:int) {
-    if button == 1 { dragThumbNode = 0 }
+    if button == 1 {
+        dragThumbNode = 0
+        dragResizeNode = 0
+    }
 }
 
 on mouse(x:int, y:int) {
     if page.root == null { return }
+    // A resize drag restyles and lays the document out again, because
+    // the dragged size reaches layout as a declaration: it is the
+    // element's own used width and height, and everything that depends
+    // on them -- its lines, its descendants, the boxes after it --
+    // follows from that one pass rather than from a second rule here.
+    if dragResizeNode != 0 {
+        Box held = dragResizeBox(page.root)
+        if held == null { dragResizeNode = 0 }
+        else {
+            int docYn = y - TOOLBAR_H + scrollY
+            dragResizeW = dragResizeW + (x - dragResizeLastX)
+            dragResizeH = dragResizeH + (docYn - dragResizeLastY)
+            dragResizeLastX = x
+            dragResizeLastY = docYn
+            if resizeSetSize(held, dragResizeW, dragResizeH) {
+                computeStyles(page.doc)
+                layoutPage(page, clientWidth)
+                clampScroll()
+                repaint()
+            }
+            return
+        }
+    }
     // A drag in progress moves the thumb and nothing else: the pointer
     // may leave the bar, and the thumb still follows it, which is what
     // every scrollbar does.

@@ -1697,6 +1697,101 @@ map[int] boxScrollTops = {}
 // And how far across, for the axis a horizontal bar scrolls.
 map[int] boxScrollLefts = {}
 
+// ---- `resize` -------------------------------------------------------
+//
+// The grabber (CSS Basic User Interface 3 §5.1, whose `block` and
+// `inline` keywords are Level 4's): two diagonal hairlines
+// inside a seven by seven square inset one pixel from the bottom-right
+// corner of the PADDING box -- which is what Chromium draws, read off a
+// rasterised corner rather than invented (todo.md). The painter draws
+// it from these three functions and the pointer is tested against the
+// same square, so what it looks like and what can be taken hold of
+// cannot drift apart.
+//
+// The keyword says nothing about the drawing: `horizontal`, `vertical`,
+// `block` and `inline` all get the grabber `both` gets, and constrain
+// the drag instead. What the keyword cannot do alone is make it
+// appear -- the property applies only where `overflow` is neither
+// `visible` nor `clip`, and a box whose overflow is visible shows no
+// grabber though its computed `resize` is still `both`.
+const int RESIZE_GRAB_PX = 7
+
+bool func resizeGrabberShown(b:Box) {
+    Style s = b.style
+    if s == null || resizeOf(s) == RESIZE_NONE { return false }
+    if s.overflowX == OVERFLOW_VISIBLE || s.overflowY == OVERFLOW_VISIBLE { return false }
+    if s.overflowX == OVERFLOW_CLIP || s.overflowY == OVERFLOW_CLIP { return false }
+    return b.w - b.bl - b.br > 0 && b.h - b.bt - b.bb > 0
+}
+
+// The last pixel inside the padding box, which both diagonals and the
+// square are measured from.
+int func resizeGrabberX(b:Box) { return b.x + b.bl + (b.w - b.bl - b.br) - 1 }
+
+int func resizeGrabberY(b:Box) { return b.y + b.bt + (b.h - b.bt - b.bb) - 1 }
+
+// The innermost box whose grabber is under this point, or null. The
+// walk is the scroll thumb's exactly: a box that is scrolled moves the
+// point into its own coordinates before testing its children, so a
+// grabber inside a scrolled container is found where it is drawn
+// rather than where it was laid out.
+Box func resizeGrabberAt(b:Box, x:int, y:int) {
+    if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
+    int scrolled = boxScrollTop(b)
+    int inner = scrolled > 0 ? y + scrolled : y
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
+            Box found = resizeGrabberAt(c, x, inner)
+            if found != null { return found }
+        }
+    }
+    if !resizeGrabberShown(b) { return null }
+    int cx = resizeGrabberX(b)
+    int cy = resizeGrabberY(b)
+    if x > cx || x <= cx - RESIZE_GRAB_PX { return null }
+    if y > cy || y <= cy - RESIZE_GRAB_PX { return null }
+    return b
+}
+
+// What a drag makes the box: a BORDER box, because that is the
+// rectangle whose corner was taken hold of. The axes the keyword
+// allows are the ones that move; the other keeps whatever the
+// stylesheet said. Nothing here lays anything out -- the size is
+// recorded against the element's id and the caller runs the cascade
+// and the layout again, which is what makes a dragged size behave
+// exactly as a declared one.
+//
+// Answers whether anything changed, which is what tells a drag that
+// reached the minimum from one that moved the box.
+bool func resizeSetSize(b:Box, w:int, h:int) {
+    if !resizeGrabberShown(b) || b.node == null || b.node.id == 0 { return false }
+    resizeAxes(resizeOf(b.style))
+    bool moved = false
+    // A box smaller than its own grabber cannot be taken hold of again,
+    // so the square plus the edges it sits inside is the floor.
+    if resizeAcross {
+        int ww = maxInt(w, RESIZE_GRAB_PX + b.bl + b.br)
+        if resizeUsedW[`${b.node.id}`] != ww { moved = true }
+        resizeUsedW[`${b.node.id}`] = ww
+    }
+    if resizeDown {
+        int hh = maxInt(h, RESIZE_GRAB_PX + b.bt + b.bb)
+        if resizeUsedH[`${b.node.id}`] != hh { moved = true }
+        resizeUsedH[`${b.node.id}`] = hh
+    }
+    if moved { anyResizeUsed = true }
+    return moved
+}
+
+// The same, said as a point the corner is taken to, in the box's own
+// coordinates. The shell drives the drag by deltas instead, so that a
+// pointer held past the minimum does not lose the distance it went.
+bool func resizeDragTo(b:Box, x:int, y:int) {
+    return resizeSetSize(b, x - b.x + 1, y - b.y + 1)
+}
+
 void func boxScrollReset() {
     boxScrollTops = {}
     boxScrollLefts = {}

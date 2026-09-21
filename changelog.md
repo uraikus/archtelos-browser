@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `resize`
+
+265 -> 266 properties, and the last of Basic User Interface 3 this
+engine can reach. The property **reserves no space and changes no
+geometry** -- fourteen declarations measured in Chromium, and the only
+row whose client box moves is `overflow: scroll`, which moves the same
+way with no `resize` on it at all. Its computed value is the declared
+keyword under every `overflow`, `visible` included. So neither geometry
+nor `getComputedStyle` can tell whether it is doing anything, and the
+painter is the only instrument that can see it.
+
+**What there is to see is the grabber.** Two diagonal hairlines in
+`#666666`, at `x + y` = corner - 8 and corner - 4, inside a seven by
+seven square inset one pixel from the bottom-right corner of the
+*padding* box. Every number there was read off a rasterised corner
+rather than derived: the same reading with a five pixel border puts the
+lines at the same offsets from the padding box's corner, which is how
+the measurement tells the padding box from the border box.
+
+**The keyword constrains the drag, not the drawing.** `horizontal`,
+`vertical`, `block` and `inline` all paint the grabber `both` paints,
+which the suite asserts by agreement rather than by pixels of their
+own -- each is checked against `both`'s signature, so all five can only
+pass together. What the keyword cannot do alone is make the grabber
+appear: it shows only where `overflow` is neither `visible` nor `clip`,
+though the computed `resize` is still `both` either way. That is the
+one place the painting and `getComputedStyle` disagree, in Chromium as
+here, and the `clip` half of it is measured rather than read off the
+specification, which names only `visible`.
+
+**A drag reaches layout as a declaration.** A computed `Style` is
+shared between elements that matched the same rules and is never
+written to after it is computed, so a used size belonging to one
+element cannot be a field somebody sets on it: it has to change what
+that element *matched*. The dragged size is added to that element's
+matches as an important inline `width` and `height` -- the weight a
+user's own drag deserves, beating anything the page wrote -- and the
+document is styled and laid out again. Everything that depends on the
+new size follows from that one pass rather than from a second rule
+about dragging, and the box's lines, its descendants and the boxes
+after it all move because a declared length moved. What follows the
+pointer is the **border** box whatever the element's `box-sizing`
+says, since that is the rectangle whose corner was taken hold of, so
+`box-sizing: border-box` is declared beside it.
+
+The painter draws the grabber from the same three functions the
+pointer is tested against, which is what the scroll thumb already
+does: what it looks like and what can be taken hold of are one square
+rather than two formulas that agree.
+
+51 checks in `tests/render/resize.f`.
+
 ### `zoom`
 
 264 -> 265 properties. Every length zooms exactly once: a declared
