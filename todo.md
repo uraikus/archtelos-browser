@@ -518,10 +518,45 @@ so the earlier `width: 40px` is not retained. That is the opposite of
 static position -- the two functions fail differently and the
 difference is measured rather than reasoned about.
 
-**It is valid far beyond the sizing properties.** `margin-left` and
-`left` both take it, which `anchor()` does not: `margin-left:
-anchor(--a right)` does nothing while `margin-left: anchor-size(--a
-width)` moves the box by 100.
+**It is valid far beyond the sizing properties**, which `anchor()` is
+not: `margin-left: anchor(--a right)` does nothing while `margin-left:
+anchor-size(--a width)` moves the box by 100. Measured across all four
+insets and all four margins, on the same fixture in a 400 by 300
+containing block:
+
+| declaration | x | y |
+|---|---|---|
+| (control) | 0 | 0 |
+| `left: anchor-size(--a width)` | 100 | 0 |
+| `right: anchor-size(--a width)` | 260 | 0 |
+| `top: anchor-size(--a height)` | 0 | 60 |
+| `bottom: anchor-size(--a height)` | 0 | 220 |
+| `margin-left: anchor-size(--a width)` | 100 | 0 |
+| `margin-right: anchor-size(--a width)` | 0 | 0 |
+| `margin-top: anchor-size(--a height)` | 0 | 60 |
+| `margin-bottom: anchor-size(--a height)` | 0 | 0 |
+| `right: 0; margin-right: anchor-size(--a width)` | 260 | 0 |
+| `bottom: 0; margin-bottom: anchor-size(--a height)` | 0 | 220 |
+| `left: anchor-size(--missing width, 7px)` | 7 | 0 |
+| `left: anchor-size(--missing width)` | 0 | 0 |
+| `left: anchor(--a right); margin-left: anchor-size(--a width)` | 350 | 0 |
+| `padding-left: anchor-size(--a width)` | 0 | 0 |
+
+Every one of those is the length the function resolved to, put in the
+property as if it had been written out. `margin-right` and
+`margin-bottom` doing nothing on their own is ordinary CSS rather than
+anything to do with anchors -- an end-side margin has nothing to push
+against while the matching inset is `auto` -- and both work as soon as
+that inset is given a value.
+
+**`padding-*` refuses it.** `padding-left: anchor-size(--a width)`
+leaves the box 40 wide at x 0, so the declaration is dropped rather
+than resolved. Margins and insets take it; padding does not.
+
+**`anchor()` and `anchor-size()` compose across two properties.**
+`left: anchor(--a right)` with `margin-left: anchor-size(--a width)`
+puts the box at 350 -- the anchor's right edge at 250 plus its own
+width as a margin.
 
 **The name may be left out, and then `position-anchor` supplies it.**
 `left: anchor(right)` beside `position-anchor: --a` is 220. With no
