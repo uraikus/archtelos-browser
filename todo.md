@@ -1388,6 +1388,56 @@ formatting context as it is placed. Saving and restoring the float
 list around the search would lift that; the balancing this is for is
 a paragraph of text, so it has not been.
 
+### CSS Ruby Annotation Layout 1, measured
+
+Nothing of it is implemented, and almost everything it needs is
+already here: the tree builder handles `<rt>` and `<rp>`, the
+user-agent stylesheet says `ruby { display: ruby }`, and the element
+instrument already agrees with Chromium that `rt` is `inline` and `rp`
+is `none`. What is missing is the layout.
+
+Chromium 141, `X<ruby>base<rt>ann</rt></ruby>Y` in a 400px paragraph
+at 16px/20px monospace, measured from the paragraph's own corner:
+
+| | |
+|---|---|
+| the paragraph's height | **27**, where a plain line is 20 |
+| the `<ruby>` box | 19 tall, at y **7** |
+| the `<rt>` box | 9 tall, at y **0** |
+| `rt`'s font size | **8px** -- half the element's |
+| `ruby-align`'s initial value | `space-around` |
+| `ruby-position`'s initial value | `over` |
+
+So the annotation sits in a band above the base, the two **overlap by
+two pixels**, and the line grows by seven. `ruby-position: under` puts
+the `<rt>` at y 19, below the base, and the paragraph becomes 28 --
+one taller than `over`, which is the descender the annotation has to
+clear.
+
+**The ruby box is as wide as the wider of the two**, and the
+annotation is allowed to overhang when it is the wider: `base` with
+`ann` gives a 38.53 box and a 38.52 annotation stretched to match,
+while `b` with `annotation` gives a **40.17** box holding a **48.17**
+annotation that starts 4 pixels to the *left* of it. Two base/
+annotation pairs inside one `<ruby>` are laid out as two such units
+side by side, and `<rp>` contributes nothing.
+
+**`ruby-align` has two behaviours in Chromium, not four.** Rasterised,
+a four-character annotation over a sixteen-character base puts its ink
+at columns 0-19 under `start` and at 67-86 under `center`,
+`space-between` **and** `space-around` -- the three are pixel-identical,
+so Chromium distributes nothing between the annotation's characters
+however the property is spelled. An implementation that centres for
+everything but `start` reproduces Chromium exactly, and the two
+computed values that matter are still distinct.
+
+What this needs here is the inline layout: a ruby box whose base runs
+through the ordinary line breaker, an annotation measured at half the
+size and centred over it, a line box grown by the annotation's height
+less the overlap, and the two properties read where the annotation is
+placed. The `<rt>` font size is a user-agent stylesheet rule and needs
+no code.
+
 ### A scroll offset outlives the document it belongs to
 
 Found by asking the same question of `resize`'s dragged sizes, which
