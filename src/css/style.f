@@ -464,6 +464,14 @@ struct AnchorInfo {
     sizeNames:arr[text]
     sizeDims:arr[int]
     sizeFallbacks:arr[int]
+    // The property's whole value, kept as written, when the function
+    // appears inside an expression rather than as the value itself.
+    // Both functions resolve to a length, so what an expression needs
+    // is the length substituted in and the ordinary parser run over
+    // the result -- which is where `calc()`'s arithmetic, precedence
+    // and nesting come from rather than being written again here.
+    // Empty where this property said nothing, or said the bare form.
+    sizeExprs:arr[text]
 }
 
 const int ANCHOR_SIZE_WIDTH = 0
@@ -510,6 +518,11 @@ bool anyAnchorInset = false
 // the six sizing properties. It is what buys the second layout pass,
 // and every page that never says it pays one boolean.
 bool anyAnchorSize = false
+// The two maps an `anchor-size()` expression resolves into, keyed the
+// same way: an expression can carry a percentage of the containing
+// block beside the anchor's length, and the containing block is not
+// known where the anchor's rectangle is.
+map[int] anchorSizePct = {}
 
 // Whether any element scoped a name. A page with none resolves each
 // anchor under its bare name, as it did before the property existed,

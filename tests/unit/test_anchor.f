@@ -631,4 +631,56 @@ Box padded = anchoredBy('padding-left:anchor-size(--a width)')
 checkEqInt(padded.w, 40, 'padding does not take anchor-size(): the box keeps its width')
 checkEqInt(padded.x, insetX(''), 'and does not move')
 
+// ---- anchor-size() inside calc() -------------------------------------
+//
+// Both functions resolve to a length, so both compose. Every number is
+// Chromium 141 on this fixture; todo.md has the table.
+//
+// `min()` and `max()` take them in Chromium too, and are not asserted
+// here: this engine implements neither function for any value at all,
+// so there is nothing about anchors in that gap.
+
+checkEqInt(sizeW('width:calc(anchor-size(--a width) + 10px)'), 110,
+           'a length added to the anchor\'s width')
+checkEqInt(sizeW('width:calc(anchor-size(--a width) - 10px)'), 90, 'and subtracted')
+checkEqInt(sizeW('width:calc(anchor-size(--a width) * 2)'), 200, 'multiplied')
+checkEqInt(sizeW('width:calc(2 * anchor-size(--a width))'), 200,
+           'and multiplied the other way round')
+checkEqInt(sizeW('width:calc(anchor-size(--a width) / 2)'), 50, 'and divided')
+checkEqInt(sizeH('height:calc(anchor-size(--a height) - 10px)'), 50,
+           'the same down the block axis')
+
+// Ordinary precedence, and two functions in one expression.
+checkEqInt(sizeW('width:calc(anchor-size(--a width) + anchor-size(--a height))'), 160,
+           'two functions in one expression')
+checkEqInt(sizeW('width:calc(anchor-size(--a height) * 2 - 20px)'), 100,
+           'and ordinary precedence: the product before the difference')
+
+// A percentage of the containing block alongside, which is what makes
+// the result a calc rather than a length: the containing block is 400.
+checkEqInt(sizeW('width:calc(anchor-size(--a width) + 10%)'), 140,
+           'a percentage of the containing block beside it')
+
+// Nesting, because a nested calc is just a parenthesised sum.
+checkEqInt(sizeW('width:calc(calc(anchor-size(--a width)) + 10px)'), 110,
+           'a nested calc is the same answer')
+
+// The whole-value form and the one-term calc are two ways of saying one
+// thing, and must land on the same box.
+checkEqInt(sizeW('width:calc(anchor-size(--a width))'),
+           sizeW('width:anchor-size(--a width)'),
+           'calc() of one term is the term')
+
+// Each fails inside the expression the way it fails outside it: the
+// fallback is taken before the arithmetic, and no fallback takes the
+// whole declaration to zero rather than only the term.
+checkEqInt(sizeW('width:calc(anchor-size(--missing width, 5px) + 1px)'), 6,
+           'the fallback is taken before the arithmetic')
+checkEqInt(sizeW('width:calc(anchor-size(--missing width) + 1px)'), 0,
+           'and with none the whole declaration is zero, not one pixel')
+
+// The margins take an expression as they take the bare function.
+checkEqInt(insetX('margin-left:calc(anchor-size(--a width) + 5px)'), insetX('') + 105,
+           'a margin of the anchor plus a length')
+
 finish('anchor positioning')

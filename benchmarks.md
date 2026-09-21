@@ -1808,3 +1808,48 @@ than the work it could be doing.
 
 `features.html` is free: paired median 0 and 11 of 25 against a floor
 of -1 and 8 of 25, in the same minutes.
+
+`anchor-size()` inside `calc()` costs **8,672 bytes** (2,998,528 ->
+3,007,200) and nothing measurable, on both pages, each against its own
+per-phase floor taken in the same minutes. Twenty-five alternating
+paired samples at 800x600:
+
+| `generated.html` | Floor | The change |
+|---|---|---|
+| parse | 0 ms, 1 of 25 | 0 ms, 2 of 25 |
+| stylesheets | 0 ms, 3 of 25 | 0 ms, 3 of 25 |
+| cascade | -1 ms, 5 of 25 | 0 ms, 6 of 25 |
+| layout | +1 ms, 13 of 25 | +1 ms, 15 of 25 |
+
+| `features.html` | Floor | The change |
+|---|---|---|
+| parse | 0 ms, 5 of 25 | 0 ms, 7 of 25 |
+| stylesheets | 0 ms, 7 of 25 | 0 ms, 10 of 25 |
+| cascade | 0 ms, 9 of 25 | -1 ms, 9 of 25 |
+| layout | -1 ms, 8 of 25 | 0 ms, 12 of 25 |
+
+`generated.html`'s layout floors at thirteen of twenty-five here, which
+is the per-page baseline this file records above; fifteen sits on it,
+with a paired mean of 0.00. The one reading that moved at all is
+`features.html`'s stylesheets, ten against a floor of seven, with a
+median of 0 and a mean of +0.20 -- a fifth of a millisecond on a phase
+that is not where any of this change's code is.
+
+The expression path is the flag pattern again and nothing else: the
+cascade reaches it only behind `cascadeSawAnchorSize`, and the layout
+walk that resolves it only behind `anyAnchorSize`. Neither page says
+`anchor-size()`, so neither raises either flag. The two milliseconds
+of unattributed layout the entry above records on `generated.html` are
+still there and are still not this.
+
+**The table above is not rewritten from this change's `tests/bench.sh`
+run, because that run disqualified its own absolute numbers.** It read
+Chromium at 23.9 ms on `generated.html` where this file records 26.0 --
+8.1% out, inside the 15% the script allows and so a pass, but a shift
+in a row the change could not have touched. This browser's row moved
+the other way in the same minutes, 120 ms against the 101 recorded, so
+the machine was neither uniformly fast nor uniformly slow and neither
+number is a reading of the engine. The paired measurements above are
+what carry this entry: they compare two binaries alternately, in the
+same minutes, on the same machine, and a machine that drifts under both
+of them drifts out of the difference.

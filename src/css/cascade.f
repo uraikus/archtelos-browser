@@ -14,6 +14,15 @@ const int ORIGIN_INLINE = 2
 const int ROOT_FONT_SIZE = 16
 const int LEN_INVALID = -1
 
+// A length that did not parse, which every caller already tests for by
+// kind. It lives here rather than beside `lenPx` because `LEN_INVALID`
+// does: style.f is imported by this file, not the other way round.
+Len func lenInvalid() {
+    Len l
+    l.kind = LEN_INVALID
+    return l
+}
+
 // hot-spot accumulators, reported with ARCHTELOS_TIMING=1
 int profCollectMs = 0
 int profSortMs = 0
@@ -5017,6 +5026,7 @@ void func motionReadRotate(mi:MotionInfo, v:ascii) {
 // them -- an element that does say `anchor-size()` builds its own --
 // so one copy is safe for the whole program.
 arr[text] anchorSizeNoNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
+arr[text] anchorSizeNoExprs = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
 arr[int] anchorSizeNoDims = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
 arr[int] anchorSizeNoFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
@@ -5967,6 +5977,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     arr[text] szNames = anchorSizeNoNames
     arr[int] szDims = anchorSizeNoDims
     arr[int] szFalls = anchorSizeNoFalls
+    arr[text] szExprs = anchorSizeNoExprs
     bool anySaidSize = false
     if cascadeSawAnchorSize {
         arr[text] mySzNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
@@ -5976,6 +5987,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+        arr[text] mySzExprs = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
         arr[text] sizeProps = ['width', 'height', 'min-width', 'max-width',
                                'min-height', 'max-height',
                                'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
@@ -5984,13 +5996,25 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             ascii rawsz = styleProp(props, sizeProps[i])
             if rawsz == null { continue }
             ascii lowsz = asciiLower(asciiTrim(rawsz))
-            if !asciiStartsWith(lowsz, 'anchor-size(', 0) { continue }
-            int closesz = asciiMatchingParen(lowsz, 11)
-            if closesz < 0 { continue }
-            if !parseAnchorSize(lowsz.slice(12, closesz)) { continue }
-            mySzNames[i] = anchorSizeName
-            mySzDims[i] = anchorSizeDim
-            mySzFalls[i] = anchorSizeFallback
+            // The bare form -- the function and nothing else -- keeps
+            // its own path: it needs no arithmetic and no second parse.
+            if asciiStartsWith(lowsz, 'anchor-size(', 0) {
+                int closesz = asciiMatchingParen(lowsz, 11)
+                if closesz == lowsz.length - 1 {
+                    if !parseAnchorSize(lowsz.slice(12, closesz)) { continue }
+                    mySzNames[i] = anchorSizeName
+                    mySzDims[i] = anchorSizeDim
+                    mySzFalls[i] = anchorSizeFallback
+                    anySaidSize = true
+                    anyAnchorSize = true
+                    continue
+                }
+            }
+            // Anything else holding the function is an expression, kept
+            // whole so the length can be substituted into it once the
+            // anchor is known.
+            if asciiIndexOf(lowsz, 'anchor-size(', 0) < 0 { continue }
+            mySzExprs[i] = lowsz.toText()
             anySaidSize = true
             anyAnchorSize = true
         }
@@ -5998,6 +6022,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
             szNames = mySzNames
             szDims = mySzDims
             szFalls = mySzFalls
+            szExprs = mySzExprs
         }
     }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
@@ -6017,6 +6042,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ai.sizeNames = szNames
         ai.sizeDims = szDims
         ai.sizeFallbacks = szFalls
+        ai.sizeExprs = szExprs
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }

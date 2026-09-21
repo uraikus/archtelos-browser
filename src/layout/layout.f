@@ -211,6 +211,15 @@ int func frameBoxHeight(b:Box) {
 map[int] anchorSizePx = {}
 bool anchorSizeChanged = false
 
+// The percentage an `anchor-size()` expression resolved to beside its
+// pixels, in hundredths, or 0. Read only where a pixel value was found,
+// so it needs no -1 of its own.
+int func anchorSizePctFor(b:Box, slot:int) {
+    if b == null || b.node == null || b.node.id <= 0 { return 0 }
+    int v = anchorSizePct[`${b.node.id}:${slot}`]
+    return v == null ? 0 : v
+}
+
 // The pixels an `anchor-size()` in this slot resolved to, or -1 where
 // this box said nothing. Every caller asks `anyAnchorSize` before
 // calling rather than leaving the test to the first line here: these
@@ -220,6 +229,17 @@ int func anchorSizeFor(b:Box, slot:int) {
     if !anyAnchorSize || b == null || b.node == null || b.node.id <= 0 { return -1 }
     int v = anchorSizePx[`${b.node.id}:${slot}`]
     return v == null ? -1 : v
+}
+
+// The same, with an expression's percentage resolved against the base
+// a percentage in this property would have been resolved against. -1
+// where this box said nothing, as above.
+int func anchorSizeAgainst(b:Box, slot:int, base:int) {
+    int v = anchorSizeFor(b, slot)
+    if v < 0 { return -1 }
+    int pct = anchorSizePctFor(b, slot)
+    if pct == 0 { return v }
+    return maxInt(v + Math.floorDiv(base * pct, 10000), 0)
 }
 
 // ---- fonts and measurement -------------------------------------------
@@ -1313,17 +1333,19 @@ void func resolveEdges(b:Box, cw:int) {
     // called for every box of every page, and putting the body inside
     // it cost two milliseconds of layout on a page with no
     // `anchor-size()` on it -- measured, and recovered by this.
-    if anyAnchorSize { applyAnchorSizeMargins(b) }
+    if anyAnchorSize { applyAnchorSizeMargins(b, cw) }
 }
 
-void func applyAnchorSizeMargins(b:Box) {
-    int amL = anchorSizeFor(b, ANCHOR_SIZE_MARGINLEFT)
+void func applyAnchorSizeMargins(b:Box, cw:int) {
+    // Every margin resolves a percentage against the containing
+    // block's WIDTH, down the block axis as well (CSS2 §8.3).
+    int amL = anchorSizeAgainst(b, ANCHOR_SIZE_MARGINLEFT, cw)
     if amL >= 0 { b.ml = amL }
-    int amR = anchorSizeFor(b, ANCHOR_SIZE_MARGINRIGHT)
+    int amR = anchorSizeAgainst(b, ANCHOR_SIZE_MARGINRIGHT, cw)
     if amR >= 0 { b.mr = amR }
-    int amT = anchorSizeFor(b, ANCHOR_SIZE_MARGINTOP)
+    int amT = anchorSizeAgainst(b, ANCHOR_SIZE_MARGINTOP, cw)
     if amT >= 0 { b.mt = amT }
-    int amB = anchorSizeFor(b, ANCHOR_SIZE_MARGINBOTTOM)
+    int amB = anchorSizeAgainst(b, ANCHOR_SIZE_MARGINBOTTOM, cw)
     if amB >= 0 { b.mb = amB }
 }
 
@@ -2005,7 +2027,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // An `anchor-size()` width behaves exactly as a declared length
     // does, which is what this hook already means.
     if anyAnchorSize && b.forcedWidthPx < 0 {
-        int asWidth = anchorSizeFor(b, ANCHOR_SIZE_WIDTH)
+        int asWidth = anchorSizeAgainst(b, ANCHOR_SIZE_WIDTH, cw)
         if asWidth >= 0 { b.forcedWidthPx = asWidth }
     }
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
@@ -2036,14 +2058,14 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // border box, so the padding and border come out of it.
         if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
     }
-    int asMaxW = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MAXWIDTH) : -1
+    int asMaxW = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MAXWIDTH, cw) : -1
     if asMaxW >= 0 {
         if width > asMaxW { width = asMaxW }
     } else if s.maxWidth.kind != LEN_AUTO {
         int mx = resolveLen(s.maxWidth, cw, width)
         if width > mx { width = mx }
     }
-    int asMinW = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MINWIDTH) : -1
+    int asMinW = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MINWIDTH, cw) : -1
     if asMinW >= 0 {
         if width < asMinW { width = asMinW }
     } else if s.minWidth.kind != LEN_AUTO {
@@ -2198,15 +2220,15 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // point, the children having been laid out and put it back.
     // An `anchor-size()` height is a definite height, as a declared
     // length is, and takes the same box-sizing subtraction.
-    int asHeight = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_HEIGHT) : -1
+    int asHeight = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_HEIGHT, maxInt(layoutCBHeight, 0)) : -1
     if asHeight >= 0 {
         h = s.boxSizing == BOX_BORDER ? maxInt(asHeight - vEdges, 0) : asHeight
     }
-    int asMinH = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MINHEIGHT) : -1
+    int asMinH = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MINHEIGHT, maxInt(layoutCBHeight, 0)) : -1
     int minH = asMinH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMinH - vEdges, 0) : asMinH)
                            : heightLimitPx(s.minHeight, vEdges, s.boxSizing)
     if minH >= 0 { h = maxInt(h, minH) }
-    int asMaxH = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MAXHEIGHT) : -1
+    int asMaxH = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MAXHEIGHT, maxInt(layoutCBHeight, 0)) : -1
     int maxH = asMaxH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMaxH - vEdges, 0) : asMaxH)
                            : heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
     if maxH >= 0 && h > maxH { h = maxH }
@@ -5444,10 +5466,10 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
         // An `anchor-size()` inset is a declared inset: it is the length
         // the function resolved to, and it takes the same precedence a
         // written-out one would, the start side before the end side.
-        int asL = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_LEFT) : -1
-        int asR = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_RIGHT) : -1
-        int asT = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_TOP) : -1
-        int asB = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_BOTTOM) : -1
+        int asL = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_LEFT, useW) : -1
+        int asR = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_RIGHT, useW) : -1
+        int asT = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_TOP, useH) : -1
+        int asB = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_BOTTOM, useH) : -1
         if asL >= 0 {
             wantX = useX + asL + b.ml
         } else if !lenIsAuto(s.left) {
@@ -5611,6 +5633,65 @@ void func anchorScopePop(n:int) {
     }
 }
 
+// Set when an occurrence names an anchor that is not there and carries
+// no fallback. The whole declaration is then zero rather than the term
+// being dropped, which is measured (todo.md).
+bool anchorExprMissing = false
+
+// One `anchor-size()` occurrence, as the length it resolves to,
+// against the anchors this walk has already passed. It lives here
+// rather than beside the rest of `anchor-size()`'s parsing in
+// cascade.f because resolving a name needs `anchorScopeKey`, and a
+// scope is a layout fact: cascade.f is imported on its own by the two
+// conformance runners, which have no box tree to scope against.
+float func anchorExprValue(inner:ascii, ownName:text) {
+    if !parseAnchorSize(inner) {
+        anchorExprMissing = true
+        return 0.0
+    }
+    text nm = anchorSizeName != '' ? anchorSizeName : ownName
+    if nm != '' {
+        text key = anchorScopeKey(nm)
+        if anchorLiveW[key] != null {
+            return anchorSizeDim == ANCHOR_DIM_WIDTH
+                ? anchorLiveW[key].toFloat() : anchorLiveH[key].toFloat()
+        }
+    }
+    if anchorSizeFallback != ANCHOR_NO_FALLBACK { return anchorSizeFallback.toFloat() }
+    anchorExprMissing = true
+    return 0.0
+}
+
+// An expression with every `anchor-size()` in it replaced by the length
+// it resolves to, parsed by the ordinary length parser. That parser
+// already does `calc()`'s arithmetic, precedence and nesting, so none
+// of it is written twice: what the standard means by "the function
+// resolves to a length" is exactly this substitution.
+//
+// Returns an invalid Len where an occurrence named an anchor that is
+// not there with no fallback beside it.
+Len func anchorExprLength(expr:text, ownName:text, fontSize:int) {
+    anchorExprMissing = false
+    ascii src = expr.toAscii()
+    if src == null { return lenInvalid() }
+    text out = ''
+    int at = 0
+    int guard = 0
+    while guard < 64 {
+        guard++
+        int hit = asciiIndexOf(src, 'anchor-size(', at)
+        if hit < 0 { break }
+        int close = asciiMatchingParen(src, hit + 11)
+        if close < 0 { return lenInvalid() }
+        float v = anchorExprValue(src.slice(hit + 12, close), ownName)
+        if anchorExprMissing { return lenInvalid() }
+        out = out + src.slice(at, hit).toText() + `${roundPx(v)}px`
+        at = close + 1
+    }
+    out = out + src.slice(at, src.length).toText()
+    return parseLength(out.toAscii(), fontSize)
+}
+
 void func collectAnchors(b:Box, depth:int) {
     if b == null { return }
     int pushed = 0
@@ -5674,6 +5755,30 @@ void func collectAnchors(b:Box, depth:int) {
                 text pkey = `${b.node.id}:${i}`
                 if anchorSizePx[pkey] == null || anchorSizePx[pkey] != v {
                     anchorSizePx[pkey] = v
+                    anchorSizeChanged = true
+                }
+            }
+            // An expression is resolved by substituting each length in
+            // and parsing the result, which is where `calc()`'s
+            // arithmetic comes from. A percentage survives that as the
+            // `Len`'s own percentage part, because the containing block
+            // is not known here.
+            for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
+                if ai.sizeExprs[i] == '' { continue }
+                Len el = anchorExprLength(ai.sizeExprs[i], ai.anchor, b.style.fontSize)
+                int ev = 0
+                int epct = 0
+                if el.kind == LEN_PX { ev = roundPx(el.v) }
+                else if el.kind == LEN_PERCENT { epct = roundPx(el.v * 100.0) }
+                else if el.kind == LEN_CALC {
+                    ev = roundPx(el.v)
+                    epct = roundPx(el.pct * 100.0)
+                }
+                text ekey = `${b.node.id}:${i}`
+                if anchorSizePx[ekey] == null || anchorSizePx[ekey] != ev
+                    || anchorSizePctFor(b, i) != epct {
+                    anchorSizePx[ekey] = ev
+                    anchorSizePct[ekey] = epct
                     anchorSizeChanged = true
                 }
             }
@@ -6026,7 +6131,9 @@ Box func layoutDocument(doc:Node, width:int) {
     // to that call; a fresh layout of the document starts without them.
     if anyAnchorSize {
         map[int] emptyAnchorSizes = {}
+        map[int] emptyAnchorPcts = {}
         anchorSizePx = emptyAnchorSizes
+        anchorSizePct = emptyAnchorPcts
     }
     anchorSizeChanged = false
     Box laid = layoutDocumentOnce(doc, width)

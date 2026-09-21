@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `anchor-size()` composes inside `calc()`
+
+The standard says the function resolves to a length, and that is taken
+literally: the length is substituted into the expression and the
+ordinary length parser is run over the result. `calc()`'s arithmetic,
+precedence and nesting therefore come from the parser that already has
+them rather than being written a second time -- `calc(anchor-size(--a
+height) * 2 - 20px)` is 100 because that parser knows the product binds
+before the difference, not because anything here was taught to.
+
+A percentage survives the substitution as the `Len`'s own percentage
+part, because the containing block is not known where the anchors'
+rectangles are. It is resolved at the property's own read site against
+the base a percentage there would have used: the containing block's
+width for a width or any of the four margins, its height for a height.
+
+The bare form keeps its own path rather than going through the
+expression one -- it needs no arithmetic and no second parse -- so the
+suite asserts the two agree: `calc(anchor-size(--a width))` must give
+the box `anchor-size(--a width)` gives.
+
+Each failure carries into the expression unchanged. A fallback is taken
+before the arithmetic, so `calc(anchor-size(--missing width, 5px) +
+1px)` is 6; with no fallback the whole declaration is zero rather than
+the term being dropped, so `calc(anchor-size(--missing width) + 1px)`
+is 0 and not 1.
+
+`anchor()` inside an expression is not implemented. It resolves against
+the containing block rather than against the anchor alone, and the
+containing block is known in the positioning pass rather than where the
+rectangles are collected. `min()` and `max()` take both functions in
+Chromium and are not a gap in anchors here: this engine implements
+neither for any value at all.
+
 ### `anchor-size()`, on a second layout pass
 
 `anchor-size(<name>? <dimension>, <fallback>?)` gives an absolutely

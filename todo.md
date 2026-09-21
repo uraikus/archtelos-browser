@@ -618,10 +618,29 @@ declaration, not just the term -- and `calc(anchor(--missing right) +
 1px)` has **no effect** at all, leaving the box at its static position.
 That is the same difference the two functions show when written alone.
 
-**What it needs.** Both resolve to a length that is not known until the
-anchor's rectangle is, so the evaluator has to carry a term that is not
-a length until then. The whole-value form needed only the rectangle,
-which is why it went first.
+**`anchor-size()` composes; `anchor()` does not yet.** What the
+standard means by "the function resolves to a length" is taken
+literally: the length is substituted into the expression and the
+ordinary length parser is run over the result, so `calc()`'s
+arithmetic, precedence and nesting come from the parser that already
+has them rather than being written a second time. A percentage survives
+that substitution as the `Len`'s own percentage part and is resolved at
+the property's own read site, against the base a percentage there would
+have used -- the containing block's width for a width or any margin,
+its height for a height.
+
+**`anchor()` inside an expression is the piece left.** It resolves
+against the containing block rather than against the anchor alone --
+`anchor(--a right)` in a `left` is the anchor's right edge in the
+containing block's coordinates -- and the containing block is known in
+the positioning pass, where `anchorInsetEdge` already is, rather than
+where the anchors' rectangles are collected. So it wants the same
+substitution driven from that pass.
+
+**`min()` and `max()` take both functions in Chromium and are not the
+gap here.** This engine implements neither for any value at all: there
+is no `min(`, `max(` or `clamp(` in its length parser, so there is
+nothing about anchors in that hole. It belongs to CSS Values 4.
 
 **`anchor-size()` works in the six sizing properties** -- `width`,
 `height` and their minima and maxima -- on a second layout pass. A
