@@ -194,6 +194,34 @@ int func frameBoxHeight(b:Box) {
     return FRAME_DEFAULT_H
 }
 
+// ---- CSS Anchor Positioning: anchor-size() ---------------------------
+//
+// What each `anchor-size()` resolved to on the pass before this one, in
+// pixels, keyed by `<node id>:<slot>`. By NODE id and not box id: a
+// second layout rebuilds the box tree from scratch and the box ids
+// start again, so a box id carried across a pass names a different box
+// or none.
+//
+// A size cannot wait for the positioning pass the way a placement can.
+// `anchor()` in an inset is resolved after the tree is laid out,
+// because moving a laid-out box is a shift; a size has to be there
+// before the box is laid out at all, and the anchor has no rectangle
+// until the layout it is measured from has finished. So this is filled
+// in by one layout and read by the next.
+map[int] anchorSizePx = {}
+bool anchorSizeChanged = false
+
+// The pixels an `anchor-size()` in this slot resolved to, or -1 where
+// this box said nothing. Every caller asks `anyAnchorSize` before
+// calling rather than leaving the test to the first line here: these
+// sites are in the width and height of every box on every page, and a
+// call that returns -1 is still a call.
+int func anchorSizeFor(b:Box, slot:int) {
+    if !anyAnchorSize || b == null || b.node == null || b.node.id <= 0 { return -1 }
+    int v = anchorSizePx[`${b.node.id}:${slot}`]
+    return v == null ? -1 : v
+}
+
 // ---- fonts and measurement -------------------------------------------
 
 text currentFontKey = ''
@@ -1954,6 +1982,12 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
             b.forcedWidthPx = fieldCharCount(b.node) * maxInt(measureWidth(s, '0'), 1)
         }
     }
+    // An `anchor-size()` width behaves exactly as a declared length
+    // does, which is what this hook already means.
+    if anyAnchorSize && b.forcedWidthPx < 0 {
+        int asWidth = anchorSizeFor(b, ANCHOR_SIZE_WIDTH)
+        if asWidth >= 0 { b.forcedWidthPx = asWidth }
+    }
     bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
     // A definite height and a ratio give the width, block-level or not:
     // Chromium makes `aspect-ratio: 2; height: 40px` eighty pixels wide
@@ -1982,11 +2016,17 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // border box, so the padding and border come out of it.
         if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
     }
-    if s.maxWidth.kind != LEN_AUTO {
+    int asMaxW = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MAXWIDTH) : -1
+    if asMaxW >= 0 {
+        if width > asMaxW { width = asMaxW }
+    } else if s.maxWidth.kind != LEN_AUTO {
         int mx = resolveLen(s.maxWidth, cw, width)
         if width > mx { width = mx }
     }
-    if s.minWidth.kind != LEN_AUTO {
+    int asMinW = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MINWIDTH) : -1
+    if asMinW >= 0 {
+        if width < asMinW { width = asMinW }
+    } else if s.minWidth.kind != LEN_AUTO {
         int mn = resolveLen(s.minWidth, cw, 0)
         if width < mn { width = mn }
     }
@@ -2136,9 +2176,19 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // block a percentage height would be of, and is ignored where that
     // is not definite -- `layoutCBHeight` is the parent's again by this
     // point, the children having been laid out and put it back.
-    int minH = heightLimitPx(s.minHeight, vEdges, s.boxSizing)
+    // An `anchor-size()` height is a definite height, as a declared
+    // length is, and takes the same box-sizing subtraction.
+    int asHeight = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_HEIGHT) : -1
+    if asHeight >= 0 {
+        h = s.boxSizing == BOX_BORDER ? maxInt(asHeight - vEdges, 0) : asHeight
+    }
+    int asMinH = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MINHEIGHT) : -1
+    int minH = asMinH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMinH - vEdges, 0) : asMinH)
+                           : heightLimitPx(s.minHeight, vEdges, s.boxSizing)
     if minH >= 0 { h = maxInt(h, minH) }
-    int maxH = heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
+    int asMaxH = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_MAXHEIGHT) : -1
+    int maxH = asMaxH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMaxH - vEdges, 0) : asMaxH)
+                           : heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
     if maxH >= 0 && h > maxH { h = maxH }
     b.h = h + vEdges + b.sbH
     if b.baseline == 0 { b.baseline = b.h }
@@ -5568,6 +5618,31 @@ void func collectAnchors(b:Box, depth:int) {
                 anchorInsetH[`${b.id}:${i}`] = anchorLiveH[ikey]
             }
         }
+        // What each `anchor-size()` resolves to, for the layout after
+        // this one. Recorded against the anchors this walk has already
+        // passed, the same rule `position-anchor` and `anchor()` follow.
+        if anyAnchorSize && boxIsOutOfFlow(b) && b.node != null && b.node.id > 0 {
+            for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
+                if ai.sizeDims[i] < 0 { continue }
+                // No fallback and no anchor is ZERO rather than no
+                // effect, which is where this differs from `anchor()`
+                // in an inset (todo.md records the measurement).
+                int v = ai.sizeFallbacks[i] != ANCHOR_NO_FALLBACK ? ai.sizeFallbacks[i] : 0
+                text snm = ai.sizeNames[i] != '' ? ai.sizeNames[i] : ai.anchor
+                if snm != '' {
+                    text skey = anchorScopeKey(snm)
+                    if anchorLiveW[skey] != null {
+                        v = ai.sizeDims[i] == ANCHOR_DIM_WIDTH
+                            ? anchorLiveW[skey] : anchorLiveH[skey]
+                    }
+                }
+                text pkey = `${b.node.id}:${i}`
+                if anchorSizePx[pkey] == null || anchorSizePx[pkey] != v {
+                    anchorSizePx[pkey] = v
+                    anchorSizeChanged = true
+                }
+            }
+        }
         if ai.name != '' {
             text key = anchorScopeKey(ai.name)
             anchorLiveX[key] = b.x
@@ -5912,14 +5987,34 @@ bool func answerContainerQueries(root:Box) {
 const int CQ_MAX_PASSES = 8
 
 Box func layoutDocument(doc:Node, width:int) {
+    // The sizes `anchor-size()` resolved to on a previous call belong
+    // to that call; a fresh layout of the document starts without them.
+    if anyAnchorSize {
+        map[int] emptyAnchorSizes = {}
+        anchorSizePx = emptyAnchorSizes
+    }
+    anchorSizeChanged = false
     Box laid = layoutDocumentOnce(doc, width)
-    // Every page that never says `@container` stops here, having done
+    // Every page that never says `@container` skips this, having done
     // exactly what it did before this existed: one bool, once.
-    if !cssSawContainerQuery || laid == null { return laid }
-    int pass = 0
-    while pass < CQ_MAX_PASSES && answerContainerQueries(laid) {
-        pass++
-        computeStyles(doc)
+    if cssSawContainerQuery && laid != null {
+        int pass = 0
+        while pass < CQ_MAX_PASSES && answerContainerQueries(laid) {
+            pass++
+            computeStyles(doc)
+            laid = layoutDocumentOnce(doc, width)
+        }
+    }
+    // And every page that never says `anchor-size()` skips this for the
+    // same one boolean. A pass that changes no resolved size is the
+    // fixed point: the sizes come off the anchors' own boxes, and an
+    // anchor that did not move gives the same answer again. The bound
+    // is for a stylesheet written to make two of them chase each other.
+    if !anyAnchorSize || laid == null { return laid }
+    int spass = 0
+    while spass < CQ_MAX_PASSES && anchorSizeChanged {
+        anchorSizeChanged = false
+        spass++
         laid = layoutDocumentOnce(doc, width)
     }
     return laid

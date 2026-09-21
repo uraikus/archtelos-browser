@@ -447,9 +447,10 @@ inline's start side rather than its left.
 
 ### What is left of `anchor()` and `anchor-size()`
 
-`anchor()` works in the four inset properties. `anchor-size()` does
-not, and neither function composes inside `calc()`; both are measured
-and both are left out for the same structural reason, at the end.
+`anchor()` works in the four inset properties and `anchor-size()` in
+the six sizing ones. Neither function composes inside `calc()`, and
+`anchor-size()` is refused in the margins and insets that Chromium
+allows it in; both gaps are measured, at the end.
 
 All of the following is Chromium 141, against an anchor whose border
 box is x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 --
@@ -552,16 +553,27 @@ carry a term that is not a length until the anchor is known, where the
 whole-value form needs only the rectangle the positioning pass already
 has.
 
-**`anchor-size()` is not implemented either, and the reason is the
-ordering.** A placement can wait: `anchor()` in an inset is resolved
-after the tree has been laid out, in the same pass as `position-area`,
-because moving a box that is already laid out is a shift. A *size*
-cannot -- the box has to be laid out at that size in the first place,
-and an anchor has no rectangle until the layout it would be measured
-from is finished. So it wants a second layout pass, which this engine
-already has the shape of for `@container`: lay out, resolve the sizes,
-lay out again. `Box.forcedWidthPx` is the hook the second pass would
-write to.
+**`anchor-size()` works in the six sizing properties** -- `width`,
+`height` and their minima and maxima -- on a second layout pass. A
+placement can wait: `anchor()` in an inset is resolved after the tree
+has been laid out, in the same pass as `position-area`, because moving
+a box that is already laid out is a shift. A *size* cannot -- the box
+has to be laid out at that size in the first place, and an anchor has
+no rectangle until the layout it would be measured from is finished. So
+one layout records what each `anchor-size()` came to and the next reads
+it, and a pass that changes no resolved size is the fixed point.
+
+**What is carried between the passes is keyed by NODE id.**
+`layoutDocumentOnce` rebuilds the box tree and restarts `nextBoxId`, so
+a box id carried across a pass names a different box or none.
+
+**`margin-*` and the insets also take it, and are not implemented.**
+Chromium answers 100 for `margin-left: anchor-size(--a width)` and for
+`left: anchor-size(--a width)` on the same fixture, where `margin-left:
+anchor(--a right)` does nothing. Neither needs the second layout pass
+-- a margin or an inset can be resolved in the positioning pass, where
+`anchor()` already is -- so they belong with that resolver rather than
+with this one.
 
 ### What CSS Inline 3 still needs
 

@@ -172,6 +172,7 @@ void func cascadeReset() {
     anyAnchorName = false
     anyAnchorScope = false
     anyAnchorInset = false
+    anyAnchorSize = false
     anchorInfos = []
     anyOffsetPath = false
     motionInfos = []
@@ -4791,6 +4792,51 @@ bool func parseAnchorInset(inner:ascii, axis:int) {
     return true
 }
 
+// One `anchor-size()`. Same three globals-not-a-struct shape as
+// `anchor()` above, and the same reason.
+text anchorSizeName = ''
+int anchorSizeDim = -1
+int anchorSizeFallback = ANCHOR_NO_FALLBACK
+
+// Which of the anchor's two dimensions a word names, or -1. The
+// logical spellings are the physical ones here, as the side keywords
+// are: there is no `writing-mode` to make them anything else.
+int func anchorDimension(w:ascii) {
+    if w == 'width' || w == 'inline' || w == 'self-inline' { return ANCHOR_DIM_WIDTH }
+    if w == 'height' || w == 'block' || w == 'self-block' { return ANCHOR_DIM_HEIGHT }
+    return -1
+}
+
+// `[ <name>? <dimension> ] , <fallback>?` -- the inside of one
+// `anchor-size()`. Answers whether it parsed, and leaves what it said
+// in the three globals above. Which property this is does not come
+// into it: the dimension names the anchor's box, not the property's
+// axis, which is measured rather than assumed (todo.md).
+bool func parseAnchorSize(inner:ascii) {
+    anchorSizeName = ''
+    anchorSizeDim = -1
+    anchorSizeFallback = ANCHOR_NO_FALLBACK
+    arr[ascii] parts = asciiSplitChar(inner, CH_COMMA)
+    if parts.length == 0 || parts.length > 2 { return false }
+    arr[ascii] words = asciiSplitSpace(asciiTrim(parts[0]))
+    if words.length == 0 || words.length > 2 { return false }
+    int at = 0
+    if words.length == 2 {
+        if !asciiStartsWith(words[0], '--', 0) { return false }
+        anchorSizeName = words[0].toText()
+        at = 1
+    }
+    int dim = anchorDimension(words[at])
+    if dim < 0 { return false }
+    anchorSizeDim = dim
+    if parts.length == 2 {
+        Len l = parseLength(asciiTrim(parts[1]), 16)
+        if l.kind == LEN_INVALID || lenIsAuto(l) { return false }
+        anchorSizeFallback = resolveLen(l, 0, 0)
+    }
+    return true
+}
+
 // `auto | contain | none`, or -1 for anything else.
 int func overscrollKeyword(w:ascii) {
     if w == 'auto' { return OSB_AUTO }
@@ -5869,9 +5915,31 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         anySaidInset = true
         anyAnchorInset = true
     }
+    // `anchor-size()` in the six sizing properties.
+    arr[text] szNames = ['', '', '', '', '', '']
+    arr[int] szDims = [-1, -1, -1, -1, -1, -1]
+    arr[int] szFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+    bool anySaidSize = false
+    arr[text] sizeProps = ['width', 'height', 'min-width', 'max-width',
+                           'min-height', 'max-height']
+    for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
+        ascii rawsz = styleProp(props, sizeProps[i])
+        if rawsz == null { continue }
+        ascii lowsz = asciiLower(asciiTrim(rawsz))
+        if !asciiStartsWith(lowsz, 'anchor-size(', 0) { continue }
+        int closesz = asciiMatchingParen(lowsz, 11)
+        if closesz < 0 { continue }
+        if !parseAnchorSize(lowsz.slice(12, closesz)) { continue }
+        szNames[i] = anchorSizeName
+        szDims[i] = anchorSizeDim
+        szFalls[i] = anchorSizeFallback
+        anySaidSize = true
+        anyAnchorSize = true
+    }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
         || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != ''
-        || anySaidInset {
+        || anySaidInset || anySaidSize {
         AnchorInfo ai
         ai.name = aName
         ai.anchor = aAnchor
@@ -5883,6 +5951,9 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ai.insetNames = inNames
         ai.insetPcts = inPcts
         ai.insetFallbacks = inFalls
+        ai.sizeNames = szNames
+        ai.sizeDims = szDims
+        ai.sizeFallbacks = szFalls
         anchorInfos.push(ai)
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }

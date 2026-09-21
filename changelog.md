@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `anchor-size()`, on a second layout pass
+
+`anchor-size(<name>? <dimension>, <fallback>?)` gives an absolutely
+positioned box the anchor's own border-box size, in `width`, `height`
+and their minima and maxima.
+
+**It needs a second layout pass, and that is the whole difficulty.**
+`anchor()` in an inset is resolved after the tree is laid out, in the
+same pass as `position-area`, because moving a box that is already laid
+out is a shift. A size cannot wait like that: the box has to be laid
+out at that size in the first place, and the anchor has no rectangle
+until the layout it is measured from has finished. So one layout
+records what each `anchor-size()` came to and the next reads it, and a
+pass that changes no resolved size is the fixed point -- the sizes come
+off the anchors' own boxes, and an anchor that did not move gives the
+same answer again.
+
+**What is carried between the passes is keyed by node id.**
+`layoutDocumentOnce` rebuilds the box tree and restarts `nextBoxId`, so
+a box id carried across a pass names a different box or none.
+
+Three things the measurement gave that the name does not. The dimension
+is the *anchor's* rather than the property's, so `width:
+anchor-size(--a height)` is the anchor's height. With no fallback and
+no anchor the answer is **zero** rather than no effect, which is the
+opposite of `anchor()` in an inset, where the same case leaves the box
+at its static position. And the logical dimensions are the physical
+ones here, as the side keywords are.
+
+`margin-*` and the insets take it in Chromium too and are not
+implemented: neither needs the second pass, so both belong with
+`anchor()`'s resolver rather than with this one. Nor does either
+function compose inside `calc()`.
+
 ### The property instrument grades a pseudo-element
 
 A property whose whole effect is on `::first-letter` could not register

@@ -507,4 +507,74 @@ checkEqInt(insetX('left:anchor(--missing right)'),
            insetX(''),
            'with no fallback the declaration has no effect at all')
 
+// ---- anchor-size() ---------------------------------------------------
+//
+// `anchor-size(<name>? <dimension>, <fallback>?)` gives the anchor's own
+// border-box size to an absolutely positioned box. Every number below
+// is Chromium 141 on this fixture -- an anchor 100 by 60, and the
+// positioned box declared 40 by 20 so that a declaration doing nothing
+// reads as 40 or 20 rather than as a plausible answer. todo.md has the
+// whole table.
+//
+// A size cannot wait for the positioning pass the way a placement can:
+// the box has to be laid out at that size in the first place, and the
+// anchor has no rectangle until the layout it is measured from has
+// finished. So this runs on a second layout pass, and what is carried
+// between the two is keyed by NODE id -- the box tree is rebuilt and
+// the box ids start again.
+
+int func sizeW(decls:text) { Box b = anchoredBy(decls)  return b == null ? -1 : b.w }
+int func sizeH(decls:text) { Box b = anchoredBy(decls)  return b == null ? -1 : b.h }
+
+// The control, so that a declaration doing nothing is visible.
+checkEqInt(sizeW(''), 40, 'the box is 40 wide with nothing said')
+checkEqInt(sizeH(''), 20, 'and 20 tall')
+
+checkEqInt(sizeW('width:anchor-size(--a width)'), 100, "the anchor's width")
+checkEqInt(sizeH('height:anchor-size(--a height)'), 60, "and its height")
+checkEqInt(sizeH('width:anchor-size(--a width)'), 20,
+           'sizing one axis leaves the other alone')
+
+// The logical dimensions are the physical ones here, as the side
+// keywords are: there is no `writing-mode` to make them anything else.
+checkEqInt(sizeW('width:anchor-size(--a inline)'), 100, '`inline` is the width')
+checkEqInt(sizeW('width:anchor-size(--a self-inline)'), 100, 'and `self-inline`')
+checkEqInt(sizeH('height:anchor-size(--a block)'), 60, '`block` is the height')
+checkEqInt(sizeH('height:anchor-size(--a self-block)'), 60, 'and `self-block`')
+
+// The dimension is the ANCHOR's, not the property's. This is the row
+// that does not follow from the name, and it is measured.
+checkEqInt(sizeW('width:anchor-size(--a height)'), 60,
+           "the anchor's height, asked for by the width")
+checkEqInt(sizeH('height:anchor-size(--a width)'), 100,
+           "and its width, asked for by the height")
+
+// The name may be left out, and `position-anchor` supplies it. Two ways
+// of naming one anchor must give one box.
+checkEqInt(sizeW('width:anchor-size(width)'), 100,
+           'the name is optional where position-anchor gives one')
+checkEqInt(sizeW('width:anchor-size(width)'), sizeW('width:anchor-size(--a width)'),
+           'and it is the same anchor either way')
+
+// The fallback is taken only when the anchor cannot be found.
+checkEqInt(sizeW('width:anchor-size(--missing width, 5px)'), 5,
+           'a missing anchor falls back to the length beside it')
+checkEqInt(sizeW('width:anchor-size(--a width, 5px)'), 100,
+           'and an anchor that is found ignores the fallback')
+
+// With no fallback and no anchor the answer is ZERO, not the declared
+// width -- which is the opposite of `anchor()` in an inset, where the
+// same case leaves the box where it was.
+checkEqInt(sizeW('width:anchor-size(--missing width)'), 0,
+           'a missing anchor with no fallback is zero, not the declared width')
+checkEqInt(sizeH('height:anchor-size(--missing height)'), 0, 'and zero tall')
+
+// The minima and maxima take it too.
+checkEqInt(sizeW('min-width:anchor-size(--a width)'), 100,
+           'a minimum width of the anchor widens the box to it')
+checkEqInt(sizeW('max-width:anchor-size(--a width);width:999px'), 100,
+           'and a maximum width holds it there')
+checkEqInt(sizeH('min-height:anchor-size(--a height)'), 60, 'the same down the block axis')
+checkEqInt(sizeH('max-height:anchor-size(--a height);height:999px'), 60, 'and its maximum')
+
 finish('anchor positioning')

@@ -449,7 +449,31 @@ struct AnchorInfo {
     insetNames:arr[text]
     insetPcts:arr[int]
     insetFallbacks:arr[int]
+    // `anchor-size()` in the six sizing properties, in the order
+    // `width`, `height`, `min-width`, `max-width`, `min-height`,
+    // `max-height`.
+    //
+    // The dimension is the ANCHOR's rather than the property's --
+    // `width: anchor-size(--a height)` is the anchor's height -- so it
+    // is kept per slot rather than inferred from which property this
+    // is. -1 means the property said nothing. An empty name means the
+    // one `position-anchor` gave, and a fallback of ANCHOR_NO_FALLBACK
+    // means there was none, which resolves to zero rather than to no
+    // effect (todo.md records the measurement).
+    sizeNames:arr[text]
+    sizeDims:arr[int]
+    sizeFallbacks:arr[int]
 }
+
+const int ANCHOR_SIZE_WIDTH = 0
+const int ANCHOR_SIZE_HEIGHT = 1
+const int ANCHOR_SIZE_MINWIDTH = 2
+const int ANCHOR_SIZE_MAXWIDTH = 3
+const int ANCHOR_SIZE_MINHEIGHT = 4
+const int ANCHOR_SIZE_MAXHEIGHT = 5
+const int ANCHOR_SIZE_SLOTS = 6
+const int ANCHOR_DIM_WIDTH = 0
+const int ANCHOR_DIM_HEIGHT = 1
 
 const int ANCHOR_INSET_LEFT = 0
 const int ANCHOR_INSET_RIGHT = 1
@@ -469,6 +493,10 @@ bool anyAnchorName = false
 // with none does not grow the per-inset rectangles below and does not
 // test for them while it places its anchored boxes.
 bool anyAnchorInset = false
+// Whether any element on this document said `anchor-size()` in one of
+// the six sizing properties. It is what buys the second layout pass,
+// and every page that never says it pays one boolean.
+bool anyAnchorSize = false
 
 // Whether any element scoped a name. A page with none resolves each
 // anchor under its bare name, as it did before the property existed,
