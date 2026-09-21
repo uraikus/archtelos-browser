@@ -1305,6 +1305,19 @@ void func resolveEdges(b:Box, cw:int) {
     b.br = s.borderRight
     b.bb = s.borderBottom
     b.bl = s.borderLeft
+    // An `anchor-size()` margin is the length the function resolved to,
+    // put in the property as if it had been written out. `padding-*`
+    // refuses the function, so the padding above is untouched.
+    if anyAnchorSize {
+        int amL = anchorSizeFor(b, ANCHOR_SIZE_MARGINLEFT)
+        if amL >= 0 { b.ml = amL }
+        int amR = anchorSizeFor(b, ANCHOR_SIZE_MARGINRIGHT)
+        if amR >= 0 { b.mr = amR }
+        int amT = anchorSizeFor(b, ANCHOR_SIZE_MARGINTOP)
+        if amT >= 0 { b.mt = amT }
+        int amB = anchorSizeFor(b, ANCHOR_SIZE_MARGINBOTTOM)
+        if amB >= 0 { b.mb = amB }
+    }
 }
 
 int func contentWidth(b:Box) {
@@ -5421,13 +5434,28 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
             wantX = staticPosX[`${b.id}`] + b.ml
             wantY = staticPosY[`${b.id}`] + b.mt
         }
-        if !lenIsAuto(s.left) {
+        // An `anchor-size()` inset is a declared inset: it is the length
+        // the function resolved to, and it takes the same precedence a
+        // written-out one would, the start side before the end side.
+        int asL = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_LEFT) : -1
+        int asR = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_RIGHT) : -1
+        int asT = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_TOP) : -1
+        int asB = anyAnchorSize ? anchorSizeFor(b, ANCHOR_SIZE_BOTTOM) : -1
+        if asL >= 0 {
+            wantX = useX + asL + b.ml
+        } else if !lenIsAuto(s.left) {
             wantX = useX + resolveLen(s.left, useW, 0) + b.ml
+        } else if asR >= 0 {
+            wantX = useX + useW - asR - w + b.ml
         } else if !lenIsAuto(s.right) {
             wantX = useX + useW - resolveLen(s.right, useW, 0) - w + b.ml
         }
-        if !lenIsAuto(s.top) {
+        if asT >= 0 {
+            wantY = useY + asT + b.mt
+        } else if !lenIsAuto(s.top) {
             wantY = useY + resolveLen(s.top, useH, 0) + b.mt
+        } else if asB >= 0 {
+            wantY = useY + useH - asB - h + b.mt
         } else if !lenIsAuto(s.bottom) {
             wantY = useY + useH - resolveLen(s.bottom, useH, 0) - h + b.mt
         }

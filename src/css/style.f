@@ -449,9 +449,10 @@ struct AnchorInfo {
     insetNames:arr[text]
     insetPcts:arr[int]
     insetFallbacks:arr[int]
-    // `anchor-size()` in the six sizing properties, in the order
-    // `width`, `height`, `min-width`, `max-width`, `min-height`,
-    // `max-height`.
+    // `anchor-size()` in the fourteen properties that take it, in the
+    // order `width`, `height`, `min-width`, `max-width`, `min-height`,
+    // `max-height`, the four margins and the four insets. `padding-*`
+    // refuses it, which is measured rather than assumed (todo.md).
     //
     // The dimension is the ANCHOR's rather than the property's --
     // `width: anchor-size(--a height)` is the anchor's height -- so it
@@ -471,7 +472,19 @@ const int ANCHOR_SIZE_MINWIDTH = 2
 const int ANCHOR_SIZE_MAXWIDTH = 3
 const int ANCHOR_SIZE_MINHEIGHT = 4
 const int ANCHOR_SIZE_MAXHEIGHT = 5
-const int ANCHOR_SIZE_SLOTS = 6
+// The margins and insets take it too, which `anchor()` does not. They
+// need no second layout pass of their own -- a margin or an inset can
+// be resolved once the anchor's rectangle is known -- but they read the
+// same carry, so they are slots on the same list.
+const int ANCHOR_SIZE_MARGINLEFT = 6
+const int ANCHOR_SIZE_MARGINRIGHT = 7
+const int ANCHOR_SIZE_MARGINTOP = 8
+const int ANCHOR_SIZE_MARGINBOTTOM = 9
+const int ANCHOR_SIZE_LEFT = 10
+const int ANCHOR_SIZE_RIGHT = 11
+const int ANCHOR_SIZE_TOP = 12
+const int ANCHOR_SIZE_BOTTOM = 13
+const int ANCHOR_SIZE_SLOTS = 14
 const int ANCHOR_DIM_WIDTH = 0
 const int ANCHOR_DIM_HEIGHT = 1
 

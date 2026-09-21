@@ -5916,13 +5916,18 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         anyAnchorInset = true
     }
     // `anchor-size()` in the six sizing properties.
-    arr[text] szNames = ['', '', '', '', '', '']
-    arr[int] szDims = [-1, -1, -1, -1, -1, -1]
+    arr[text] szNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    arr[int] szDims = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
     arr[int] szFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
-                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
     bool anySaidSize = false
     arr[text] sizeProps = ['width', 'height', 'min-width', 'max-width',
-                           'min-height', 'max-height']
+                           'min-height', 'max-height',
+                           'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
+                           'left', 'right', 'top', 'bottom']
     for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
         ascii rawsz = styleProp(props, sizeProps[i])
         if rawsz == null { continue }

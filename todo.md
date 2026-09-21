@@ -448,9 +448,9 @@ inline's start side rather than its left.
 ### What is left of `anchor()` and `anchor-size()`
 
 `anchor()` works in the four inset properties and `anchor-size()` in
-the six sizing ones. Neither function composes inside `calc()`, and
-`anchor-size()` is refused in the margins and insets that Chromium
-allows it in; both gaps are measured, at the end.
+the fourteen that take it -- the six sizing properties, the four
+margins and the four insets. What is left is that neither function
+composes inside `calc()`, which is measured, at the end.
 
 All of the following is Chromium 141, against an anchor whose border
 box is x 100 to 220 and y 80 to 140 -- 120 by 60, centre 160, 110 --
@@ -602,13 +602,11 @@ it, and a pass that changes no resolved size is the fixed point.
 `layoutDocumentOnce` rebuilds the box tree and restarts `nextBoxId`, so
 a box id carried across a pass names a different box or none.
 
-**`margin-*` and the insets also take it, and are not implemented.**
-Chromium answers 100 for `margin-left: anchor-size(--a width)` and for
-`left: anchor-size(--a width)` on the same fixture, where `margin-left:
-anchor(--a right)` does nothing. Neither needs the second layout pass
--- a margin or an inset can be resolved in the positioning pass, where
-`anchor()` already is -- so they belong with that resolver rather than
-with this one.
+**The four margins and the four insets take it too**, which `anchor()`
+does not. They need no second layout pass of their own -- a margin or an
+inset is resolved once the anchor's rectangle is known -- but they read
+the same carry, so they are slots on the same list of fourteen.
+`padding-*` refuses the function, here as in Chromium.
 
 ### What CSS Inline 3 still needs
 

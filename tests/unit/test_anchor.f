@@ -577,4 +577,58 @@ checkEqInt(sizeW('max-width:anchor-size(--a width);width:999px'), 100,
 checkEqInt(sizeH('min-height:anchor-size(--a height)'), 60, 'the same down the block axis')
 checkEqInt(sizeH('max-height:anchor-size(--a height);height:999px'), 60, 'and its maximum')
 
+// ---- anchor-size() in the insets and the margins ---------------------
+//
+// The function is valid far beyond the sizing properties, which
+// `anchor()` is not: `margin-left: anchor(--a right)` does nothing
+// while `margin-left: anchor-size(--a width)` moves the box by 100.
+// Every number is Chromium 141 on this fixture, whose containing block
+// is 400 by 300. todo.md has the whole table.
+//
+// What the function resolves to is simply put in the property, as if
+// the length had been written out -- so these assert the geometry that
+// length would have produced.
+
+checkEqInt(insetX('left:anchor-size(--a width)'), 100,
+           "a left inset of the anchor's width")
+checkEqInt(insetX('right:anchor-size(--a width)'), 260,
+           'and a right inset, measured from the other edge')
+checkEqInt(insetY('top:anchor-size(--a height)'), 60,
+           "a top inset of the anchor's height")
+checkEqInt(insetY('bottom:anchor-size(--a height)'), 220, 'and a bottom inset')
+
+// A start-side margin pushes the box off its static position.
+checkEqInt(insetX('margin-left:anchor-size(--a width)'), insetX('') + 100,
+           'a left margin pushes the box by the anchor of its width')
+checkEqInt(insetY('margin-top:anchor-size(--a height)'), insetY('') + 60,
+           'and a top margin down the block axis')
+
+// An end-side margin has nothing to push against while its inset is
+// `auto`, which is ordinary CSS rather than anything to do with
+// anchors -- and it works as soon as that inset is given one.
+checkEqInt(insetX('margin-right:anchor-size(--a width)'), insetX(''),
+           'a right margin alone moves nothing')
+checkEqInt(insetX('right:0;margin-right:anchor-size(--a width)'), 260,
+           'and moves the box once the right inset is given a value')
+checkEqInt(insetY('margin-bottom:anchor-size(--a height)'), insetY(''),
+           'a bottom margin alone moves nothing')
+checkEqInt(insetY('bottom:0;margin-bottom:anchor-size(--a height)'), 220, 'and with an inset')
+
+// The fallback and the missing-anchor zero behave in an inset as they
+// do in a size.
+checkEqInt(insetX('left:anchor-size(--missing width, 7px)'), 7,
+           'a missing anchor falls back to the length beside it')
+checkEqInt(insetX('left:anchor-size(--missing width)'), 0,
+           'and with no fallback resolves to zero, which is a left of 0')
+
+// The two functions compose across two properties: the anchor's right
+// edge, plus its own width as a margin.
+checkEqInt(insetX('left:anchor(--a right);margin-left:anchor-size(--a width)'), 350,
+           'anchor() places the box and anchor-size() pushes it')
+
+// `padding-*` refuses it, which is measured rather than assumed.
+Box padded = anchoredBy('padding-left:anchor-size(--a width)')
+checkEqInt(padded.w, 40, 'padding does not take anchor-size(): the box keeps its width')
+checkEqInt(padded.x, insetX(''), 'and does not move')
+
 finish('anchor positioning')

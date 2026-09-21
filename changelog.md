@@ -34,10 +34,26 @@ opposite of `anchor()` in an inset, where the same case leaves the box
 at its static position. And the logical dimensions are the physical
 ones here, as the side keywords are.
 
-`margin-*` and the insets take it in Chromium too and are not
-implemented: neither needs the second pass, so both belong with
-`anchor()`'s resolver rather than with this one. Nor does either
-function compose inside `calc()`.
+**The four margins and the four insets take it too**, which `anchor()`
+does not: `margin-left: anchor(--a right)` does nothing while
+`margin-left: anchor-size(--a width)` moves the box by 100. They need
+no second pass of their own -- a margin or an inset is resolved once the
+anchor's rectangle is known -- but they read the same carry, so they are
+slots on the same list of fourteen. What the function resolves to is
+put in the property as if the length had been written out, and takes
+the precedence a written-out one would: the start side before the end
+side.
+
+Two refusals came with the measurement. `padding-*` does not take it,
+here as in Chromium, so a `padding-left: anchor-size(--a width)` leaves
+the box 40 wide where it was. And `margin-right` and `margin-bottom`
+move nothing on their own -- which is ordinary CSS rather than anything
+to do with anchors, an end-side margin having nothing to push against
+while its inset is `auto` -- and both work the moment that inset is
+given a value.
+
+Neither function composes inside `calc()`, which is the last of this
+specification left.
 
 ### The property instrument grades a pseudo-element
 
