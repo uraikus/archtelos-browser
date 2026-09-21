@@ -1324,11 +1324,34 @@ copied: the three-word row above is one this engine should *not*
 reproduce, because there the widow rule and the standard's own
 sentence point opposite ways.
 
-Two more readings the fixture owes before any code. `pretty` gave the
-same answer as `balance` in every case measured here, which is a
-reason to grade them apart deliberately rather than by accident.
-And a block of more than a few lines is where the search has to be
-bounded; the threshold Chromium uses has not been read yet.
+**The threshold is six lines.** A paragraph of five three-character
+words per line with a two-character tail leaves a 48-pixel last line
+at every length, so `balance` has work to do at every length; it does
+it at two, three, four, five and six lines and stops at **seven**.
+
+| lines | `auto` | `balance` |
+|---|---|---|
+| 2 | `183, 48` | `106, 125` |
+| 3 | `183, 183, 48` | `145, 145, 125` |
+| 6 | `183 ×5, 48` | `183, 183, 145, 145, 145, 164` |
+| **7** | `183 ×6, 48` | **unchanged** |
+| 8 and up | | **unchanged** |
+
+**And `pretty` is not `balance`.** It left every one of those rows
+alone, including the two-line one, where `balance` moved 48 to 125 --
+and yet it agreed with `balance` on `alpha beta gamma delta`, which
+`auto` breaks into a one-word last line. So the three answers separate
+cleanly:
+
+| | |
+|---|---|
+| `auto`, `stable` | the greedy break |
+| `pretty` | the greedy break, except that a **one-word last line** is refused where another break avoids it |
+| `balance` | that widow rule, and then, at **six lines or fewer**, the break whose widest line is narrowest |
+
+which is why the widow rule in the first table outranks balancing: it
+is not part of balancing at all, it is the rule `pretty` is made of
+and `balance` inherits.
 
 ### A scroll offset outlives the document it belongs to
 
