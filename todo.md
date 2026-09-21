@@ -479,8 +479,48 @@ runs right, and this engine has no `writing-mode` to make them
 anything else.
 
 **`anchor-size(<name>? <dimension>, <fallback>?)`** gives the anchor's
-own size: `width: anchor-size(--a width)` is 120, `height:
-anchor-size(--a height)` is 60, and `self-inline` is 120 as well.
+own border-box size. Measured against a second fixture -- an anchor 100
+by 60, with the positioned box declared `width: 40px; height: 20px` so
+that a declaration doing nothing is visible as 40 or 20:
+
+| declaration | w | h |
+|---|---|---|
+| `width: anchor-size(--a width)` | 100 | 20 |
+| `height: anchor-size(--a height)` | 40 | 60 |
+| `width: anchor-size(--a inline)` | 100 | 20 |
+| `width: anchor-size(--a self-inline)` | 100 | 20 |
+| `height: anchor-size(--a block)` | 40 | 60 |
+| `height: anchor-size(--a self-block)` | 40 | 60 |
+| `width: anchor-size(width)` | 100 | 20 |
+| `width: anchor-size(--missing width, 5px)` | 5 | 20 |
+| `width: anchor-size(--a width, 5px)` | 100 | 20 |
+| `width: anchor-size(--missing width)` | **0** | 20 |
+| `height: anchor-size(--missing height)` | 40 | **0** |
+| `width: anchor-size(--a height)` | **60** | 20 |
+| `height: anchor-size(--a width)` | 40 | **100** |
+| `min-width: anchor-size(--a width)` | 100 | 20 |
+| `max-width: anchor-size(--a width); width: 999px` | 100 | 20 |
+| `margin-left: anchor-size(--a width)` | 40 | 20, at x 100 |
+| `left: anchor-size(--a width)` | 40 | 20, at x 100 |
+
+Three of those rows do not follow from the name.
+
+**The dimension is independent of the property.** `width:
+anchor-size(--a height)` is 60 and `height: anchor-size(--a width)` is
+100: the function always names a dimension of the *anchor*, whatever
+property it is in.
+
+**With no fallback and no anchor the answer is zero, not nothing.**
+`width: anchor-size(--missing width)` gives 0 where the box declared 40,
+so the earlier `width: 40px` is not retained. That is the opposite of
+`anchor()` in an inset, where the same case leaves the box at its
+static position -- the two functions fail differently and the
+difference is measured rather than reasoned about.
+
+**It is valid far beyond the sizing properties.** `margin-left` and
+`left` both take it, which `anchor()` does not: `margin-left:
+anchor(--a right)` does nothing while `margin-left: anchor-size(--a
+width)` moves the box by 100.
 
 **The name may be left out, and then `position-anchor` supplies it.**
 `left: anchor(right)` beside `position-anchor: --a` is 220. With no
