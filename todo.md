@@ -682,15 +682,71 @@ and a percentage part separately, so that `calc(100% - 2em)` can wait
 for the containing block. A comparison cannot wait the same way:
 `min(50%, 200px)` has no answer until the containing block is known,
 and the two operands cannot be folded into one pixel-and-percentage
-pair beforehand. So either the `Len` gains a deferred comparison --
-which every read site would then have to resolve -- or the cases that
-mix a percentage with a length are refused, and that refusal is
-written down here as measured rather than assumed.
+pair beforehand.
 
-**Probe Chromium first** for each shape and commit the measurement on
-its own: the all-length case, the all-percentage case, the mixed case,
-`clamp()`'s three arguments, a nested `calc()` inside one and one
-inside a `calc()`, and what a single argument or an empty one does.
+**Chromium 141, thirty-six declarations on a block in a containing
+block 400 wide and 300 tall.** The box declares `width` unless another
+property is named, so `auto` -- 400 -- is what an invalid declaration
+reads as.
+
+| declaration | width |
+|---|---|
+| `min(100px, 200px)` | 100 |
+| `max(100px, 200px)` | 200 |
+| `min(200px, 100px, 150px)` | 100 |
+| `max(100px, 200px, 150px)` | 200 |
+| `clamp(50px, 100px, 200px)` | 100 |
+| `clamp(150px, 100px, 200px)` | 150 |
+| `clamp(50px, 300px, 200px)` | 200 |
+| **`clamp(200px, 100px, 50px)`** | **200** |
+| `min(10%, 20%)` | 40 |
+| `max(10%, 20%)` | 80 |
+| **`min(50%, 100px)`** | **100** |
+| **`max(50%, 100px)`** | **200** |
+| `min(10%, 100px)` | 40 |
+| `clamp(10%, 100px, 90%)` | 100 |
+| `min(10em, 100px)` | 100 |
+| `max(10em, 100px)` | 160 |
+| `calc(min(100px, 200px) + 10px)` | 110 |
+| `min(calc(50px + 50px), 200px)` | 100 |
+| `min(min(100px, 200px), 150px)` | 100 |
+| `calc(2 * min(50px, 200px))` | 100 |
+| `min(100px, 200px, max(10px, 300px))` | 100 |
+| **`min(100px, 5)`** | **400 (invalid)** |
+| **`min(100, 200)`** | **400 (invalid)** |
+| `min(100px)` | 100 |
+| `max(100px)` | 100 |
+| **`clamp(100px)`** | **400 (invalid)** |
+| `min()` | 400 (invalid) |
+| `min( 100px , 200px )` | 100 |
+| **`min(100px,)`** | **400 (invalid)** |
+| `min(-100px, 100px)` | 0 |
+| **`max(0, 100px)`** | **400 (invalid)** |
+
+And where else it is taken, with `width: 100px` beside it:
+`margin-left: min(30px, 60px)` is 30, `padding-left:` the same,
+`font-size: min(30px, 60px)` is 30 and makes `width: 10em` 300, and
+`height: min(10%, 100px)` is 30 against the containing block's 300
+while `height: max(10%, 100px)` is 100. So the percentage is the
+containing block's on the property's own axis, as it is everywhere.
+
+**Five of those rows are rules rather than arithmetic.**
+
+1. **A percentage is resolved before the comparison, not after.**
+   `min(50%, 100px)` is 100 and `max(50%, 100px)` is 200, which is 50%
+   of 400 compared against 100 -- so the function cannot be folded into
+   one pixel-and-percentage pair at parse time. Either the `Len` gains
+   a deferred comparison, which `resolveLen` is the one place to answer
+   it in, or the mixed case is refused and that refusal is written down
+   here.
+2. **`clamp()`'s minimum wins over its maximum.**
+   `clamp(200px, 100px, 50px)` is 200, not 50.
+3. **A bare number is not a length here, and zero is not exempt.**
+   `min(100px, 5)`, `min(100, 200)` and `max(0, 100px)` are all
+   invalid, where `calc()` takes a bare number as a multiplier.
+4. **`min()` and `max()` take one argument; `clamp()` takes exactly
+   three.** `min(100px)` is 100 and `clamp(100px)` is invalid.
+5. **A trailing comma is invalid**, and so is an empty argument list.
 
 The property instrument cannot grade a function, so
 `tests/unit/test_values.f` is the instrument. The check that earns its
