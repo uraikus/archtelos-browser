@@ -743,12 +743,49 @@ const int LEN_PERCENT = 2
 // calc() can mix the two -- `calc(100% - 2em)` is the common case -- and
 // neither part can be resolved until the containing block is known.
 const int LEN_CALC = 3
+// `min()`, `max()` and `clamp()` over lengths that are not all
+// pixels. A comparison cannot be folded the way `calc()`'s arithmetic
+// can: `min(50%, 100px)` is 100 against a 400px base and 50 against a
+// 100px one, because the percentage is resolved BEFORE the comparison,
+// which is measured (todo.md). So the operands are kept and the answer
+// is worked out in `resolveLen`, where the base finally is. An
+// all-pixel comparison never reaches this kind -- it is folded at parse
+// time into an ordinary LEN_PX, which is what makes `min(10px, 20px)`
+// work in the places that take a length rather than only where
+// `resolveLen` is called.
+const int LEN_MINMAX = 4
 
 struct Len {
     kind:int
-    v:float     // pixels, or the percentage for LEN_PERCENT
+    v:float     // pixels, the percentage for LEN_PERCENT, or the
+                // operand-list index for LEN_MINMAX
     pct:float   // LEN_CALC only: the percentage part, added to v
 }
+
+const int MM_MIN = 0
+const int MM_MAX = 1
+const int MM_CLAMP = 2
+
+// The operand lists of every unfolded comparison on this document,
+// flat: list `i` runs from `minmaxAt[i]` for `minmaxCount[i]` operands,
+// each of which is a whole `Len` in the three parallel arrays below --
+// so a comparison nested inside a comparison is one more operand
+// rather than a special case.
+//
+// A side table rather than fields on `Len`, because `Style` holds some
+// thirty of them and this file has twice measured what a field costs
+// the pages that never read it (benchmarks.md).
+arr[int] minmaxOp = []
+arr[int] minmaxAt = []
+arr[int] minmaxCount = []
+arr[int] minmaxKind = []
+arr[float] minmaxV = []
+arr[float] minmaxPct = []
+// Whether this document wrote one at all. Every length of every box
+// goes through `resolveLen`, so the kind it almost never is gets tested
+// behind a global that short-circuits rather than by reading the
+// struct.
+bool anyMinMax = false
 
 // A linear gradient, as CSS Images 3 defines it: a line through the box
 // at `angle` degrees clockwise from "up", and colour stops along it.
@@ -1494,7 +1531,54 @@ int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
     if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
+    if anyMinMax && l.kind == LEN_MINMAX { return roundPx(resolveMinMax(l, base.toFloat())) }
     return roundPx(l.v)
+}
+
+// The same, as a float and without the `auto` default, so a comparison
+// nested inside one resolves through the same arithmetic as the
+// outermost rather than through a copy of it.
+float func resolveLenFloat(l:Len, base:float) {
+    if l == null { return 0.0 }
+    if l.kind == LEN_PERCENT { return base * l.v / 100.0 }
+    if l.kind == LEN_CALC { return l.v + base * l.pct / 100.0 }
+    if l.kind == LEN_MINMAX { return resolveMinMax(l, base) }
+    return l.v
+}
+
+// `min()` and `max()` take the extreme of their operands; `clamp(a, b,
+// c)` is `max(a, min(b, c))`, which is why a minimum above the maximum
+// wins -- measured in Chromium rather than derived from the grammar
+// (todo.md).
+float func resolveMinMax(l:Len, base:float) {
+    int idx = Math.round(l.v)
+    if idx < 0 || idx >= minmaxOp.length { return 0.0 }
+    int op = minmaxOp[idx]
+    int at = minmaxAt[idx]
+    int n = minmaxCount[idx]
+    if n == 0 { return 0.0 }
+    if op == MM_CLAMP {
+        float lo = resolveMinMaxArg(at, base)
+        float mid = resolveMinMaxArg(at + 1, base)
+        float hi = resolveMinMaxArg(at + 2, base)
+        if mid > hi { mid = hi }
+        if mid < lo { mid = lo }
+        return mid
+    }
+    float best = resolveMinMaxArg(at, base)
+    for int i = 1, i < n, i++ {
+        float v = resolveMinMaxArg(at + i, base)
+        if op == MM_MIN ? v < best : v > best { best = v }
+    }
+    return best
+}
+
+float func resolveMinMaxArg(at:int, base:float) {
+    Len a
+    a.kind = minmaxKind[at]
+    a.v = minmaxV[at]
+    a.pct = minmaxPct[at]
+    return resolveLenFloat(a, base)
 }
 
 Len func lenCalc(px:float, pct:float) {

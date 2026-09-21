@@ -37,6 +37,140 @@ Node p1 = findElement(d1, 'p')
 checkEqInt(resolveLen(p1.style.width, 400, -1), 360, 'calc() in a width declaration')
 checkEqInt(resolveLen(p1.style.marginLeft, 0, -1), 32, 'calc() in a margin declaration')
 
+Node func valNodeById(n:Node, id:text) {
+    if n.kind == NODE_ELEMENT && attrOf(n.id, 'id') == id { return n }
+    for int i = 0, i < n.children.length, i++ {
+        Node f = valNodeById(n.children[i], id)
+        if f != null { return f }
+    }
+    return null
+}
+
+// ---- min(), max() and clamp() -----------------------------------------
+//
+// Values and Units 4 §10. Every number here is Chromium 141's, on a
+// block in a containing block 400 wide and 300 tall (todo.md). The
+// checks that earn their place are the ones that need no number: a
+// comparison of two lengths must land where the length it picks lands.
+
+// All lengths, which fold at parse time -- and folding is the point,
+// because a folded value is an ordinary LEN_PX and works in the places
+// that take one rather than only where `resolveLen` is called.
+Len m1 = parseLength('min(100px, 200px)'.toAscii(), 16)
+checkEqInt(m1.kind, LEN_PX, 'a comparison of two lengths folds to a length')
+checkEqInt(resolveLen(m1, 400, -1), 100, 'and it is the smaller')
+checkEqInt(resolveLen(parseLength('max(100px, 200px)'.toAscii(), 16), 400, -1), 200,
+    'max() takes the larger')
+checkEqInt(resolveLen(parseLength('min(200px, 100px, 150px)'.toAscii(), 16), 400, -1), 100,
+    'min() of three')
+checkEqInt(resolveLen(parseLength('max(100px, 200px, 150px)'.toAscii(), 16), 400, -1), 200,
+    'max() of three')
+
+checkEqInt(resolveLen(parseLength('clamp(50px, 100px, 200px)'.toAscii(), 16), 400, -1), 100,
+    'clamp() leaves a value between its bounds alone')
+checkEqInt(resolveLen(parseLength('clamp(150px, 100px, 200px)'.toAscii(), 16), 400, -1), 150,
+    'and raises one below the minimum')
+checkEqInt(resolveLen(parseLength('clamp(50px, 300px, 200px)'.toAscii(), 16), 400, -1), 200,
+    'and lowers one above the maximum')
+// Measured rather than derived: the minimum wins where the two bounds
+// cross, so this is 200 and not 50.
+checkEqInt(resolveLen(parseLength('clamp(200px, 100px, 50px)'.toAscii(), 16), 400, -1), 200,
+    'a minimum above the maximum wins')
+
+checkEqInt(resolveLen(parseLength('min(10em, 100px)'.toAscii(), 16), 400, -1), 100,
+    'em resolves before the comparison')
+checkEqInt(resolveLen(parseLength('max(10em, 100px)'.toAscii(), 16), 400, -1), 160,
+    'and the em is the larger of the two')
+
+checkEqInt(resolveLen(parseLength('min(100px)'.toAscii(), 16), 400, -1), 100,
+    'min() takes a single argument')
+checkEqInt(resolveLen(parseLength('max(100px)'.toAscii(), 16), 400, -1), 100,
+    'and so does max()')
+checkEqInt(resolveLen(parseLength('min( 100px , 200px )'.toAscii(), 16), 400, -1), 100,
+    'whitespace around the arguments is allowed')
+checkEqInt(resolveLen(parseLength('min(-100px, 100px)'.toAscii(), 16), 400, -1), -100,
+    'a negative is smaller than a positive, and the function says so')
+
+// Nesting, in both directions.
+checkEqInt(resolveLen(parseLength('calc(min(100px, 200px) + 10px)'.toAscii(), 16), 400, -1), 110,
+    'a comparison inside a calc()')
+checkEqInt(resolveLen(parseLength('min(calc(50px + 50px), 200px)'.toAscii(), 16), 400, -1), 100,
+    'a calc() inside a comparison')
+checkEqInt(resolveLen(parseLength('min(min(100px, 200px), 150px)'.toAscii(), 16), 400, -1), 100,
+    'a comparison inside a comparison')
+checkEqInt(resolveLen(parseLength('calc(2 * min(50px, 200px))'.toAscii(), 16), 400, -1), 100,
+    'a comparison multiplied')
+checkEqInt(resolveLen(parseLength('min(100px, 200px, max(10px, 300px))'.toAscii(), 16), 400, -1), 100,
+    'the other function nested inside this one')
+
+// A percentage cannot fold, because the answer depends on the base:
+// the comparison happens AFTER the percentage is resolved, which is
+// measured. Asking the same value against two bases is what shows it
+// is deferred rather than decided at parse time.
+Len mp = parseLength('min(50%, 100px)'.toAscii(), 16)
+checkEqInt(resolveLen(mp, 400, -1), 100, 'against a 400 base the length wins')
+checkEqInt(resolveLen(mp, 100, -1), 50, 'and against a 100 base the percentage does')
+checkEqInt(resolveLen(parseLength('max(50%, 100px)'.toAscii(), 16), 400, -1), 200,
+    'max() of the same pair takes the percentage')
+checkEqInt(resolveLen(parseLength('min(10%, 20%)'.toAscii(), 16), 400, -1), 40,
+    'two percentages against a 400 base')
+checkEqInt(resolveLen(parseLength('min(10%, 20%)'.toAscii(), 16), 200, -1), 20,
+    'and against a 200 base, which a folded value could not do')
+checkEqInt(resolveLen(parseLength('max(10%, 20%)'.toAscii(), 16), 400, -1), 80,
+    'and max() of them')
+checkEqInt(resolveLen(parseLength('clamp(10%, 100px, 90%)'.toAscii(), 16), 400, -1), 100,
+    'clamp() between two percentages')
+
+// The checks that need no number of their own.
+checkEqInt(resolveLen(parseLength('min(10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('10px'.toAscii(), 16), 400, -1),
+           'min() of two lengths is the smaller, written out')
+checkEqInt(resolveLen(parseLength('max(10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('20px'.toAscii(), 16), 400, -1),
+           'and max() is the larger')
+checkEqInt(resolveLen(parseLength('clamp(5px, 10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('10px'.toAscii(), 16), 400, -1),
+           'and a clamp() inside its bounds is the value')
+checkEqInt(resolveLen(parseLength('min(50%, 100%)'.toAscii(), 16), 370, -1),
+           resolveLen(parseLength('50%'.toAscii(), 16), 370, -1),
+           'and a percentage comparison is the percentage it picks')
+
+// The standard's invalid cases, all measured in Chromium.
+checkEqInt(parseLength('min(100px, 5)'.toAscii(), 16).kind, LEN_INVALID,
+    'a bare number is not a length here, where calc() takes one as a multiplier')
+checkEqInt(parseLength('min(100, 200)'.toAscii(), 16).kind, LEN_INVALID,
+    'and neither argument may be one')
+checkEqInt(parseLength('max(0, 100px)'.toAscii(), 16).kind, LEN_INVALID,
+    'and zero is not exempt')
+checkEqInt(parseLength('clamp(100px)'.toAscii(), 16).kind, LEN_INVALID,
+    'clamp() takes exactly three arguments')
+checkEqInt(parseLength('clamp(10px, 20px)'.toAscii(), 16).kind, LEN_INVALID,
+    'two of them is not enough')
+checkEqInt(parseLength('min()'.toAscii(), 16).kind, LEN_INVALID, 'an empty argument list is invalid')
+checkEqInt(parseLength('min(100px,)'.toAscii(), 16).kind, LEN_INVALID, 'and so is a trailing comma')
+checkEqInt(parseLength('min(100px'.toAscii(), 16).kind, LEN_INVALID, 'and an unclosed one')
+
+// And it reaches a real declaration, in each of the four kinds of
+// property Chromium was asked about.
+cascadeReset()
+Node dm = parseHtmlText('<html><body><div style="width:400px;height:300px">'
+    + '<p id="a" style="width: min(100px, 200px)">x</p>'
+    + '<p id="b" style="height: min(10%, 100px)">x</p>'
+    + '<p id="c" style="margin-left: min(30px, 60px)">x</p>'
+    + '<p id="d" style="font-size: min(30px, 60px); width: 10em">x</p>'
+    + '</div></body></html>')
+cascadeAddDocumentStyles(dm)
+computeStyles(dm)
+checkEqInt(resolveLen(valNodeById(dm, 'a').style.width, 400, -1), 100,
+    'min() in a width declaration')
+checkEqInt(resolveLen(valNodeById(dm, 'b').style.height, 300, -1), 30,
+    'min() in a height, against the containing block\'s height')
+checkEqInt(resolveLen(valNodeById(dm, 'c').style.marginLeft, 400, -1), 30,
+    'min() in a margin')
+checkEqInt(valNodeById(dm, 'd').style.fontSize, 30, 'min() in a font size')
+checkEqInt(resolveLen(valNodeById(dm, 'd').style.width, 400, -1), 300,
+    'which the em beside it then multiplies')
+
 // ---- custom properties and var() --------------------------------------
 cascadeReset()
 Node d2 = parseHtmlText('<html><head><style>:root { --gap: 12px; --brand: #112233 } .a { --gap: 4px } p { margin-top: var(--gap); color: var(--brand); padding-top: var(--missing, 7px); padding-left: var(--nope) }</style></head><body><p id="one">x</p><div class="a"><p id="two">y</p></div></body></html>')

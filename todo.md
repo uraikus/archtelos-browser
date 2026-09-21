@@ -644,10 +644,13 @@ records one rectangle per occurrence there, because an expression may
 name several anchors and each takes the ones tree order has passed.
 
 **`min()`, `max()` and `clamp()` take both functions in Chromium and
-are not the gap here.** This engine implements none of the three for
-any value at all: there is no `min(`, `max(` or `clamp(` in its length
-parser, so there is nothing about anchors in that hole. It belongs to
-CSS Values 4, and has its own section below.
+neither anchor function goes inside one here.** The three work over
+ordinary lengths, but an anchor function is not one: `anchor-size()` is
+substituted into an expression's *text* before the ordinary parser
+sees it, and the length parser is what knows `min(`. Making them
+compose wants the substitution to happen before that parse rather than
+after -- which is a question about where `anchorExprLength` runs, not
+about the comparison functions.
 
 **`anchor-size()` works in the six sizing properties** -- `width`,
 `height` and their minima and maxima -- on a second layout pass. A
@@ -669,17 +672,32 @@ inset is resolved once the anchor's rectangle is known -- but they read
 the same carry, so they are slots on the same list of fourteen.
 `padding-*` refuses the function, here as in Chromium.
 
-### `min()`, `max()` and `clamp()` are absent from the length parser
+### What `min()`, `max()` and `clamp()` still leave out
 
-CSS Values and Units 4 §10. This engine has none of the three, for any
-value at all: `parseLength` knows `calc()` and its arithmetic, and
-there is no `min(`, `max(` or `clamp(` anywhere in it. That is why
-neither anchor function can be written inside one, and why that is not
-a gap in Anchor Positioning.
+All three work, wherever this engine reads a length. Two things they
+do not do.
 
-**The hard part is not the arithmetic.** A `Len` carries a pixel part
-and a percentage part separately, so that `calc(100% - 2em)` can wait
-for the containing block. A comparison cannot wait the same way:
+**A comparison whose answer is deferred cannot go inside a `calc()`.**
+`calc(min(100px, 200px) + 10px)` is 110, because the inner comparison
+folds to a pixel length; `calc(min(50%, 100px) + 10px)` is refused,
+because a `calc()`'s running value is a pixel part and a percentage
+part and a deferred comparison is neither until the base is known.
+Chromium answers it. Making it work wants `CalcVal` to carry an
+operand list of its own, the way `Len` now does, rather than two
+floats.
+
+**An unfolded comparison is refused by the properties that read a
+length's kind directly** -- `border-radius`, `transform-origin`,
+`background-size` and the rest of the `l.kind == LEN_PX || l.kind ==
+LEN_PERCENT` sites. That is exactly where `calc(100% - 2em)` is
+refused today, so it is one gap rather than two: the fix is those sites
+going through `resolveLen`, and it would carry `calc()` with it.
+
+**The measurement below is what all of it was built against.**
+
+CSS Values and Units 4 §10. A `Len` carries a pixel part and a
+percentage part separately, so that `calc(100% - 2em)` can wait for the
+containing block. A comparison cannot wait the same way:
 `min(50%, 200px)` has no answer until the containing block is known,
 and the two operands cannot be folded into one pixel-and-percentage
 pair beforehand.
@@ -749,9 +767,10 @@ containing block's on the property's own axis, as it is everywhere.
 5. **A trailing comma is invalid**, and so is an empty argument list.
 
 The property instrument cannot grade a function, so
-`tests/unit/test_values.f` is the instrument. The check that earns its
-place asserts `min(10px, 20px)` lands where `10px` lands, rather than
-matching a number of its own.
+`tests/unit/test_values.f` is the instrument, at 86 checks. The ones
+that earn their place assert `min(10px, 20px)` lands where `10px`
+lands, and that the same unfolded comparison answers differently
+against two bases -- which is what a folded value could not do.
 
 ### What CSS Inline 3 still needs
 

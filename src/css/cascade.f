@@ -211,6 +211,16 @@ void func cascadeReset() {
     anyAnchorInset = false
     anyAnchorSize = false
     anchorInfos = []
+    // A `Len` of kind LEN_MINMAX holds an INDEX into these, so they go
+    // together: a table kept across documents would leave the previous
+    // document's comparisons under the next one's indices.
+    anyMinMax = false
+    minmaxOp = []
+    minmaxAt = []
+    minmaxCount = []
+    minmaxKind = []
+    minmaxV = []
+    minmaxPct = []
     anyOffsetPath = false
     motionInfos = []
     anyClipMargin = false
@@ -3647,6 +3657,32 @@ void func calcSkipSpace() {
     while calcPos < calcSrc.length && isSpaceCode(calcSrc.charCodeAt(calcPos)) { calcPos++ }
 }
 
+// Which comparison function is at the cursor, and how long its name is
+// including the opening parenthesis. Both answers come from the one
+// test rather than the length being matched back to a name: `min` and
+// `max` are the same length, and telling them apart afterwards is a
+// place to get it wrong -- which is what the suite caught when this
+// read the wrong character and every `min()` inside a `calc()` came
+// out as the maximum.
+int calcMinMaxOp = -1
+
+int func calcMinMaxNameLen() {
+    calcMinMaxOp = -1
+    if asciiStartsWithLower(calcSrc, 'min(', calcPos) {
+        calcMinMaxOp = MM_MIN
+        return 4
+    }
+    if asciiStartsWithLower(calcSrc, 'max(', calcPos) {
+        calcMinMaxOp = MM_MAX
+        return 4
+    }
+    if asciiStartsWithLower(calcSrc, 'clamp(', calcPos) {
+        calcMinMaxOp = MM_CLAMP
+        return 6
+    }
+    return 0
+}
+
 CalcVal func calcParseTerm(fontSize:int) {
     calcSkipSpace()
     if calcPos >= calcSrc.length { return calcBad }
@@ -3667,6 +3703,24 @@ CalcVal func calcParseTerm(fontSize:int) {
         if calcPos >= calcSrc.length || calcSrc.charCodeAt(calcPos) != CH_RPAREN { return calcBad }
         calcPos++
         return inner
+    }
+    // A comparison inside an expression. It contributes one length, so
+    // it is read with the ordinary parser and its answer taken --
+    // except when that answer is itself a deferred comparison, which a
+    // `CalcVal` has nowhere to put: a `CalcVal` is a pixel part and a
+    // percentage part, and `min(50%, 100px)` is neither until the base
+    // is known. That case is refused rather than approximated, and is
+    // recorded as a limit (todo.md).
+    int mmLen = calcMinMaxNameLen()
+    if mmLen > 0 {
+        int close = asciiMatchingParen(calcSrc, calcPos + mmLen - 1)
+        if close < 0 { return calcBad }
+        Len m = parseMinMax(calcSrc.slice(calcPos + mmLen, close), fontSize, calcMinMaxOp)
+        calcPos = close + 1
+        if m.kind == LEN_PX { return calcLength(m.v, 0.0) }
+        if m.kind == LEN_PERCENT { return calcLength(0.0, m.v) }
+        if m.kind == LEN_CALC { return calcLength(m.v, m.pct) }
+        return calcBad
     }
     parseNumberAt(calcSrc, calcPos)
     if !numOk { return calcBad }
@@ -3813,6 +3867,102 @@ ViewBox func parseViewBox(v:ascii, fontSize:int) {
     return vb
 }
 
+// Splits on commas that are not inside parentheses, which is what a
+// comparison's argument list needs and `asciiSplitChar` cannot do:
+// `min(100px, max(10px, 300px))` has two arguments, not three. An
+// empty piece is KEPT rather than dropped, because a trailing comma is
+// invalid and dropping it would make it valid (measured, todo.md).
+arr[ascii] func asciiSplitTopLevel(s:ascii, sep:int) {
+    arr[ascii] out = []
+    int depth = 0
+    int start = 0
+    int n = s.length
+    for int i = 0, i <= n, i++ {
+        if i == n {
+            out.push(asciiTrim(s.slice(start, i)))
+            break
+        }
+        int c = s.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN { depth-- }
+        else if c == sep && depth == 0 {
+            out.push(asciiTrim(s.slice(start, i)))
+            start = i + 1
+        }
+    }
+    return out
+}
+
+// One `min()`, `max()` or `clamp()`, as the length it resolves to.
+//
+// An argument list of nothing but pixels is folded here, because the
+// answer cannot change: the result is an ordinary LEN_PX and works
+// wherever a length works. Anything with a percentage in it is kept
+// whole in the side table and answered in `resolveLen`, because the
+// comparison happens after the percentage is resolved -- `min(50%,
+// 100px)` is 100 against a 400px base and 50 against a 100px one.
+Len func parseMinMax(inner:ascii, fontSize:int, op:int) {
+    arr[ascii] args = asciiSplitTopLevel(inner, CH_COMMA)
+    if args.length == 0 { return lenInvalid() }
+    if op == MM_CLAMP ? args.length != 3 : args.length < 1 { return lenInvalid() }
+    arr[int] kinds = []
+    arr[float] vs = []
+    arr[float] pcts = []
+    bool allPx = true
+    for int i = 0, i < args.length, i++ {
+        if args[i].length == 0 { return lenInvalid() }
+        // A bare number is not a length here, where `calc()` takes one
+        // as a multiplier, and zero is not exempt: `max(0, 100px)` is
+        // invalid in Chromium (todo.md).
+        parseNumberAt(args[i], 0)
+        if numOk && numEnd == args[i].length { return lenInvalid() }
+        Len a = parseLength(args[i], fontSize)
+        if a.kind == LEN_INVALID || a.kind == LEN_AUTO { return lenInvalid() }
+        if a.kind != LEN_PX { allPx = false }
+        kinds.push(a.kind)
+        vs.push(a.v)
+        pcts.push(a.pct)
+    }
+    if allPx {
+        Len folded
+        folded.kind = LEN_PX
+        folded.v = minmaxFold(op, vs)
+        return folded
+    }
+    Len l
+    l.kind = LEN_MINMAX
+    l.v = minmaxOp.length.toFloat()
+    minmaxOp.push(op)
+    minmaxAt.push(minmaxKind.length)
+    minmaxCount.push(kinds.length)
+    for int i = 0, i < kinds.length, i++ {
+        minmaxKind.push(kinds[i])
+        minmaxV.push(vs[i])
+        minmaxPct.push(pcts[i])
+    }
+    anyMinMax = true
+    return l
+}
+
+// The same comparison `resolveMinMax` makes, over operands that are
+// already pixels. Written once here and once there rather than shared,
+// because the two take their operands from different places and what
+// must agree is the answer -- which the suite checks by asking for a
+// folded value and an unfolded one that pick the same argument.
+float func minmaxFold(op:int, vs:arr[float]) {
+    if op == MM_CLAMP {
+        float mid = vs[1]
+        if mid > vs[2] { mid = vs[2] }
+        if mid < vs[0] { mid = vs[0] }
+        return mid
+    }
+    float best = vs[0]
+    for int i = 1, i < vs.length, i++ {
+        if op == MM_MIN ? vs[i] < best : vs[i] > best { best = vs[i] }
+    }
+    return best
+}
+
 Len func parseLength(tok:ascii, fontSize:int) {
     Len l
     l.kind = LEN_INVALID
@@ -3821,6 +3971,18 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if t == 'auto' || t == 'none' || t == 'initial' || t == 'unset' { return lenAuto() }
     if t.length > 5 && asciiLower(t.slice(0, 5)) == 'calc(' && t.charCodeAt(t.length - 1) == CH_RPAREN {
         return evaluateCalc(t.slice(5, t.length - 1), fontSize)
+    }
+    // Values and Units 4 §10. The closing parenthesis is required to be
+    // the one that matches, so `min(1px,2px)min(3px)` is not a length
+    // although it ends in one.
+    if asciiStartsWith(t, 'min(', 0) && asciiMatchingParen(t, 3) == t.length - 1 {
+        return parseMinMax(t.slice(4, t.length - 1), fontSize, MM_MIN)
+    }
+    if asciiStartsWith(t, 'max(', 0) && asciiMatchingParen(t, 3) == t.length - 1 {
+        return parseMinMax(t.slice(4, t.length - 1), fontSize, MM_MAX)
+    }
+    if asciiStartsWith(t, 'clamp(', 0) && asciiMatchingParen(t, 5) == t.length - 1 {
+        return parseMinMax(t.slice(6, t.length - 1), fontSize, MM_CLAMP)
     }
     parseNumberAt(t, 0)
     if !numOk { return l }

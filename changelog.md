@@ -5,6 +5,48 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `min()`, `max()` and `clamp()`
+
+CSS Values and Units 4 §10, wherever this engine reads a length --
+which is every property that takes one, and inside `calc()`.
+
+**An argument list of nothing but pixels is folded at parse time**, and
+that is the point rather than an optimisation: a folded comparison is
+an ordinary pixel length, so `min(10px, 20px)` works everywhere `10px`
+works, including the places that take a length by kind rather than
+through `resolveLen` and already refuse a `calc()`.
+
+**A percentage cannot fold, because the comparison happens after the
+percentage is resolved.** `min(50%, 100px)` is 100 against a 400px base
+and 50 against a 100px one, so the operands are kept in a side table
+and the answer is worked out in `resolveLen`, where the base finally
+is. A side table rather than fields on `Len`, because `Style` holds
+some thirty of them and this project has twice measured what a field
+costs the pages that never read it. An unfolded comparison reaches
+every property that goes through `resolveLen`, and is refused by the
+ones that read a length's kind directly -- which is exactly where
+`calc(100% - 2em)` is refused today.
+
+Four of the rules are Chromium's rather than the grammar's.
+`clamp()`'s minimum wins over its maximum, so `clamp(200px, 100px,
+50px)` is 200. A bare number is not a length there and zero is not
+exempt, where `calc()` takes one as a multiplier. `min()` and `max()`
+take a single argument and `clamp()` takes exactly three. A trailing
+comma is invalid.
+
+Nesting works in both directions, and a comparison nested inside one is
+one more operand rather than a case of its own. A comparison whose
+answer is *deferred* inside a `calc()` is refused rather than
+approximated: a `calc()`'s running value is a pixel part and a
+percentage part, and a deferred comparison is neither until the base is
+known.
+
+The suite caught the implementation answering the wrong function: every
+`min()` inside a `calc()` came out as the maximum, because the code
+that chose between them read the name's first letter, which `min` and
+`max` share. The two answers now come from the one test that
+recognises the name.
+
 ### `anchor()` composes inside `calc()`, completing Anchor Positioning 1
 
 The other function resolves to a length too, so the same substitution
@@ -37,10 +79,11 @@ inset's own axis, and goes through `resolveLen`, which is what every
 written-out inset resolves one against -- so the two land on the same
 pixel by construction rather than by agreeing about a convention.
 
-`min()`, `max()` and `clamp()` take both functions in Chromium. They
-are not a gap in anchors here: this engine implements none of the three
-for any value at all, which is a CSS Values 4 hole with nothing about
-anchors in it.
+`min()`, `max()` and `clamp()` take both functions in Chromium and
+neither goes inside one here. The three work over ordinary lengths;
+an anchor function is not one, because it is substituted into an
+expression's text before the ordinary parser sees it, and the length
+parser is what knows `min(`. That is recorded in todo.md.
 
 ### `anchor-size()` composes inside `calc()`
 

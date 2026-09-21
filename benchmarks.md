@@ -1896,3 +1896,39 @@ than before, not more. Both function names begin `anchor`, so the two
 flags are raised by **one** scan for that prefix rather than two scans
 for the full names, with the character after it saying which -- a
 shorter needle over the same bytes, once instead of twice.
+
+`min()`, `max()` and `clamp()` cost **9,304 bytes** (3,011,712 ->
+3,021,016) and nothing measurable, against a per-phase floor taken on
+each page in the same minutes. Twenty-five alternating paired samples
+at 800x600, paired mean in brackets:
+
+| `generated.html` | Floor | The change |
+|---|---|---|
+| parse | 10 of 25 (+0.32) | 2 (-0.44) |
+| stylesheets | 4 of 25 (+0.08) | 0 (-0.08) |
+| cascade | 10 of 25 (-0.48) | 6 (-0.24) |
+| layout | 13 of 25 (+0.84) | 12 (+0.92) |
+
+| `features.html` | Floor | The change | Floor again | The change again |
+|---|---|---|---|---|
+| parse | 3 of 25 (-0.32) | 7 (+0.12) | 6 (-0.04) | 6 (+0.04) |
+| stylesheets | 10 of 25 (+0.28) | 9 (-0.04) | 7 (+0.08) | 5 (-0.04) |
+| cascade | 8 of 25 (+0.24) | 7 (-0.56) | 9 (+0.60) | 6 (+0.44) |
+| layout | 11 of 25 (+0.12) | 13 (+0.12) | **13 (+0.92)** | **13 (-0.24)** |
+
+**This is the change in this file with the most to prove**, because
+what it touches is `resolveLen` -- the function that turns a `Len` into
+pixels, called for every length of every box of every page. A cost
+there would show in layout and nowhere else, which is why
+`features.html`'s layout was asked twice. It read 13 of 25 against a
+floor of 11; asked again the floor itself read **13**, with the change
+also at 13 and a paired mean *below* it. Thirteen is what that page's
+layout floors at today.
+
+What `resolveLen` actually gained is one test for a kind it almost
+never is, written as `anyMinMax && l.kind == LEN_MINMAX` so that a page
+which never says one reads a global rather than a struct field. That
+is not a saving the benchmark can see, and it is not claimed as one:
+the guard is there because a test inside a loop over every box gets a
+per-document flag before it lands, which is a rule about what the code
+does.
