@@ -1138,6 +1138,32 @@ not settled is not one to ship for the sake of a count. The probe is
 `document.elementFromPoint` at each pixel's centre, which is how
 `clip-path`'s own expectations were read.
 
+### What the property instrument does not grade
+
+The property instrument cross-checks every claim about a *property*:
+one that css-2026.md says is implemented and that renders the same
+either way is caught on every run. **Nothing plays that role for a
+function, a unit, an at-rule or a selector's behaviour.** Those claims
+are assertions until a suite asks, and one was wrong -- "`attr()` is
+missing", of a function that has worked in `content` since generated
+content landed.
+
+The audit that found it swept css-2026.md's negative claims. The rest
+hold up: `cursor`, `resize`, `user-select`, `mix-blend-mode`,
+`isolation`, `background-blend-mode`, `text-wrap-style`,
+`text-decoration-skip-ink`, `shape-image-threshold`, `writing-mode`,
+`text-orientation` and the four font ones are all *properties*, so the
+instrument already grades them and agrees. The claims with no
+instrument are the ones to keep an eye on, and they now have suites:
+`attr()` in `tests/unit/test_counters.f`, `min()`/`max()`/`clamp()`
+and the `ex`, `ch`, `cap` and `ic` units in `test_values.f`, the two
+anchor functions in `test_anchor.f`.
+
+What still has no check of its own, and should get one before its
+row is trusted: `@font-face`'s descriptors, `@counter-style`'s
+`speak-as`, and `image()`'s colour fallback -- the last of which
+css-2026.md already admits "has never had to show".
+
 ### The instrument
 
 **Three measurements exist**, each with a floor in `tests/run.sh`:

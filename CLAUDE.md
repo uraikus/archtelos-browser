@@ -147,6 +147,19 @@ worked; the count did not move. So the check is end to end — set the
 property, run the instrument, watch the number go up — and it is done
 when the implementation lands, not once the suite is green.
 
+**A claim about a function, a unit or an at-rule has no instrument
+behind it.** The property instrument cross-checks every claim of the
+form "this engine implements `foo`" for a *property*: a row that says
+so and renders the same either way is caught on every run. Nothing
+does that for `attr()`, `min()`, `ex`, `@page` or a selector's
+behaviour, so a sentence about one of those in css-2026.md is an
+assertion until a suite asks. One had been wrong for months --
+"`attr()` is missing", of a function that has worked in `content`
+since generated content landed, in a file whose own preamble says the
+engine column is read from the code. The rule is not to read the code
+harder; it is that **every such claim needs a check in `tests/unit/`,
+because the thing that would otherwise notice does not exist**.
+
 **Audit the whole instrument, not one row at a time.** Checking the row
 in front of you leaves every other row unexamined, and they rot
 silently: 218 of the 373 rows in `css-properties.txt` declared
