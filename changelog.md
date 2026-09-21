@@ -5,6 +5,22 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `attr()` was implemented, untested, and documented as missing
+
+css-2026.md's Values and Units 3 row said "`attr()` is missing". It
+has worked in `content` since generated content landed, and `content`
+is the only place Values 3 allows it -- the typed form that reaches
+other properties belongs to Values 5. Nothing in the suite asked,
+which is why a claim about the engine could sit in a file that says it
+is read from the code.
+
+Five checks pin it: the attribute's value is generated, a missing
+attribute generates the empty string rather than dropping the
+declaration, it sits among the strings beside it in the order written,
+the attribute's name folds while its value does not, and -- the one
+that needs no number -- an attribute holding exactly what a string
+would have said generates what that string generates.
+
 ### A flex container's text becomes an anonymous item, and its baseline its first item's
 
 Two halves of one bug, found by writing `baseline-source`'s fixture.
