@@ -703,22 +703,48 @@ anonymous item shows up only as the height it gives the container:
 | whitespace only | **0** | none |
 | `A <div>B</div>` | 20 | 10x20 |
 
-**Three rules.** Each maximal run of inline-level children becomes one
-anonymous *block* flex item. A run that is entirely whitespace
-produces no item at all, which is why the whitespace-only container is
-zero tall rather than one line tall. And this happens whether or not
-there are block-level siblings -- `ABC` alone is one item, and
-`A<div>B</div>` is two items side by side in the row, which is why
-that container is 20 tall and not 40.
+**A `flex-direction: column` container counts the items for you**,
+because it stacks them, so its height divided by the line height is
+how many there are. Ten more, same width and line height:
 
-**This engine has exactly that function already**: `wrapInlineRuns`
+| the container's content | its height | items | element children |
+|---|---|---|---|
+| `ABC` | 20 | 1 | none |
+| `A<span>B</span>` | 40 | 2 | 200x20 |
+| `<span>A</span>` | 20 | 1 | 200x20 |
+| `<span>A</span><span>B</span>` | 40 | 2 | 200x20, 200x20 |
+| `A<span>B</span>C` | 60 | **3** | 200x20 |
+| **`A<br>B`** | **40** | **1** | the `<br>`, 0x19 |
+| `<br>` alone | 20 | 1 | 0x19 |
+| `A<span style="display:inline-block">B</span>` | 40 | 2 | 200x20 |
+| `A<div>B</div>` | 40 | 2 | 200x20 |
+| `A<img style="width:10px;height:10px">B` | 50 | **3** | 10x10 |
+
+**Three rules, and the third is the one that is not obvious.** Each
+maximal run of text becomes one anonymous *block* flex item, so
+`A<span>B</span>C` is three items and `A<img>B` is three -- an element
+child breaks the run and becomes an item of its own. A run that is
+entirely whitespace produces no item, which is why the whitespace-only
+container is zero tall rather than one line tall. And **`<br>` does
+not break a run**: `A<br>B` is ONE item forty pixels tall, not three
+items of twenty, nineteen and twenty. A forced line break belongs to
+the inline content around it rather than being a box the flex
+algorithm can place.
+
+All of this happens whether or not there are block-level siblings:
+`ABC` alone is one item, and in a row `A<div>B</div>` is two items
+side by side, which is why that container is 20 tall and not 40.
+
+**This engine has most of that function already**: `wrapInlineRuns`
 builds anonymous block boxes out of runs of inline children and drops
-all-blank runs. It is guarded by `hasBlock && hasInline`, because for
-an ordinary block container a run of inline children with no block
-sibling needs no anonymous box -- the block lays them out itself. A
-flex container cannot: its children are items, and a text box is not
-one. So the guard is what has to change for flex and grid, not the
-wrapping.
+all-blank runs, and `blockifyItems` already turns a flex container's
+inline *element* children into block items. What is missing is the
+text: a `BOX_TEXT` child is neither, so it becomes an item with no
+layout and no height, and the container collapses.
+
+So the wrapping a flex container needs is narrower than
+`wrapInlineRuns` -- runs of `BOX_TEXT` and `BOX_BR` only, because
+every other element child is an item in its own right.
 
 **This is why the `baseline-source` suite has no inline-flex rows.**
 Chromium's answer there is "the span beside it stays at 0", and this
