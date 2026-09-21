@@ -582,11 +582,46 @@ came out 780 wide, which is `width: auto` against the body. So the
 functions need an absolutely positioned box, and `anchor()` needs an
 inset property.
 
-**`anchor()` composes inside `calc()`**: `left: calc(anchor(--a right)
-+ 5px)` gives 225. Not implemented -- it needs the calc evaluator to
-carry a term that is not a length until the anchor is known, where the
-whole-value form needs only the rectangle the positioning pass already
-has.
+**Both functions compose inside `calc()`, `min()` and `max()`, and are
+not implemented there.** Nineteen declarations in Chromium 141 on the
+anchor suite's fixture -- an anchor 100 by 60 whose box is x 150 to 250,
+in a containing block 400 by 300, with the positioned box declared 40 by
+20:
+
+| declaration | result |
+|---|---|
+| `left: calc(anchor(--a right) + 5px)` | x 255 |
+| `left: calc(anchor(--a right) - 5px)` | x 245 |
+| `left: calc(anchor(--a left) + anchor-size(--a width))` | x 250 |
+| `width: calc(anchor-size(--a width) + 10px)` | 110 |
+| `width: calc(anchor-size(--a width) * 2)` | 200 |
+| `width: calc(anchor-size(--a width) / 2)` | 50 |
+| `width: calc(2 * anchor-size(--a width))` | 200 |
+| `height: calc(anchor-size(--a height) - 10px)` | 50 |
+| `left: calc(anchor(--a center) - anchor-size(--a width) / 2)` | x 150 |
+| `width: calc(anchor-size(--a width) + 10%)` | 140 |
+| `left: calc(calc(anchor(--a right)) + 5px)` | x 255 |
+| `width: min(anchor-size(--a width), 50px)` | 50 |
+| `width: max(anchor-size(--a width), 500px)` | 500 |
+| `margin-left: calc(anchor-size(--a width) + 5px)` | x 105 |
+
+So: either operand order for `*`, ordinary precedence (`/` before `-`),
+percentages of the containing block alongside, nesting, two functions in
+one expression, and `min()` and `max()` as well as `calc()`.
+
+**Each function fails inside `calc()` the way it fails outside it.**
+`calc(anchor-size(--missing width, 5px) + 1px)` is 6 and
+`calc(anchor(--missing right, 7px) + 1px)` is 8, so a fallback is taken
+before the arithmetic. With no fallback,
+`calc(anchor-size(--missing width) + 1px)` is **0** -- the whole
+declaration, not just the term -- and `calc(anchor(--missing right) +
+1px)` has **no effect** at all, leaving the box at its static position.
+That is the same difference the two functions show when written alone.
+
+**What it needs.** Both resolve to a length that is not known until the
+anchor's rectangle is, so the evaluator has to carry a term that is not
+a length until then. The whole-value form needed only the rectangle,
+which is why it went first.
 
 **`anchor-size()` works in the six sizing properties** -- `width`,
 `height` and their minima and maxima -- on a second layout pass. A
