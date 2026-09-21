@@ -713,6 +713,26 @@ fractions is what a day's difference in machine state looks like, and it
 is why the rendering table's large row is the middle of eight samples
 rather than one run of five -- one run of five is what produced the 104.
 
+## What ruby cost the pages with no ruby in them
+
+2026-09-21, same machine and script. Ruby adds one comparison to
+`isInlineLevelBox`, which every child of every block is asked about,
+and one branch in the box builder's display dispatch. Nothing else on
+a page that has no `<ruby>`.
+
+| generated.html | forward, parent first | reversed, candidate first |
+|---|---|---|
+| cascade | +0, 11 of 25 | +0, 12 of 25 |
+| layout | **-1**, 8 of 25 | **+1**, 14 of 25 |
+| paint | +0, 11 of 25 | +1, 13 of 25 |
+
+The two layout readings **add to zero**, which is what a difference of
+nothing looks like once the order effect is separated out: whichever
+binary runs second reads about a millisecond slower, and here that is
+the whole of it. Compare the entry below, where both directions came
+out positive and the answer was still nothing, and the one below that,
+where forward was +1 and reversed 0 and a millisecond was real.
+
 ## What `text-wrap-style` cost, and the reversed pairing that read it
 
 2026-09-21, same machine and script as the entry below, 25 iterations

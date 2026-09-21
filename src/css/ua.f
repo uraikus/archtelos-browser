@@ -20,6 +20,12 @@ area, noscript { display: inline }
 marquee, meter, progress { display: inline-block }
 slot { display: contents }
 ruby { display: ruby }
+/* HTML's Rendering section: the annotation is set at half the size and
+   takes its own line height rather than the one it would inherit, which
+   is what makes the band it sits in the height of its own text and not
+   of the base's. Chromium reports 8px and a 9-pixel box for a 16px/20px
+   element, which is what this reproduces. */
+rt { font-size: 50%; line-height: normal }
 col { display: table-column }
 colgroup { display: table-column-group }
 li { display: list-item }

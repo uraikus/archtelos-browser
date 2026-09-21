@@ -782,6 +782,22 @@ const int BSRC_LAST = 2
 // `resize`'s six keywords. The two logical ones are kept apart from
 // the physical pair they resolve to, because the computed value is the
 // keyword that was declared.
+// CSS Ruby Annotation Layout 1. `ruby-position` says which side of the
+// base the annotation band goes; `ruby-align` how the narrower of the
+// two is placed against the wider. Measured in todo.md: Chromium
+// distinguishes `start` from the other three and nothing else, so the
+// three that centre are kept apart in the computed value and land in
+// the same place.
+const int RUBYPOS_OVER = 0
+const int RUBYPOS_UNDER = 1
+const int RUBYPOS_ALTERNATE = 2
+const int RUBYPOS_INTER_CHARACTER = 3
+
+const int RUBYALIGN_SPACE_AROUND = 0
+const int RUBYALIGN_START = 1
+const int RUBYALIGN_CENTER = 2
+const int RUBYALIGN_SPACE_BETWEEN = 3
+
 // `text-wrap-style` (CSS Text 4 §6.2): which of the breaks that fit
 // the line breaker chooses. Measured in todo.md.
 const int TWS_AUTO = 0
@@ -1645,6 +1661,25 @@ int func textWrapStyleOf(s:Style) {
     if !anyTextWrapStyle || s == null { return TWS_AUTO }
     int v = textWrapStyleOfSerial[`${s.serial}`]
     return v == null ? TWS_AUTO : v
+}
+
+// The two ruby properties, kept by the computed style's serial. Both
+// inherit, so each applier reads the parent's value out of its own map
+// before it looks at the element's declaration.
+map[int] rubyPositionOfSerial = {}
+map[int] rubyAlignOfSerial = {}
+bool anyRuby = false
+
+int func rubyPositionOf(s:Style) {
+    if !anyRuby || s == null { return RUBYPOS_OVER }
+    int v = rubyPositionOfSerial[`${s.serial}`]
+    return v == null ? RUBYPOS_OVER : v
+}
+
+int func rubyAlignOf(s:Style) {
+    if !anyRuby || s == null { return RUBYALIGN_SPACE_AROUND }
+    int v = rubyAlignOfSerial[`${s.serial}`]
+    return v == null ? RUBYALIGN_SPACE_AROUND : v
 }
 
 // Whether this box may be resized across and down, in that order, in

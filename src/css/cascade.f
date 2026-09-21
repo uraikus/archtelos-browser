@@ -190,6 +190,8 @@ bool cascadeSawResize = false
 // element that says nothing still has to be asked about its parent --
 // but only on a document where something said it.
 bool cascadeSawTextWrapStyle = false
+// And for the two ruby properties, which inherit for the same reason.
+bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
 // insets are read of every element already, so this guards only the
 // scan that tells a bare `anchor()` from one inside a `calc()`.
@@ -281,6 +283,7 @@ void func cascadeReset() {
     cascadeSawZoom = false
     cascadeSawResize = false
     cascadeSawTextWrapStyle = false
+    cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
     map[int] emptyZoom = {}
@@ -294,6 +297,11 @@ void func cascadeReset() {
     anyTextWrapStyle = false
     map[int] emptyTextWrapStyle = {}
     textWrapStyleOfSerial = emptyTextWrapStyle
+    anyRuby = false
+    map[int] emptyRubyPos = {}
+    map[int] emptyRubyAlign = {}
+    rubyPositionOfSerial = emptyRubyPos
+    rubyAlignOfSerial = emptyRubyAlign
     // A dragged size belongs to the document it was dragged in. The
     // node registry starts its ids again for every document, so an
     // override left behind would land on whichever element of the next
@@ -399,8 +407,8 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
         bool wantAnchor = !cascadeSawAnchorSize || !cascadeSawAnchorInset
         if anyCounters && anyQuotes && cascadeSawColorScheme && cascadeSawDirection
             && cascadeSawFontSizeAdjust && cascadeSawBaselineSource && cascadeSawZoom
-            && cascadeSawResize && cascadeSawTextWrapStyle && anyRevert
-            && !wantAnchor { continue }
+            && cascadeSawResize && cascadeSawTextWrapStyle && cascadeSawRuby
+            && anyRevert && !wantAnchor { continue }
         for int d = 0, d < rule.decls.length, d++ {
             text dn = rule.decls[d].name
             if !anyCounters && (dn == 'counter-reset' || dn == 'counter-increment'
@@ -418,6 +426,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawResize && dn == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (dn == 'text-wrap-style' || dn == 'text-wrap') {
                 cascadeSawTextWrapStyle = true
+            }
+            if !cascadeSawRuby && (dn == 'ruby-position' || dn == 'ruby-align') {
+                cascadeSawRuby = true
             }
             if !anyRevert && declIsRevert(rule.decls[d].value) { anyRevert = true }
             // The scan is inside `cascadeNoteAnchorFns`, and does not
@@ -1054,6 +1065,8 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawResize && decls[d].name == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (decls[d].name == 'text-wrap-style'
                 || decls[d].name == 'text-wrap') { cascadeSawTextWrapStyle = true }
+            if !cascadeSawRuby && (decls[d].name == 'ruby-position'
+                || decls[d].name == 'ruby-align') { cascadeSawRuby = true }
             // `anchor-size()` written only in a style attribute has to
             // raise its flag here too, for the reason above: the
             // stylesheet walk never sees an inline declaration, and the
@@ -5160,6 +5173,29 @@ bool func parseAnchorSize(inner:ascii) {
 }
 
 // `auto | contain | none`, or -1 for anything else.
+void func applyRuby(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    int pos = isRoot ? RUBYPOS_OVER : rubyPositionOf(parent)
+    ascii rp = styleProp(props, 'ruby-position')
+    if rp != null {
+        ascii t = asciiLower(asciiTrim(rp))
+        if t == 'over' { pos = RUBYPOS_OVER }
+        else if t == 'under' { pos = RUBYPOS_UNDER }
+        else if t == 'alternate' { pos = RUBYPOS_ALTERNATE }
+        else if t == 'inter-character' { pos = RUBYPOS_INTER_CHARACTER }
+    }
+    int al = isRoot ? RUBYALIGN_SPACE_AROUND : rubyAlignOf(parent)
+    ascii ra = styleProp(props, 'ruby-align')
+    if ra != null {
+        ascii t = asciiLower(asciiTrim(ra))
+        if t == 'space-around' { al = RUBYALIGN_SPACE_AROUND }
+        else if t == 'start' { al = RUBYALIGN_START }
+        else if t == 'center' { al = RUBYALIGN_CENTER }
+        else if t == 'space-between' { al = RUBYALIGN_SPACE_BETWEEN }
+    }
+    if pos != RUBYPOS_OVER { rubyPositionOfSerial[`${s.serial}`] = pos  anyRuby = true }
+    if al != RUBYALIGN_SPACE_AROUND { rubyAlignOfSerial[`${s.serial}`] = al  anyRuby = true }
+}
+
 int func textWrapStyleKeyword(w:ascii) {
     if w == 'balance' { return TWS_BALANCE }
     if w == 'pretty' { return TWS_PRETTY }
@@ -7216,6 +7252,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // asked where the grabber is painted rather than here, since the
     // computed value does not depend on it.
     if cascadeSawTextWrapStyle { applyTextWrapStyle(s, parent, isRoot, props) }
+    if cascadeSawRuby { applyRuby(s, parent, isRoot, props) }
     if cascadeSawResize {
         ascii rsz = styleProp(props, 'resize')
         if rsz != null {

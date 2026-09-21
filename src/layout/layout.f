@@ -28,6 +28,9 @@ const int BOX_IFRAME = 11
 const int BOX_FLEX = 12
 const int BOX_AUDIO = 13
 const int BOX_GRID = 14
+// A ruby box: an atomic inline holding two anonymous blocks, the
+// annotation band and the base, stacked the way `ruby-position` says.
+const int BOX_RUBY = 15
 
 // The size Chromium draws an audio element's controls at, which is what
 // a page laid out against it expects to find.
@@ -404,6 +407,84 @@ bool docHasFloats = false
 // that do not use it").
 bool anyRtlText = false
 
+// ---- ruby ------------------------------------------------------------
+//
+// CSS Ruby Annotation Layout 1. A `<ruby>`'s children arrive as an
+// ordinary run of inline boxes; this pulls the `<rt>`s out of that run
+// and puts each band in an anonymous block of its own, so that the
+// base and the annotation each go through the ordinary inline layout
+// and the ruby through the ordinary atomic-inline path. `<rp>` never
+// gets here: the user-agent stylesheet gives it `display: none`.
+//
+// The annotation block comes first in document order whatever
+// `ruby-position` says; where it is *placed* is decided in the layout,
+// which is what keeps the property out of the box tree.
+const int RUBY_BAND_ANNOTATION = 0
+const int RUBY_BAND_BASE = 1
+
+// Moves a band and everything under it. `shiftBoxTree` moves boxes and
+// fragments but not the line boxes themselves, which is enough where
+// it is used; a band's lines have to move with it or the painter culls
+// them against the row they used to be on.
+void func shiftRubyBand(b:Box, dy:int) {
+    if b == null { return }
+    b.y = b.y + dy
+    for int i = 0, i < b.lines.length, i++ {
+        b.lines[i].y = b.lines[i].y + dy
+        b.lines[i].baseline = b.lines[i].baseline + dy
+        for int j = 0, j < b.lines[i].frags.length, j++ {
+            b.lines[i].frags[j].y = b.lines[i].frags[j].y + dy
+            b.lines[i].frags[j].baseline = b.lines[i].frags[j].baseline + dy
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { shiftRubyBand(b.children[i], dy) }
+}
+
+void func applyRubyPosition(b:Box) {
+    if rubyPositionOf(b.style) != RUBYPOS_UNDER { return }
+    if b.children.length < 2 { return }
+    Box ann = b.children[0]
+    Box base = b.children[1]
+    if ann.h <= 0 && base.h <= 0 { return }
+    shiftRubyBand(ann, base.h)
+    shiftRubyBand(base, 0 - ann.h)
+}
+
+bool func boxIsRubyText(b:Box) {
+    return b.node != null && b.node.tag == 'rt'
+}
+
+void func splitRubyBands(b:Box, s:Style) {
+    arr[Box] kids = b.children
+    // The annotation band takes its style from the FIRST `<rt>` rather
+    // than from the ruby, because a band's strut is its own block's and
+    // an annotation's band has to be the height of the annotation. The
+    // user-agent stylesheet gives `rt` half the font size and its own
+    // `line-height: normal`, and the band inherits exactly that.
+    Style annSource = s
+    for int i = 0, i < kids.length, i++ {
+        if boxIsRubyText(kids[i]) { annSource = kids[i].style  break }
+    }
+    Style annStyle = anonymousStyle(annSource)
+    Style baseStyle = anonymousStyle(s)
+    // `ruby-align` places the narrower band against the wider one, and
+    // a band is a block as wide as the ruby, so the placing is its
+    // text alignment. Chromium distinguishes `start` and nothing else
+    // (todo.md), so `center`, `space-between` and `space-around` all
+    // centre -- which is what it does pixel for pixel.
+    int al = rubyAlignOf(s)
+    annStyle.textAlign = al == RUBYALIGN_START ? ALIGN_LEFT : ALIGN_CENTER
+    baseStyle.textAlign = annStyle.textAlign
+    Box ann = newBox(BOX_ANON, null, annStyle)
+    Box base = newBox(BOX_ANON, null, baseStyle)
+    b.children = []
+    addChildBox(b, ann)
+    addChildBox(b, base)
+    for int i = 0, i < kids.length, i++ {
+        addChildBox(boxIsRubyText(kids[i]) ? ann : base, kids[i])
+    }
+}
+
 Box func newBox(kind:int, node:Node, style:Style) {
     Box b
     b.id = nextBoxId
@@ -526,7 +607,7 @@ bool func boxIsPositioned(b:Box) {
 
 bool func isInlineLevelBox(b:Box) {
     if b.blockLevel { return false }
-    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_GRID || b.kind == BOX_TABLE || b.kind == BOX_AUDIO
+    return b.kind == BOX_INLINE || b.kind == BOX_TEXT || b.kind == BOX_INLINE_BLOCK || b.kind == BOX_IMAGE || b.kind == BOX_IFRAME || b.kind == BOX_BR || b.kind == BOX_FLEX || b.kind == BOX_GRID || b.kind == BOX_TABLE || b.kind == BOX_AUDIO || b.kind == BOX_RUBY
 }
 
 // Whether a text box holds nothing but white space, which is the test
@@ -736,6 +817,17 @@ Box func buildBox(n:Node, parentStyle:Style) {
     if d == DISPLAY_INLINE_BLOCK {
         Box b = newBox(BOX_INLINE_BLOCK, n, s)
         buildChildren(b, n, s)
+        return b
+    }
+    // A ruby box is an atomic inline made of two anonymous blocks: the
+    // annotation band and the base. Building it that way is what lets
+    // the base and the annotation each go through the ordinary inline
+    // layout, and the ruby itself through the ordinary atomic-inline
+    // path, with nothing in either of them knowing about ruby.
+    if d == DISPLAY_RUBY {
+        Box b = newBox(BOX_RUBY, n, s)
+        buildChildren(b, n, s)
+        splitRubyBands(b, s)
         return b
     }
     if d == DISPLAY_INLINE {
@@ -1635,8 +1727,8 @@ int func collapsedBottomMargin(b:Box, cw:int) {
 // and went underneath, which is the visible half of the bug.
 bool func widthIsShrinkToFit(b:Box) {
     if b.style.floatSide != FLOAT_NONE { return true }
-    return (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX || b.kind == BOX_GRID)
-        && !b.blockLevel
+    return (b.kind == BOX_INLINE_BLOCK || b.kind == BOX_FLEX || b.kind == BOX_GRID
+        || b.kind == BOX_RUBY) && !b.blockLevel
 }
 
 // ---- aspect-ratio ----------------------------------------------------------
@@ -3566,9 +3658,14 @@ void func placeInline(b:Box) {
         if endEdge > 0 { ifcLineHasContent = true }
         return
     }
-    // atomic: inline-block or image
+    // atomic: inline-block, image or ruby
     int cw = ifcLineRight - ifcLineStart
     layoutBlock(b, 0, 0, cw, false)
+    // `ruby-position: under` moves the annotation band to the other
+    // side of the base. The bands are built annotation-first and laid
+    // out as ordinary blocks, so this is the one place the property is
+    // read -- and only on a document that declared it.
+    if anyRuby && b.kind == BOX_RUBY { applyRubyPosition(b) }
     int total = b.w + b.ml + b.mr
     if ifcPendingSpace && ifcLineHasContent {
         int sw = ifcPendingSpaceWidth

@@ -5,6 +5,61 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Ruby Annotation Layout 1
+
+267 -> 269 properties, and a specification off zero. Almost everything
+it needs was already here -- the tree builder handles `<rt>` and
+`<rp>`, the user-agent stylesheet said `ruby { display: ruby }`, and
+the element instrument already agreed with Chromium that `rt` is
+`inline` and `rp` is `none`. What was missing was the layout, and
+`display: ruby` fell through to the block branch, so **a `<ruby>` was
+a block box and broke the line it was on in two**.
+
+**A ruby is an atomic inline made of two anonymous bands**, the
+annotation and the base. Building it that way is the whole trick: each
+band goes through the ordinary inline layout, the ruby itself goes
+through the ordinary atomic-inline path, and nothing in either of them
+knows about ruby. The bands are built annotation-first whatever
+`ruby-position` says -- where they are *placed* is the layout's
+business, which keeps the property out of the box tree.
+
+**The band takes its metrics from the `<rt>`, not from the ruby.** A
+band is a block and a block's line has a strut, so a band built from
+the ruby's own style would be a full base line tall however small the
+annotation is. The user-agent stylesheet gives `rt` half the font size
+and its own `line-height: normal` -- which is HTML's Rendering section
+-- and the band inherits exactly that, so it is the height of the
+annotation's text.
+
+**`ruby-align` is the bands' text alignment.** A band is a block as
+wide as the ruby, so placing the narrower one against the wider is
+what `text-align` already does. Chromium distinguishes `start` and
+nothing else: rasterised, a four-character annotation over a
+sixteen-character base sits at columns 0-19 under `start` and at 67-86
+under `center`, `space-between` **and** `space-around`, which are
+pixel-identical. So all three centre here, and the suite asserts that
+by agreement rather than by three numbers.
+
+That last one is why the measurement was rasterised rather than read
+off `getBoundingClientRect`: the `<rt>` box is stretched to the ruby's
+width under every value, so the box metrics say the four values agree
+and the pixels say two of them do not.
+
+**Where it differs, measured.** The band is a full annotation line
+tall where Chromium overlaps it two pixels into the base's ascent, so
+a ruby line is 30 pixels here against Chromium's 27. The base does not
+break across lines, because the ruby is atomic. `alternate` and
+`inter-character` are kept apart in the computed style and behave as
+`over`.
+
+It measured **free** on a page with no ruby in it. What it adds there
+is one comparison in `isInlineLevelBox`, which every child of every
+block is asked about: the forward pairing read layout at -1 and the
+reversed at +1, which add to zero -- a difference of nothing, once the
+order effect the entry before this one names is separated out.
+
+31 checks in `tests/unit/test_ruby.f`.
+
 ### `text-wrap-style`
 
 266 -> 267 properties. `balance` breaks a paragraph of six lines or

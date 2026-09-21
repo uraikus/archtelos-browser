@@ -1431,12 +1431,29 @@ however the property is spelled. An implementation that centres for
 everything but `start` reproduces Chromium exactly, and the two
 computed values that matter are still distinct.
 
-What this needs here is the inline layout: a ruby box whose base runs
-through the ordinary line breaker, an annotation measured at half the
-size and centred over it, a line box grown by the annotation's height
-less the overlap, and the two properties read where the annotation is
-placed. The `<rt>` font size is a user-agent stylesheet rule and needs
-no code.
+### What CSS Ruby Annotation Layout 1 still needs
+
+The layout and both properties work. Three things do not.
+
+**The band is a full annotation line tall**, where Chromium overlaps
+it two pixels into the base's ascent: a ruby line is 30 pixels here
+against Chromium's 27. Closing that needs the base font's ascent
+against its cap height, so that the band can be sunk into the room a
+line already leaves above the letters -- which is the same font metric
+`initial-letter` and `text-box-edge` read, so it is a small piece of
+work rather than a missing capability.
+
+**The base does not break across lines**, because the ruby is an
+atomic inline. A `<ruby>` holding a sentence is laid out on one line
+and overflows rather than wrapping. Making it break means the bands
+stop being two blocks and become a run of base/annotation pairs the
+line breaker can split between, which is a different shape of layout
+and the largest piece left here.
+
+**`alternate` and `inter-character` behave as `over`.** The first
+wants a notion of which side the last annotation went, kept across
+sibling rubies; the second is a vertical writing mode, which this
+engine does not have at all.
 
 ### A scroll offset outlives the document it belongs to
 
@@ -1488,7 +1505,7 @@ css-2026.md already admits "has never had to show".
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(267; Chromium answers for 406, and one of them -- `overlay` -- only the
+(269; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
