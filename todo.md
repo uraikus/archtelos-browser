@@ -1206,6 +1206,66 @@ actually selected and measured -- `setFontFor` and `measureWidth`,
 with the effective zoom in the `fontKey` so the width cache does not
 serve one zoom's advance at another.
 
+### `resize`, measured
+
+Fourteen declarations in Chromium 141, plus the grabber rasterised
+through `headless_shell`. The box under test is 200 by 100 with no
+border and no padding; `width` and `height` are
+`getBoundingClientRect`, `clientW`/`clientH` are the element's.
+
+| declaration | width | height | clientW | clientH | `cs.resize` |
+|---|---|---|---|---|---|
+| (control) | 200 | 100 | 200 | 100 | `none` |
+| `resize: both; overflow: visible` | 200 | 100 | 200 | 100 | `both` |
+| `resize: both; overflow: auto` | 200 | 100 | 200 | 100 | `both` |
+| `resize: both; overflow: hidden` | 200 | 100 | 200 | 100 | `both` |
+| `resize: both; overflow: scroll` | 200 | 100 | **185** | **85** | `both` |
+| `resize: horizontal; overflow: auto` | 200 | 100 | 200 | 100 | `horizontal` |
+| `resize: vertical; overflow: auto` | 200 | 100 | 200 | 100 | `vertical` |
+| `resize: block; overflow: auto` | 200 | 100 | 200 | 100 | `block` |
+| `resize: inline; overflow: auto` | 200 | 100 | 200 | 100 | `inline` |
+| `resize: none; overflow: auto` | 200 | 100 | 200 | 100 | `none` |
+| `resize: both` (no `overflow`) | 200 | 100 | 200 | 100 | `both` |
+| `resize: both; display: inline` | 9.64 | 19 | 0 | 0 | `both` |
+
+**`resize` reserves no space and changes no geometry**, in any
+combination. The 185 by 85 row is the two scrollbars `overflow:
+scroll` raises, which the control with no `resize` also gets; the
+grabber is painted *over* the content rather than beside it. And the
+computed value is the declared keyword under every `overflow`,
+`visible` included, so `getComputedStyle` cannot tell whether the
+property is doing anything.
+
+So the only instrument that can see this property is the painter, and
+the grabber is what there is to paint. Rasterised at the bottom-right
+of a 100 by 60 box whose inner corner's last pixel is (119, 79):
+
+```
+y=72                                   118
+y=73                               117
+y=74                           116
+y=75                       115
+y=76                   114                 118
+y=77               113                 117
+y=78           112                 116
+```
+
+Every one of those is `#666666` on white. They are two diagonal
+hairlines, at `x + y` = corner − 8 and corner − 4, inside a seven by
+seven square inset one pixel from the corner: the first diagonal
+crosses the whole square, the second is cut to three pixels by the
+inset. The same reading with a 5px border puts them at the same
+offsets from the **padding box's** corner rather than the border
+box's, so the grabber sits inside the border.
+
+Two more facts the rasteriser gives and the computed style does not.
+`horizontal`, `vertical`, `block` and `inline` all paint **the same**
+grabber as `both` -- the value constrains the drag, not the drawing.
+And `overflow: visible` paints **no** grabber at all, though its
+computed `resize` is still `both`: that is the specification's own
+"applies to: elements with `overflow` other than `visible`", and it
+is the one place the two readings disagree.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
