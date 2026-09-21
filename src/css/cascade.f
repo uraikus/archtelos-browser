@@ -159,6 +159,12 @@ bool func containerQueryHolds(nid:int, q:int) {
 }
 // And for `shape-outside`, which the float code asks once per document.
 bool cascadeSawShape = false
+// Whether any rule anywhere on this document writes `anchor-size(`.
+// Without it, `computeStyleValues` would ask fourteen properties of
+// every element for a function almost no page uses: the loop cost
+// two milliseconds of cascade on features.html before this flag, which
+// is what a paired benchmark found and what this exists to stop.
+bool cascadeSawAnchorSize = false
 
 void func cascadeReset() {
     // The `@page` rules come out of the same stylesheets, so they are
@@ -211,6 +217,7 @@ void func cascadeReset() {
     // ordinary one darkens the ordinary one's system colours.
     cssSchemeIsDark = false
     cascadeSawShape = false
+    cascadeSawAnchorSize = false
     cssResetNamespaces()
     cssResetCounterStyles()
     // The computed-style cache is keyed partly on declaration serials,
@@ -320,6 +327,20 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyRevert {
                 for int d = 0, d < rule.decls.length, d++ {
                     if declIsRevert(rule.decls[d].value) { anyRevert = true  break }
+                }
+            }
+            if !cascadeSawAnchorSize {
+                for int d = 0, d < rule.decls.length, d++ {
+                    // `asciiIndexOfLower` rather than lowering the
+                    // value first: this runs on every declaration of
+                    // every rule, and an `asciiLower` there allocates a
+                    // string per declaration. That cost six milliseconds
+                    // of cascade on generated.html, which a paired
+                    // benchmark read as 22 of 25 pairs slower.
+                    if asciiIndexOfLower(rule.decls[d].value, 'anchor-size(', 0) >= 0 {
+                        cascadeSawAnchorSize = true
+                        break
+                    }
                 }
             }
             addToBucket(selectorKey(sel), ref)
@@ -896,6 +917,15 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
+            }
+            // `anchor-size()` written only in a style attribute has to
+            // raise its flag here too, for the reason above: the
+            // stylesheet walk never sees an inline declaration, and the
+            // guarded loop would then read none of it. The anchor suite
+            // is written that way and said so at once.
+            if !cascadeSawAnchorSize
+                && asciiIndexOfLower(decls[d].value, 'anchor-size(', 0) >= 0 {
+                cascadeSawAnchorSize = true
             }
             // A style attribute is parsed per element rather than
             // indexed, so this is where its `revert` is noticed -- in
@@ -4980,6 +5010,20 @@ void func motionReadRotate(mi:MotionInfo, v:ascii) {
     mi.rotateAngle = angle
 }
 
+// The `anchor-size()` slots an element that said nothing gets. They are
+// shared rather than built per element: three fourteen-slot arrays
+// allocated for every element of every page is what the six-slot
+// version already cost, and this made it fourteen. Nothing writes to
+// them -- an element that does say `anchor-size()` builds its own --
+// so one copy is safe for the whole program.
+arr[text] anchorSizeNoNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
+arr[int] anchorSizeNoDims = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+arr[int] anchorSizeNoFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+
 // The key the text measurer caches widths under. Anything that changes
 // the font after the style is computed has to rebuild it, or the cache
 // answers for the font the style used to have: `initial-letter` scaled
@@ -5916,31 +5960,45 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         anyAnchorInset = true
     }
     // `anchor-size()` in the six sizing properties.
-    arr[text] szNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
-    arr[int] szDims = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
-    arr[int] szFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
-                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
-                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
-                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
-                        ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+    // Asked once per document rather than fourteen times per element,
+    // and the slots are the shared do-nothing ones until a page has
+    // actually written the function: no page that never says
+    // `anchor-size(` allocates or looks anything up for it.
+    arr[text] szNames = anchorSizeNoNames
+    arr[int] szDims = anchorSizeNoDims
+    arr[int] szFalls = anchorSizeNoFalls
     bool anySaidSize = false
-    arr[text] sizeProps = ['width', 'height', 'min-width', 'max-width',
-                           'min-height', 'max-height',
-                           'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
-                           'left', 'right', 'top', 'bottom']
-    for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
-        ascii rawsz = styleProp(props, sizeProps[i])
-        if rawsz == null { continue }
-        ascii lowsz = asciiLower(asciiTrim(rawsz))
-        if !asciiStartsWith(lowsz, 'anchor-size(', 0) { continue }
-        int closesz = asciiMatchingParen(lowsz, 11)
-        if closesz < 0 { continue }
-        if !parseAnchorSize(lowsz.slice(12, closesz)) { continue }
-        szNames[i] = anchorSizeName
-        szDims[i] = anchorSizeDim
-        szFalls[i] = anchorSizeFallback
-        anySaidSize = true
-        anyAnchorSize = true
+    if cascadeSawAnchorSize {
+        arr[text] mySzNames = ['', '', '', '', '', '', '', '', '', '', '', '', '', '']
+        arr[int] mySzDims = [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
+        arr[int] mySzFalls = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                              ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+        arr[text] sizeProps = ['width', 'height', 'min-width', 'max-width',
+                               'min-height', 'max-height',
+                               'margin-left', 'margin-right', 'margin-top', 'margin-bottom',
+                               'left', 'right', 'top', 'bottom']
+        for int i = 0, i < ANCHOR_SIZE_SLOTS, i++ {
+            ascii rawsz = styleProp(props, sizeProps[i])
+            if rawsz == null { continue }
+            ascii lowsz = asciiLower(asciiTrim(rawsz))
+            if !asciiStartsWith(lowsz, 'anchor-size(', 0) { continue }
+            int closesz = asciiMatchingParen(lowsz, 11)
+            if closesz < 0 { continue }
+            if !parseAnchorSize(lowsz.slice(12, closesz)) { continue }
+            mySzNames[i] = anchorSizeName
+            mySzDims[i] = anchorSizeDim
+            mySzFalls[i] = anchorSizeFallback
+            anySaidSize = true
+            anyAnchorSize = true
+        }
+        if anySaidSize {
+            szNames = mySzNames
+            szDims = mySzDims
+            szFalls = mySzFalls
+        }
     }
     if aName != '' || aAnchor != '' || aArea != PAREA_NONE || aFall != ''
         || aOrder != TRYORDER_NORMAL || aVis != POSVIS_ALWAYS || aScope != ''

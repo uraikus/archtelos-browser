@@ -1308,16 +1308,23 @@ void func resolveEdges(b:Box, cw:int) {
     // An `anchor-size()` margin is the length the function resolved to,
     // put in the property as if it had been written out. `padding-*`
     // refuses the function, so the padding above is untouched.
-    if anyAnchorSize {
-        int amL = anchorSizeFor(b, ANCHOR_SIZE_MARGINLEFT)
-        if amL >= 0 { b.ml = amL }
-        int amR = anchorSizeFor(b, ANCHOR_SIZE_MARGINRIGHT)
-        if amR >= 0 { b.mr = amR }
-        int amT = anchorSizeFor(b, ANCHOR_SIZE_MARGINTOP)
-        if amT >= 0 { b.mt = amT }
-        int amB = anchorSizeFor(b, ANCHOR_SIZE_MARGINBOTTOM)
-        if amB >= 0 { b.mb = amB }
-    }
+    //
+    // Out of line, and not four lookups written here: `resolveEdges` is
+    // called for every box of every page, and putting the body inside
+    // it cost two milliseconds of layout on a page with no
+    // `anchor-size()` on it -- measured, and recovered by this.
+    if anyAnchorSize { applyAnchorSizeMargins(b) }
+}
+
+void func applyAnchorSizeMargins(b:Box) {
+    int amL = anchorSizeFor(b, ANCHOR_SIZE_MARGINLEFT)
+    if amL >= 0 { b.ml = amL }
+    int amR = anchorSizeFor(b, ANCHOR_SIZE_MARGINRIGHT)
+    if amR >= 0 { b.mr = amR }
+    int amT = anchorSizeFor(b, ANCHOR_SIZE_MARGINTOP)
+    if amT >= 0 { b.mt = amT }
+    int amB = anchorSizeFor(b, ANCHOR_SIZE_MARGINBOTTOM)
+    if amB >= 0 { b.mb = amB }
 }
 
 int func contentWidth(b:Box) {

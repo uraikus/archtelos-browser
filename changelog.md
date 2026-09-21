@@ -55,6 +55,22 @@ given a value.
 Neither function composes inside `calc()`, which is the last of this
 specification left.
 
+**Three things keep the fourteen properties off the pages that do not
+use them.** `cascadeSawAnchorSize` is raised once per document, by the
+stylesheet walk and by the inline-style path both -- the anchor suite
+writes its declarations in `style` attributes and said at once when only
+the first was there. Behind it, the fourteen property lookups do not
+run, and the slots an element gets are shared do-nothing arrays rather
+than three fresh fourteen-slot ones. And the margin lookups live in
+`applyAnchorSizeMargins` rather than inline in `resolveEdges`, which
+runs for every box of every page.
+
+None of the three is claimed to have fixed the two milliseconds of
+layout that `generated.html` still shows, because measuring each
+against the binary before it found no difference. benchmarks.md records
+that, the per-phase pairing that located it in layout, and the floor
+taken either side of the comparison.
+
 ### The property instrument grades a pseudo-element
 
 A property whose whole effect is on `::first-letter` could not register

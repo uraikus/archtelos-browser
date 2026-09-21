@@ -1742,3 +1742,69 @@ which is why each one asks `anyAnchorSize` before calling the helper
 rather than leaving the test to the helper's first line: a call that
 returns -1 is still a call. The second layout pass itself is behind the
 same flag and runs on no page that does not say `anchor-size()`.
+Taking `anchor-size()` into the margins and insets costs **816 bytes**
+(2,997,712 -> 2,998,528), nothing on `features.html`, and about **two
+milliseconds of layout on `generated.html`** -- a page with no
+`anchor-size()` in it, whose `anyAnchorSize` reads false. That is
+recorded rather than explained: three candidate causes were found by
+reading the diff, each was fixed, and none of the fixes removed it.
+
+The reading is not the harness being noisy. A floor taken either side
+of the comparison, all three runs in the same minutes, twenty-five
+alternating paired samples of `generated.html`:
+
+| | Paired median | Slower in |
+|---|---|---|
+| parent against a copy of itself | -1 ms | 9 of 25 |
+| **parent against the change** | **+3 ms** | **20 of 25** |
+| parent against a copy of itself, again | 0 ms | 11 of 25 |
+
+**Asked per phase, it is layout.** The same twenty-five samples, with
+each phase paired on its own rather than summed:
+
+| | Floor | The change |
+|---|---|---|
+| parse | 0 ms, 7 of 25 | 0 ms, 5 of 25 |
+| stylesheets | 0 ms, 4 of 25 | 0 ms, 3 of 25 |
+| cascade | 0 ms, 11 of 25 | +1 ms, 14 of 25 |
+| **layout** | **-1 ms, 7 of 25** | **+2 ms, 18 of 25** |
+
+That is worth the table on its own: the summed harness had said
+"slower", and only the per-phase pairing said *where*. It ruled out the
+two explanations that had looked most likely from the diff.
+
+**Three attributions were tested and all three failed.**
+
+1. *The flag's scan allocated.* Raising `cascadeSawAnchorSize` lowercased
+   every declaration value of every rule, which allocates a string per
+   declaration. Replaced with `asciiIndexOfLower`, which searches
+   without allocating. Measured against the unfixed binary: paired
+   median 0, 11 of 25 -- no change.
+2. *The slots were allocated per element.* Three fourteen-slot arrays
+   were built for every element of every page, where the version before
+   this built three six-slot ones. Replaced with shared do-nothing
+   arrays that only a page actually writing the function replaces.
+   Measured the same way: paired median 0, 11 of 25 -- no change.
+3. *A branch was added inside a hot function.* `resolveEdges` runs for
+   every box, and the four margin lookups were written inline in it.
+   Moved out into `applyAnchorSizeMargins`, leaving one predictable
+   branch. One round read layout at +1 ms and 15 of 25, halving it; the
+   next read +2 ms and 17 of 25 again.
+
+All three changes were kept. Each is strictly less work than what it
+replaced, and the rule they serve -- a feature must not cost anything to
+the pages that do not use it -- is a rule about what the code does, not
+about what a noisy afternoon can measure. But none of them is claimed
+to have fixed anything, because none of them measurably did.
+
+What is left in the layout phase, on a page with no `anchor-size()`, is
+one predictable-false branch per box and four guarded reads in a
+positioning pass `generated.html` never enters. Two milliseconds is not
+credible as the cost of that work, and no further explanation was
+found. **This is the second entry in this file recorded as measured and
+unattributed**, the first being the static position's millisecond, and
+it has the same shape: localised to one phase, reproducible, and larger
+than the work it could be doing.
+
+`features.html` is free: paired median 0 and 11 of 25 against a floor
+of -1 and 8 of 25, in the same minutes.
