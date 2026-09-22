@@ -182,8 +182,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    read. `range` and `fallback` are done. Also the predefined
    styles that need a table this repository would have to vendor --
    `hebrew`, `armenian`, `georgian` and the East Asian ones beyond
-   `cjk-decimal`. What is left of Lists 3 is `list-style-image`, which
-   needs a fetched image for the marker.
+   `cjk-decimal`. Lists 3 itself is done, `list-style-image` included --
+   a fetched image stands in for the marker at its own size, and falls
+   back to the type's marker where it could not be fetched.
 8. **Transforms 1 is done** but for `skew()` and `matrix()`: a
    transformed box is a containing block for its positioned
    descendants, `absolute` and `fixed` alike, it establishes a stacking
