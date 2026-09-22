@@ -190,38 +190,6 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
-   **A negative `margin-top` is dropped**, which the hit-testing order
-   work turned up: it silently stopped two in-flow blocks from
-   overlapping at all, so the fixture that meant to ask which of them a
-   click lands on was asking nothing. A negative `margin-left` works --
-   `margin-left: -30px` puts the box at x = -30, which is Chromium's
-   answer -- so the clamp is on the block direction alone. Four stacked
-   100px blocks, the second declaring `margin-top: -40px`:
-
-   | | y of the four |
-   |---|---|
-   | this engine | 0, 100, 200, 300 (and `mt` reads 0) |
-   | Chromium | 0, **60**, 160, 260 |
-
-   It **is** the collapsing code: the sibling collapse takes
-   `maxInt(prevBottomMargin, topM)`, and the larger of 0 and -40 is 0.
-   CSS2 §8.3.1 says to add the largest positive to the most negative
-   instead, which five pairs of 100px blocks confirm -- the gap between
-   them, measured:
-
-   | `margin-bottom` / `margin-top` | Chromium's gap |
-   |---|---|
-   | +50 / +20 | 50 |
-   | +50 / -20 | **30** |
-   | -30 / -50 | **-50** |
-   | 0 / -40 | **-40** |
-   | -40 / +10 | **-30** |
-
-   Every one is `max(positives, 0) + min(negatives, 0)`. The
-   parent-and-child collapse in `collapsedTopMargin` and
-   `collapsedBottomMargin` takes the same `maxInt` and wants the same
-   correction.
-
    **What is left of hit testing is its order.** An out-of-flow box
    laid out beyond every ancestor's rectangle is found now -- the
    out-of-flow boxes are kept in a list as layout passes them, and the
@@ -1577,6 +1545,37 @@ two 100px columns in a 400px container, Chromium puts the item at
 of line 1 and stretched it. The forward direction is done; this one
 renumbers every line and moves every item already placed, so it is
 left.
+
+### Where a float sits in the hit-testing order, measured
+
+CSS2 §9.9 paints non-positioned floats at step 4, between the in-flow
+block-level descendants of step 3 and the in-flow inline-level content
+of step 5. Five overlaps against Chromium 141's `elementFromPoint`,
+every rectangle checked with `getBoundingClientRect` before the point
+was asked for:
+
+| what overlaps | Chromium names |
+|---|---|
+| a float against an in-flow block written **after** it | the **float** |
+| a float against an in-flow block written before it, pulled over it | the **float** |
+| an inline-block pulled over a float | the **inline-block** |
+| an absolutely positioned box over a float | the **positioned** box |
+| two floats, the later pulled over the earlier | the **later** float |
+
+The first is the one that discriminates: the block comes later in
+document order, so a search running the in-flow children latest-first
+-- which is what this engine does, floats among them -- answers the
+block where Chromium answers the float.
+
+**Two fixtures had to be thrown away for overlapping nothing.** A float
+written after inline content on the same line shortens that line and is
+placed beside it, so the span that was meant to sit under the float was
+pushed to x=101 while the float sat at x=1. Both read as a clean
+answer, and both were asking nothing -- the rectangles were only
+noticed because they were printed beside the result. An inline-level
+box written *before* a float and genuinely overlapping it is hard to
+construct for that reason; the case that settles step 5 against step 4
+is the inline-block written after the float and pulled back over it.
 
 ### Which of two overlapping boxes a click lands on, measured
 
