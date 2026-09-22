@@ -4740,6 +4740,10 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     int innerY = contentY(b)
     int colGap = s.columnGap
     int rowGap = s.rowGap
+    // The content height this container was given, or -1 where it has
+    // none. Taken before any child is laid out, because laying one out
+    // moves `layoutCBHeight` to that child's own containing block.
+    int gridCBHeight = layoutCBHeight
 
     // ---- pass 1: place every item ----------------------------------
     // `grid-template-areas` declares tracks of its own: the strings say
@@ -4896,7 +4900,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         ? gridCollapsedTracks(areas, rowCount, s.gridRowsAutoAt, rowRepeatSpan, false)
         : gridNoCollapse
     arr[int] colSizes = gridSizeAxis(b, areas, colTracks, s.gridAutoCols, colCount,
-                                     width, colGap, true, colCollapsed)
+                                     width, colGap, true, colCollapsed, s.justifyContent)
     // The rows are sized after the columns, because an auto row's
     // height is the height of items laid out at their column widths --
     // and an item has no height until something lays it out, so the
@@ -4918,12 +4922,20 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         layoutBlock(c, 0, 0, measureW, false)
         c.forcedWidthPx = -1
     }
+    // The block axis has a size to share only where this container's
+    // own height is definite; `layoutCBHeight` is that content height,
+    // or -1, put there by the caller that sized this box.
     arr[int] rowSizes = gridSizeAxis(b, areas, rowTracks, s.gridAutoRows, rowCount,
-                                     -1, rowGap, false, rowCollapsed)
+                                     gridCBHeight, rowGap, false, rowCollapsed,
+                                     s.alignContent)
 
     // ---- pass 3: place the items in their areas --------------------
-    arr[int] colPos = gridTrackPositions(colSizes, colGap, colCollapsed)
-    arr[int] rowPos = gridTrackPositions(rowSizes, rowGap, rowCollapsed)
+    arr[int] colPos = gridDistributeTracks(
+        gridTrackPositions(colSizes, colGap, colCollapsed),
+        colCount, colGap, colCollapsed, width, s.justifyContent)
+    arr[int] rowPos = gridDistributeTracks(
+        gridTrackPositions(rowSizes, rowGap, rowCollapsed),
+        rowCount, rowGap, rowCollapsed, gridCBHeight, s.alignContent)
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
         int ax = innerX + colPos[a.col]
@@ -5009,6 +5021,27 @@ arr[int] func gridTrackPositions(sizes:arr[int], gap:int, collapsed:arr[bool]) {
     return pos
 }
 
+// Where `justify-content` and `align-content` put the tracks (Grid 1
+// §10.5). §12.8 has already given any spare space to the auto tracks
+// where the distribution is `normal` or `stretch`; every other
+// distribution leaves it over, and it is shared out here the same way a
+// flex container shares its line's leftover among its items.
+arr[int] func gridDistributeTracks(pos:arr[int], count:int, gap:int, collapsed:arr[bool],
+                                   axisSize:int, distribute:int) {
+    if axisSize < 0 || count <= 0 || distribute == BOXALIGN_STRETCH { return pos }
+    // `pos[count]` is where a further track would start, so it carries
+    // the gutter after the last one; the tracks themselves end before it.
+    int used = pos[count] - (gridCollapsedAt(collapsed, count - 1) ? 0 : gap)
+    int spare = axisSize - used
+    if spare <= 0 { return pos }
+    arr[int] out = []
+    for int i = 0, i < pos.length, i++ {
+        int at = i < count ? i : count - 1
+        out.push(pos[i] + flexOffsetFor(distribute, spare, count, at, gap))
+    }
+    return out
+}
+
 // The size an item spanning `span` tracks from `at` occupies, gaps
 // between them included.
 int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int, collapsed:arr[bool]) {
@@ -5031,12 +5064,14 @@ int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int, collapsed:arr[b
 // limits in equal shares, each freezing as it arrives (§12.5); to the
 // `fr` tracks, which take what the others left (§12.7); and, where no
 // `fr` track took it, to stretch the tracks whose maximum is `auto`
-// (§12.8). `justify-content` does not position tracks here, so a
-// `normal` that stretches and a `start` that does not cannot be told
-// apart yet -- todo.md carries it.
+// (§12.8). That last pass is what `distribute` -- this axis's
+// `justify-content` or `align-content` -- governs: only `normal` and
+// `stretch` stretch, and every other distribution leaves the space
+// over for the caller to position the tracks in.
 arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
                            auto:arr[Track], count:int, axisSize:int,
-                           gap:int, inline:bool, collapsed:arr[bool]) {
+                           gap:int, inline:bool, collapsed:arr[bool],
+                           distribute:int) {
     int pct = axisSize < 0 ? 0 : axisSize
     // What each track has to hold: the largest contribution of the
     // single-span items in it. An item spanning several tracks
@@ -5186,7 +5221,7 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
     // §12.8 stretch auto tracks: anything still spare is shared equally
     // by the tracks whose maximum is `auto`. An fr track has already
     // taken everything, so this only runs where there is none.
-    if axisSize >= 0 && totalFr <= 0.0 {
+    if axisSize >= 0 && totalFr <= 0.0 && distribute == BOXALIGN_STRETCH {
         int used = 0
         for int i = 0, i < count, i++ { used = used + sizes[i] }
         int spare = axisSize - used - gaps

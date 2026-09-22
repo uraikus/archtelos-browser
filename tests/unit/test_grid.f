@@ -576,4 +576,97 @@ Box gPlain = gridOf('grid-template-columns:100px 150px 50px',
 checkEqInt(findById(gPlain, 'pa').w, 60, 'an ordinary nested grid keeps its own first track')
 checkEqInt(findById(gPlain, 'pb').x, 60, 'and its own second')
 
+// ---- justify-content and align-content position the tracks ------------
+//
+// Measured in Chromium (todo.md): two `auto` columns holding `ab` and
+// `cd` in a 400px grid are 200 wide apiece under `normal` and their
+// content width apiece under `start`, `center`, `end` and
+// `space-between`, which then place the pair at the start, centred, at
+// the end, and spread to both edges. `align-content` answers the same
+// way on the row axis.
+//
+// The numbers below are relations rather than pixel counts wherever a
+// font advance is involved, because this engine's advance is not
+// Chromium's: what is asserted is that `normal` fills the container and
+// that the other four leave the tracks at the width `start` gives them
+// and only move them.
+
+Box func jcGrid(jc:text) {
+    text decl = jc == '' ? '' : (';justify-content:' + jc)
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-columns:auto auto;'
+        + 'width:400px' + decl + '">'
+        + '<div id="c1">ab</div><div id="c2">cd</div></div></body>', 800)
+}
+
+Box jcNormal = jcGrid('normal')
+Box jcNone = jcGrid('')
+Box jcStart = jcGrid('start')
+Box jcCentre = jcGrid('center')
+Box jcEnd = jcGrid('end')
+Box jcBetween = jcGrid('space-between')
+
+Box nc1 = findById(jcNormal, 'c1')
+Box nc2 = findById(jcNormal, 'c2')
+checkEqInt(nc1.x, 0, 'normal puts the first track at the start')
+checkEqInt(nc1.w, 200, 'and stretches it to half the container')
+checkEqInt(nc2.x, 200, 'the second follows it')
+checkEqInt(nc2.w, 200, 'and takes the other half')
+
+// Declaring nothing is `normal`, which is the initial value -- so the
+// two must agree rather than each match a number.
+checkEqInt(findById(jcNone, 'c1').w, nc1.w, 'an undeclared justify-content is normal')
+checkEqInt(findById(jcNone, 'c2').x, nc2.x, 'on both tracks')
+
+Box sc1 = findById(jcStart, 'c1')
+Box sc2 = findById(jcStart, 'c2')
+check(sc1.w < 200, 'start does not stretch the track')
+check(sc1.w > 0, 'and leaves it its content width')
+checkEqInt(sc1.x, 0, 'start packs the tracks at the start')
+checkEqInt(sc2.x, sc1.x + sc1.w, 'with the second against the first')
+
+// The four that do not stretch must all give the same track widths:
+// only where the tracks sit changes.
+int packed = sc1.w + sc2.w
+checkEqInt(findById(jcCentre, 'c1').w, sc1.w, 'center leaves the widths alone')
+checkEqInt(findById(jcEnd, 'c1').w, sc1.w, 'and so does end')
+checkEqInt(findById(jcBetween, 'c1').w, sc1.w, 'and space-between')
+
+checkEqInt(findById(jcCentre, 'c1').x, Math.floorDiv(400 - packed, 2),
+           'center puts the pair in the middle')
+checkEqInt(findById(jcEnd, 'c2').x + findById(jcEnd, 'c2').w, 400,
+           'end puts the last track against the far edge')
+checkEqInt(findById(jcBetween, 'c1').x, 0, 'space-between starts at the near edge')
+checkEqInt(findById(jcBetween, 'c2').x + findById(jcBetween, 'c2').w, 400,
+           'and ends at the far one')
+
+// ---- the row axis answers the same way ---------------------------------
+Box func acGrid(ac:text) {
+    text decl = ac == '' ? '' : (';align-content:' + ac)
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-rows:auto auto;'
+        + 'height:400px' + decl + '">'
+        + '<div id="r1">ab</div><div id="r2">cd</div></div></body>', 800)
+}
+
+Box acNormal = acGrid('normal')
+Box acStart = acGrid('start')
+Box acEnd = acGrid('end')
+Box acBetween = acGrid('space-between')
+
+checkEqInt(findById(acNormal, 'r1').h, 200, 'align-content: normal stretches the row')
+checkEqInt(findById(acNormal, 'r2').y, 200, 'and the second follows it')
+
+Box ar1 = findById(acStart, 'r1')
+Box ar2 = findById(acStart, 'r2')
+check(ar1.h < 200, 'start does not stretch the row')
+checkEqInt(ar1.y, 0, 'and packs it at the top')
+checkEqInt(ar2.y, ar1.y + ar1.h, 'with the second under it')
+
+checkEqInt(findById(acEnd, 'r2').y + findById(acEnd, 'r2').h, 400,
+           'end puts the last row against the bottom')
+checkEqInt(findById(acBetween, 'r1').y, 0, 'space-between starts at the top')
+checkEqInt(findById(acBetween, 'r2').y + findById(acBetween, 'r2').h, 400,
+           'and ends at the bottom')
+
 finish('grid')

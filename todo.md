@@ -254,17 +254,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     own beside the keyword. Subgrid itself, named lines,
     `grid-template-areas`, the track sizing functions — `minmax()`,
     `min-content`, `max-content`, `fit-content()` — `repeat()` with
-    `auto-fill` and `auto-fit`, and dense packing are done. Three divergences are left in what is
+    `auto-fill` and `auto-fit`, and dense packing are done. Two divergences are left in what is
     done. A placement naming a line the template does not know leaves
     that edge automatic, where the standard creates an implicit line of
     that name after the explicit grid — Chromium puts `grid-area: zz` on
     a two-column grid at the fourth column line and the fourth row line,
-    and this puts it wherever auto-placement does. A track's size comes
-    from the items that sit in it alone, so an item spanning two tracks
-    grows neither of them. And `justify-content` does not position the
-    tracks, so the `normal` that stretches an `auto` track and the
-    `start` that does not are one value here: the stretching happens
-    either way.
+    and this puts it wherever auto-placement does. And a track's size
+    comes from the items that sit in it alone, so an item spanning two
+    tracks grows neither of them.
 12. **Multi-column 1, completed**: a spanner that sits below the
     container's own children, which needs its ancestors broken around
     it; and real fragment boxes, so that a subtree nested
@@ -1570,23 +1567,7 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
-### Grid's three divergences, measured
-
-**`justify-content` positions the tracks, and `normal` is not `start`.**
-Two `auto` columns holding `ab` and `cd` in a 400px grid:
-
-| | first track | second track |
-|---|---|---|
-| `normal` | x=0, **w=200** | x=200, **w=200** |
-| `start` | x=0, w=19 | x=19, w=19 |
-| `center` | x=181, w=19 | x=200, w=19 |
-| `end` | x=361, w=19 | x=381, w=19 |
-| `space-between` | x=0, w=19 | x=381, w=19 |
-
-So `normal` **stretches** an `auto` track to fill the container and
-every other value sizes the track to its content and positions it
-instead. This engine stretches under all five, which is why `normal`
-and `start` are one value here.
+### Grid's two remaining divergences, measured
 
 **A spanning item does widen the tracks it spans.** A grid of two
 `auto` columns at `width: max-content`, holding `ab` and `cd` and an

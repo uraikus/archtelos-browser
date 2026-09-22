@@ -6646,7 +6646,11 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if t == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
         else if t == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
     }
-    s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_START)
+    // `normal` behaves as `stretch` on a grid container and as
+    // `flex-start` on a flex one; BOXALIGN_STRETCH is the initial value
+    // because only the grid can tell the two apart -- flexOffsetFor
+    // gives it and BOXALIGN_START the same offset.
+    s.justifyContent = parseAlignValue(styleProp(props, 'justify-content'), BOXALIGN_STRETCH)
     // justify-items is inherited in effect rather than by the cascade:
     // it is read off the parent box at layout time, so it is stored as
     // the element's own value and the child asks for it there.

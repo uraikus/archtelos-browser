@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `justify-content` and `align-content` distribute a grid's tracks
+
+`normal` and `start` were one value on a grid: §12.8's stretch ran
+whatever the distribution said, so two `auto` columns in a 400px grid
+came out 200 apiece under both. Chromium gives 200 under `normal` and
+19 -- the content width -- under `start`, `center`, `end` and
+`space-between`, then positions the pair at 0, 181, 361 and spread.
+
+The stretch is now conditional on the axis distributing `stretch`, and
+what it leaves over is handed to `flexOffsetFor`, the same function
+that distributes a flex line's leftover among its items, once per
+track. The initial value of `justify-content` moves from `start` to
+`stretch`, which a flex container cannot notice: `flexOffsetFor`
+returns the same offset for both.
+
+Writing the test found a second bug behind the first. The row axis had
+never stretched **at all** -- `gridSizeAxis` was called with an axis
+size of -1 for the rows, so §12.8's `axisSize >= 0` guard excluded it,
+and a two-row grid 400px tall left both rows at their 19px content
+height. The container's content height is already sitting in
+`layoutCBHeight`, put there by the caller that sized the box, so the
+row axis now gets it -- captured before any child is laid out, because
+laying one out moves that global to the child's own containing block.
+
+`tests/unit/test_grid.f` 145 -> 170. The column-axis cases were written
+first and failed on the value they were supposed to; the row-axis cases
+failed on something nobody had asked about, which is the argument for
+writing the mirror of a test rather than only the case in hand.
+
+Two divergences from Chromium are left in Grid: a spanning item does
+not widen the tracks it spans, and a line name the template does not
+know leaves the edge automatic rather than making an implicit line.
+
 ### A negative margin collapses by CSS2 §8.3.1
 
 Collapsing margins take the **largest positive** and the **most

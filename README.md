@@ -306,6 +306,13 @@ shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is
 `auto` are stretched into the rest.
 
+That last stretch is what `justify-content` and `align-content` govern:
+they hold for `normal` and `stretch`, and under `start`, `center`,
+`end`, `space-between`, `space-around` and `space-evenly` the tracks
+keep their content size and are positioned in the leftover space
+instead. The block axis has space to share only where the container's
+own height is definite.
+
 **Containment** lets a box promise what cannot escape it. `contain:
 size` lays it out as if it were empty — its content is never measured,
 and `contain-intrinsic-size` supplies what an automatic size resolves to
@@ -485,12 +492,12 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, text wrapping, ruby, the preload scanner), twenty-four offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, text wrapping, ruby, the preload scanner), twenty-five offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text, box shadows,
-corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour, printed pages and the resize grabber — three conformance
+corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour, printed pages, stacking contexts and the resize grabber — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument
