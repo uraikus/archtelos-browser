@@ -1541,6 +1541,32 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### Where an outline paints, measured
+
+CSS2 §9.9's step 10 draws the outlines of a stacking context and its
+descendants after everything else in it. Four overlaps against
+Chromium 141, read with `tests/chromium.py pixels` at 300x300, a
+200x60 blue box with `outline: 6px solid red` against something laid
+over the band its outline occupies:
+
+| what the outline overlaps | Chromium draws |
+|---|---|
+| an in-flow block written after it | the **outline** |
+| a float | the **outline** |
+| an inline-block pulled over it | the **outline** |
+| an absolutely positioned box over it | the **positioned box** |
+
+So the outline is above steps 3, 4 and 5 and below step 8, which is
+one pass of its own between the inline content and the positioned
+descendants -- not the very last thing the standard's wording
+suggests. The fourth row is the one that pins which side it falls on:
+`#p{position:absolute;top:56px}` covers the outline's band at x 0-199
+and leaves it showing only at 200-205, where the positioned box does
+not reach.
+
+Here the outline is drawn with the box's own background and border, so
+it is step 3, and all three of the first rows go the other way.
+
 ### What three walks of the box tree cost, still unexplained
 
 Separating CSS2 §9.9's steps 3, 4 and 5 as three walks of the subtree,
