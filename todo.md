@@ -1561,6 +1561,40 @@ of line 1 and stretched it. The forward direction is done; this one
 renumbers every line and moves every item already placed, so it is
 left.
 
+### What §9.9's steps 3, 4 and 5 look like in pixels
+
+The hit-testing table below says which box a *click* lands on. This is
+the same divergence read off the screen, with `tests/chromium.py pixels`
+against this engine's own `--screenshot`, every rectangle checked with
+`getBoundingClientRect` before a row was read.
+
+**A float against a later in-flow block.** A 100x100 blue float, a
+100-tall red block after it, and a 60x60 green inline-block pulled over
+both. At row 60, across 300 pixels:
+
+| | blue (float, step 4) | green (inline, step 5) | red (block, step 3) |
+|---|---|---|---|
+| Chromium | 0-19 and 80-99 | 20-79 | 100-299 |
+| this engine | **nowhere** | 20-79 | 0-299 |
+
+The float is not merely under the inline content; it is under the
+block, so it disappears entirely.
+
+**And it is not only about floats.** A 100x60 green inline-block and a
+red block after it with `margin-top: -40px`, no float anywhere:
+
+| | green (step 5) | red (step 3) |
+|---|---|---|
+| Chromium | 0-99 | 100-299 |
+| this engine | **nowhere** | 0-299 |
+
+So `paintLines` running before a box's children is a divergence in its
+own right, on any page where inline content and a block overlap. **A
+`docHasFloats` guard would not be an honest one**, and neither
+benchmark page has a float on it at all -- so a guarded change would
+read free while the benchmark saw nothing, which is the shape this file
+records three times already.
+
 ### Where a float sits in the hit-testing order, measured
 
 CSS2 §9.9 paints non-positioned floats at step 4, between the in-flow
