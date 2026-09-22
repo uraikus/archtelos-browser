@@ -750,6 +750,57 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What CSS2 §9.9's painting order cost, and three ways of paying it
+
+2026-09-22, same machine and script. Neither benchmark page had a
+`z-index` on it at all -- the `::placeholder` lesson repeating one
+feature later -- so `tests/featurepage.py` gained a negative-`z-index`
+stack per section and a `--verify` probe that turns the parent into a
+stacking context and requires the pixels to move. Thirteen features now.
+
+On the page that has them the first implementation cost **three
+milliseconds of paint**:
+
+| features.html | forward | reversed |
+|---|---|---|
+| paint | **+3** (mean +3.16), **23 of 25** | **-3** (mean -3.04), 2 of 25 |
+| layout | +2, 14 of 25 | -1, 9 of 25 |
+
+Both directions say the same thing, which is what a cost looks like.
+`generated.html`, which declares no `z-index`, reads a median of 0 in
+every phase in both directions: the per-document flag does what it
+claims.
+
+**Two attempts to remove it made it worse, and both are worth the
+space.**
+
+The cost is asking every painted box whether it is a stacking context.
+The obvious fix is to work that out once, on a walk something else
+already makes, so the first attempt threaded the owning context down
+`layoutPositioned` and filed each negative box under it. Paint stayed at
++3 -- because the per-box question was still being asked there -- and
+**layout gained seven**, since `layoutPositioned` visits every box in
+the tree including the text and inline ones that paint skips.
+
+The second attempt collected the negative boxes cheaply on the way down
+and worked out each one's owner afterwards by walking *up* from it,
+marking the owner so the painter could read a field. Twenty-five upward
+walks, a handful of steps each. It cost **eighty-eight milliseconds of
+layout**, 25 of 25 pairs, on a layout of seventy.
+
+That number is the finding. `parentBox` is `boxRegistry[b.parentId]`,
+and **a struct read out of a registry is a retained temporary whose
+release walks everything reachable from it** -- finding 1's cost,
+arriving without a back-pointer, through what looks like an array
+index. A few hundred of those reads is a hundred milliseconds.
+FINDINGS.md 40 has the reproduction.
+
+**So the three milliseconds stands, measured and attributed**, and the
+cheapest of the three is the simplest. It is paid only by a page that
+declares a negative `z-index`, which is what this file's rule asks; the
+way to remove it is a borrowed registry read, which is a language
+change rather than an engine one.
+
 ## What the transform's containing block and hit testing cost
 
 2026-09-22, same machine and script. Both halves are guarded by

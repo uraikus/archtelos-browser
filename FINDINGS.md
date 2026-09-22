@@ -1237,3 +1237,62 @@ shift-wheel at all because no event says whether shift was down.
 wheel notch, and name this finding beside it.
 
 **Proposal.** See festina.md §3s.
+
+## 39 A map cannot hold an array
+
+A `map` value lives in one fixed-size slot, so an `arr` does not fit in
+one. The compiler says so plainly:
+
+```
+error: map values cannot be arr[Box] -- a map value is stored in a
+single fixed-size slot, which an array or another map doesn't fit in
+```
+
+That rules out the shape a grouping wants — "these boxes belong to that
+one" — and the way round it is two parallel arrays, one of the values
+and one of the keys, scanned together. It costs a linear scan where a
+lookup would do, which is fine while the list is short and is the reason
+CSS2 §9.9's negative-`z-index` boxes are kept that way here
+(`src/paint/paint.f`).
+
+A minimal reproduction:
+
+```festina
+struct Thing { n:int }
+map[arr[Thing]] byOwner = {}     // refused
+```
+
+**What would close it.** Either a map value that can be a handle to a
+heap object of any size, or a standard multimap. The first is the
+smaller change and would also allow `map[map[...]]`, which is refused
+for the same reason.
+
+## 40 Reading a struct out of a registry costs a walk of everything it reaches
+
+Finding 1 records that a back-pointer makes every release of a live
+alias walk the whole document. The same cost arrives without any
+back-pointer, through an ordinary indexed read: `boxRegistry[id]`
+returns a retained temporary, and releasing it after the expression
+walks everything reachable from it.
+
+It is easy to pay by accident and hard to see. Marking twenty-five boxes
+through the registry —
+
+```festina
+Box ob = boxRegistry[owner]
+if ob != null { ob.ownsNegativeZ = true }
+```
+
+— measured **a hundred milliseconds of layout** on a page whose layout
+is seventy (benchmarks.md, "What CSS2 §9.9's painting order cost"). The
+same twenty-five marks, written on a box the code already held, cost
+nothing measurable. Twenty-five reads, each releasing a temporary that
+walks a box graph of thousands.
+
+So a registry read is not the cheap array index it looks like, and a
+loop that does one per iteration is the shape to watch for.
+
+**What would close it.** A borrowed read — an indexing form that hands
+back a reference without retaining it, as the existing "the bucket
+travels as a borrowed parameter" comment in `src/css/cascade.f` already
+works around by hand.

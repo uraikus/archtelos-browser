@@ -32,6 +32,21 @@ it guards both the collecting pass and the skip in the ordinary
 positioned loop -- which is also what kept a painting-order change from
 moving a pixel of the twenty-four render suites.
 
+**It costs three milliseconds of paint on a page that uses it**, which
+is measured, attributed, and the cheapest of three implementations
+tried. Two attempts to remove it made it worse -- one by seven
+milliseconds of layout, one by eighty-eight -- and the second of those
+is a Festina finding rather than an engine one: `parentBox` is a
+registry read, and a struct read out of a registry is a retained
+temporary whose release walks everything reachable from it. A few
+hundred of them is a hundred milliseconds. FINDINGS.md 39 and 40, and
+benchmarks.md, carry both.
+
+The feature page had no `z-index` on it at all, so the first pairing
+could not have seen any of this. It has a negative stack per section
+now, and a `--verify` probe that requires turning the order off to move
+pixels.
+
 New `stacking` render suite, 10 checks.
 
 ### What a transform makes of a box

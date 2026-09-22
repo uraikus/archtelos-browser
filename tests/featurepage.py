@@ -87,6 +87,11 @@ def png(path, w, h):
 # document's own <style>, so `tests/chromium.py render` -- which adopts
 # the head's <style> elements along with the body -- gives both engines
 # the same cascade to do.
+ZSTACK_CSS = """
+.zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
+.zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
+"""
+
 FEATURES_CSS = """
 body{font-family:sans-serif;margin:20px;line-height:1.5;counter-reset:part}
 h2{color:#234;border-bottom:1px solid #ccd;counter-increment:part}
@@ -122,6 +127,8 @@ th{background:#dde}
 # generated counters become no generated content at all, `object-fit`
 # goes back to its initial value and the form controls stop being
 # painted as form controls.
+FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS
+
 PLAIN_CSS = FEATURES_CSS + """
 h2::before{content:none}
 .cards{display:block}
@@ -152,6 +159,11 @@ PROBES = (
     # input's own colour is what a page with no placeholder on it cannot
     # tell apart -- which is why the page has one.
     ('placeholder', '.controls input::placeholder{color:#000}'),
+    # CSS2 §9.9: the `z-index: -1` box belongs to the nearest ancestor
+    # stacking context, so it paints behind its parent's background.
+    # Making the parent a context puts it in front, which is the whole
+    # of the painting order in one pixel.
+    ('stacking-order', '.zstack{z-index:0}'),
     ('object-fit', 'img{object-fit:fill}'),
     ('object-position', 'img{object-position:0 0}'),
     ('images', 'img{display:none}'),
@@ -198,7 +210,9 @@ def body():
                     '<label><input type="radio" name="m%d"> mean</label> '
                     '<input type="text" value="section %d"> '
                     '<input type="text" placeholder="search section %d"> '
-                    '<button type="button">run</button></form>' % (s, s, s, s))
+                    '<button type="button">run</button></form>' % (s, s, s, s)),
+        rows.append('<div class="zstack"><div class="zback"></div>'
+                    'behind and in front</div>')
         rows.append('<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>')
         for i in range(6):
             rows.append('<tr><td>row %d.%d</td><td>kind %d</td><td>%d</td></tr>'
