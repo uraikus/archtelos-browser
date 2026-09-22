@@ -1109,21 +1109,16 @@ These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
 
-**`print-color-adjust` is open work and `forced-color-adjust` is not.**
-Both have values Chromium computes differently from the initial one, so
-either would move the count by one the moment the keyword were stored in
-the computed style. The difference between them is whether a pixel would
-follow. This engine prints — `--print` writes one image per page — so
-`print-color-adjust: exact` has something to be about here, and
-Chromium's answer can be read back once the print is asked to omit
-backgrounds, so the question is measurable rather than a keyword stored
-and never used. It is worth doing, and the measurement below says what
-it takes: the property overrides an omission this engine does not yet
-have, so the omission is what has to be built for the keyword to mean
-anything. `forced-color-adjust` is not: there is no forced-colors mode
-for it to be about, so it would be `outline-style` again — a property the
-instrument scores while the engine does nothing with it — and it stays
-unimplemented and counted as such.
+**`forced-color-adjust` is the one this engine will not take.** It has
+values Chromium computes differently from the initial one, so it would
+move the count by one the moment the keyword were stored in the computed
+style, and no pixel would follow: there is no forced-colors mode here for
+it to be about, so it would be `outline-style` again -- a property the
+instrument scores while the engine does nothing with it. It stays
+unimplemented and counted as such. `print-color-adjust` was on this list
+beside it and is no longer: the measurement below found the omission it
+overrides, `--no-background-graphics` supplies it, and the property moves
+pixels under it.
 
 **`image-rendering` is blocked on Festina rather than on effort.** Its
 three values choose how a scaled image is filtered, and `drawImage`

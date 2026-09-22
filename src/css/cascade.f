@@ -190,6 +190,7 @@ bool cascadeSawResize = false
 // element that says nothing still has to be asked about its parent --
 // but only on a document where something said it.
 bool cascadeSawTextWrapStyle = false
+bool cascadeSawPrintColorAdjust = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -283,6 +284,7 @@ void func cascadeReset() {
     cascadeSawZoom = false
     cascadeSawResize = false
     cascadeSawTextWrapStyle = false
+    cascadeSawPrintColorAdjust = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -408,6 +410,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
         if anyCounters && anyQuotes && cascadeSawColorScheme && cascadeSawDirection
             && cascadeSawFontSizeAdjust && cascadeSawBaselineSource && cascadeSawZoom
             && cascadeSawResize && cascadeSawTextWrapStyle && cascadeSawRuby
+            && cascadeSawPrintColorAdjust
             && anyRevert && !wantAnchor { continue }
         for int d = 0, d < rule.decls.length, d++ {
             text dn = rule.decls[d].name
@@ -426,6 +429,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawResize && dn == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (dn == 'text-wrap-style' || dn == 'text-wrap') {
                 cascadeSawTextWrapStyle = true
+            }
+            if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
+                cascadeSawPrintColorAdjust = true
             }
             if !cascadeSawRuby && (dn == 'ruby-position' || dn == 'ruby-align') {
                 cascadeSawRuby = true
@@ -1065,6 +1071,9 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawResize && decls[d].name == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (decls[d].name == 'text-wrap-style'
                 || decls[d].name == 'text-wrap') { cascadeSawTextWrapStyle = true }
+            if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
+                cascadeSawPrintColorAdjust = true
+            }
             if !cascadeSawRuby && (decls[d].name == 'ruby-position'
                 || decls[d].name == 'ruby-align') { cascadeSawRuby = true }
             // `anchor-size()` written only in a style attribute has to
@@ -5207,6 +5216,24 @@ int func textWrapStyleKeyword(w:ascii) {
 // `<text-wrap-mode> || <text-wrap-style>` -- the two halves in either
 // order, either one alone. The mode half is applied where the rest of
 // `white-space` is; only the style half belongs here.
+// `print-color-adjust` inherits, so an element with no declaration of
+// its own takes the parent's -- which is what makes `exact` on a
+// wrapper reach everything inside it, and what lets a child withdraw
+// it again with `economy`. Both were measured (todo.md).
+void func applyPrintColorAdjust(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    int v = isRoot ? PCA_ECONOMY : printColorAdjustOf(parent)
+    ascii pca = styleProp(props, 'print-color-adjust')
+    if pca != null {
+        ascii k = asciiLower(asciiTrim(pca))
+        if k == 'exact' { v = PCA_EXACT }
+        else if k == 'economy' { v = PCA_ECONOMY }
+    }
+    if v != PCA_ECONOMY {
+        printColorAdjustOfSerial[`${s.serial}`] = v
+        anyPrintColorAdjust = true
+    }
+}
+
 void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
     ascii tw = styleProp(props, 'text-wrap')
@@ -7252,6 +7279,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // asked where the grabber is painted rather than here, since the
     // computed value does not depend on it.
     if cascadeSawTextWrapStyle { applyTextWrapStyle(s, parent, isRoot, props) }
+    if cascadeSawPrintColorAdjust { applyPrintColorAdjust(s, parent, isRoot, props) }
     if cascadeSawRuby { applyRuby(s, parent, isRoot, props) }
     if cascadeSawResize {
         ascii rsz = styleProp(props, 'resize')

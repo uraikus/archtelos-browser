@@ -805,6 +805,13 @@ const int TWS_BALANCE = 1
 const int TWS_PRETTY = 2
 const int TWS_STABLE = 3
 
+// `print-color-adjust` (CSS Color Adjustment 1 §3). `economy` is the
+// initial value and grants the user agent a permission it may not be
+// using, so it is indistinguishable from not declaring the property at
+// all; `exact` withdraws that permission. Measured in todo.md.
+const int PCA_ECONOMY = 0
+const int PCA_EXACT = 1
+
 const int RESIZE_NONE = 0
 const int RESIZE_BOTH = 1
 const int RESIZE_HORIZONTAL = 2
@@ -1661,6 +1668,19 @@ int func textWrapStyleOf(s:Style) {
     if !anyTextWrapStyle || s == null { return TWS_AUTO }
     int v = textWrapStyleOfSerial[`${s.serial}`]
     return v == null ? TWS_AUTO : v
+}
+
+// `print-color-adjust`, kept by the computed style's serial. It
+// INHERITS -- measured: `exact` on a parent reaches an undeclared
+// child, and the child takes it back with `economy` -- so the applier
+// reads the parent's value out of this same map first.
+map[int] printColorAdjustOfSerial = {}
+bool anyPrintColorAdjust = false
+
+int func printColorAdjustOf(s:Style) {
+    if !anyPrintColorAdjust || s == null { return PCA_ECONOMY }
+    int v = printColorAdjustOfSerial[`${s.serial}`]
+    return v == null ? PCA_ECONOMY : v
 }
 
 // The two ruby properties, kept by the computed style's serial. Both

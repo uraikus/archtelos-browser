@@ -3223,6 +3223,23 @@ void func paintBoxUntransformed(b:Box) {
 // is tested against in layout.f, so what it looks like and what can be
 // taken hold of are one square rather than two formulas that agree.
 // Its colour is Chromium's own, read off the rasterised corner.
+// Whether this render omits background graphics, the way a print
+// dialog's "background graphics" setting and `printToPDF`'s
+// `printBackground: false` do. `print-color-adjust: exact` overrides
+// it per element -- the property grants nothing on its own, it
+// withdraws this omission (CSS Color Adjustment 1 §3, and the table in
+// todo.md). Off by default, so an ordinary `--print` is unchanged.
+bool printOmitBackgrounds = false
+
+// Whether this box's background is printed at all. A render that is
+// not omitting them -- every ordinary one -- answers yes without
+// reading the property, so a page that never says `print-color-adjust`
+// pays one boolean here.
+bool func printsBackground(s:Style) {
+    if !printOmitBackgrounds { return true }
+    return printColorAdjustOf(s) == PCA_EXACT
+}
+
 const int RESIZE_GRAB_GREY = 102
 
 void func paintResizeGrabber(b:Box) {
@@ -3266,10 +3283,11 @@ void func paintBoxInner(b:Box) {
     if b.kind != BOX_ANON && !s.hidden {
         // a shadow is cast by the border box and lies under it
         paintShadows(b.x, b.y, b.w, b.h, s)
+        bool bg = printsBackground(s)
         if b.kind == BOX_ROW {
-            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+            if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
         } else {
-            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
+            if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
             // A border image replaces the border's own styles where it
             // is drawn, so it goes over them (Backgrounds and Borders 3
             // §6.1).

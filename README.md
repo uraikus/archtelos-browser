@@ -173,7 +173,12 @@ margin, aligned the way the standard's table says — a corner toward the
 page content, an edge box left, centred or right between the corners —
 with `counter(page)` and `counter(pages)` reading the page number and
 the count, and a `color` or `font-size` of their own over what they
-inherit from the root element. A page is a fragmentation container like a column, so
+inherit from the root element.
+`--no-background-graphics` omits background colours and images from the
+print, the way a print dialog's setting of that name does, and
+`print-color-adjust: exact` is what puts one back on the page — it
+inherits, so it can be declared once on a wrapper; only backgrounds go,
+and the text over them still prints. A page is a fragmentation container like a column, so
 `break-before: page` and the `page-break-*` properties CSS2 spells them
 with put a break where a document asks for one. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle

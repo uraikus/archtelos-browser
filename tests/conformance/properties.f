@@ -119,7 +119,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.counterSet}`, `${s.quotes}`,
         `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`,
         `${initialLetterPacked(s)}`, `${baselineSourceOf(s)}`, `${resizeOf(s)}`, `${textWrapStyleOf(s)}`,
-        `${rubyPositionOf(s)}`, `${rubyAlignOf(s)}`]
+        `${rubyPositionOf(s)}`, `${rubyAlignOf(s)}`, `${printColorAdjustOf(s)}`]
 }
 
 text func motionKeyPath(mi:MotionInfo) {
@@ -209,7 +209,7 @@ arr[text] func styleDigestFieldNames() {
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'objectViewBox', 'shadows',
         'counterReset', 'counterIncrement', 'counterSet', 'quotes', 'colorSchemeDark',
         'containerType', 'containerName', 'initialLetterPacked', 'baselineSource',
-        'resize', 'textWrapStyle', 'rubyPosition', 'rubyAlign']
+        'resize', 'textWrapStyle', 'rubyPosition', 'rubyAlign', 'printColorAdjust']
 }
 
 text func trackKey(list:arr[Track]) {

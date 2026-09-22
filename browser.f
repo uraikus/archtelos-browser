@@ -456,6 +456,11 @@ for int i = 1, i < argv.length, i++ {
     } else if arg == '--print' && i + 1 < argv.length {
         printPath = argv[i + 1]
         i++
+    } else if arg == '--no-background-graphics' {
+        // What a print dialog's "background graphics" setting turns
+        // off, and what `print-color-adjust: exact` turns back on for
+        // the boxes that ask (todo.md).
+        printOmitBackgrounds = true
     } else if arg == '--width' && i + 1 < argv.length {
         int w = argv[i + 1].toInt()
         if w != null && w > 0 { requestedWidth = w }
@@ -468,8 +473,9 @@ for int i = 1, i < argv.length, i++ {
         }
         i++
     } else if arg == '--help' || arg == '-h' {
-        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H]')
+        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H] [--no-background-graphics]')
         log('  --print paginates the document and writes out-1.png, out-2.png, ...')
+        log('  --no-background-graphics omits backgrounds, which print-color-adjust: exact overrides')
         close(0)
     } else {
         startUrl = arg

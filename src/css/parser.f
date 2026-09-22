@@ -1095,6 +1095,7 @@ arr[text] supportedProperties = [
     'zoom',
     'resize',
     'text-wrap-style',
+    'print-color-adjust',
     'ruby-position', 'ruby-align',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
     'word-break', 'line-break', 'overflow-wrap', 'tab-size', 'all',

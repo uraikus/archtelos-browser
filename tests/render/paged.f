@@ -315,4 +315,68 @@ printPage(firstSel, twoPageBody, 1)
 check(anyInk(50, 0, 350, 50), 'and the second draws the general one')
 check(inkRight - inkLeft < firstWide, 'which is the narrower of the two')
 
+// ---- print-color-adjust (CSS Color Adjustment 1 §3) --------------------
+//
+// The property overrides an omission rather than causing one: a print
+// that draws every background cannot tell `economy` from `exact`, which
+// is what Chromium's `--print-to-pdf` demonstrated by giving byte
+// identical fills for both. What separates them there is
+// `printToPDF`'s `printBackground`, and `printOmitBackgrounds` is the
+// same switch here. Measured in todo.md.
+
+text PCBOX = 'body { margin: 0 } #a { width: 200px; height: 100px'
+
+// With nothing omitted the two values agree, which is the measurement
+// rather than an implementation detail: asserted as an agreement so it
+// holds whatever this engine's backgrounds look like.
+printOmitBackgrounds = false
+printPage(PAGE + PCBOX + '; background: red }', '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == red, 'printing every background, an undeclared box paints one')
+printPage(PAGE + PCBOX + '; background: red; print-color-adjust: economy }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == red, 'and economy paints the same one')
+printPage(PAGE + PCBOX + '; background: red; print-color-adjust: exact }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == red, 'and so does exact')
+
+// Omitting them is what gives the property something to say.
+printOmitBackgrounds = true
+printPage(PAGE + PCBOX + '; background: red }', '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == white, 'omitting them, an undeclared box loses its background')
+printPage(PAGE + PCBOX + '; background: red; print-color-adjust: economy }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == white, 'and economy loses it too, being the initial value')
+printPage(PAGE + PCBOX + '; background: red; print-color-adjust: exact }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == red, 'and exact keeps it')
+
+// A gradient is a background image rather than a colour, and goes the
+// same way -- one function paints both, so this says the switch is on
+// the background and not on the fill.
+printPage(PAGE + PCBOX + '; background: linear-gradient(red, red) }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == white, 'a background image goes with the colour')
+printPage(PAGE + PCBOX + '; background: linear-gradient(red, red); print-color-adjust: exact }',
+    '<div id="a"></div>', 0)
+check(getPixelColor(100, 100) == red, 'and exact keeps that too')
+
+// It inherits, and a child can withdraw it -- both measured in Chromium.
+printPage(PAGE + 'body { margin: 0 } #p { print-color-adjust: exact }'
+    + ' #a { width: 200px; height: 100px; background: red }',
+    '<div id="p"><div id="a"></div></div>', 0)
+check(getPixelColor(100, 100) == red, 'exact on the parent reaches an undeclared child')
+printPage(PAGE + 'body { margin: 0 } #p { print-color-adjust: exact }'
+    + ' #a { width: 200px; height: 100px; background: red; print-color-adjust: economy }',
+    '<div id="p"><div id="a"></div></div>', 0)
+check(getPixelColor(100, 100) == white, 'and the child can withdraw it again')
+
+// Only the background goes. The text on top of it is still printed,
+// which is the whole point of omitting the one and not the other.
+printPage(PAGE + 'body { margin: 0 } #a { background: red; color: blue; font-size: 30px }',
+    '<div id="a">IIII</div>', 0)
+check(!hasColorIn(50, 50, 350, 120, red), 'the omitted background is gone')
+check(hasColorIn(50, 50, 350, 120, blue), 'and the text over it is not')
+
+printOmitBackgrounds = false
+
 finish('paged render')

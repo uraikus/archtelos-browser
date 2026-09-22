@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `print-color-adjust`
+
+269 -> 270 properties. css-2026.md said a PDF read makes the property
+measurable. It does, but the first probe could not see it: **`--print-to-pdf` prints background graphics
+unconditionally**, so `economy` and `exact` give byte-identical fills and
+three runs agreeing meant only that the instrument could not tell the two
+answers apart.
+
+What separates them is `Page.printToPDF`'s `printBackground`, which the
+CLI does not expose, so the probe is a CDP client written for it -- a
+socket, the WebSocket handshake and its framing, standard library only,
+no dependency. With backgrounds omitted, an undeclared box and an
+`economy` box lose theirs and an `exact` box keeps it.
+
+**So the property overrides an omission rather than causing one**, and
+that decides the whole implementation. `economy` grants a permission the
+user agent may not be using and is indistinguishable from not declaring
+the property; `exact` withdraws it. A renderer that always prints
+backgrounds cannot tell them apart, which is what this engine was, so
+storing the keyword alone would have been `outline-style` again -- a
+property the instrument scores while the engine does nothing with it.
+
+`--no-background-graphics` is the omission, named after the print
+dialog's own setting. It is **off by default**, because a `--print` that
+silently stopped printing backgrounds would be a behaviour change nothing
+asked for; under it a box's background is drawn only where the computed
+`print-color-adjust` is `exact`.
+
+**It inherits**, which was measured rather than read off the
+specification: `exact` on a parent reaches an undeclared child, and the
+child takes it back with `economy`. Both are in the suite.
+
+The gate is one boolean on the ordinary path -- `printsBackground`
+returns true without reading the property whenever the render is not
+omitting anything, which is every render but this one.
+
+Twelve checks, written before the code and watched failing: five of them
+failed for the right reason and the other seven passed, because with
+nothing omitted `economy` and `exact` agree and cannot fail. That
+agreement is asserted too, since it is the measurement.
+
 ### The `@page` margin boxes
 
 All sixteen. `@top-center` and its fifteen siblings were parsed out of
