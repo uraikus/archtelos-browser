@@ -780,6 +780,59 @@ So the cost of a layout fix is measured on a page the fix does not
 touch, and the page that exercises it is kept for `--verify` and the
 render suite, where a difference is the point rather than the noise.
 
+## What §12.5's spanning pass cost, and three binaries that would not add up
+
+2026-09-22, same machine and script. `features.html` is the right page
+for once and for a reason worth stating: `.wide` draws
+`"pic note" "pic meta"`, so `.pic` **spans two rows** and the new code
+runs on it -- but those rows already held the two lines beside it, so
+the span asks for nothing and the page renders **byte-identically**
+between the two binaries. The work happens and the document does not
+move, which is exactly what the paired-benchmark rule wants and what a
+layout fix usually cannot give.
+
+Paired 25 times each way against the parent:
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate | +0 | +1 | **+3** | +0 |
+| reversed, candidate then parent | +0 | +1 | **+1** | +0 |
+
+Both directions positive, which is the order effect: +3 and +1 split
+into about +2 of order and about +1 that might be the code.
+
+**`generated.html` has no grid on it at all**, so nothing in this diff
+can execute there. Forward +1 of layout, reversed +0. That is the same
+size as the residue above, from a page where the residue is known to be
+nothing, and it is the floor this method reads at.
+
+The control settles the rest. The parent recompiled with
+`gridPlanSpanIncrease` under another name and called from nowhere comes
+out at 3,082,288 bytes -- the candidate's size **exactly**, though the
+diff also adds lines inside `gridSizeAxis` and `layoutGrid` that the
+control cannot carry.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| control then candidate | +0 | +0 | **-2** | -1 |
+| candidate then control | +0 | +0 | **-3** | +0 |
+| parent then control (dead code only) | +0 | +0 | +0 | +1 |
+
+The candidate reads **faster than the control in both directions**,
+which cannot be a difference between them: a real one would come out
++n and -n. So the residue is not a property of the diff, the same
+conclusion three binaries have forced here before, and the honest
+answer is that no cost was established above the floor.
+
+What the code does cost is structural rather than measured, and it is
+worth naming because the measurement cannot see it. A page with no grid
+never enters `layoutGrid`. A grid whose every item sits in one track
+leaves `maxSpan` at 1 and the span loop never runs. A row-spanning item
+is laid out an extra time only where one of the rows it spans is
+intrinsic. What every grid now pays, spanning item or not, is three
+`arr[bool]` pushes per track and one comparison per item -- and that is
+below anything this pairing can read.
+
 ## What distributing a grid's tracks cost, and a control that read a whole millisecond of nothing
 
 2026-09-22, same machine and script. `features.html` answers this one:
