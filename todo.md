@@ -42,16 +42,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 1. **What is left of the CSS2 chapters**: nothing whole. Paged media
    (§13) is in -- `@page` with `size` and `margin`, the page selectors,
-   named pages, the three `page-break-*` properties and a `--print` that
-   writes one image per page -- but three parts of it are not:
-   the **margin boxes** (`@top-center` and its fifteen siblings), which
-   are parsed and dropped because each is a box generated from `content`
-   in a place the layout engine has no notion of; **the side a
-   `break-before: left` asks for**, which needs a blank page generated to
-   put the next one on the right side; and **a page's own `size` when a
-   named page declares a different one**, because the document is laid
-   out once at the first page's width and a page that wanted a wider
-   sheet would need a second layout. A wheel
+   named pages, all sixteen margin boxes, the three `page-break-*`
+   properties and a `--print` that writes one image per page -- but two
+   parts of it are not:
+   **the side a `break-before: left` asks for**, which needs a blank page
+   generated to put the next one on the right side; and **a page's own
+   `size` when a named page declares a different one**, because the
+   document is laid out once at the first page's width and a page that
+   wanted a wider sheet would need a second layout. A wheel
    over a scroll container scrolls it, the thumb follows, and the thumb
    can be taken hold of and dragged. Both axes scroll, both thumbs drag,
    and a wheel tilted sideways scrolls a container across **on X11 and
@@ -1111,14 +1109,19 @@ These sit in the
 snapshot's three lower classes, which is lower than their prominence
 suggests.
 
-**`print-color-adjust` and `forced-color-adjust` are two rows this
-engine will not take.** Both have values Chromium computes differently
-from the initial one, so either would move the count by one the moment
-the keyword were stored in the computed style. Neither would change a
-pixel: nothing here prints, and there is no forced-colors mode, so both
-would be `outline-style` again — a property the instrument scores while
-the engine does nothing with it. They stay unimplemented and counted as
-such until there is something for them to adjust.
+**`print-color-adjust` is open work and `forced-color-adjust` is not.**
+Both have values Chromium computes differently from the initial one, so
+either would move the count by one the moment the keyword were stored in
+the computed style. The difference between them is whether a pixel would
+follow. This engine prints — `--print` writes one image per page — so
+`print-color-adjust: exact` has something to be about here, and the PDF
+read in `/tmp/claude-0/probe/pdfboxes.py` (recorded with the margin-box
+measurement below) says Chromium's answer can be read back, so the
+question is measurable rather than a keyword stored and never used. It is
+worth doing. `forced-color-adjust` is not: there is no forced-colors mode
+for it to be about, so it would be `outline-style` again — a property the
+instrument scores while the engine does nothing with it — and it stays
+unimplemented and counted as such.
 
 **`image-rendering` is blocked on Festina rather than on effort.** Its
 three values choose how a scaled image is filtered, and `drawImage`

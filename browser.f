@@ -521,7 +521,7 @@ if printPath != '' {
         setClientWidth(pbox.width)
         setClientHeight(pbox.height)
         clearCanvas()
-        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i])
+        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i], i, pageStartY.length)
         text out = printPageName(printPath, i + 1)
         if saveCanvas(out) { written++ } else { log(`could not write ${out}`) }
     }

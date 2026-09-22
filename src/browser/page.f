@@ -360,7 +360,114 @@ void func layoutPage(page:Page, width:int) {
 // painter culls by box and not by pixel, so the margins are laid back
 // over it afterwards in the page's own colour. The page box's background
 // is the root element's, propagated to it (CSS2 §13.2).
-void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
+// ---- the page margin boxes --------------------------------------------
+//
+// Sixteen boxes in the page margin (CSS Paged Media 3 §5), each drawn
+// from its own `content`. Measured in todo.md against Chromium's own
+// print, read out of the PDF: the five along each of the top and
+// bottom edges are vertically centred in their band, the three down
+// each side are top-, middle- and bottom-aligned in the side region,
+// and the corners align INWARD, toward the page content.
+//
+// A margin box inherits from the ROOT element rather than from `body`,
+// which the measurement settles: `html { font: 16px monospace }`
+// reaches the box and `body { ... }` does not, because the page
+// context inherits from the root.
+
+// Where one box goes, as (x, y, w, h). Four values out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+int mbX = 0
+int mbY = 0
+int mbW = 0
+int mbH = 0
+
+void func marginBoxRect(box:PageBox, slot:int) {
+    int innerW = maxInt(box.width - box.marginLeft - box.marginRight, 0)
+    int innerH = maxInt(box.height - box.marginTop - box.marginBottom, 0)
+    int right = box.width - box.marginRight
+    int bottom = box.height - box.marginBottom
+    if slot == MB_TOP_LEFT_CORNER { mbX = 0  mbY = 0  mbW = box.marginLeft  mbH = box.marginTop  return }
+    if slot == MB_TOP_RIGHT_CORNER { mbX = right  mbY = 0  mbW = box.marginRight  mbH = box.marginTop  return }
+    if slot == MB_BOTTOM_LEFT_CORNER { mbX = 0  mbY = bottom  mbW = box.marginLeft  mbH = box.marginBottom  return }
+    if slot == MB_BOTTOM_RIGHT_CORNER { mbX = right  mbY = bottom  mbW = box.marginRight  mbH = box.marginBottom  return }
+    if slot == MB_TOP_LEFT || slot == MB_TOP_CENTER || slot == MB_TOP_RIGHT {
+        mbX = box.marginLeft  mbY = 0  mbW = innerW  mbH = box.marginTop  return
+    }
+    if slot == MB_BOTTOM_LEFT || slot == MB_BOTTOM_CENTER || slot == MB_BOTTOM_RIGHT {
+        mbX = box.marginLeft  mbY = bottom  mbW = innerW  mbH = box.marginBottom  return
+    }
+    if slot == MB_LEFT_TOP || slot == MB_LEFT_MIDDLE || slot == MB_LEFT_BOTTOM {
+        mbX = 0  mbY = box.marginTop  mbW = box.marginLeft  mbH = innerH  return
+    }
+    mbX = right  mbY = box.marginTop  mbW = box.marginRight  mbH = innerH
+}
+
+// The style a margin box draws in: the root element's, with whatever
+// the box itself declares on top. Only the handful of properties a
+// margin box is written for are read; the rest are recorded in todo.md
+// rather than half-applied.
+Style func marginBoxStyle(rootStyle:Style, decls:arr[PageDecl]) {
+    Style s = rootStyle
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name == 'color' {
+            int c = parseCssColor(decls[i].value, rootStyle.color)
+            if c != COLOR_UNSET { s.color = c }
+        } else if decls[i].name == 'font-size' {
+            int px = pageMarginPx(decls[i].value, rootStyle.fontSize)
+            if px > 0 {
+                s.fontSize = px
+                s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+            }
+        }
+    }
+    return s
+}
+
+int func marginBoxAlignOf(decls:arr[PageDecl], slot:int, vertical:bool) {
+    int a = vertical ? marginBoxDefaultVAlign(slot) : marginBoxDefaultAlign(slot)
+    text want = vertical ? 'vertical-align' : 'text-align'
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name != want { continue }
+        ascii v = asciiLower(asciiTrim(decls[i].value))
+        if v == 'left' || v == 'start' || v == 'top' { a = MBALIGN_START }
+        else if v == 'center' || v == 'middle' { a = MBALIGN_CENTER }
+        else if v == 'right' || v == 'end' || v == 'bottom' { a = MBALIGN_END }
+    }
+    return a
+}
+
+void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, rootStyle:Style) {
+    for int slot = 0, slot < MB_COUNT, slot++ {
+        arr[PageDecl] decls = marginBoxDecls(slot, name, index)
+        if decls.length == 0 { continue }
+        text content = ''
+        for int i = 0, i < decls.length, i++ {
+            if decls[i].name == 'content' {
+                content = marginBoxContent(decls[i].value, index, total)
+            }
+        }
+        if content == '' { continue }
+        marginBoxRect(box, slot)
+        if mbW <= 0 || mbH <= 0 { continue }
+        Style s = marginBoxStyle(rootStyle, decls)
+        int w = measureWidth(s, content)
+        int lh = lineHeightOf(s)
+        int align = marginBoxAlignOf(decls, slot, false)
+        int valign = marginBoxAlignOf(decls, slot, true)
+        int x = mbX
+        if align == MBALIGN_CENTER { x = mbX + Math.floorDiv(mbW - w, 2) }
+        else if align == MBALIGN_END { x = mbX + mbW - w }
+        int top = mbY
+        if valign == MBALIGN_CENTER { top = mbY + Math.floorDiv(mbH - lh, 2) }
+        else if valign == MBALIGN_END { top = mbY + mbH - lh }
+        setFontFor(s)
+        applyFillColor(s.color)
+        drawText(content, x, top + fontAscent(s))
+    }
+    fillAlpha(1.0)
+}
+
+void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int, total:int) {
     if page.root == null { return }
     int t0 = now()
     int areaW = pageAreaWidth(box)
@@ -384,6 +491,12 @@ void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
     drawRect(0, 0, box.marginLeft, box.height)
     drawRect(box.marginLeft + areaW, 0, box.width - box.marginLeft - areaW, box.height)
     fillAlpha(1.0)
+    // The boxes go on last, over the margins that were just laid back
+    // over the content -- which is what puts them in the margin rather
+    // than under it. A document that declares none pays one boolean.
+    if anyPageMarginBox {
+        paintPageMarginBoxes(box, pageNames[index], index + 1, total, page.root.style)
+    }
     timing('paint', t0)
 }
 

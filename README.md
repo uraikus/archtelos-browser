@@ -167,7 +167,13 @@ box `@page` declares — one of ten named sheet sizes or a pair of
 lengths, turned by `landscape`, with margins, and a box of its own for
 the first page, the left-hand pages, the right-hand ones or any page a
 `page` property names — and writes `out-1.png`, `out-2.png` and so on,
-one to a sheet. A page is a fragmentation container like a column, so
+one to a sheet. All sixteen margin boxes draw: `@top-center` and its
+fifteen siblings each generate their content in their band of the page
+margin, aligned the way the standard's table says — a corner toward the
+page content, an edge box left, centred or right between the corners —
+with `counter(page)` and `counter(pages)` reading the page number and
+the count, and a `color` or `font-size` of their own over what they
+inherit from the root element. A page is a fragmentation container like a column, so
 `break-before: page` and the `page-break-*` properties CSS2 spells them
 with put a break where a document asks for one. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle

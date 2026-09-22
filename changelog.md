@@ -5,6 +5,60 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The `@page` margin boxes
+
+All sixteen. `@top-center` and its fifteen siblings were parsed out of
+the `@page` body and dropped, on the recorded reasoning that each is a
+box generated from `content` in a place the layout engine has no notion
+of -- and on the assumption that no browser reached them. Chromium 141
+lays all sixteen down, which the measurement commit ahead of this one
+read out of its print.
+
+**Reading a print needs no new dependency.** `--print-to-pdf` writes
+Flate streams and `zlib` is in Python's standard library, so a probe
+inflates the content stream, reads the `Tm`/`Td`/`Tj` operators and maps
+the glyph ids back through the standard glyph order. That gives every
+string Chromium drew and where its baseline is, in CSS pixels, which is
+what turned the sixteen boxes into a table of numbers rather than an
+opinion. It also disproves a note this project had been carrying: that
+`print-color-adjust` was unmeasurable here. todo.md now says the
+opposite, and that the property is worth doing.
+
+**What the numbers said is the standard's own table.** Each box on the
+top and bottom edges is vertically centred in its band; the three down
+each side are top-, middle- and bottom-aligned in the region between the
+corners; and a corner aligns *inward*, toward the page content -- a
+`@top-left-corner` is right-aligned. That is CSS Paged Media 3 §5.2's
+default `text-align` and `vertical-align` per box, which is worth
+saying, because it means the standard could be implemented rather than
+the browser copied.
+
+**A margin box inherits from the root element, not from `body`**, which
+is what the page context is. The decisive pair in the measurement was a
+monospace `font` on `html` reaching the box and the same on `body` not.
+`color` and `font-size` on the box itself win over what it inherits.
+
+**Each box is an `@page` rule of its own.** The parser splits a nested
+block out of the `@page` body at the last semicolon before its brace and
+registers one extra rule per selector and slot, so the boxes cascade by
+the same page-selector specificity the page box already uses: a `@page
+:first` rule's `@top-center` replaces the general one on the first sheet
+and leaves it in force on the rest. Nothing walks for them on a page
+that declares none -- `anyPageMarginBox` is raised while the sheet is
+read and the painter asks it once per page.
+
+`content` takes strings, `counter(page)` and `counter(pages)`,
+concatenated in the order written; `content: none` and an empty box draw
+nothing.
+
+The render suite grew 45 checks, to 78. They are ink-bounds checks
+rather than glyph checks -- which band the ink is in and where in that
+band -- because what a margin box has to get right is its place, and ink
+bounds say that without pinning a font's advances. Two of them are
+colour checks, and they draw at 30px: at 16px no pixel of a stem is
+fully opaque, so a check for the colour itself could not have passed
+however right the colour was.
+
 ### CSS Ruby Annotation Layout 1
 
 267 -> 269 properties, and a specification off zero. Almost everything
