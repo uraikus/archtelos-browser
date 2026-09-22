@@ -780,6 +780,34 @@ So the cost of a layout fix is measured on a page the fix does not
 touch, and the page that exercises it is kept for `--verify` and the
 render suite, where a difference is the point rather than the noise.
 
+## What a subgrid's contribution cost, and a page that exercises the guard
+
+2026-09-22, same machine and script. Both benchmark pages render
+byte-identically between the two binaries, so the pairing compares
+code. `features.html` is the page that matters here: it has two grids
+and **no subgrid**, which is exactly the path the change adds -- one
+walk of the item list per axis per grid, finding nothing and handing
+the list straight back.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate | +0 | **-2** | **-1** | -1 |
+| reversed, candidate then parent | +0 | **-1** | **-2** | -1 |
+| `generated.html`, no grid at all | +0 | +0 | +0 | +0 |
+
+The candidate reads faster in *both* directions on the page with
+grids, which cannot be a difference between two binaries any more than
+the §12.5 entry's -2 and -3 could; and the page with no grid reads flat
+in every phase. Nothing to attribute, so no control was built.
+
+Two things in this diff could have read as a cost and did not. The
+placement pass moved out of `layoutGrid` into `gridPlaceItems`, turning
+a hundred lines of inline code into a call, on a path every grid takes.
+And the expansion allocates nothing on a grid without a subgrid,
+because the walk that looks for one returns the caller's own list
+rather than a copy -- which is the difference between a guard that
+costs a comparison per item and one that costs an array.
+
 ## What resolving an unknown grid line name cost
 
 2026-09-22, same machine and script. Both benchmark pages render
