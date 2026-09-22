@@ -255,10 +255,17 @@ the question to the code had nowhere to take it. The parent recompiled
 with the change's globals and reader function appended under different
 names, **called from nowhere**, read the same +1. Dead code cannot run,
 so the millisecond was where the compiler put the machine code, not
-work. When a paired reading lands on a phase the diff does not touch,
-that is the control to build: a binary that grows by the same amount
-and does nothing with it, and then the candidate paired against *that*
-rather than against the parent.
+work. The next feature then showed the reading is not
+even attached to a phase: its control moved a millisecond of *layout*
+where the candidate had moved one of *cascade*, and paired against each
+other the two came out below both. A quantity that does not add up
+across three binaries is not a property of any one diff.
+
+So the phase a reading lands on is not evidence about the code, and the
+control is what settles it: recompile the parent with the change's
+globals, constants and functions renamed and **called from nowhere**,
+check it comes out within a few bytes of the candidate, and pair the
+candidate against *that* rather than against the parent.
 
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
