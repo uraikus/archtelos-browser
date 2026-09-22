@@ -306,6 +306,13 @@ shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is
 `auto` are stretched into the rest.
 
+A **subgrid** takes the lines it spans from the grid above it instead
+of sizing tracks of its own, and it may name those lines —
+`subgrid [a] [b] [c]` — counting from its own first line rather than
+the parent's. Its items are placed on the parent's tracks and each
+sizes the one it sits in, in both axes, so a subgrid is not a spanning
+item whose own width is split between the tracks it covers.
+
 A line name that the template does not declare is not an error and
 does not leave the placement to the flow: every implicit line counts as
 carrying every name, so the name lands on the first line past the

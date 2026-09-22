@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A subgrid names its own lines, and its items size the parent's tracks
+
+Grid 2 §3's two halves, and they turned out to be one parser bug and
+one missing pass.
+
+**The name list was dropping the keyword, not the names.**
+`grid-template-columns: subgrid [a] [b] [c]` is a name list beside the
+keyword, naming the lines the subgrid spans. The parser recognised
+`subgrid` only when it was the *whole* value, so the moment a list
+appeared the flag was never set and the box became an ordinary grid --
+silently, because the names themselves parsed fine. The keyword is read
+off the first token now, and the names count from the subgrid's own
+first line rather than the parent's: on a three-column parent a subgrid
+at `grid-column: 2/4` puts `a` in the parent's second column. A subgrid
+declares no tracks, so the line a name belongs to cannot be counted
+from them; its lines are consecutive, one per bracketed group.
+
+**And a subgrid is not a spanning item.** Its children sit on the
+parent's tracks, so it is *their* contributions that size those tracks.
+A parent of two `auto` columns holding a subgrid with a twenty-`W` item
+and an `x` comes out 192.66 and 9.64 in Chromium; this engine gave 100
+and 100, having treated the subgrid as one item spanning both and split
+its width equally between them. The row axis was worse in a way that
+shows: a subgrid of an 80px and a 30px child gave its parent two rows
+of 55 where Chromium gives 80 and 30.
+
+The sizing pass is now handed a list with every subgrid item replaced
+by its children mapped onto this grid's lines, per axis, and the
+placement pass still works from the original because the subgrid box is
+what gets laid out. A grid with no subgrid in the axis being sized gets
+its own list back and allocates nothing. The row measurement measures
+the expanded list too: a grandchild has no height until something lays
+it out, and the subgrid box's own height is not the answer for either
+of the rows it spans.
+
+**That needed the placement pass factored out of `layoutGrid`.** The
+parent needs the answer for a subgrid's *children* before it can size
+its own tracks, and running the placement from two copies of it is how
+the two would come to disagree. `gridPlaceItems` is that pass, verbatim
+and behaviour-preserving -- the suite read the same count before and
+after the move, which is the only thing that makes a refactor of a
+hundred lines worth trusting.
+
+**A segfault caught a fixture asking nothing.** One of the new checks
+compared `findById(asSpan, 'c1')` against a fixture whose spanning
+element had no `id` at all, so the lookup returned null and the
+dereference took the process down. That is the fourth fixture in two
+tasks that was measuring nothing -- and the only one that announced
+itself, because the others returned clean answers.
+
+`tests/unit/test_grid.f` 242 -> 255.
+
 ### A grid line name the template does not declare lands after the grid
 
 Grid 1 §8.3: "if not enough lines with that name exist, all implicit

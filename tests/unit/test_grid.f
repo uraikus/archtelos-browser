@@ -907,4 +907,107 @@ sameAs('grid-column:zz;grid-row:2', 'grid-column:4;grid-row:2', TWOCOLS,
        '<div style="grid-column:5;grid-row:1">o</div>',
        'implicit tracks already made do not move an unknown name')
 
+// ---- Grid 2 §3: what a subgrid owes its parent -------------------------
+// A subgrid is not a spanning item. Its children are placed on the
+// parent's tracks and each contributes to the one it sits in, so the
+// parent sizes its tracks as though those children were written
+// directly in it -- which is how these are asserted, against that
+// arrangement rather than against a pixel count. Measured against
+// Chromium first (todo.md).
+
+Box func parentGrid(cols:text, items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:700px;justify-content:start;'
+        + 'grid-template-columns:' + cols + '">' + items + '</div></body>', 800)
+}
+
+text WIDE = 'WWWWWWWWWWWWWWWWWWWW'
+text SUBOPEN = '<div style="display:grid;grid-template-columns:subgrid;grid-column:1/3">'
+
+// The same two children, once inside a subgrid across both tracks and
+// once written directly in the parent, one per track.
+Box viaSub = parentGrid('auto auto',
+    SUBOPEN + '<div id="c1">' + WIDE + '</div><div id="c2">x</div></div>')
+Box direct = parentGrid('auto auto',
+    '<div id="c1">' + WIDE + '</div><div id="c2">x</div>')
+checkEqInt(findById(viaSub, 'c1').w, findById(direct, 'c1').w,
+           'a subgrid\'s first child sizes the parent track it sits in')
+checkEqInt(findById(viaSub, 'c2').w, findById(direct, 'c2').w,
+           'and its second sizes the second track')
+checkEqInt(findById(viaSub, 'c2').x, findById(direct, 'c2').x,
+           'so the two arrangements put the second child in the same place')
+
+// And a subgrid is not a spanning item: were it one, §12.5 would share
+// the wide child's width equally between the two tracks. `c2` is what
+// reports the first track's width in each arrangement -- in `asSpan` it
+// is auto-placed under the spanning item, so it is as wide as track one
+// and nothing else.
+Box asSpan = parentGrid('auto auto',
+    '<div style="grid-column:1/3">' + WIDE + '</div><div id="c2">x</div>')
+check(findById(viaSub, 'c1').w > findById(asSpan, 'c2').w,
+      'a subgrid gives its first track more than an equal share of a span')
+
+// A child spanning two parent tracks from inside a subgrid is shared
+// equally between them, exactly as one written in the parent is.
+Box subSpan = parentGrid('auto auto',
+    SUBOPEN + '<div id="c1" style="grid-column:1/3">' + WIDE + '</div></div>')
+Box plainSpan = parentGrid('auto auto',
+    '<div id="c1" style="grid-column:1/3">' + WIDE + '</div>')
+checkEqInt(findById(subSpan, 'c1').w, findById(plainSpan, 'c1').w,
+           'a spanning child inside a subgrid is shared as one in the parent is')
+
+// The block axis answers the same way: a row-subgrid's children size
+// the parent's rows, which is what puts the second child at the first
+// one's height rather than at half the pair's.
+Box func rowSub(items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;grid-template-columns:200px;'
+        + 'grid-template-rows:auto auto;width:400px;align-content:start">'
+        + items + '</div></body>', 800)
+}
+
+text ROWKIDS = '<div id="c1" style="grid-row:1;height:80px">a</div>'
+    + '<div id="c2" style="grid-row:2;height:30px">b</div>'
+
+Box rowViaSub = rowSub('<div style="display:grid;grid-template-rows:subgrid;'
+    + 'grid-row:1/3;grid-column:1">' + ROWKIDS + '</div>')
+Box rowDirect = rowSub(ROWKIDS)
+checkEqInt(findById(rowViaSub, 'c2').y, findById(rowDirect, 'c2').y,
+           'a row-subgrid\'s children size the parent\'s rows')
+checkEqInt(findById(rowViaSub, 'c1').h, findById(rowDirect, 'c1').h,
+           'so the first row is as tall as the child that sits in it')
+
+// ---- a subgrid names the lines it spans ---------------------------------
+// The parent's columns are fixed lengths here, so each line has a
+// distinct x and a check can tell them apart. With `auto` columns and
+// nothing sizing them every line sits at zero, and two of these read as
+// passing against an engine that drops the name list entirely.
+Box func namedSub(span:text, names:text, place:text) {
+    return parentGrid('100px 100px 100px',
+        '<div style="display:grid;grid-template-columns:subgrid ' + names
+        + ';grid-column:' + span + '"><div id="c1" style="grid-column:' + place
+        + '">x</div></div>')
+}
+
+text ABC = '[a] [b] [c]'
+
+checkEqInt(findById(namedSub('1/4', ABC, 'b'), 'c1').x, 100,
+           'a named subgrid line is the line it names')
+checkEqInt(findById(namedSub('1/4', ABC, 'b'), 'c1').x,
+           findById(namedSub('1/4', ABC, '2'), 'c1').x,
+           'which is where the number for that line puts it')
+
+// The names count from the subgrid's own first line, so on a subgrid
+// starting at the parent's second line `b` is the parent's third.
+checkEqInt(findById(namedSub('2/4', ABC, 'b'), 'c1').x, 200,
+           'the names count from the subgrid\'s own first line')
+checkEqInt(findById(namedSub('2/4', ABC, 'b'), 'c1').x,
+           findById(namedSub('2/4', ABC, '2'), 'c1').x,
+           'so a name and the subgrid\'s own line number agree')
+checkEqInt(findById(namedSub('2/4', ABC, 'a'), 'c1').x, 100,
+           'and the first name is the subgrid\'s own first line')
+
+checkEqInt(findById(namedSub('1/4', '[a]', 'a'), 'c1').x, 0,
+           'fewer names than lines is not an error')
+
 finish('grid')

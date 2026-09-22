@@ -2903,12 +2903,22 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
     if v == null { return out }
     ascii t = asciiTrim(v)
     if t == '' || asciiLower(t) == 'none' { return out }
-    if asciiLower(t) == 'subgrid' {
-        trackIsSubgrid = true
-        return out
-    }
     arr[ascii] toks = cssTokens(t)
-    for int i = 0, i < toks.length, i++ {
+    // `subgrid` may be followed by a line-name list (Grid 2 §3), which
+    // names the lines the subgrid spans rather than declaring tracks of
+    // its own. Reading the keyword only when it is the whole value lost
+    // the flag the moment a name list appeared, and the box became an
+    // ordinary grid -- silently, because the names parsed fine.
+    int from = 0
+    if toks.length > 0 && asciiLower(asciiTrim(toks[0])) == 'subgrid' {
+        trackIsSubgrid = true
+        from = 1
+    }
+    // A subgrid declares no tracks, so the line a name belongs to
+    // cannot be counted from them: its lines are consecutive, one per
+    // bracketed group.
+    int subgridLine = 1
+    for int i = from, i < toks.length, i++ {
         // `[a b]` names the line before the next track. cssTokens splits
         // on whitespace and knows nothing of brackets, so a bracketed
         // run arrives as several tokens and is gathered back here.
@@ -2930,11 +2940,12 @@ arr[Track] func parseTrackList(v:ascii, fontSize:int) {
                     trackLineNames.push(asciiLower(inner).toText())
                     // Line numbers count from 1, and this names the line
                     // before the track that follows.
-                    trackLineAt.push(out.length + 1)
+                    trackLineAt.push(trackIsSubgrid ? subgridLine : out.length + 1)
                 }
                 if last { break }
                 j++
             }
+            subgridLine++
             i = j
             continue
         }
