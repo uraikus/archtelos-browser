@@ -190,16 +190,18 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
-   **Hit testing culls by the ancestor's rectangle**, which the
-   transform work turned up. An out-of-flow box laid out beyond its
-   parent's box is unreachable: `hitTest` descends only into children
-   whose rectangle holds the point, and an absolutely positioned box at
-   100,100 inside a body of zero height is found by neither. Chromium
-   finds it. The fix is for the descent to use the box's **ink** extent
-   -- the union of its own rectangle and its out-of-flow descendants' --
-   rather than its laid-out one, which is the same question the painter
-   asks with `inlineInkOverhang`. It wants its own measurement of what
-   that union costs to keep.
+   **What is left of hit testing is its order.** An out-of-flow box
+   laid out beyond every ancestor's rectangle is found now -- the
+   out-of-flow boxes are kept in a list as layout passes them, and the
+   search falls back to it once the ordinary descent has come back
+   empty. What that fallback deliberately does not do is change an
+   answer the descent already gave, which leaves the older imprecision
+   in place: the descent returns the **first** child whose rectangle
+   holds the point rather than the topmost, so where an in-flow box and
+   a positioned one overlap, the one earlier in document order wins
+   where the painter puts the other on top. Fixing that is a reverse
+   walk of the painting order rather than a tree descent, and now that
+   CSS2 §9.9's order exists there is something to walk backwards.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does

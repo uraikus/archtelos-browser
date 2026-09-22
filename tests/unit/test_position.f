@@ -254,4 +254,60 @@ check(mvIn == null || getAttr(mvIn.node, 'id') != 'r',
       'a translated box is not where it was laid out')
 check(mvOut != null && getAttr(mvOut.node, 'id') == 'r', 'it is where it was drawn')
 
+// ---- an out-of-flow box beyond its ancestors is still hit ------------
+//
+// Hit testing descends only into children whose rectangle holds the
+// point, so a box laid out past every ancestor's box was unreachable.
+// Chromium finds it: with an empty body -- `getBoundingClientRect`
+// gives it a height of **0** -- a `position: absolute` box at 100,100
+// answers `elementFromPoint` at 140,120, and so does one beyond a
+// parent ten pixels tall, and a `position: fixed` one beyond both
+// (todo.md).
+
+Box func outFlowRoot(css:text, body:text) {
+    Page p = pageFromHtml('<!doctype html><head><style>body{margin:0}' + css
+        + '</style><body>' + body + '</body>', 'about:blank', 800)
+    return p.root
+}
+
+text OF_ABS = '#a{position:absolute;left:100px;top:100px;width:80px;height:40px}'
+
+Box ofEmpty = hitTest(outFlowRoot(OF_ABS, '<div id="a"></div>'), 140, 120)
+check(ofEmpty != null && getAttr(ofEmpty.node, 'id') == 'a',
+      'an absolute box in an empty body is hit')
+
+Box ofBeside = hitTest(outFlowRoot(OF_ABS, '<div id="a"></div>'), 300, 120)
+check(ofBeside == null || getAttr(ofBeside.node, 'id') != 'a',
+      'and a point beside it is not')
+
+text OF_SHORT = '#p{position:relative;width:50px;height:10px}' + OF_ABS
+Box ofChild = hitTest(outFlowRoot(OF_SHORT, '<div id="p"><div id="a"></div></div>'), 140, 120)
+check(ofChild != null && getAttr(ofChild.node, 'id') == 'a',
+      'an absolute box beyond a short parent is hit')
+
+Box ofParent = hitTest(outFlowRoot(OF_SHORT, '<div id="p"><div id="a"></div></div>'), 20, 5)
+check(ofParent != null && getAttr(ofParent.node, 'id') == 'p',
+      'and the parent is still hit where it is')
+
+text OF_FIXED = '#p{width:10px;height:10px}'
+    + '#a{position:fixed;left:200px;top:200px;width:80px;height:40px}'
+Box ofFixed = hitTest(outFlowRoot(OF_FIXED, '<div id="p"><div id="a"></div></div>'), 240, 220)
+check(ofFixed != null && getAttr(ofFixed.node, 'id') == 'a',
+      'a fixed box beyond everything is hit')
+
+// `pointer-events: none` takes it out of hit testing wherever it is, so
+// the new path must honour it exactly as the ordinary descent does.
+Box ofNone = hitTest(outFlowRoot(OF_ABS + '#a{pointer-events:none}',
+    '<div id="a"></div>'), 140, 120)
+check(ofNone == null || getAttr(ofNone.node, 'id') != 'a',
+      'pointer-events: none keeps it out of the new path too')
+
+// And a transformed one is hit where it is drawn, which is the two
+// features agreeing rather than each answering on its own.
+Box ofTx = hitTest(outFlowRoot(
+    '#a{position:absolute;left:100px;top:100px;width:80px;height:40px;'
+    + 'transform:translate(200px,0)}', '<div id="a"></div>'), 340, 120)
+check(ofTx != null && getAttr(ofTx.node, 'id') == 'a',
+      'a translated out-of-flow box is hit where it is drawn')
+
 finish('position')

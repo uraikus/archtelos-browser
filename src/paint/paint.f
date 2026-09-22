@@ -3534,6 +3534,32 @@ void func untransformPoint(b:Box, x:int, y:int) {
     untransformedY = oy + roundPx(py)
 }
 
+// The out-of-flow boxes, searched topmost first. This is what finds a
+// box laid out past every ancestor's rectangle, which the ordinary
+// descent cannot reach because it culls by the ancestor's box. Later in
+// document order is nearer the top, so the scan runs backwards.
+//
+// It is declared before `hitTest` and calls it, which is fine because
+// functions are hoisted here where globals are not.
+Box func hitOutOfFlow(x:int, y:int) {
+    for int i = outOfFlowBoxes.length - 1, i >= 0, i-- {
+        Box c = outOfFlowBoxes[i]
+        int hx = x
+        int hy = y
+        if cascadeSawTransform && c.style.transforms.length > 0 {
+            untransformPoint(c, x, y)
+            hx = untransformedX
+            hy = untransformedY
+        }
+        if hx < c.x || hx >= c.x + c.w { continue }
+        if hy < c.y || hy >= c.y + c.h { continue }
+        Box inner = hitTest(c, hx, hy)
+        if inner != null { return inner }
+        if c.style.pointerEvents != PE_NONE { return c }
+    }
+    return null
+}
+
 Box func hitTest(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     // Inside a scrolled box the content is drawn that much higher than
@@ -3587,6 +3613,15 @@ Box func hitTest(b:Box, x:int, y:int) {
             if inner != null { return inner }
             if c.style.pointerEvents != PE_NONE { return c }
         }
+    }
+    // Nothing in the tree under this point. A box laid out past every
+    // ancestor's rectangle is unreachable by that descent, so the
+    // out-of-flow boxes are searched directly -- from the root only,
+    // and only once the ordinary answer has come back empty, so no
+    // answer this already gave can change.
+    if b.parentId == 0 && outOfFlowBoxes.length > 0 {
+        Box away = hitOutOfFlow(x, y)
+        if away != null { return away }
     }
     return null
 }

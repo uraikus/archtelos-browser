@@ -5822,6 +5822,15 @@ int posCbY = 0
 int posCbW = 0
 int posCbH = 0
 
+// Every out-of-flow box, in document order. Hit testing descends only
+// into children whose rectangle holds the point, so a box laid out past
+// every ancestor's box was unreachable -- an absolutely positioned box
+// at 100,100 inside an empty body is found by neither, where Chromium
+// finds it (todo.md). This is what the search falls back to, and it is
+// filled on the walk `layoutPositioned` already makes rather than by a
+// pass of its own.
+arr[Box] outOfFlowBoxes = []
+
 // A box whose computed `transform` is anything but `none` is the
 // containing block for its positioned descendants -- `absolute` and
 // `fixed` alike (Transforms 1 §3). The test is on the list's length
@@ -5847,6 +5856,7 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
     // An out-of-flow box has no geometry yet: give it one against its
     // containing block before deciding where to put it.
     if boxIsOutOfFlow(b) {
+        outOfFlowBoxes.push(b)
         int useX = b.style.position == POS_FIXED ? fxX : cbX
         int useY = b.style.position == POS_FIXED ? fxY : cbY
         int useW = b.style.position == POS_FIXED ? fxW : cbW
@@ -6788,6 +6798,8 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // layout and as tall as the document turned out to be. A document
     // with no positioned box skips the walk entirely.
     if docHasPositioned {
+        arr[Box] emptyOutOfFlow = []
+        outOfFlowBoxes = emptyOutOfFlow
         layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight,
                          0, 0, width, cssViewportHeight)
         // An anchored box resolves against another element's finished

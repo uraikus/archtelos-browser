@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An out-of-flow box beyond its ancestors is hit again
+
+`hitTest` descends only into children whose rectangle holds the point,
+so a box laid out past every ancestor's box was unreachable. With an
+empty body -- height **0** -- an absolutely positioned box at 100,100
+was found by nothing; Chromium's `elementFromPoint` finds it, and so
+does one beyond a parent ten pixels tall, and a `fixed` one beyond both.
+
+The out-of-flow boxes are collected as `layoutPositioned` passes them,
+which is a push on a walk that already happens, and the search falls
+back to that list **only once the ordinary descent has returned
+nothing** -- so no answer this already gave can change, which is what
+keeps a hit-testing change out of the rest of the suite. The fallback
+honours `pointer-events: none` and goes through the inverse transform,
+so a translated out-of-flow box is hit where it is drawn: the two
+features agree rather than each answering on its own.
+
+What it deliberately leaves alone is the older imprecision, now written
+down in todo.md: the descent returns the first child whose rectangle
+holds the point rather than the topmost.
+
+position 58 -> 65.
+
 ### CSS2 §9.9's painting order
 
 A `z-index: -1` child painted above everything here, including the

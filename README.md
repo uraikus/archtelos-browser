@@ -312,6 +312,10 @@ and `contain-intrinsic-size` supplies what an automatic size resolves to
 instead; `contain: paint` clips its descendants; and
 `content-visibility: hidden` paints the box and nothing inside it.
 
+**Clicks** find a box wherever it was laid out, including past every
+ancestor's edge — an absolutely positioned box in an empty body is
+clickable — and through any transform on it.
+
 **Painting order** is CSS2 §9.9's: inside a stacking context a box's
 own background and border come first, then its negative-`z-index`
 descendants, then its in-flow content, then the positioned descendants
