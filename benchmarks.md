@@ -750,6 +750,63 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What the page-side breaks cost, and the millisecond that changed phase
+
+2026-09-22, same machine and script. The change reaches an ordinary page
+through one line: the unit collector's test for "does this box end the
+container" becomes a range rather than an equality, because the two side
+values sit above `BRK_PAGE`. Its first comparison rejects the `auto`
+almost every box carries. `pageSideAt` runs once per break of a print
+and not at all otherwise, and neither benchmark page is printed.
+
+| generated.html | forward, parent first | reversed, candidate first |
+|---|---|---|
+| parse | +0, 7 of 25 | +0, 0 of 25 |
+| cascade | **+1** (mean +1.12), 16 of 25 | +0 (mean -0.16), 8 of 25 |
+| layout | +0, 9 of 25 | +0, 10 of 25 |
+| paint | +0, 5 of 25 | +0, 6 of 25 |
+
+A forward +1 against a reversed 0 is this file's clearest shape for a
+real cost, and `src/css/cascade.f` is on the diff, so unlike the entry
+below the rule had somewhere to send the question. The code answers it
+anyway: the only cascade-side change is inside `breakKeyword`, which
+returns before any of its comparisons when the property is undeclared,
+and `generated.html` declares no `break-*` at all.
+
+**So the control was built again** -- the parent recompiled with this
+change's constants, its array and a reader of the same shape, all
+renamed and called from nowhere. It came out eight bytes from the
+candidate, and it moved a millisecond too. Into a different phase:
+
+| generated.html | parent -> parent + dead code |
+|---|---|
+| cascade | +0 (mean -0.04), 10 of 25 |
+| layout | **+1** (mean +1.36), 18 of 25 |
+
+That is the finding. **The millisecond is not attached to a phase; it
+follows wherever the compiler puts the code.** Against the parent the
+candidate's landed in cascade and the dead code's in layout, which no
+account of either diff can explain, because the dead code runs nowhere
+and the candidate's cascade change runs nowhere on this page.
+
+**Paired against the control, the candidate reads below it, both ways
+and on both pages:**
+
+| | pad -> new | new -> pad |
+|---|---|---|
+| `generated.html` cascade | **-1**, 4 of 25 | +1, 13 of 25 |
+| `generated.html` layout | **-1**, 4 of 25 | +1, 15 of 25 |
+| `features.html` cascade | +0, 8 of 25 | +1, 14 of 25 |
+| `features.html` layout | **-2**, 3 of 25 | +1, 19 of 25 |
+
+Every pair says the same thing in both directions: a binary that does
+this work is no slower than a binary of the same size that does none,
+and on these runs it is a millisecond quicker. The readings against the
+*parent* do not compose with each other -- +1 of cascade for the
+candidate, +1 of layout for the dead code, and -1 of both between them
+-- and a quantity that does not add up across three binaries is not a
+property of any one diff.
+
 ## What `print-color-adjust` cost, and the control that unmasked it
 
 2026-09-22, same machine and script. The property reaches a page
