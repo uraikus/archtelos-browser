@@ -190,19 +190,39 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
-   **What is left of hit testing is its order.** An out-of-flow box
-   laid out beyond every ancestor's rectangle is found now -- the
-   out-of-flow boxes are kept in a list as layout passes them, and the
-   search falls back to it once the ordinary descent has come back
-   empty. The descent runs in reverse painting order now --
-   the positioned children at zero and above, highest `z-index` first
-   and latest first within a z; then this box's own inline content;
-   then the in-flow children, latest first; then the negative ones --
-   and the out-of-flow fallback runs the same way, so the topmost box
-   takes the click rather than the first one found. What is left is
-   what CSS2 §9.9 puts between those steps and this does not: floats
-   have their own place in the order (step 4) and are searched with the
-   in-flow boxes here.
+   **What is left of hit testing is §9.9's steps 3, 4 and 5, and it is
+   not a hit-testing job.** An out-of-flow box laid out beyond every
+   ancestor's rectangle is found -- the out-of-flow boxes are kept in a
+   list as layout passes them, and the search falls back to it once the
+   ordinary descent has come back empty. The descent runs in reverse
+   painting order -- the positioned children at zero and above, highest
+   `z-index` first and latest first within a z; then this box's own
+   inline content; then the in-flow children, latest first; then the
+   negative ones -- and the out-of-flow fallback runs the same way, so
+   the topmost box takes the click rather than the first one found.
+
+   What the standard separates and this does not is steps 3, 4 and 5:
+   the in-flow **block-level** descendants, then the **floats**, then
+   the in-flow **inline-level** descendants. Here the painter draws a
+   box's own lines and then its children in document order, so a float
+   paints among its in-flow siblings rather than above them, and a
+   box's own inline content paints below its block children rather than
+   above them. Hit testing reads that same order backwards, so a click
+   and a pixel agree with each other and diverge from the standard
+   together -- which is the one redeeming thing about it, and the
+   reason this cannot be fixed in the hit tester alone.
+
+   **An attempt that was reverted is worth recording.** Giving floats
+   their own pass in `hitTest`, between the inline-content pass and the
+   in-flow one, fixes the case that discriminates -- a float against a
+   block written after it -- and breaks the case above it, because the
+   inline content that should beat the float lives in an *anonymous
+   block child* rather than in this box's own lines. Step 5 is a
+   property of the whole subtree, not of a box's siblings, so the
+   faithful form is three walks of the subtree per stacking context, in
+   the painter first and in the hit tester to match. That is the shape
+   of the work, and it has a cost question of its own: most pages have
+   a float.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does
