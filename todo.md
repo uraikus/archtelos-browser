@@ -1570,6 +1570,38 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### Grid's three divergences, measured
+
+**`justify-content` positions the tracks, and `normal` is not `start`.**
+Two `auto` columns holding `ab` and `cd` in a 400px grid:
+
+| | first track | second track |
+|---|---|---|
+| `normal` | x=0, **w=200** | x=200, **w=200** |
+| `start` | x=0, w=19 | x=19, w=19 |
+| `center` | x=181, w=19 | x=200, w=19 |
+| `end` | x=361, w=19 | x=381, w=19 |
+| `space-between` | x=0, w=19 | x=381, w=19 |
+
+So `normal` **stretches** an `auto` track to fill the container and
+every other value sizes the track to its content and positions it
+instead. This engine stretches under all five, which is why `normal`
+and `start` are one value here.
+
+**A spanning item does widen the tracks it spans.** A grid of two
+`auto` columns at `width: max-content`, holding `ab` and `cd` and an
+item spanning both with twenty `W`s: Chromium gives the grid 193, each
+column **96**, and the spanning item 193. With the item contributing
+nothing the columns would be 19 apiece and the grid 38, which is what
+this engine gives.
+
+**An unknown line name makes an implicit line after the explicit
+grid.** On a 2x2 grid of 100px columns and 50px rows in a 400px
+container, `grid-area: zz` puts the item at **x=300, y=100, w=100,
+h=0** -- the fourth column line and the fourth row line, one implicit
+track past the explicit grid, spanning one. This engine leaves the edge
+automatic and auto-places it instead.
+
 ### Which of two overlapping boxes a click lands on, measured
 
 `elementFromPoint` names the **topmost in painting order**, so five
