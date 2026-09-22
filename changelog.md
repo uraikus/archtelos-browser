@@ -46,6 +46,12 @@ uppercase at 0.7" said in widths.
 Properties 270 -> **271**, and `--fields` says the field that moved is
 `fontCaps` rather than something belonging to another property.
 
+**And the feature page could not see it**, which is the fourth time.
+`features.html` had no `font-variant` on it at all, so the paired
+benchmark would have reported free while measuring nothing. It has a
+small-caps paragraph with a probe now, and `--verify` is at fifteen
+features.
+
 Left out: `petite-caps` and its `all-` form want a second synthesised
 size nothing has measured, and `unicase` and `titling-caps` want a font
 feature no face here carries.

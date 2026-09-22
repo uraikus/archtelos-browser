@@ -833,6 +833,51 @@ where it used to return 0. `parseGridLine` now walks its tokens rather
 than indexing the first, which is once per declaration at cascade time.
 A page with no grid on it never reaches any of it.
 
+## What synthesised small caps cost, and a cascade millisecond from dead code
+
+2026-09-22, same machine and script. **Neither benchmark page had a
+`font-variant` on it**, so the pairing below measures what the feature
+costs a page that does *not* use it -- which is the question this file's
+own rule asks -- and the feature page gains a probe for it so the next
+reading is not blind.
+
+Both pages render byte-identically between the binaries, `cmp`-checked
+before any timing.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate, `features.html` | +0 | +0 | -1 | +0 |
+| reversed | +0 | +0 | +1 | -1 |
+| forward, `generated.html` | +0 | **+1** | **+1** | **+1** |
+| reversed, `generated.html` | +0 | +0 | +0 | +0 |
+
+`features.html` reads nothing: -1 forward against +1 reversed is the
+order effect. `generated.html` reads +1 in three phases forward against
+nothing reversed, which this file calls an order effect *plus* a
+millisecond -- so a third binary was built.
+
+The control is the parent recompiled with the six functions on the
+measured path -- `asciiUpper`, the two that segment a run, the one that
+sets an explicit size and the measurer -- under other names and **called
+from nowhere**. It comes out 624 bytes above the parent.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| parent then control (dead code only) | +0 | **+1** | +0 | +0 |
+| control then candidate | +0 | +0 | **+1** | +0 |
+
+**The cascade millisecond is reproduced exactly by code that cannot
+run, in a phase the dead code is not even in.** That is the sixth time
+the control has disagreed with the parent here and the sixth time it
+has been right. The paint reading vanishes against the control too.
+
+What survives is +1 of layout against the control, with a mean of
+**+0.12** -- a median of one on a 77 ms phase whose mean says nothing.
+That is the floor this method reads at rather than an established cost,
+and it is recorded as such. What the code actually adds to a page with
+no small caps is one boolean test per `measureWidth` miss and one per
+fragment painted, both behind `anySmallCaps`.
+
 ## What §12.5's spanning pass cost, and three binaries that would not add up
 
 2026-09-22, same machine and script. `features.html` is the right page

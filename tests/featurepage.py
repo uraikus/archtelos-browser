@@ -92,6 +92,10 @@ NEGMARGIN_CSS = """
 .pull2{height:34px;background:#cfe3d4;padding:4px;margin-top:-18px;margin-left:24px}
 """
 
+SMALLCAPS_CSS = """
+.caps{font-variant-caps:small-caps;letter-spacing:0}
+"""
+
 ZSTACK_CSS = """
 .zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
 .zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
@@ -132,7 +136,7 @@ th{background:#dde}
 # generated counters become no generated content at all, `object-fit`
 # goes back to its initial value and the form controls stop being
 # painted as form controls.
-FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS
+FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS + SMALLCAPS_CSS
 
 PLAIN_CSS = FEATURES_CSS + """
 h2::before{content:none}
@@ -169,6 +173,11 @@ PROBES = (
     # Making the parent a context puts it in front, which is the whole
     # of the painting order in one pixel.
     ('stacking-order', '.zstack{z-index:0}'),
+    # Synthesised small caps draws the lowercase letters of a run at 0.7
+    # of the font size. Turning the keyword off puts them back at the
+    # full size, which rewraps the paragraph -- a page with no
+    # `font-variant` on it cannot tell the two apart.
+    ('small-caps', '.caps{font-variant-caps:normal}'),
     # A negative `margin-top` pulls the second box up over the first.
     # Setting it to zero puts them back apart, which moves every box
     # below them and so the whole page.
@@ -220,6 +229,8 @@ def body():
                     '<input type="text" value="section %d"> '
                     '<input type="text" placeholder="search section %d"> '
                     '<button type="button">run</button></form>' % (s, s, s, s)),
+        rows.append('<p class="caps">small capitals drawn from capitals at '
+                    'seven tenths of the size</p>')
         rows.append('<div class="zstack"><div class="zback"></div>'
                     'behind and in front</div>')
         rows.append('<div class="pull1">pulled</div>'
