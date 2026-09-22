@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS2 §9.9's painting order
+
+A `z-index: -1` child painted above everything here, including the
+background of the box it is inside. The standard puts it after that
+background and before the box's own content -- and, when the box is not
+a stacking context, **behind** that background, because the child
+belongs to the nearest ancestor that is one.
+
+That hoisting is the whole of it, and it is what made the previous
+entry's third part unshippable: making `transform` a stacking context
+changes nothing until there is an order for it to change. Both landed
+together.
+
+**What makes a context was measured rather than listed.** A positioned
+box with a *declared* `z-index`, a box with a `transform`, and a box
+with an `opacity` below 1 all answer identically, and `z-index: auto`
+answers as declaring nothing. Since `auto` and `0` both compute to 0
+here, the fact that a declaration happened is kept in a side map keyed
+by the computed style's serial rather than as a field on `Style`, for
+the reason benchmarks.md gives about one `int` on `Style`.
+
+**A document that declares no negative `z-index` does none of the
+walk.** `cascadeSawNegativeZ` is raised where the value is computed, and
+it guards both the collecting pass and the skip in the ordinary
+positioned loop -- which is also what kept a painting-order change from
+moving a pixel of the twenty-four render suites.
+
+New `stacking` render suite, 10 checks.
+
 ### What a transform makes of a box
 
 Two of the three things Transforms 1 §3 asks of a transformed box, and

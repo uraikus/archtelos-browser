@@ -3259,6 +3259,56 @@ void func paintResizeGrabber(b:Box) {
     }
 }
 
+// Whether this box establishes a stacking context (CSS2 §9.9, and the
+// specifications that have added to the list since). Three of them are
+// reachable here and all three were measured to behave identically
+// (todo.md): a positioned box with a **declared** `z-index` -- `auto` is
+// not one -- a box with a `transform`, and a box with an `opacity` below
+// 1. The root is always one, which its caller answers for.
+bool func boxIsStackingContext(b:Box) {
+    Style s = b.style
+    if s.opacity < 1.0 { return true }
+    if cascadeSawTransform && s.transforms.length > 0 { return true }
+    return boxIsPositioned(b) && zIndexIsExplicit(s)
+}
+
+// The negative-`z-index` boxes that belong to this stacking context:
+// its positioned descendants with a negative z, and those of every
+// descendant that is **not** itself a stacking context -- because a
+// negative child of a non-context box is painted by the nearest
+// ancestor that is one, which is what puts it behind that box's own
+// background.
+void func collectNegativeZ(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) && c.style.zIndex < 0 {
+            out.push(c)
+            continue
+        }
+        // A descendant that is a stacking context keeps its own
+        // negatives; anything else passes them up to here.
+        if boxIsStackingContext(c) { continue }
+        collectNegativeZ(c, out)
+    }
+}
+
+// Them, painted lowest first and in document order within a z.
+void func paintNegativeZ(b:Box) {
+    arr[Box] neg = []
+    collectNegativeZ(b, neg)
+    if neg.length == 0 { return }
+    int lowest = neg[0].style.zIndex
+    for int i = 1, i < neg.length, i++ {
+        if neg[i].style.zIndex < lowest { lowest = neg[i].style.zIndex }
+    }
+    for int z = lowest, z < 0, z++ {
+        for int i = 0, i < neg.length, i++ {
+            if neg[i].style.zIndex == z { paintBox(neg[i]) }
+        }
+    }
+}
+
 void func paintBoxInner(b:Box) {
     // `overflow: hidden` clips this box's descendants to its padding box
     // (CSS2 §11.1.1). The box itself -- its background and border -- is
@@ -3315,6 +3365,11 @@ void func paintBoxInner(b:Box) {
     // are not contents, so they are already painted above; everything
     // below this line is.
     if s.contentHidden { return }
+    // CSS2 §9.9 step 3: the negative descendants of this stacking
+    // context, after its own background and border and before anything
+    // of its content. A document that declares no negative `z-index`
+    // does none of this.
+    if cascadeSawNegativeZ && boxIsStackingContext(b) { paintNegativeZ(b) }
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
     paintLines(b)
@@ -3358,6 +3413,9 @@ void func paintBoxInner(b:Box) {
             if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
             if !boxIsPositioned(c) { continue }
             if c.style.zIndex != z { continue }
+            // A negative one was painted by the stacking context it
+            // belongs to, before any of this box's content.
+            if cascadeSawNegativeZ && z < 0 { continue }
             paintBox(c)
         }
     }

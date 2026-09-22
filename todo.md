@@ -180,21 +180,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `hebrew`, `armenian`, `georgian` and the East Asian ones beyond
    `cjk-decimal`. What is left of Lists 3 is `list-style-image`, which
    needs a fetched image for the marker.
-8. **Transforms 1, completed**: a transformed box is a containing block
-   for its positioned descendants, `absolute` and `fixed` alike, and hit
-   testing goes through the inverse transform so a click lands where the
-   box is drawn. What is left is the **stacking context**, and it is
-   not one line: the observable difference is where a `z-index: -1`
-   child paints, and this painter puts every positioned child after the
-   box's own background and lines, so a negative child already paints
-   above a background it should be behind. Making `transform` a stacking
-   context changes nothing until CSS2 §9.9's order is there to change --
-   the negative children of a box that is *not* a stacking context have
-   to be painted by the nearest ancestor that is, which is hoisting
-   rather than reordering. Declaring it implemented before that would be
-   `outline-style` again: a keyword the instrument scores while no pixel
-   moves. `skew()` and `matrix()` are blocked on Festina rather than on
-   effort: the canvas has no call that takes a matrix (FINDINGS.md,
+8. **Transforms 1 is done** but for `skew()` and `matrix()`: a
+   transformed box is a containing block for its positioned
+   descendants, `absolute` and `fixed` alike, it establishes a stacking
+   context, and hit testing goes through the inverse transform so a
+   click lands where the box is drawn. The stacking context needed CSS2
+   §9.9's painting order underneath it before it could mean anything,
+   which is now there. `skew()` and `matrix()` are blocked on Festina
+   rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
    **Hit testing culls by the ancestor's rectangle**, which the

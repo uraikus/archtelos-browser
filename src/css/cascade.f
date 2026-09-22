@@ -139,6 +139,23 @@ int styleDepth = 0
 // page with no transform pays one bool for the feature (CLAUDE.md, "a
 // feature must not cost anything to the pages that do not use it").
 bool cascadeSawTransform = false
+// Whether any element computed a negative `z-index`. CSS2 §9.9's
+// hoisting -- a negative child of a box that is not a stacking context
+// is painted by the nearest ancestor that is -- costs a walk, and a
+// document that never says one needs none of it.
+bool cascadeSawNegativeZ = false
+// Which computed styles **declared** a `z-index`. `auto` and `0` both
+// compute to 0 here, and the difference is exactly what makes a
+// positioned box a stacking context, so the fact that a declaration
+// happened is kept beside the value rather than as a field on `Style`
+// (benchmarks.md, "What one `int` on `Style` costs").
+map[bool] explicitZIndexOfSerial = {}
+bool anyExplicitZIndex = false
+
+bool func zIndexIsExplicit(s:Style) {
+    if !anyExplicitZIndex || s == null { return false }
+    return explicitZIndexOfSerial[`${s.serial}`] == true
+}
 // The same question for `clip-path` and the legacy `clip`: a page with
 // neither pays one bool, and the painter never asks a box.
 bool cascadeSawClip = false
@@ -264,6 +281,10 @@ void func cascadeReset() {
     anyAnchorHidden = false
     cssResetLayers()
     cascadeSawTransform = false
+    cascadeSawNegativeZ = false
+    map[bool] emptyExplicitZ = {}
+    explicitZIndexOfSerial = emptyExplicitZ
+    anyExplicitZIndex = false
     cascadeSawClip = false
     cascadeSawColorScheme = false
     cascadeSawDirection = false
@@ -7170,7 +7191,15 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     ascii zi = styleProp(props, 'z-index')
     if zi != null {
         int z = asciiTrim(zi).toText().toInt()
-        if z != null { s.zIndex = z }
+        // `auto` does not parse as an integer, which is what keeps it
+        // out of both of these: it is neither a declared z-index nor a
+        // negative one.
+        if z != null {
+            s.zIndex = z
+            explicitZIndexOfSerial[`${s.serial}`] = true
+            anyExplicitZIndex = true
+            if z < 0 { cascadeSawNegativeZ = true }
+        }
     }
     s.floatSide = FLOAT_NONE
     ascii fl = styleProp(props, 'float')
