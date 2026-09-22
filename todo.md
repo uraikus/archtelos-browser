@@ -1523,6 +1523,42 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### `text-decoration-skip-ink`, measured and not taken
+
+Rasterised at 40px monospace, `gjpqy` underlined in blue three pixels
+thick, reading the row through the underline:
+
+| | blue pixels | the gaps in it |
+|---|---|---|
+| `auto` | 58 | 1-22, 32-42, 49-57, 86-94, 101-111 |
+| `all` | 58 | **identical, pixel for pixel** |
+| `none` | 89 | 4-7, 15-20, 35-39, 50-55, 88-92, 104-108 |
+
+Two things come out of it. **Chromium does not distinguish `auto` from
+`all`**, which the standard defines as different -- `all` is meant to
+skip where `auto` would not. And **`none` still shows gaps**, which are
+not skipping: they are the glyph's own strokes, four to six pixels wide,
+painted over an underline that Chromium draws *under* the text. `auto`'s
+gaps are eleven to twenty-two pixels, which is the stroke plus the halo
+the standard asks for either side.
+
+So the default here disagrees with the browser on every descender: this
+engine draws through them, and `auto` is the initial value.
+
+**It is not taken, and the obstacle is the painter's coordinates rather
+than the algorithm.** The engine has no glyph outlines -- `measureTextWidth`
+is the whole of what it can ask about a string -- so the only way to find
+where ink crosses the underline is to draw the glyphs, read the canvas
+back along the band, and draw the line in the runs that did not change.
+The read has to be in device pixels, and `paintTextFragment` runs inside
+whatever `saveState`/`translate` the scroll offset, a transform and any
+enclosing scroll container have pushed; the painter tracks no accumulated
+offset to undo them with. Giving it one is the task, and it is a change
+to the painter rather than to text decoration. The cost wants measuring
+too: the scan is one read per pixel of every underlined fragment, which
+every page with a link pays, and nothing here has read the canvas back
+mid-paint before.
+
 ### A side break's blank page, measured
 
 CSS 2 §13.3.1 and Fragmentation 3 §3.1 say `left` and `right` force
