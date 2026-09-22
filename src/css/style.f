@@ -815,6 +815,14 @@ const int TWS_STABLE = 3
 // initial value and grants the user agent a permission it may not be
 // using, so it is indistinguishable from not declaring the property at
 // all; `exact` withdraws that permission. Measured in todo.md.
+// font-variant-caps. Every value but these three is parsed and dropped:
+// `petite-caps` and its `all-` form want a second synthesised size the
+// measurement did not pin, and `unicase` and `titling-caps` want a font
+// feature no face here carries.
+const int CAPS_NORMAL = 0
+const int CAPS_SMALL = 1
+const int CAPS_ALL_SMALL = 2
+
 const int PCA_ECONOMY = 0
 const int PCA_EXACT = 1
 
@@ -1680,6 +1688,19 @@ int func textWrapStyleOf(s:Style) {
 // INHERITS -- measured: `exact` on a parent reaches an undeclared
 // child, and the child takes it back with `economy` -- so the applier
 // reads the parent's value out of this same map first.
+// font-variant-caps, kept by the computed style's serial rather than as
+// a field on `Style`, like everything else this engine has added since
+// one `int` there was measured at a millisecond of layout. It INHERITS,
+// so the applier reads the parent's value out of this map first.
+map[int] fontCapsOfSerial = {}
+bool anySmallCaps = false
+
+int func fontCapsOf(s:Style) {
+    if !anySmallCaps || s == null { return CAPS_NORMAL }
+    int v = fontCapsOfSerial[`${s.serial}`]
+    return v == null ? CAPS_NORMAL : v
+}
+
 map[int] printColorAdjustOfSerial = {}
 bool anyPrintColorAdjust = false
 

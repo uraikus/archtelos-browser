@@ -216,4 +216,46 @@ Box rBrPlain = layoutHtml('<body><div style="width:200px">aa<br>bb</div></body>'
 check(lineLeft(findBox(rBr, 'div'), 0) > lineLeft(findBox(rBrPlain, 'div'), 0),
       'the line before a forced break takes text-align-last')
 
+// ---- font-variant-caps, synthesised (CSS Fonts 4) ----------------------
+// No face here carries a small-caps feature, so a browser synthesises
+// it: a lowercase letter is drawn as its uppercase at 0.7 of the font
+// size, per character. Measured in Chromium first (todo.md).
+//
+// Every check is a relation rather than an advance worked out here: a
+// small-caps run must measure what the same letters uppercased measure
+// at the smaller size, which is the same statement as "drawn as
+// uppercase at 0.7" said in widths.
+
+int func runWidth(decl:text, body:text) {
+    Box r = layoutHtml(`<body style="margin:0;font:40px/60px monospace"><div id="t" style="float:left;${decl}">${body}</div></body>`, 800)
+    Box t = findBox(r, 'div')
+    return t == null ? 0 - 1 : t.w
+}
+
+int plainLower = runWidth('', 'abc')
+int plainUpper = runWidth('', 'ABC')
+int smallOfUpper = runWidth('font-size:28px', 'ABC')
+checkEqInt(plainUpper, plainLower, 'monospace gives upper and lower the same advance')
+check(smallOfUpper < plainUpper, 'and 0.7 of the size is narrower')
+
+checkEqInt(runWidth('font-variant-caps:small-caps', 'abc'), smallOfUpper,
+           'small-caps measures its lowercase as uppercase at 0.7 of the size')
+checkEqInt(runWidth('font-variant-caps:small-caps', 'ABC'), plainUpper,
+           'and leaves an uppercase letter at the full size')
+checkEqInt(runWidth('font-variant-caps:all-small-caps', 'ABC'), smallOfUpper,
+           'all-small-caps shrinks the uppercase too')
+checkEqInt(runWidth('font-variant-caps:all-small-caps', 'abc'), smallOfUpper,
+           'and its lowercase with it')
+
+// Per character rather than per run: one full-size letter and two small
+// ones, which is the sum of the two runs above over one letter each.
+checkEqInt(runWidth('font-variant-caps:small-caps', 'aBc'),
+           Math.floorDiv(plainUpper, 3) + Math.floorDiv(smallOfUpper, 3) * 2,
+           'the size is chosen letter by letter, not for the run')
+
+// The shorthand reaches the same value as the longhand.
+checkEqInt(runWidth('font-variant:small-caps', 'abc'),
+           runWidth('font-variant-caps:small-caps', 'abc'),
+           'the font-variant shorthand sets the same thing')
+
 finish('text')

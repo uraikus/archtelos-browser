@@ -323,6 +323,72 @@ void func setFontFor(s:Style) {
     changeFont(usedFontSize(s), styleText, s.fontFamily)
 }
 
+// Synthesised small caps (CSS Fonts 4). No face here carries the
+// feature, so a lowercase letter is drawn as its capital at 0.7 of the
+// font size -- measured across five sizes in Chromium, where the
+// smaller size is rounded, which is why this rounds too (todo.md).
+//
+// Measuring and painting walk a run the same way, through
+// `smallCapsRunAt`, because a run drawn in segments the measurer did
+// not agree with puts the ink somewhere the layout did not reserve.
+int func smallCapsSize(s:Style) {
+    return maxInt(roundPx(usedFontSize(s).toFloat() * 0.7), 1)
+}
+
+// Whether the character at `i` is one the keyword shrinks: any letter
+// under `all-small-caps`, and only a lowercase one under `small-caps`.
+// Anything that is not a letter takes the full size, which is what
+// leaves a digit and a space alone.
+bool func smallCapsAt(caps:int, t:text, i:int) {
+    int c = t.toAscii().charCodeAt(i)
+    if c >= 97 && c <= 122 { return true }
+    if caps == CAPS_ALL_SMALL && c >= 65 && c <= 90 { return true }
+    return false
+}
+
+// The end of the run of like characters starting at `i`.
+int func smallCapsRunAt(caps:int, t:text, i:int) {
+    bool small = smallCapsAt(caps, t, i)
+    int j = i + 1
+    while j < t.length && smallCapsAt(caps, t, j) == small { j++ }
+    return j
+}
+
+// Set the canvas font to this style's, at an explicit size. The key is
+// cleared rather than set, because the size is not the style's own and
+// the next ordinary `setFontFor` must not believe the font is already
+// right.
+void func setFontAt(s:Style, px:int) {
+    text styleText = 'normal'
+    if s.fontBold && s.fontItalic { styleText = 'bold italic' }
+    else if s.fontBold { styleText = 'bold' }
+    else if s.fontItalic { styleText = 'italic' }
+    changeFont(px, styleText, s.fontFamily)
+    currentFontKey = ''
+}
+
+int func measureSmallCaps(s:Style, t:text, caps:int) {
+    int small = smallCapsSize(s)
+    ascii a = t.toAscii()
+    int w = 0
+    int i = 0
+    while i < a.length {
+        int j = smallCapsRunAt(caps, t, i)
+        // The slice is indexed rather than bound to a local, because a
+        // bound element of an ascii releases an alias that was never
+        // retained (FINDINGS.md, "ascii aliases are not retained").
+        if smallCapsAt(caps, t, i) {
+            setFontAt(s, small)
+            w = w + measureTextWidth(asciiUpper(a.slice(i, j)).toText())
+        } else {
+            setFontFor(s)
+            w = w + measureTextWidth(a.slice(i, j).toText())
+        }
+        i = j
+    }
+    return w
+}
+
 int func measureWidth(s:Style, t:text) {
     int t0 = archtelosTiming ? now() : 0
     profMeasureCalls++
@@ -333,8 +399,14 @@ int func measureWidth(s:Style, t:text) {
         return cached
     }
     profMeasureMisses++
-    setFontFor(s)
-    int w = measureTextWidth(t)
+    int caps = fontCapsOf(s)
+    int w = 0
+    if caps == CAPS_NORMAL {
+        setFontFor(s)
+        w = measureTextWidth(t)
+    } else {
+        w = measureSmallCaps(s, t, caps)
+    }
     if s.letterSpacing != 0 { w = w + s.letterSpacing * t.length }
     widthCache[key] = w
     if archtelosTiming { profMeasureMs = profMeasureMs + (now() - t0) }

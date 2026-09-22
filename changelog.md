@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `font-variant-caps`, synthesised rather than selected
+
+CSS Fonts 4, and the part of it this engine can reach. No face here
+carries a small-caps feature and `cairo_select_font_face` cannot load
+one, so the keyword is a **drawing instruction**: a lowercase letter is
+drawn as its capital at 0.7 of the font size, which is what Chromium
+does when the face has no feature either (§2.2 allows it).
+
+Measured across five sizes first -- 0.7000 at 20, 40, 80 and 100px, and
+0.6876 at 16px, which is the same rule with the smaller size rounded,
+0.7 x 16 being 11.2. The choice is made **letter by letter**:
+`small-caps` leaves an uppercase letter at the full size,
+`all-small-caps` shrinks it too, and `aBc` measures as one full-size
+character plus two small ones. The line box keeps the full font's
+metrics either way.
+
+**Measuring and painting walk the run through one pair of functions**,
+`smallCapsAt` and `smallCapsRunAt`, and that is the design rather than
+a tidiness. A run drawn in segments the measurer did not agree with
+puts ink where the layout reserved no room, and the two would drift
+apart the first time either learned about a character the other did
+not -- which is the same reason the resize grabber is drawn from the
+functions the pointer is tested against.
+
+**The width cache caught the stale key for the third time.** The first
+implementation put the applier beside the other inherited properties,
+which run *after* `refreshFontKey` -- so the key said nothing about the
+keyword, and the plain run's advance was served to the small-caps one
+from the cache. The tests read 72 where they wanted 51 for `abc` while
+`aBc` was right, which is the signature: a mixed run had no plain
+counterpart in the cache to collide with. The applier now runs before
+the key is built, where the zoom's does, and for the same reason.
+
+`tests/unit/test_text.f` 40 -> 44, and every check is a relation rather
+than an advance worked out here: a small-caps run must measure what the
+same letters uppercased measure at the smaller size, which is "drawn as
+uppercase at 0.7" said in widths.
+
+Properties 270 -> **271**, and `--fields` says the field that moved is
+`fontCaps` rather than something belonging to another property.
+
+Left out: `petite-caps` and its `all-` form want a second synthesised
+size nothing has measured, and `unicase` and `titling-caps` want a font
+feature no face here carries.
+
 ### A subgrid names its own lines, and its items size the parent's tracks
 
 Grid 2 §3's two halves, and they turned out to be one parser bug and

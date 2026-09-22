@@ -2431,7 +2431,43 @@ void func paintListMarker(b:Box) {
 }
 
 // The fragment's glyphs, at an offset from where the fragment sits.
+// Synthesised small caps, drawn in the same segments `measureSmallCaps`
+// measured. The two walk the run through one pair of functions on
+// purpose: a segment drawn where the measurer did not put one leaves
+// the ink somewhere the layout reserved no room for.
+void func drawSmallCaps(f:Fragment, s:Style, caps:int, dx:int, dy:int) {
+    int small = smallCapsSize(s)
+    ascii a = f.content.toAscii()
+    int x = f.x + dx
+    int i = 0
+    while i < a.length {
+        int j = smallCapsRunAt(caps, f.content, i)
+        bool isSmall = smallCapsAt(caps, f.content, i)
+        if isSmall { setFontAt(s, small) } else { setFontFor(s) }
+        text seg = isSmall ? asciiUpper(a.slice(i, j)).toText() : a.slice(i, j).toText()
+        if s.letterSpacing == 0 {
+            pDrawText(seg, x, f.baseline + dy)
+            x = x + measureTextWidth(seg)
+        } else {
+            arr[text] chars = seg.split('')
+            for int k = 0, k < chars.length, k++ {
+                pDrawText(chars[k], x, f.baseline + dy)
+                x = x + measureTextWidth(chars[k]) + s.letterSpacing
+            }
+        }
+        i = j
+    }
+    // The canvas is left at a size that is not this style's, so the
+    // next thing to draw would believe the font was already right.
+    setFontFor(s)
+}
+
 void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
+    int caps = fontCapsOf(s)
+    if caps != CAPS_NORMAL {
+        drawSmallCaps(f, s, caps, dx, dy)
+        return
+    }
     if s.letterSpacing == 0 {
         pDrawText(f.content, f.x + dx, f.baseline + dy)
         return

@@ -171,9 +171,11 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    style string for `bold`; and `@font-face` cannot be done at all,
    because `cairo_select_font_face` picks a family from the system and
    no call loads a font file. FINDINGS.md has the measurements and
-   festina.md §3l the proposal. Until Festina grows either, the most
-   this item can gain is `font-variant` and `font-stretch`, which are
-   the parts that do not need a font the system lacks.
+   festina.md §3l the proposal. `font-variant-caps` is done, synthesised
+   rather than selected, which was the part reachable without a font the
+   system lacks. `font-stretch` is not and cannot be: it needs a face
+   that carries the widths, and the runtime has no call that asks for
+   one.
 7. **Counter Styles 3, completed**: the `range`, `fallback` and
    `speak-as` descriptors; the `symbols()` function; and the predefined
    styles that need a table this repository would have to vendor --

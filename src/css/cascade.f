@@ -208,6 +208,7 @@ bool cascadeSawResize = false
 // but only on a document where something said it.
 bool cascadeSawTextWrapStyle = false
 bool cascadeSawPrintColorAdjust = false
+bool cascadeSawFontCaps = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -239,6 +240,9 @@ void func cascadeReset() {
     // would otherwise register every one of them twice.
     resetPageRules()
     anyPageBreak = false
+    anySmallCaps = false
+    map[int] emptyFontCaps = {}
+    fontCapsOfSerial = emptyFontCaps
     anyUnicodeBidi = false
     anyCornerShape = false
     cornerCustomK = []
@@ -306,6 +310,7 @@ void func cascadeReset() {
     cascadeSawResize = false
     cascadeSawTextWrapStyle = false
     cascadeSawPrintColorAdjust = false
+    cascadeSawFontCaps = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -450,6 +455,10 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawResize && dn == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (dn == 'text-wrap-style' || dn == 'text-wrap') {
                 cascadeSawTextWrapStyle = true
+            }
+            if !cascadeSawFontCaps
+                && (dn == 'font-variant-caps' || dn == 'font-variant' || dn == 'font') {
+                cascadeSawFontCaps = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1098,6 +1107,10 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawResize && decls[d].name == 'resize' { cascadeSawResize = true }
             if !cascadeSawTextWrapStyle && (decls[d].name == 'text-wrap-style'
                 || decls[d].name == 'text-wrap') { cascadeSawTextWrapStyle = true }
+            if !cascadeSawFontCaps && (decls[d].name == 'font-variant-caps'
+                || decls[d].name == 'font-variant' || decls[d].name == 'font') {
+                cascadeSawFontCaps = true
+            }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
             }
@@ -5334,6 +5347,28 @@ void func applyPrintColorAdjust(s:Style, parent:Style, isRoot:bool, props:map[te
     }
 }
 
+// `font-variant-caps` inherits. No face this engine can reach carries a
+// small-caps feature, so the value is a drawing instruction rather than
+// a font selection: the reader in layout turns it into a smaller size
+// for the letters it applies to (CSS Fonts 4 §5.3, and the synthesis
+// §2.2 allows). `font-variant`'s one-keyword form reaches the same
+// value, which is the only part of that shorthand this engine has.
+void func applyFontCaps(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    int v = isRoot ? CAPS_NORMAL : fontCapsOf(parent)
+    ascii decl = styleProp(props, 'font-variant-caps')
+    if decl == null { decl = styleProp(props, 'font-variant') }
+    if decl != null {
+        ascii k = asciiLower(asciiTrim(decl))
+        if k == 'small-caps' { v = CAPS_SMALL }
+        else if k == 'all-small-caps' { v = CAPS_ALL_SMALL }
+        else if k == 'normal' || k == 'none' { v = CAPS_NORMAL }
+    }
+    if v != CAPS_NORMAL {
+        fontCapsOfSerial[`${s.serial}`] = v
+        anySmallCaps = true
+    }
+}
+
 void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
     ascii tw = styleProp(props, 'text-wrap')
@@ -5537,6 +5572,15 @@ void func refreshFontKey(s:Style) {
         int zk = zoomOfSerial[`${s.serial}`]
         if zk != null { s.fontKey = s.fontKey + `|${zk}` }
     }
+    // Synthesised small caps draws part of a run at a smaller size, so
+    // two styles alike but for the keyword measure differently -- and
+    // the width cache is keyed on this. Leaving it out serves one
+    // style's advance to the other, which is the drop cap's stale-key
+    // bug a third time.
+    if anySmallCaps {
+        int ck = fontCapsOfSerial[`${s.serial}`]
+        if ck != null { s.fontKey = s.fontKey + `|c${ck}` }
+    }
 }
 
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
@@ -5615,6 +5659,11 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if t == 'normal' { s.fontItalic = false }
     }
     s.fontFamily = computeFontFamily(styleProp(props, 'font-family'), isRoot ? 'sans-serif' : parent.fontFamily)
+    // Before the key is built, because the key folds the keyword in:
+    // a style resolved after it would get a key that does not mention
+    // the smaller size its text is partly drawn at, and the width cache
+    // would serve the plain run's advance to the small-caps one.
+    if cascadeSawFontCaps { applyFontCaps(s, parent, isRoot, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a
