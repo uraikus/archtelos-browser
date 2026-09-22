@@ -1541,6 +1541,29 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### What three walks of the box tree cost, still unexplained
+
+Separating CSS2 §9.9's steps 3, 4 and 5 as three walks of the subtree,
+each asking `boxPaintsWhole` of every box, cost **7 ms of a 20 ms
+paint** on generated.html and 23 of 33 on features.html. Replacing that
+predicate's body with `return false` -- which on generated.html is the
+answer it gives anyway, and the two binaries render it pixel for pixel
+the same -- gave back 8 ms forward and 6 ms reversed, so the reading is
+real and the predicate is where it lives.
+
+**What it is not is a `Style` read**, which was the first explanation
+and is wrong. A minimal Festina program (FINDINGS.md, finding 41)
+builds a struct of 244 fields, 16 of them `text` and 14 of them arrays
+-- `Style`'s own shape -- and forty thousand reads of the form
+`Big s = n.big` do not register at millisecond resolution.
+
+So roughly a microsecond a call is going somewhere in
+`boxPaintsWhole`'s handful of field reads and guarded calls, and
+nothing here has found where. The shipped painter does not pay it -- it
+asks the question once and writes the answer on the box -- so this is
+a question about Festina rather than about the browser, and the next
+answer to it belongs in FINDINGS.md.
+
 ### Grid's remaining corner, measured
 
 **A backwards search for a name the template does not declare.**

@@ -32,12 +32,43 @@ stacking context, a replaced element, and anything that paints through
 a layer -- `overflow`, paint containment, a `clip-path` -- because a
 layer is built and blitted once rather than three times.
 
-**The cost is two extra walks of the box tree, unconditionally.** The
-float pass is behind `docHasFloats`, but the inline pass cannot be
-behind anything: the second of the two fixtures that measure this has
-no float on it at all. `tests/featurepage.py` grew a float section with
-a probe so that the pass that *can* be skipped is measured rather than
-skipped on the benchmark page.
+**The two extra walks are free; asking them anything is not.** Written
+as three walks that each ask which step paints a box, the change cost
+**7 ms of a 20 ms paint** on generated.html and 23 of 33 on
+features.html. None of it was the walking: replacing `boxPaintsWhole`'s
+body with `return false` -- the answer it gives anyway on
+generated.html, where the two binaries render the page pixel for pixel
+the same -- gave back 8 ms forward and 6 reversed, which is the whole
+of the figure. *Why* a handful of field reads costs a microsecond a
+call is not established; todo.md keeps the question, and the first
+explanation, that a `Style` read is expensive, is measured and wrong.
+
+Two ways round it were tried before the third worked. A per-document
+flag over the part of the predicate that reads a `Style` took
+generated.html to +1 ms -- paired against a placement control, the
+parent recompiled with this change's code renamed and called from
+nowhere, so the millisecond is work rather than where the compiler put
+the machine code -- and left features.html at +23, because a page with
+a `transform` or a positioned box on it raises the other guards.
+Collecting the boxes each later step wants into an `arr[Box]` during
+the first walk cost **523 ms**, and that one is now a Festina finding
+with a minimal reproduction: putting a node in a second place costs a
+walk of everything under it (FINDINGS.md, finding 41).
+
+What works is to answer the question once and write the answer on the
+box. The step 3 walk marks each child with the step that paints it, and
+the step 4, step 5 and positioned walks read an int. Paint is then
+unchanged on generated.html and a millisecond *faster* on features.html
+in both directions, the millisecond being the inline-level boxes that
+are no longer painted twice. The hit tester cannot use the marks -- a
+click can arrive on a page that was laid out and never painted -- so it
+asks the questions itself, once per click rather than once per frame.
+
+`tests/featurepage.py` grew a float section with a probe, so the one
+pass that *can* be skipped is measured rather than skipped: the float
+pass is behind `docHasFloats`, and the inline pass cannot be behind
+anything, because the second of the two fixtures that measure this has
+no float on it at all.
 
 **And an inline-level box is painted once.** It is step 5 content,
 reached through the line that holds it -- and it is a child box as

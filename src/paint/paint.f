@@ -3368,22 +3368,44 @@ void func paintNegativeZ(b:Box) {
 // anything that paints through a layer -- `overflow`, paint
 // containment, a `clip-path` -- because a layer is built and blitted
 // once rather than three times.
-const int PHASE_WHOLE = 0
 const int PHASE_BLOCKS = 1
 const int PHASE_FLOATS = 2
 const int PHASE_INLINES = 3
+
+// What the step 3 walk records on each child it looks at, so that the
+// step 4 and step 5 walks read an int rather than asking the same
+// questions of the same boxes again. Asking them three times cost
+// 23 ms of a 33 ms paint on the feature page and 8 ms of a 19 ms paint
+// on generated.html, because `boxIsPositioned`, `boxIsFloated` and
+// `boxPaintsWhole` all read a `Style` and a `Style` read is not free.
+const int PSTEP_NONE = 0     // not painted from the walk at all
+const int PSTEP_SPLIT = 1    // step 3 decoration here, step 5 lines, descend
+const int PSTEP_FLOAT = 2    // step 4, painted whole
+const int PSTEP_WHOLE = 3    // painted whole at step 3
+const int PSTEP_POSITIONED = 4  // step 6 and after, painted whole
 
 // Whether this box is handed over whole rather than split across the
 // three phases. A float and a positioned box are whole as well, but
 // they are asked for by name because *which* phase paints them differs.
 bool func boxPaintsWhole(b:Box) {
     if b.kind == BOX_IMAGE || b.kind == BOX_AUDIO || b.kind == BOX_IFRAME { return true }
-    Style s = b.style
-    if s.contentHidden { return true }
-    if s.overflowHidden || s.containPaint { return true }
+    // Every question below this line that is not behind a flag reads a
+    // `Style`, and the walk asks this of every box in every phase. The
+    // three walks cost **8 ms of a 19 ms paint** on generated.html
+    // while it read one unconditionally, and stubbing the predicate out
+    // gave back every millisecond of it with the pixels unchanged -- so
+    // a page that declares none of these pays six boolean tests.
     if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
     if anyOffsetPath && boxHasOffset(b) { return true }
-    return boxIsStackingContext(b)
+    if cascadeSawTransform && b.style.transforms.length > 0 { return true }
+    // A positioned box is not asked about: every caller steps over one
+    // before it gets here, so the `z-index` half of
+    // `boxIsStackingContext` would be a `Style` read that can never
+    // answer yes.
+    if !docHasWholePaint { return false }
+    Style s = b.style
+    if s.contentHidden { return true }
+    return s.overflowHidden || s.containPaint || s.opacity < 1.0
 }
 
 // Everything a box paints of itself, before any of its contents: its
@@ -3445,11 +3467,23 @@ bool func paintBoxSelf(b:Box) {
     return true
 }
 
-// One phase of the walk over a box's in-flow, non-positioned subtree.
-void func paintPhaseWalk(b:Box, phase:int) {
+// CSS2 §9.9 step 3 over a box's in-flow, non-positioned subtree: each
+// block-level descendant's own decoration, in tree order, and none of
+// their lines. It answers, for every child it looks at, which step
+// paints it, and writes that answer on the box for the two walks below.
+void func paintBlocksWalk(b:Box) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
+        c.paintStep = PSTEP_NONE
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // Positioned first, and before the inline-level test below it:
+        // an out-of-flow box is in no line, so a `position: absolute`
+        // inline-block that the inline-level test stepped over would be
+        // painted by nothing at all.
+        if docHasPositioned && boxIsPositioned(c) {
+            c.paintStep = PSTEP_POSITIONED
+            continue
+        }
         // An in-flow inline-level child is step 5 content reached
         // through the line that holds it, as the atomic it was placed
         // as -- `paintLines` paints it from its own box. Walking into
@@ -3458,31 +3492,42 @@ void func paintPhaseWalk(b:Box, phase:int) {
         // A flex or grid item is block-level however it was declared,
         // so this does not take one of those away from its container.
         if isInlineLevelBox(c) { continue }
-        if docHasPositioned && boxIsPositioned(c) { continue }
         if anyAnchorHidden && anchorHides(c) { continue }
         if !boxVisible(c) { continue }
         if docHasFloats && boxIsFloated(c) {
-            if phase != PHASE_FLOATS { continue }
-            paintBox(c)
+            c.paintStep = PSTEP_FLOAT
             continue
         }
         if boxPaintsWhole(c) {
-            // A box that paints whole did so in the first phase, and
-            // took its own floats and lines with it.
-            if phase != PHASE_BLOCKS { continue }
+            // It takes its own floats and its own lines with it, and
+            // its `resize` grabber -- only a box whose `overflow` is
+            // not `visible` shows one, and such a box paints whole.
+            c.paintStep = PSTEP_WHOLE
             paintBox(c)
             continue
         }
-        if phase == PHASE_BLOCKS {
-            if !paintBoxSelf(c) { continue }
-        } else if phase == PHASE_INLINES {
-            paintLines(c)
-        }
-        paintPhaseWalk(c, phase)
-        // The grabber goes over the box's own content, so it goes on
-        // in the last phase. A page that never says `resize` pays one
-        // boolean here.
-        if phase == PHASE_INLINES && anyResize { paintResizeGrabber(c) }
+        if !paintBoxSelf(c) { continue }
+        c.paintStep = PSTEP_SPLIT
+        paintBlocksWalk(c)
+    }
+}
+
+// Step 4: the non-positioned floats, each painted whole, in tree order.
+void func paintFloatsWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep == PSTEP_FLOAT { paintBox(c) }
+        else if c.paintStep == PSTEP_SPLIT { paintFloatsWalk(c) }
+    }
+}
+
+// Step 5: every in-flow box's lines, in tree order.
+void func paintInlinesWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep != PSTEP_SPLIT { continue }
+        paintLines(c)
+        paintInlinesWalk(c)
     }
 }
 
@@ -3505,12 +3550,24 @@ void func collectPositionedIn(b:Box, out:arr[Box]) {
     }
 }
 
+// The same set, read off the marks the step 3 walk left rather than
+// asked again. This is the painter's; the one above is the hit
+// tester's, which cannot use the marks because a click can arrive on a
+// page that was laid out and never painted.
+void func collectPositionedPainted(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep == PSTEP_POSITIONED { out.push(c) }
+        else if c.paintStep == PSTEP_SPLIT { collectPositionedPainted(c, out) }
+    }
+}
+
 // Them, lowest z first and in document order within a z. The negative
 // ones are not here: they belong to the nearest stacking context and
 // were painted before any of this box's content.
 void func paintPositionedIn(b:Box) {
     arr[Box] pos = []
-    collectPositionedIn(b, pos)
+    collectPositionedPainted(b, pos)
     if pos.length == 0 { return }
     int highest = 0
     for int i = 0, i < pos.length, i++ {
@@ -3528,11 +3585,11 @@ void func paintPositionedIn(b:Box) {
 // whole, so a float and a clipped subtree get the same three passes
 // the document does.
 void func paintSubtree(b:Box) {
-    paintPhaseWalk(b, PHASE_BLOCKS)
+    paintBlocksWalk(b)
     // Step 4 is skipped outright on a document with no float in it.
-    if docHasFloats { paintPhaseWalk(b, PHASE_FLOATS) }
+    if docHasFloats { paintFloatsWalk(b) }
     paintLines(b)
-    paintPhaseWalk(b, PHASE_INLINES)
+    paintInlinesWalk(b)
     if docHasPositioned { paintPositionedIn(b) }
 }
 
@@ -3766,10 +3823,12 @@ Box func hitPhaseWalk(b:Box, x:int, y:int, phase:int) {
     for int i = b.children.length - 1, i >= 0, i-- {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // Positioned first, as in the painter: an out-of-flow box is in
+        // no line, so the inline-level test must not reach one.
+        if docHasPositioned && boxIsPositioned(c) { continue }
         // Reached through the line that holds it, exactly as the
         // painter reaches it.
         if isInlineLevelBox(c) { continue }
-        if docHasPositioned && boxIsPositioned(c) { continue }
         if docHasFloats && boxIsFloated(c) {
             if phase != PHASE_FLOATS { continue }
             Box got = hitChild(c, x, y)

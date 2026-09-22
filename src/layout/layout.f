@@ -55,6 +55,17 @@ struct Box {
     // declarations: writing to one would write to all of them.
     forcedWidthPx:int
     controlKind:int         // CONTROL_CHECK, CONTROL_FIELD, or neither
+    // Which of CSS2 §9.9's steps paints this box, written by the
+    // painter's step 3 walk and read by its step 4 and step 5 walks.
+    // It is scratch rather than layout: the three walks ask the same
+    // questions of the same boxes, and the answers read a `Style`,
+    // which is what made asking them three times cost 23 ms of a 33 ms
+    // paint on the feature page. Asked once and recorded, the two
+    // later walks read an int. The hit tester cannot use it -- a click
+    // can arrive on a page that has been laid out and not painted --
+    // so it asks the questions itself, once per click rather than once
+    // per frame.
+    paintStep:int
     // The words of a text box, after white-space processing and any
     // text-transform. They depend only on the content and the computed
     // style, both fixed once the cascade has run, and they are asked
@@ -473,6 +484,19 @@ bool docHasPositioned = false
 map[int] staticPosX = {}
 map[int] staticPosY = {}
 bool docHasFloats = false
+// Set while the box tree is built when any box would be painted as one
+// unit rather than split across CSS2 §9.9's steps 3, 4 and 5 for a
+// reason that can only be read out of its `Style`: `overflow`, paint
+// containment, `content-visibility: hidden`, or an `opacity` below 1.
+// The other reasons -- a replaced element, a `clip-path`, an
+// `offset-path`, a `transform`, a declared `z-index` -- are a box kind
+// or a flag of their own, so the painter asks those without touching a
+// style at all. This is what keeps the three walks from costing three
+// `Style` reads a box: they cost eight milliseconds of a nineteen
+// millisecond paint on the benchmark page, which is the whole of what
+// separating the steps cost (CLAUDE.md, "a feature must not cost
+// anything to the pages that do not use it").
+bool docHasWholePaint = false
 // Set while the box tree is built when any text holds a right-to-left
 // character. A page with none never runs the bidirectional algorithm
 // at all (CLAUDE.md, "a feature must not cost anything to the pages
@@ -573,6 +597,8 @@ Box func newBox(kind:int, node:Node, style:Style) {
     if node != null && kind != BOX_TEXT && kind != BOX_BR && kind != BOX_ANON {
         if positionIsPositioned(style.position) { docHasPositioned = true }
         if style.floatSide != FLOAT_NONE { docHasFloats = true }
+        if style.overflowHidden || style.containPaint || style.contentHidden
+            || style.opacity < 1.0 { docHasWholePaint = true }
     }
     return b
 }
@@ -7157,6 +7183,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     docHasPositioned = false
     anyRtlText = false
     docHasFloats = false
+    docHasWholePaint = false
     inlineInkOverhang = 0
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')

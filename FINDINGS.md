@@ -1296,3 +1296,67 @@ loop that does one per iteration is the shape to watch for.
 back a reference without retaining it, as the existing "the bucket
 travels as a borrowed parameter" comment in `src/css/cascade.f` already
 works around by hand.
+
+## 41 Putting a node in a second place costs a walk of everything under it
+
+Finding 1 records that a back-pointer makes every release of a live
+alias walk the whole document, and finding 40 that an indexed read out
+of a registry does the same. The third face of it needs neither: an
+ordinary `push` of a node into an ordinary array costs a walk of that
+node's subtree, and a traversal that collects a tree is therefore
+quadratic in the size of the tree.
+
+```festina
+struct Node {
+    id:int
+    kids:arr[Node]
+}
+
+void func collectNodes(n:Node, out:arr[Node]) {
+    out.push(n)
+    for int i = 0, i < n.kids.length, i++ { collectNodes(n.kids[i], out) }
+}
+
+void func collectIds(n:Node, out:arr[int]) {
+    out.push(n.id)
+    for int i = 0, i < n.kids.length, i++ { collectIds(n.kids[i], out) }
+}
+```
+
+Ten traversals of a ternary tree, the same walk and the same number of
+pushes, differing only in what is pushed:
+
+| nodes | `push(node)` | `push(node.id)` |
+|---|---|---|
+| 40 | 1 ms | 0 ms |
+| 121 | 4 ms | 0 ms |
+| 364 | 34 ms | 0 ms |
+| 1093 | **306 ms** | 0 ms |
+
+Three times the nodes is nine times the time, which is the signature of
+a per-push cost proportional to the subtree. Pushing values rather than
+nodes is flat: ten rounds of four thousand pushes into an `arr[int]`,
+an `arr[text]` or an `arr` of a two-field struct are 0, 2 and 5 ms, so
+`push` itself is not the problem and neither is the array's growth.
+
+It cost this browser 523 ms of paint. CSS2 §9.9's steps 3, 4 and 5 want
+three passes over one subtree, and collecting the boxes the later two
+want during the first pass is the obvious way to avoid walking the tree
+three times. A couple of thousand boxes collected that way turned
+generated.html's 20 ms paint into 543. What works instead is to write an int on each
+box as the first pass goes and have the later passes read it, which is
+the same shape finding 1 forces on the box tree's parents.
+
+And it is worth saying what this is *not*: reading a struct-valued
+field is free. A `Style` here has 244 fields, 16 of them `text` and 14
+of them arrays, and forty thousand reads of one that size --
+`Big s = n.big`, the shape `Style s = b.style` takes all over this
+engine -- do not register at millisecond resolution. The cost is in
+holding the node, not in looking at it.
+
+**What would close it.** The same borrowed reference finding 40 asks
+for, extended to a container: a way to put a node in a list that
+observes it without taking ownership of everything under it. An
+explicit weak or borrowed element type would do, since the alternative
+-- a list of ids and a registry to resolve them -- is finding 40's cost
+paid on the way back out.

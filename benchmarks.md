@@ -97,15 +97,14 @@ What a shell script waiting for a PNG actually experiences:
 
 | Page | Size | This browser | Chromium |
 |---|---|---|---|
-| hello.html | 4 KB | 39 ms | 517 ms |
-| css.html | 3 KB | 39 ms | 485 ms |
-| generated.html | 51 KB | 138 ms | 533 ms |
-| features.html | 60 KB | 123 ms | 473 ms |
+| hello.html | 4 KB | 38 ms | 450 ms |
+| css.html | 3 KB | 37 ms | 462 ms |
+| generated.html | 51 KB | 151 ms | 494 ms |
+| features.html | 76 KB | 177 ms | 497 ms |
 
-The last row comes from a later run of the same day, which is why
-Chromium reads 473 there against 485 to 533 above: that 60 ms is the
-start-up spread this section is about, on a browser whose engine did
-the same work in both.
+Chromium's four figures span 450 to 497 in one run of one script on an
+idle machine, on pages whose engine work differs by a factor of four.
+That 47 ms is the start-up spread this section is about.
 
 Chromium's column here moved by 40 ms between two runs an hour apart on
 an idle machine, and ours by 8, while the rendering table below held to
@@ -132,15 +131,24 @@ see the spread below.
 
 | Page | Size | This browser | Chromium | Ratio |
 |---|---|---|---|---|
-| hello.html | 4 KB | 11 ms | 1.1 ms | 10x |
-| css.html | 3 KB | 11 ms | 0.9 ms | 12x |
-| generated.html | 51 KB | 101 ms | 26.0 ms | **3.9x** |
-| features.html | 60 KB | 85 ms | 21.8 ms | **3.9x** |
+| hello.html | 4 KB | 12 ms | 1.2 ms | 10x |
+| css.html | 3 KB | 12 ms | 1.0 ms | 12x |
+| generated.html | 51 KB | 120 ms | 24.7 ms | **4.9x** |
+| features.html | 76 KB | 128 ms | 26.9 ms | **4.8x** |
 
-The feature page is larger in bytes and smaller in elements — 1,688
-against 2,728 — which is why it renders faster than the page above it
-while landing on the same ratio. Its row is one run rather than the
-middle of eight; the run's control qualified at 8.1%.
+The feature page is 1,928 elements against 2,728 and carries more of
+them in grids, multi-column blocks and images, which is why it lands
+beside the page above it rather than below. The run's control qualified
+at 5.0%.
+
+**Our column moved from 101 to 120 on `generated.html` since this table
+was last written, and it is the machine rather than the code.** The
+revision this file recorded 101 for, rebuilt and paired against the
+current one in the same minutes, reads the same 120: parse, cascade and
+layout come out at 9, 40 and 71 ms on both, with the paired difference
+a median of zero in each phase and in both orders. A comparison against
+a number written down on another day is measuring the day, which is why
+the rule above asks for the old revision beside the new one.
 
 **Chromium renders the 51 KB page about four times faster**, and the gap
 is wider on small pages because a fixed cost of about 10 ms has nothing
@@ -186,8 +194,8 @@ non-ASCII input (see FINDINGS.md, "text has no substring").
 |---|---|---|---|
 | hello.html | 4 KB | <1 ms | 0.1 ms |
 | css.html | 3 KB | <1 ms | 0.1 ms |
-| generated.html | 51 KB | 8 ms | 2.2 ms |
-| features.html | 60 KB | 6 ms | 1.5 ms |
+| generated.html | 51 KB | 8 ms | 1.9 ms |
+| features.html | 76 KB | 7 ms | 1.8 ms |
 
 **Between two and four times slower** on the large page. Ours is 8 ms
 run after run; Chromium's has been measured between 2.1 and 3.9 ms
@@ -195,7 +203,7 @@ across runs, so a single ratio would be reporting that spread rather
 than a difference — the row gives the run this table came from. Call it
 6 MB/s against 13 to 25. For a tokenizer and tree builder written in a
 young language against one of the most optimized parsers in software
-that is a reasonable place to be, and at 8 ms of a 101 ms render it is
+that is a reasonable place to be, and at 8 ms of a 120 ms render it is
 not where the time goes.
 
 ## Where the time actually goes
@@ -206,22 +214,22 @@ not where the time goes.
 |---|---|
 | fetch (local file) | 0 ms |
 | parse | 9 ms |
-| stylesheets | 1 ms |
+| stylesheets | 2 ms |
 | images | 0 ms |
-| cascade | 35 ms |
-| layout | 56 ms |
-| paint | 8 ms |
+| cascade | 39 ms |
+| layout | 70 ms |
+| paint | 19 ms |
 
-Of the 101 ms before painting, the cascade and layout are 91 — **90%**.
-Parsing is 9%, and paint, once it is not also encoding six megapixels,
-is 8 ms. Chromium does the first five phases in 26.0 ms against our 101;
+Of the 120 ms before painting, the cascade and layout are 109 — **91%**.
+Parsing is 8%, and paint, once it is not also encoding six megapixels,
+is 19 ms. Chromium does the first five phases in 24.7 ms against our 120;
 the whole gap is here, and **layout is the larger half of it**. The
 `images` row is zero because this page has no image and no longer walks
 its tree looking for one — see below.
 
 Inside the cascade: 8,578 selector tests produce 11,614 matched
 declarations across 2,728 elements. Five consecutive runs put collecting
-them at 6 to 16 ms, applying at 14 to 17 and computing at 3 to 7 — the
+them at 6 to 16 ms, applying at 14 to 17 and computing at 3 to 9 — the
 sub-phase timers are noisier than the phase totals they add up to, so
 read them as proportions and not as figures. Computing is the small one
 because only **24 distinct styles** are computed for the 2,728 elements
@@ -230,7 +238,7 @@ it is still the phase that grows with every property implemented.
 
 Inside layout: 11,564 text measurements, of which 620 miss the width
 cache and reach Cairo (7 to 9 ms across those runs); building the box
-tree is 21 to 23 ms and inline placement 8 to 14.
+tree is 21 to 25 ms and inline placement 8 to 14.
 
 ## What the CSS work cost, measured
 
@@ -356,8 +364,8 @@ sixty boxes, same layout, only the painting differs.
 |---|---|---|
 | flat colours (the control) | 0 ms | 25 ms |
 | gradients, along an axis | 1 ms | 27 ms |
-| gradients, at 37 degrees | **14 ms** | **60 ms** |
-| conic gradients | **12 ms** | **61 ms** |
+| gradients, at 37 degrees | **14 ms** | **63 ms** |
+| conic gradients | **13 ms** | **64 ms** |
 
 **An axis-aligned gradient is nearly free and an angled one is not**, and
 the difference is structural rather than incidental. Along an axis each
@@ -396,12 +404,14 @@ rather than in place of it: replacing it would throw away every figure
 above, because a new page is a new control the same way a new reference
 browser is.
 
-It is 24 sections of 1,688 elements — a two-area named grid and a
+It is 24 sections of 1,928 elements — a two-area named grid and a
 three-column grid of figures, four images a section at a size that
 makes `object-fit` do work, counters on the headings and on the step
 lists, rotated and scaled inline badges, a three-column multi-column
-block, and a form row of checkboxes, radios, a `field-sizing: content`
-text input and a button.
+block, a form row of checkboxes, radios, a `field-sizing: content`
+text input and a button, a small-caps paragraph, a negative-margin
+pair, a `z-index: -1` stack, and a float with two paragraphs beside
+it.
 
 `features-plain.html` is its control: the same markup, the same element
 count, the same image, and a stylesheet that turns the grids into
@@ -413,20 +423,20 @@ features doing their work.
 
 | Page | Cascade | Layout | Paint | End to end |
 |---|---|---|---|---|
-| features off (the control) | 24 ms | 44 ms | 6 ms | 114 ms |
-| features on | 26 ms | 50 ms | 7 ms | **124 ms** |
+| features off (the control) | 32 ms | 70 ms | 13 ms | 158 ms |
+| features on | 36 ms | 82 ms | 17 ms | **176 ms** |
 
-**About 10 ms, and most of it is layout.** A difference between two
-numbers near 120 is the shape this file has got wrong before, so both
-terms' spreads are here and not the difference alone. Eight alternating
-best-of-3 samples give the control at 113, 115, 115, 116, 116, 117, 118
-and 122 ms end to end against the feature page's 124, 125, 125, 125,
-126, 126, 127 and 127 — two series that do not overlap. Per phase the
-separation is cleaner still: layout 44 to 45 against 50 to 51, cascade
-24 to 25 against 26 to 27, paint 6 to 7 against 7 to 8. The end-to-end
-table above reads 123 ms for the same page in the same run, one below
-the best of these samples, which is the size of the noise at this
-resolution.
+**About 18 ms, and most of it is layout.** A difference between two
+numbers near 170 is the shape this file has got wrong before, so both
+terms are phase timers read from inside the engine rather than two
+whole commands subtracted. Per phase the separation is 70 against 82 of
+layout, 32 against 36 of cascade and 13 against 17 of paint, on two
+pages of the same element count.
+
+The page has grown since the rows above it were written — it carries
+four features it did not, one of them the float that makes CSS2 §9.9's
+step 4 run at all — so this pair is a new baseline rather than a
+movement from the 114 and 124 ms it used to read.
 
 The image is in both columns and therefore in neither difference: a
 stylesheet can turn a grid into a block but it cannot un-write an
@@ -2780,3 +2790,56 @@ floor. Two entries in a row have now been found, attributed to a line,
 and removed -- and the lesson of this one is narrower than the last:
 **in the hottest function, the test that avoids the work can cost more
 than the work.**
+
+## What separating §9.9's steps 3, 4 and 5 cost, and the two designs that were wrong
+
+CSS2 §9.9 paints a box's in-flow content in three steps where this
+painter did one walk in document order. Three walks of the subtree is
+the obvious shape, and it is the expensive one. Paired, 25 iterations,
+`ARCHTELOS_TIMING` phases, forward and reversed:
+
+| paint | `generated.html` | `features.html` |
+|---|---|---|
+| three walks, each asking which step paints a box | **+7 ms** of 20, 24 of 25 | **+23 ms** of 33, 25 of 25 |
+| the same, its `Style` reads behind a per-document flag | +1 ms of 20, 18 of 25 | +23 ms of 33 |
+| the answer written on the box by the first walk | 0 ms of 20, 9 of 25 | **-1 ms** of 33, 8 of 25 |
+
+Every row's mirror image agrees with it: the first reads -6 reversed,
+the second -1, the third 0 and 0.
+
+**None of it was the walking.** Replacing `boxPaintsWhole`'s body with
+`return false` — which on `generated.html` is the answer it gives
+anyway, and the two binaries render the page pixel for pixel the same —
+gave back 8 ms forward and 6 reversed. Two extra traversals of a
+2,728-element box tree are free; asking each box a question three times
+is not.
+
+**The +1 ms row survived a placement control.** The parent recompiled
+with this change's constants, globals and functions renamed and called
+from nowhere came out within 4 KB of the candidate on a 3 MB binary,
+and pairing the candidate against *that* read +1 forward and -1
+reversed — so the millisecond was work rather than where the compiler
+put the machine code. It is the only cost this project has measured
+that the control has confirmed.
+
+**And the obvious optimization was the worst of all.** Collecting the
+boxes the later two steps want, during the first walk, so that neither
+walks the tree again, turned `generated.html`'s 20 ms paint into 543 —
+**+523 ms**. Putting a box in an `arr[Box]` costs a walk of everything
+under it; FINDINGS.md's finding 41 has the minimal reproduction, where
+ten traversals of a 1,093-node tree go from 0 ms pushing each node's
+`id` to 306 ms pushing the node.
+
+What works is an integer. The step 3 walk writes on each box which step
+paints it, and the step 4, step 5 and positioned walks read that. The
+millisecond `features.html` *gains* is the inline-level boxes that are
+no longer painted twice — the same box reached once from the line that
+holds it and once from a walk over its parent's children, which this
+painter had done since the beginning and which nothing could see until
+a `border-radius` blended an antialiased corner against itself.
+
+**What is still unexplained is the microsecond a call.** A `Style` read
+was the first explanation and is measured wrong: a Festina struct of
+244 fields, 16 of them `text` and 14 of them arrays — `Style`'s own
+shape — read forty thousand times does not register at millisecond
+resolution. todo.md keeps the question.
