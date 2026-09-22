@@ -3542,21 +3542,52 @@ void func untransformPoint(b:Box, x:int, y:int) {
 // It is declared before `hitTest` and calls it, which is fine because
 // functions are hoisted here where globals are not.
 Box func hitOutOfFlow(x:int, y:int) {
-    for int i = outOfFlowBoxes.length - 1, i >= 0, i-- {
-        Box c = outOfFlowBoxes[i]
-        int hx = x
-        int hy = y
-        if cascadeSawTransform && c.style.transforms.length > 0 {
-            untransformPoint(c, x, y)
-            hx = untransformedX
-            hy = untransformedY
-        }
-        if hx < c.x || hx >= c.x + c.w { continue }
-        if hy < c.y || hy >= c.y + c.h { continue }
-        Box inner = hitTest(c, hx, hy)
-        if inner != null { return inner }
-        if c.style.pointerEvents != PE_NONE { return c }
+    if outOfFlowBoxes.length == 0 { return null }
+    // In reverse painting order, as the ordinary descent is: highest
+    // `z-index` first, and latest in document order within a z.
+    int hiZ = outOfFlowBoxes[0].style.zIndex
+    int loZ = hiZ
+    for int i = 1, i < outOfFlowBoxes.length, i++ {
+        int z = outOfFlowBoxes[i].style.zIndex
+        if z > hiZ { hiZ = z }
+        if z < loZ { loZ = z }
     }
+    for int z = hiZ, z >= loZ, z-- {
+        for int i = outOfFlowBoxes.length - 1, i >= 0, i-- {
+            Box c = outOfFlowBoxes[i]
+            if c.style.zIndex != z { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
+// One child tested against the point, or null for "not this one".
+// Shared by the three passes below so the transform and
+// `pointer-events` rules cannot drift between them.
+Box func hitChild(c:Box, x:int, y:int) {
+    if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { return null }
+    // A transformed box is drawn somewhere other than where it was laid
+    // out, so the pointer is tested against the drawn shape: the point
+    // comes back through the inverse transform and everything below it
+    // -- this box and its whole subtree -- is searched in that space. A
+    // document that never said `transform` pays one boolean here.
+    int hx = x
+    int hy = y
+    if cascadeSawTransform && c.style.transforms.length > 0 {
+        untransformPoint(c, x, y)
+        hx = untransformedX
+        hy = untransformedY
+    }
+    if hx < c.x || hx >= c.x + c.w { return null }
+    if hy < c.y || hy >= c.y + c.h { return null }
+    // pointer-events: none takes a box out of hit testing so that what
+    // is behind it is found instead. Its descendants are still
+    // searched, because a child may ask for pointer events back.
+    Box inner = hitTest(c, hx, hy)
+    if inner != null { return inner }
+    if c.style.pointerEvents != PE_NONE { return c }
     return null
 }
 
@@ -3570,6 +3601,35 @@ Box func hitTest(b:Box, x:int, y:int) {
     if scrolled > 0 { y = y + scrolled }
     int across = boxScrollLeft(b)
     if across > 0 { x = x + across }
+    // Reverse painting order (CSS2 §9.9 read backwards): the positioned
+    // children at zero and above, highest z first and latest first
+    // within a z; then this box's own inline content; then the in-flow
+    // children, latest first; then the negative ones. A document with
+    // no positioned box anywhere skips the first and last passes
+    // entirely and is one loop run backwards.
+    int hiZ = 0
+    int loZ = 0
+    bool anyPos = false
+    if docHasPositioned {
+        for int i = 0, i < b.children.length, i++ {
+            Box c = b.children[i]
+            if !boxIsPositioned(c) { continue }
+            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+            if !anyPos || c.style.zIndex > hiZ { hiZ = c.style.zIndex }
+            if !anyPos || c.style.zIndex < loZ { loZ = c.style.zIndex }
+            anyPos = true
+        }
+    }
+    if anyPos {
+        for int z = hiZ, z >= 0, z-- {
+            for int i = b.children.length - 1, i >= 0, i-- {
+                Box c = b.children[i]
+                if !boxIsPositioned(c) || c.style.zIndex != z { continue }
+                Box got = hitChild(c, x, y)
+                if got != null { return got }
+            }
+        }
+    }
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
         if y < ln.y || y >= ln.y + ln.h { continue }
@@ -3592,26 +3652,20 @@ Box func hitTest(b:Box, x:int, y:int) {
             }
         }
     }
-    for int i = 0, i < b.children.length, i++ {
+    for int i = b.children.length - 1, i >= 0, i-- {
         Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        // A transformed box is drawn somewhere other than where it was
-        // laid out, so the pointer is tested against the drawn shape:
-        // the point comes back through the inverse transform and
-        // everything below it -- this box and its whole subtree -- is
-        // searched in that space. A document that never said `transform`
-        // pays one boolean here.
-        int hx = x
-        int hy = y
-        if cascadeSawTransform && c.style.transforms.length > 0 {
-            untransformPoint(c, x, y)
-            hx = untransformedX
-            hy = untransformedY
-        }
-        if hx >= c.x && hx < c.x + c.w && hy >= c.y && hy < c.y + c.h {
-            Box inner = hitTest(c, hx, hy)
-            if inner != null { return inner }
-            if c.style.pointerEvents != PE_NONE { return c }
+        if anyPos && boxIsPositioned(c) { continue }
+        Box got = hitChild(c, x, y)
+        if got != null { return got }
+    }
+    if anyPos && loZ < 0 {
+        for int z = 0 - 1, z >= loZ, z-- {
+            for int i = b.children.length - 1, i >= 0, i-- {
+                Box c = b.children[i]
+                if !boxIsPositioned(c) || c.style.zIndex != z { continue }
+                Box got = hitChild(c, x, y)
+                if got != null { return got }
+            }
         }
     }
     // Nothing in the tree under this point. A box laid out past every

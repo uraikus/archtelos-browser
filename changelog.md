@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A click lands on the topmost box
+
+Hit testing returned the **first** child whose rectangle held the point
+rather than the topmost, so where two boxes overlapped the one earlier
+in document order took the click and the painter put the other on top.
+Now that CSS2 §9.9's order exists there is something to walk backwards,
+and the descent does: the positioned children at zero and above,
+highest `z-index` first and latest first within a z; then this box's
+own inline content; then the in-flow children, latest first; then the
+negative ones. The out-of-flow fallback added a commit earlier runs the
+same way, which is where the second of the two failures showed up --
+two absolutely positioned boxes make their parent zero tall, so they
+are only reachable through that fallback, and it was scanning document
+order.
+
+Five overlapping pairs measured in Chromium first, each pinning one
+step against the one below. The fourth is the one worth keeping: a
+`z-index: -1` box loses to in-flow content that has
+`background: transparent`, so hit testing is about the **box** rather
+than the ink in it -- which is the model this engine already had, and
+what made the fix a reordering rather than a new question.
+
+The transform and `pointer-events` rules moved into one `hitChild`
+shared by the three passes, so they cannot drift apart between them.
+
+**And the test that meant to ask the plainest question was asking
+nothing.** Two in-flow blocks overlapped by a negative `margin-top`
+would be the simplest case, and they do not overlap here at all: a
+negative `margin-top` is dropped, where a negative `margin-left` works.
+Four stacked 100px blocks with `-40px` on the second sit at 0, 100,
+200, 300 against Chromium's 0, 60, 160, 260. That is its own bug, in
+todo.md with the numbers; the case is asked of two positioned boxes at
+the same z instead, which is the same loop.
+
+position 65 -> 71.
+
 ### An out-of-flow box beyond its ancestors is hit again
 
 `hitTest` descends only into children whose rectangle holds the point,

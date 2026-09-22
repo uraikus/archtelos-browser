@@ -190,18 +190,36 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
+   **A negative `margin-top` is dropped**, which the hit-testing order
+   work turned up: it silently stopped two in-flow blocks from
+   overlapping at all, so the fixture that meant to ask which of them a
+   click lands on was asking nothing. A negative `margin-left` works --
+   `margin-left: -30px` puts the box at x = -30, which is Chromium's
+   answer -- so the clamp is on the block direction alone. Four stacked
+   100px blocks, the second declaring `margin-top: -40px`:
+
+   | | y of the four |
+   |---|---|
+   | this engine | 0, 100, 200, 300 (and `mt` reads 0) |
+   | Chromium | 0, **60**, 160, 260 |
+
+   Collapsing wants checking with it: CSS2 §8.3.1 collapses a negative
+   margin by adding the most negative to the largest positive, which is
+   probably the same code.
+
    **What is left of hit testing is its order.** An out-of-flow box
    laid out beyond every ancestor's rectangle is found now -- the
    out-of-flow boxes are kept in a list as layout passes them, and the
    search falls back to it once the ordinary descent has come back
-   empty. What that fallback deliberately does not do is change an
-   answer the descent already gave, which leaves the older imprecision
-   in place: the descent returns the **first** child whose rectangle
-   holds the point rather than the topmost, so where an in-flow box and
-   a positioned one overlap, the one earlier in document order wins
-   where the painter puts the other on top. Fixing that is a reverse
-   walk of the painting order rather than a tree descent, and now that
-   CSS2 §9.9's order exists there is something to walk backwards.
+   empty. The descent runs in reverse painting order now --
+   the positioned children at zero and above, highest `z-index` first
+   and latest first within a z; then this box's own inline content;
+   then the in-flow children, latest first; then the negative ones --
+   and the out-of-flow fallback runs the same way, so the topmost box
+   takes the click rather than the first one found. What is left is
+   what CSS2 §9.9 puts between those steps and this does not: floats
+   have their own place in the order (step 4) and are searched with the
+   in-flow boxes here.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does

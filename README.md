@@ -312,9 +312,13 @@ and `contain-intrinsic-size` supplies what an automatic size resolves to
 instead; `contain: paint` clips its descendants; and
 `content-visibility: hidden` paints the box and nothing inside it.
 
-**Clicks** find a box wherever it was laid out, including past every
+**Clicks** land on the topmost box: the search runs the painting order
+backwards, so a positioned box takes the click from an in-flow one
+underneath it and the higher `z-index` wins whatever the document order.
+It finds a box wherever it was laid out, including past every
 ancestor's edge — an absolutely positioned box in an empty body is
-clickable — and through any transform on it.
+clickable — and goes through any transform on it, so a rotated box is
+clickable along the shape it is drawn as.
 
 **Painting order** is CSS2 §9.9's: inside a stacking context a box's
 own background and border come first, then its negative-`z-index`

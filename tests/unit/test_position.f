@@ -310,4 +310,71 @@ Box ofTx = hitTest(outFlowRoot(
 check(ofTx != null && getAttr(ofTx.node, 'id') == 'a',
       'a translated out-of-flow box is hit where it is drawn')
 
+// ---- a click lands on the topmost box (CSS2 §9.9) ---------------------
+//
+// Hit testing answers the box the painter drew last at that point.
+// Measured in Chromium (todo.md), five pairs pinning five steps of the
+// painting order against the one below.
+
+Box func topAt(css:text, body:text, x:int, y:int) {
+    Page p = pageFromHtml('<!doctype html><head><style>body{margin:0;font:16px monospace}'
+        + css + '</style><body>' + body + '</body>', 'about:blank', 800)
+    return hitTest(p.root, x, y)
+}
+
+text func topIdAt(css:text, body:text, x:int, y:int) {
+    Box b = topAt(css, body, x, y)
+    if b == null { return 'null' }
+    text id = getAttr(b.node, 'id')
+    return id == null ? b.node.tag : id
+}
+
+// A positioned box written *before* an in-flow one still wins.
+checkEq(topIdAt(
+    '#pos{position:absolute;left:0;top:0;width:200px;height:100px}'
+    + '#flow{width:200px;height:100px}',
+    '<div id="pos"></div><div id="flow"></div>', 50, 50),
+    'pos', 'a positioned box beats an in-flow one written after it')
+
+// The later of two overlapping boxes at the same z wins. Two in-flow
+// blocks would be the plainest case and cannot be written here: a
+// negative `margin-top` is not applied by this engine, so they do not
+// overlap at all (todo.md). Two positioned boxes at the same z ask the
+// same question of the same loop.
+checkEq(topIdAt(
+    '#a{position:absolute;left:0;top:0;width:200px;height:100px}'
+    + '#b{position:absolute;left:0;top:0;width:200px;height:100px}',
+    '<div id="a"></div><div id="b"></div>', 50, 50),
+    'b', 'the later of two boxes at the same z wins')
+
+// The higher z-index wins whatever the document order.
+checkEq(topIdAt(
+    '#a{position:absolute;left:0;top:0;width:200px;height:100px;z-index:5}'
+    + '#b{position:absolute;left:0;top:0;width:200px;height:100px;z-index:1}',
+    '<div id="a"></div><div id="b"></div>', 50, 50),
+    'a', 'the higher z-index wins whatever the order')
+
+// A negative-z box loses to its stacking context's in-flow content.
+checkEq(topIdAt(
+    '#p{position:relative;z-index:0;width:200px;height:100px}'
+    + '#neg{position:absolute;z-index:-1;left:0;top:0;width:200px;height:100px}'
+    + '#flow{width:200px;height:100px}',
+    '<div id="p"><div id="neg"></div><div id="flow"></div></div>', 50, 50),
+    'flow', 'a negative z-index box is under the in-flow content')
+
+// A child wins over its parent's background.
+checkEq(topIdAt('#p{width:200px;height:100px}#c{width:100px;height:50px}',
+    '<div id="p"><div id="c"></div></div>', 50, 25),
+    'c', 'a child wins over its parent')
+
+// The in-flow box in the fourth case has no background at all and still
+// wins, so this is about the box rather than the ink -- asserted by
+// giving it one and requiring the same answer.
+checkEq(topIdAt(
+    '#p{position:relative;z-index:0;width:200px;height:100px}'
+    + '#neg{position:absolute;z-index:-1;left:0;top:0;width:200px;height:100px;background:red}'
+    + '#flow{width:200px;height:100px;background:transparent}',
+    '<div id="p"><div id="neg"></div><div id="flow"></div></div>', 50, 50),
+    'flow', 'and a transparent box still takes the click')
+
 finish('position')
