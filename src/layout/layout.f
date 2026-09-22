@@ -2813,14 +2813,20 @@ bool fragForPage = false
 void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
     bool pendingForce = false
     bool pendingAvoid = false
-    int forces = fragForPage ? BRK_PAGE : BRK_COLUMN
+    // What ends this container. For a column it is `break-*: column`
+    // alone; for a page it is `page` and the two side keywords above it,
+    // so the test is a range whose first comparison rejects the `auto`
+    // that almost every box carries.
+    int forceLo = fragForPage ? BRK_PAGE : BRK_COLUMN
+    int forceHi = fragForPage ? BRK_RIGHT : BRK_COLUMN
     text pendingPage = ''
     bool havePage = false
     for int i = from, i < to, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
         if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
-        bool force = pendingForce || c.style.breakBefore == forces
+        bool force = pendingForce
+            || (c.style.breakBefore >= forceLo && c.style.breakBefore <= forceHi)
         bool avoid = pendingAvoid || c.style.breakBefore == BRK_AVOID
         // A change of `page` between two siblings forces a break, since
         // the two belong on differently named pages (Paged Media 3
@@ -2830,7 +2836,7 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
             pendingPage = c.style.pageName
             havePage = true
         }
-        pendingForce = c.style.breakAfter == forces
+        pendingForce = c.style.breakAfter >= forceLo && c.style.breakAfter <= forceHi
         pendingAvoid = c.style.breakAfter == BRK_AVOID
         // A child that may not be broken goes in as one unit, however
         // many lines it holds: a unit is the smallest thing a column

@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The side a page break asks for
+
+CSS 2 §13.3.1 says `left` and `right` force **one or two** page breaks,
+whichever it takes for the next page to be formatted as a page of that
+side. The second one is a page with nothing on it. All four keywords --
+`left`, `right`, `recto` and `verso` -- were read as a plain `page`
+break here, and now ask for their side.
+
+**Chromium does not do this**, which the measurement settled before any
+code was written. Giving `@page :left` and `@page :right` different
+`size` declarations makes each printed page say which side rule
+formatted it, and the sizes come out of the PDF catalogue with no
+content-stream arithmetic. Chromium honours the two selectors and starts
+on a right page -- so the parity this engine already assumed is the
+browser's too -- but `break-before: right` puts its content on the left
+page that follows, and two of them in a row print three pages where the
+standard asks for five. The CSS2 spelling behaves the same way, so it is
+not a question of which syntax is recognised. The standard is
+unambiguous, so this follows the standard and writes the browser's
+answer down beside it, as Motion Path's ray sizing already does.
+
+**`@page :blank` now has something to select.** It was parsed and could
+never match, because nothing generated a page with nothing on it. The
+page this generates is the only such page, so the rule and the page
+arrive together.
+
+**The side is read back off the boxes rather than carried on the unit.**
+A `ColumnUnit` is built for every line of every multi-column container
+on screen, and an `int` there would cost every one of those pages a
+struct they never read -- which is exactly what one `int` on `Style` was
+measured to cost. `pageSideAt` asks the box at the break, and then the
+previous sibling's `break-after`, skipping the same siblings the unit
+collector skips. It runs once per break of a print.
+
+What the unit collector pays is one comparison becoming two:
+`break-before` ends a page when it is `BRK_PAGE` or above, and the two
+side values sit above it so the range test's first comparison rejects
+the `auto` almost every box carries.
+
+paged 125 -> 128 and paged render 90 -> 106.
+
 ### `print-color-adjust`
 
 269 -> 270 properties. css-2026.md said a PDF read makes the property

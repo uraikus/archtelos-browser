@@ -128,8 +128,10 @@ int func marginBoxDefaultVAlign(slot:int) {
 }
 
 // An `@page` rule: which pages it speaks for, and what it says.
-// `blank` is parsed and never matches -- this engine generates no blank
-// pages, so a rule for one would be a rule for nothing.
+// `blank` speaks for a page the paginator generated to put the next one
+// on the side a `break-before: left` or `right` asked for; there is no
+// other way to produce a page with nothing on it, so a `:blank` rule
+// speaks for those pages alone.
 struct PageRule {
     name:text
     first:bool
@@ -365,8 +367,8 @@ void func parsePageRule(prelude:ascii, body:ascii) {
 // for the pages that asked for that name; one without speaks for any.
 // The first page is a right-hand one, so odd pages are `:right` and
 // even ones `:left` (CSS2 §13.2.4).
-bool func pageRuleMatches(r:PageRule, name:text, index:int) {
-    if r.blank { return false }
+bool func pageRuleMatches(r:PageRule, name:text, index:int, blank:bool) {
+    if r.blank && !blank { return false }
     if r.name != '' && r.name != name { return false }
     if r.first && index != 1 { return false }
     bool odd = index - Math.floorDiv(index, 2) * 2 == 1
@@ -475,7 +477,7 @@ void func applyPageMargin(box:PageBox, d:PageDecl) {
 // cascade order: the same selector specificity the page box uses, so
 // a `@page :first` box replaces the general one on page one and
 // leaves it standing on the rest.
-arr[PageDecl] func marginBoxDecls(slot:int, name:text, index:int) {
+arr[PageDecl] func marginBoxDecls(slot:int, name:text, index:int, blank:bool) {
     arr[PageDecl] out = []
     if !anyPageMarginBox { return out }
     for int spec = 0, spec <= 7, spec++ {
@@ -483,7 +485,7 @@ arr[PageDecl] func marginBoxDecls(slot:int, name:text, index:int) {
             PageRule r = cssPageRules[i]
             if r.slot != slot { continue }
             if pageRuleSpecificity(r) != spec { continue }
-            if !pageRuleMatches(r, name, index) { continue }
+            if !pageRuleMatches(r, name, index, blank) { continue }
             for int j = 0, j < r.decls.length, j++ { out.push(r.decls[j]) }
         }
     }
@@ -552,7 +554,7 @@ text func marginBoxContent(value:ascii, index:int, total:int) {
     return out
 }
 
-PageBox func pageBoxFor(name:text, index:int) {
+PageBox func pageBoxFor(name:text, index:int, blank:bool) {
     PageBox box
     box.width = PAGE_DEFAULT_W
     box.height = PAGE_DEFAULT_H
@@ -568,7 +570,7 @@ PageBox func pageBoxFor(name:text, index:int) {
             PageRule r = cssPageRules[i]
             if r.slot != MB_NONE { continue }
             if pageRuleSpecificity(r) != spec { continue }
-            if !pageRuleMatches(r, name, index) { continue }
+            if !pageRuleMatches(r, name, index, blank) { continue }
             pick.push(i)
         }
     }

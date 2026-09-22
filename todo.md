@@ -43,13 +43,17 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 1. **What is left of the CSS2 chapters**: nothing whole. Paged media
    (§13) is in -- `@page` with `size` and `margin`, the page selectors,
    named pages, all sixteen margin boxes, the three `page-break-*`
-   properties and a `--print` that writes one image per page -- but two
-   parts of it are not:
-   **the side a `break-before: left` asks for**, which needs a blank page
-   generated to put the next one on the right side; and **a page's own
-   `size` when a named page declares a different one**, because the
-   document is laid out once at the first page's width and a page that
-   wanted a wider sheet would need a second layout. A wheel
+   properties, the four page-side break keywords with the blank page
+   they generate, and `@page :blank` for that page -- but one part of it
+   is not: **a page's own `size` when a named page declares a different
+   one**. The document is laid out once at the first page's width and
+   every page is a strip of that one layout, which is what makes a page
+   cost nothing to build; a named page on a wider sheet would need its
+   own run of the document laid out at its own width and the strips
+   stitched together, which is a different paginator rather than a
+   second pass over this one. Each page already takes its own *height*
+   from its own box, because the paginator asks for the box before it
+   measures how much fits. A wheel
    over a scroll container scrolls it, the thumb follows, and the thumb
    can be taken hold of and dragged. Both axes scroll, both thumbs drag,
    and a wheel tilted sideways scrolls a container across **on X11 and

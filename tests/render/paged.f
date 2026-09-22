@@ -379,4 +379,71 @@ check(hasColorIn(50, 50, 350, 120, blue), 'and the text over it is not')
 
 printOmitBackgrounds = false
 
+
+// ---- a side break's blank page (CSS 2 §13.3.1) ------------------------
+//
+// `left` and `right` force one or two breaks, so that the next page is
+// formatted as a page of that side. Two means a blank page in between.
+// The first page is a right page (CSS2 §13.2.4), so odd pages are right
+// and even ones left, which is the parity `pageBoxFor` already uses.
+//
+// Chromium generates no blank page at all -- it prints `left`, `right`,
+// `recto` and `verso` as a plain `page` break (todo.md). The standard is
+// unambiguous, so this follows the standard and the disagreement is
+// written down; that is also why these are graded against this engine's
+// own page count rather than against the browser's.
+text sideBlocks = 'body { margin: 0 } #a { height: 100px; background: red }'
+    + ' #b { height: 100px; background: blue }'
+text sideBody = '<div id="a"></div><div id="b"></div>'
+
+text toLeft = PAGE + sideBlocks + ' #b { break-before: left }'
+text toRight = PAGE + sideBlocks + ' #b { break-before: right }'
+text toPage = PAGE + sideBlocks + ' #b { break-before: page }'
+
+// Page one is a right page, so the left page that follows it is page
+// two: `left` needs one break and must agree with `page` exactly.
+checkEqInt(pageCount(toPage, sideBody), 2, 'a plain page break makes two pages')
+checkEqInt(pageCount(toLeft, sideBody), pageCount(toPage, sideBody),
+    'break-before: left needs no blank page after a right page')
+
+// `right` wants page three, so page two is blank.
+checkEqInt(pageCount(toRight, sideBody), 3, 'break-before: right generates the blank page')
+
+// recto is right and verso is left, in a left-to-right document.
+checkEqInt(pageCount(PAGE + sideBlocks + ' #b { break-before: recto }', sideBody),
+    pageCount(toRight, sideBody), 'recto is right here')
+checkEqInt(pageCount(PAGE + sideBlocks + ' #b { break-before: verso }', sideBody),
+    pageCount(toLeft, sideBody), 'and verso is left')
+
+// break-after asks the same question from the other side.
+checkEqInt(pageCount(PAGE + sideBlocks + ' #a { break-after: right }', sideBody),
+    pageCount(toRight, sideBody), 'break-after: right agrees with break-before: right')
+
+// Two of them in a row: A on page 1, blank 2, B on 3, blank 4, C on 5.
+text threeBlocks = 'body { margin: 0 } div { height: 100px }'
+    + ' #b, #c { break-before: right }'
+checkEqInt(pageCount(PAGE + threeBlocks, '<div id="a"></div><div id="b"></div><div id="c"></div>'),
+    5, 'two right breaks generate two blank pages')
+
+// The blank page carries the sheet and nothing else.
+printPage(toRight, sideBody, 1)
+check(getPixelColor(200, 25) == white, 'the blank page has its top margin')
+check(getPixelColor(200, 200) == white, 'and nothing in its area')
+check(getPixelColor(200, 575) == white, 'and its bottom margin')
+check(!anyInk(0, 0, 400, 600), 'a generated blank page is blank')
+
+// And the content lands on the page after it, unchanged.
+printPage(toRight, sideBody, 2)
+check(getPixelColor(200, 50) == blue, 'the break-before: right block is on page three')
+check(getPixelColor(200, 149) == blue, 'all 100px of it')
+check(getPixelColor(200, 151) == white, 'and nothing else')
+
+// `@page :blank` selects the page this generated, which it could not
+// before there was one to select (Paged Media 3 §3.5).
+text blankSel = toRight + ' @page :blank { margin-top: 200px }'
+printPage(blankSel, sideBody, 1)
+checkEqInt(pageBoxes[1].marginTop, 200, '@page :blank matches the generated page')
+printPage(blankSel, sideBody, 0)
+checkEqInt(pageBoxes[0].marginTop, 50, 'and no other page')
+
 finish('paged render')

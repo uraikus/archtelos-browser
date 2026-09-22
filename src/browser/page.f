@@ -436,9 +436,9 @@ int func marginBoxAlignOf(decls:arr[PageDecl], slot:int, vertical:bool) {
     return a
 }
 
-void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, rootStyle:Style) {
+void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, rootStyle:Style, blank:bool) {
     for int slot = 0, slot < MB_COUNT, slot++ {
-        arr[PageDecl] decls = marginBoxDecls(slot, name, index)
+        arr[PageDecl] decls = marginBoxDecls(slot, name, index, blank)
         if decls.length == 0 { continue }
         text content = ''
         for int i = 0, i < decls.length, i++ {
@@ -495,7 +495,7 @@ void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int
     // over the content -- which is what puts them in the margin rather
     // than under it. A document that declares none pays one boolean.
     if anyPageMarginBox {
-        paintPageMarginBoxes(box, pageNames[index], index + 1, total, page.root.style)
+        paintPageMarginBoxes(box, pageNames[index], index + 1, total, page.root.style, pageBlanks[index])
     }
     timing('paint', t0)
 }

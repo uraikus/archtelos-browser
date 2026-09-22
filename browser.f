@@ -516,7 +516,7 @@ if printPath != '' {
     // out of the document's own stylesheet, so it is not known until the
     // document has been read once. It is laid out again at that width
     // rather than guessed at.
-    PageBox firstBox = pageBoxFor('', 1)
+    PageBox firstBox = pageBoxFor('', 1, false)
     int areaW = pageAreaWidth(firstBox)
     setCssViewport(areaW, pageAreaHeight(firstBox))
     preparePage(page, areaW)

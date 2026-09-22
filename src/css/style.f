@@ -654,6 +654,12 @@ const int BRK_AVOID = 2
 // page: the value is separate from BRK_COLUMN so a column context can
 // tell which it was asked for, and both force a column to end.
 const int BRK_PAGE = 3
+// The page-side keywords. They end a page as `page` does and then ask
+// for a side, which may take a generated blank page to reach (CSS2
+// §13.3.1). They sit above BRK_PAGE so that "ends a page" is one
+// comparison rather than three.
+const int BRK_LEFT = 4
+const int BRK_RIGHT = 5
 
 // CSS Masking 1's `clip-path`, and the CSS2 `clip` that preceded it.
 // A shape is kept as it was written -- lengths and percentages -- and

@@ -4372,18 +4372,22 @@ int func lineStyleKeyword(t:ascii) {
 // `outline` shorthand needs in order to tell a style from a colour.
 // break-before and break-after. `column` ends a column and `page` ends
 // a page; the page-side keywords -- `left`, `right`, `recto`, `verso` --
-// each end a page as well, and the side they ask for is not honoured,
-// because honouring it means generating the blank page that makes the
-// next one land on that side. `avoid`, `avoid-column` and `avoid-page`
+// each end a page as well and then name the side the next one must be
+// formatted as, which the paginator reaches by generating a blank page
+// where it has to. `avoid`, `avoid-column` and `avoid-page`
 // all forbid a break, since the only two contexts here are the column
 // and the page.
 int func breakKeyword(v:ascii) {
     if v == null { return BRK_AUTO }
     ascii t = asciiLower(asciiTrim(v))
     if t == 'column' { return BRK_COLUMN }
-    if t == 'page' || t == 'left' || t == 'right' || t == 'recto' || t == 'verso' {
-        return BRK_PAGE
-    }
+    if t == 'page' { return BRK_PAGE }
+    // `recto` and `verso` are the sides named by the page progression
+    // rather than by the reader's hand. This engine has no vertical
+    // writing mode, so the progression is always left to right and
+    // `recto` is `right`, `verso` is `left`.
+    if t == 'right' || t == 'recto' { return BRK_RIGHT }
+    if t == 'left' || t == 'verso' { return BRK_LEFT }
     if t == 'avoid' || t == 'avoid-column' || t == 'avoid-page' { return BRK_AVOID }
     return BRK_AUTO
 }

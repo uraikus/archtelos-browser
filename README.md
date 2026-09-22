@@ -180,7 +180,11 @@ print, the way a print dialog's setting of that name does, and
 inherits, so it can be declared once on a wrapper; only backgrounds go,
 and the text over them still prints. A page is a fragmentation container like a column, so
 `break-before: page` and the `page-break-*` properties CSS2 spells them
-with put a break where a document asks for one. `linear-gradient()` and
+with put a break where a document asks for one. `left`, `right`, `recto`
+and `verso` ask for a side as well: the first page is a right page, so
+each of them ends the page and then generates a blank one where the next
+would otherwise land on the wrong side, and `@page :blank` selects the
+page that generates. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle

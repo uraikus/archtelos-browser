@@ -23,6 +23,11 @@ arr[int] pageStartY = []
 arr[int] pageEndY = []
 arr[text] pageNames = []
 arr[PageBox] pageBoxes = []
+// Whether each page is one this generated to reach a side, rather than
+// one the document filled. `:blank` selects those and nothing else, and
+// a page that carries no content is not the same thing: a page can end
+// short because the next box would not fit.
+arr[bool] pageBlanks = []
 
 // A document that will not break is still a document, and a runaway
 // would be a file per page: a page that takes no content ends the walk.
@@ -53,6 +58,43 @@ Box func findBoxByTag(b:Box, tag:text) {
     return null
 }
 
+// The first page is a right-hand one, so an odd index is a right page
+// and an even one a left page (CSS2 §13.2.4) -- the same parity
+// `pageRuleMatches` uses for `:left` and `:right`, kept in one place so
+// the two cannot drift.
+bool func pageIsRight(index:int) {
+    return index - Math.floorDiv(index, 2) * 2 == 1
+}
+
+// Which side the break just before `units[at]` asked for, or BRK_AUTO.
+//
+// The value is read back off the boxes rather than carried on the unit.
+// A ColumnUnit is built for every line of every multi-column container
+// on screen, and a field there would cost every one of those pages a
+// struct they never read -- which is what a single `int` on `Style`
+// was measured to cost (benchmarks.md, "What one `int` on `Style`
+// costs"). This runs once per break of a print instead.
+int func pageSideAt(host:Box, units:arr[ColumnUnit], at:int) {
+    int v = units[at].box.style.breakBefore
+    if v == BRK_LEFT || v == BRK_RIGHT { return v }
+    // Otherwise the break is the previous sibling's `break-after`, which
+    // the unit collector carried forward in `pendingForce`. The siblings
+    // it skips are skipped here in the same order, so the sibling found
+    // is the one that set the flag.
+    int i = units[at].childIndex - 1
+    while i >= 0 {
+        Box c = host.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || boxIsOutOfFlow(c) || boxIsFloated(c) {
+            i--
+            continue
+        }
+        int a = c.style.breakAfter
+        if a == BRK_LEFT || a == BRK_RIGHT { return a }
+        return BRK_AUTO
+    }
+    return BRK_AUTO
+}
+
 // Breaks the document into pages, filling pageStartY, pageEndY,
 // pageNames and pageBoxes. Every document has at least one page,
 // including an empty one: a sheet with nothing on it is still a sheet.
@@ -61,10 +103,12 @@ void func paginateDocument(root:Box) {
     arr[int] ends = []
     arr[text] names = []
     arr[PageBox] boxes = []
+    arr[bool] blanks = []
     pageStartY = ys
     pageEndY = ends
     pageNames = names
     pageBoxes = boxes
+    pageBlanks = blanks
     if root == null { return }
 
     arr[ColumnUnit] units = []
@@ -82,7 +126,8 @@ void func paginateDocument(root:Box) {
         ys.push(0)
         ends.push(root.h)
         names.push('')
-        boxes.push(pageBoxFor('', 1))
+        blanks.push(false)
+        boxes.push(pageBoxFor('', 1, false))
         return
     }
     int docBottom = 0
@@ -98,10 +143,11 @@ void func paginateDocument(root:Box) {
         // what keeps this from being circular: the box decides how much
         // fits, and the name that decides the box is known before it.
         text name = units[i].box.style.pageName
-        PageBox box = pageBoxFor(name, index)
+        PageBox box = pageBoxFor(name, index, false)
         int areaH = maxInt(box.height - box.marginTop - box.marginBottom, 1)
         ys.push(top)
         names.push(name)
+        blanks.push(false)
         boxes.push(box)
 
         int at = 0 - 1
@@ -120,6 +166,21 @@ void func paginateDocument(root:Box) {
             i = at
             top = units[at].top
             index++
+            // CSS 2 §13.3.1: `left` and `right` force one break or two,
+            // whichever it takes for the next page to be formatted as a
+            // page of that side. The second one produces a page with
+            // nothing on it, which is the only way a blank page is made
+            // here and so the only thing `:blank` can select.
+            int side = pageSideAt(host, units, at)
+            if side != BRK_AUTO && pageIsRight(index) != (side == BRK_RIGHT)
+                && index < PAGE_LIMIT {
+                ys.push(top)
+                ends.push(top)
+                names.push('')
+                blanks.push(true)
+                boxes.push(pageBoxFor('', index, true))
+                index++
+            }
             continue
         }
         // Nothing here may be broken, so either the rest fits or it is
