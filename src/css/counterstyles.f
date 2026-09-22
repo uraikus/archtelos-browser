@@ -32,6 +32,9 @@ struct CounterStyle {
     rangeMin:int
     rangeMax:int
     hasRange:bool
+    // The style a counter outside the range is written in. Empty means
+    // `decimal`, which is the descriptor's initial value.
+    fallback:text
     defined:bool
 }
 
@@ -188,14 +191,28 @@ text func csFormat(c:CounterStyle, n:int) {
     return out
 }
 
+// How far a `fallback` chain is followed. The standard leaves the limit
+// to the implementation, and a style may name one that names it back.
+const int CS_FALLBACK_DEPTH = 4
+
 // The marker text for a number in a named style, without its suffix.
-text func counterStyleLabel(name:text, n:int) {
+// `depth` bounds the `fallback` chain: a style may name another that
+// names it back, and the standard leaves the limit to the
+// implementation rather than defining the cycle away.
+text func counterStyleLabelAt(name:text, n:int, depth:int) {
     CounterStyle c = csLookup(name)
     if !c.defined { return `${n}` }
-    // A system that cannot write this number falls back to decimal
-    // rather than inventing a symbol, which is the standard's rule and
-    // is why `lower-roman` of 4000 is `4000`.
-    if c.hasRange && (n < c.rangeMin || n > c.rangeMax) { return `${n}` }
+    // A system that cannot write this number falls back rather than
+    // inventing a symbol, which is the standard's rule and is why
+    // `lower-roman` of 4000 is `4000`. Where the style names a
+    // `fallback` that is what it falls to; where it does not, the
+    // descriptor's initial value is `decimal`, which is the number.
+    if c.hasRange && (n < c.rangeMin || n > c.rangeMax) {
+        if c.fallback != '' && depth < CS_FALLBACK_DEPTH {
+            return counterStyleLabelAt(c.fallback, n, depth + 1)
+        }
+        return `${n}`
+    }
     bool negative = n < 0
     int v = negative ? -n : n
     if (c.system == CS_SYMBOLIC || c.system == CS_ALPHABETIC || c.system == CS_ADDITIVE)
@@ -209,6 +226,10 @@ text func counterStyleLabel(name:text, n:int) {
     }
     if negative { return c.negPrefix + body + c.negSuffix }
     return body
+}
+
+text func counterStyleLabel(name:text, n:int) {
+    return counterStyleLabelAt(name, n, 0)
 }
 
 // The suffix a style puts after its marker: `. ` for the numeric and

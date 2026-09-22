@@ -322,6 +322,26 @@ CounterStyle func parseCounterStyleBody(body:ascii) {
                 if w != null { c.padTo = w }
                 c.padSymbol = unquoteCssString(parts[1])
             }
+        } else if name == 'range' {
+            // `[ <integer> | infinite ]{2}` -- the multi-range form is
+            // not taken, because nothing measured says what this engine
+            // should do with a gap between two of them.
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if asciiLower(asciiTrim(value)) == 'auto' { c.hasRange = false }
+            else if parts.length >= 2 {
+                text lo = asciiLower(parts[0]).toText()
+                text hi = asciiLower(parts[1]).toText()
+                int a = lo == 'infinite' ? 0 - 1000000000 : lo.toInt()
+                int b = hi == 'infinite' ? 1000000000 : hi.toInt()
+                if a != null && b != null {
+                    c.rangeMin = a
+                    c.rangeMax = b
+                    c.hasRange = true
+                }
+            }
+        } else if name == 'fallback' {
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if parts.length >= 1 { c.fallback = asciiLower(parts[0]).toText() }
         } else if name == 'negative' {
             arr[ascii] parts = namespacePreludeTokens(value)
             if parts.length >= 1 { c.negPrefix = unquoteCssString(parts[0]) }

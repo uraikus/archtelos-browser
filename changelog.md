@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `@counter-style` takes a `range` and a `fallback`
+
+Counter Styles 3's two remaining descriptors this engine can act on.
+`range` bounds the numbers a style writes -- a pair, `infinite` on
+either side, or `auto` for the system's own -- and a counter outside it
+falls to the style's `fallback`, or to `decimal` where none is
+declared. The struct already carried `rangeMin`, `rangeMax` and
+`hasRange` for the built-in romans, which is why `lower-roman` of 4000
+has always been `4000`; what was missing was the parsing and somewhere
+for the fallback to go.
+
+**A `fallback` chain is followed four deep and then gives up.** A style
+may name one that names it back, and the standard leaves that limit to
+the implementation rather than defining the cycle away -- so the suite
+has two checks that a loop and a self-reference both end in decimal
+rather than hanging, which is the sort of thing that is easy to leave
+until a page does it.
+
+**Four instruments were thrown away before the measurement.**
+`getComputedStyle(li, '::marker').content` answers `normal` whatever
+the style; the `::before` form answers the *specified*
+`counter(k, ranged)` rather than the string it resolved to; a DOM
+`Range` over an element measures zero, because pseudo text is not in
+the DOM; and an inline-block `<li>` reads the same for `symbols()` as
+for `disc`, so it is seeing neither. What works is an inline-block
+whose shrink-to-fit width **is** the generated text's, divided by one
+character's width.
+
+**And the first working instrument still did not discriminate.** The
+fallback was first read at counters 1 and 5, where `I` and `V` are one
+character and so are `1` and `5` -- so the table came out identical
+with and without the descriptor. It is 8 and 9 that settle it: `VIII`
+at four characters and `IX` at two against decimal's one.
+
+`tests/unit/test_counterstyles.f` 38 -> 44.
+
+Left out: the multi-range form of `range`, nothing having measured what
+a gap between two ranges should do; `symbols()`, which no instrument
+here can see, so it is not claimed; and `speak-as`, declined because
+nothing here speaks and it would be a descriptor parsed and never read.
+
 ### `font-variant-caps`, synthesised rather than selected
 
 CSS Fonts 4, and the part of it this engine can reach. No face here

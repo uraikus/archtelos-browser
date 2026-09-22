@@ -176,8 +176,10 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    system lacks. `font-stretch` is not and cannot be: it needs a face
    that carries the widths, and the runtime has no call that asks for
    one.
-7. **Counter Styles 3, completed**: the `range`, `fallback` and
-   `speak-as` descriptors; the `symbols()` function; and the predefined
+7. **Counter Styles 3, completed**: the `symbols()` function, which no
+   instrument here can yet see, and `speak-as`, which is declined --
+   nothing here speaks, so it would be a descriptor parsed and never
+   read. `range` and `fallback` are done. Also the predefined
    styles that need a table this repository would have to vendor --
    `hebrew`, `armenian`, `georgian` and the East Asian ones beyond
    `cjk-decimal`. What is left of Lists 3 is `list-style-image`, which
