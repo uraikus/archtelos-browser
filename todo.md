@@ -1604,6 +1604,38 @@ two extra walks of the box tree, and neither benchmark page has a float
 on it, so `tests/featurepage.py` needs one with a probe before the
 measurement means anything.
 
+### How Chromium synthesises small caps, measured
+
+`font-variant-caps` is the part of Fonts 4 that needs no font the
+system lacks, because a browser with no such feature in the face
+**synthesises** it. Chromium 141, monospace:
+
+| | `abc` | `abc` small-caps | ratio |
+|---|---|---|---|
+| 16px | 28.91 | 19.88 | 0.6876 |
+| 20px | 36.13 | 25.30 | 0.7003 |
+| 40px | 72.25 | 50.58 | 0.7000 |
+| 80px | 144.50 | 101.16 | 0.7000 |
+| 100px | 180.63 | 126.44 | 0.7000 |
+
+So a lowercase letter is drawn at **0.7 x the font size**, and the 16px
+row is that rule with the size rounded: 0.7 x 16 is 11.2, and three
+characters of 11px monospace come to 19.87.
+
+Which letters are shrunk depends on the keyword, per character rather
+than per run:
+
+| | `abc` | `ABC` | `aBc` |
+|---|---|---|---|
+| `small-caps` | 50.58 | **72.25** | 57.80 |
+| `all-small-caps` | 50.58 | **50.58** | 50.58 |
+
+`small-caps` leaves an uppercase letter at the full size and
+`all-small-caps` shrinks it too; `aBc` at 57.80 is one full-size
+character plus two small ones, so the decision is made letter by
+letter. The line box keeps the full font's metrics either way -- every
+row above is 46 tall at 40px, the same as the normal run beside it.
+
 ### What §9.9's steps 3, 4 and 5 look like in pixels
 
 The hit-testing table below says which box a *click* lands on. This is
