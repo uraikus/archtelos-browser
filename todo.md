@@ -1522,6 +1522,56 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### What a `transform` makes of a box, measured
+
+Three questions, all answered by one page each.
+
+**It is the containing block for its positioned descendants**, and for
+both kinds. An `position: absolute` child at `left: 0; top: 0` inside a
+`position: relative` grandparent lands on the *grandparent* normally and
+on the **transformed parent** when the parent has a transform; a
+`position: fixed` child lands on the viewport normally and on the
+transformed parent the same way:
+
+| the middle box | where the absolute child lands | where the fixed child lands |
+|---|---|---|
+| no transform | the positioned grandparent | the viewport, `0,0` |
+| `transform: translateX(0px)` | **the middle box itself** | **the middle box itself** |
+| `transform: none` | the positioned grandparent | -- |
+
+**It is a stacking context.** A `z-index: -1` child paints behind a
+non-context parent's background and above a context parent's, so
+`elementFromPoint` at the parent's centre names which:
+
+| the parent | what is on top |
+|---|---|
+| no transform | the parent -- the negative child is behind its background |
+| `transform: translateX(0px)` | **the child** |
+| `transform: rotate(0deg)` | **the child** |
+| `transform: none` | the parent |
+| `opacity: 0.5` | the child (a separate rule, and already true here) |
+
+**The trigger is the computed value, not the matrix.** `rotate(0deg)`
+computes to `matrix(1, 0, 0, 1, 0, 0)` -- byte for byte what
+`translateX(0px)` computes to -- and both make a containing block and a
+stacking context. An **identity** transform is still a transform. Only
+`none` is not.
+
+**Hit testing follows the drawn shape.** A 100x40 box rotated 90 degrees
+about its centre is drawn 40 wide and 100 tall. Seven points against it,
+with an unrotated box of the original geometry underneath to tell the
+two shapes apart:
+
+| point | `elementFromPoint` |
+|---|---|
+| 150,280 and 150,360 -- inside the drawn box, outside the laid-out one | the rotated box |
+| 110,320 and 190,320 -- inside the laid-out box, outside the drawn one | the box underneath |
+| 105,310 and 195,310 -- the same, nearer the corners | the box underneath |
+| 150,320 -- the centre, inside both | the rotated box, which paints later |
+
+So the pointer is tested against the transformed rectangle rather than
+the laid-out one, which is the inverse transform applied to the point.
+
 ### `::placeholder`, measured
 
 Thirteen inputs on one page, each with its own rule, read back through
