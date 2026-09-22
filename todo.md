@@ -1537,6 +1537,25 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### Which of two overlapping boxes a click lands on, measured
+
+`elementFromPoint` names the **topmost in painting order**, so five
+overlapping pairs pin five steps of CSS2 §9.9 against the one below:
+
+| what overlaps | Chromium names |
+|---|---|
+| a positioned box written *before* an in-flow one | the **positioned** one |
+| two in-flow blocks, overlapped by a negative margin | the **later** one |
+| two positioned boxes, `z-index: 5` written before `z-index: 1` | the **higher z**, whatever the order |
+| a `z-index: -1` box against its context's in-flow content | the **in-flow** content |
+| a child against its parent's background | the **child** |
+
+The fourth row is worth keeping: the in-flow box has
+`background: transparent` and still wins, so hit testing is about the
+**box** rather than about the ink in it. That is the model this engine
+already has, and it is what makes the fix a reordering rather than a
+new question.
+
 ### What a `transform` makes of a box, measured
 
 Three questions, all answered by one page each.
