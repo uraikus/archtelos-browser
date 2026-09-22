@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A negative margin collapses by CSS2 §8.3.1
+
+Collapsing margins take the **largest positive** and the **most
+negative** and add them. This took the maximum, and the larger of 0 and
+-40 is 0 -- so a negative `margin-top` did nothing at all, while a
+negative `margin-left`, which goes nowhere near the collapsing code,
+worked. Four stacked 100px blocks with `-40px` on the second sat at 0,
+100, 200, 300 where Chromium puts them at 0, **60**, 160, 260.
+
+Five pairs measured before anything was written, and all five are
+`max(positives, 0) + min(negatives, 0)`: +50/+20 gives 50, +50/-20
+gives 30, -30/-50 gives -50, 0/-40 gives -40, -40/+10 gives -30. The
+same correction goes into the parent-and-child collapse, which took the
+same maximum.
+
+**Nothing in the suite moved**, which is worth saying rather than
+passing over: a change to how every page's flow collapses its margins
+regressed nothing, because not one test had used a negative margin.
+That is the same shape as the benchmark pages having no `z-index` and
+no `placeholder` -- an engine is only as measured as its fixtures are
+varied.
+
+Found by writing a hit-testing fixture that needed two in-flow blocks
+to overlap. They did not, and the fixture was measuring nothing.
+
+layout 83 -> 94.
+
 ### A click lands on the topmost box
 
 Hit testing returned the **first** child whose rectangle held the point

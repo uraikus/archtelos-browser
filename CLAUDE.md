@@ -209,6 +209,21 @@ that means the property. Where a property genuinely cannot act alone, its
 row carries the declarations it needs as context and is graded against an
 element that already has them, so the context cannot do the work for it.
 
+**A paired benchmark needs the two binaries to be doing the same work.**
+It compares code, not pages, and it stops comparing code the moment the
+change alters what the page lays out. A negative `margin-top` that had
+been dropped, once applied, made the candidate's `features.html` four
+hundred and fifty pixels shorter than the parent's -- and the forward
++1 of paint against a reversed 0 that came out of it is the shape this
+file calls real, while being nothing but two different documents timed
+against each other. This pulls against the rule above it: a page has to
+exercise a feature for the measurement to mean anything, and must not
+change shape between the binaries for a paired reading to mean
+anything. A feature that only adds work satisfies both; a feature that
+**fixes the layout** cannot. Measure that one on a page the fix does
+not touch, and keep the page that exercises it for `--verify` and the
+render suite, where the difference is the point.
+
 **Run the benchmarks on an idle machine, and check a number you did not
 change.** "Best of N" does not rescue a contended run, because every one
 of the N runs is contended: a benchmark run here beside a valgrind job

@@ -353,4 +353,56 @@ checkEqInt(longWord.sbH, 15, 'a word too long to break raises one as well')
 check(longWord.scrollW > 100, 'and the scrollable width is the word, not the box')
 checkEqInt(longWord.sbH, wideChild.sbH, 'the same bar, for the same reason')
 
+// ---- a negative margin collapses by CSS2 §8.3.1 ----------------------
+//
+// Collapsing margins take the **largest positive** and the **most
+// negative** and add them, which is not the maximum: the larger of 0
+// and -40 is 0, and that is what threw a negative `margin-top` away
+// here. Chromium's gap between two 100px blocks, measured (todo.md):
+//
+//   +50 / +20 -> 50     +50 / -20 -> 30     -30 / -50 -> -50
+//     0 / -40 -> -40    -40 / +10 -> -30
+
+int func gapBetween(mb:text, mt:text) {
+    Box root = layoutHtml('<!doctype html><body style="margin:0">'
+        + '<div id="a" style="height:100px;margin-bottom:' + mb + '"></div>'
+        + '<div id="b" style="height:100px;margin-top:' + mt + '"></div>'
+        + '</body>', 800)
+    arr[Box] all = []
+    collectBoxesForTag(root, 'div', all)
+    if all.length < 2 { return -9999 }
+    return all[1].y - (all[0].y + all[0].h)
+}
+
+checkEqInt(gapBetween('50px', '20px'), 50, 'two positive margins collapse to the larger')
+checkEqInt(gapBetween('50px', '-20px'), 30, 'a negative is added to the largest positive')
+checkEqInt(gapBetween('-30px', '-50px'), 0 - 50, 'two negatives collapse to the most negative')
+checkEqInt(gapBetween('0px', '-40px'), 0 - 40, 'a negative alone pulls the box up')
+checkEqInt(gapBetween('-40px', '10px'), 0 - 30, 'and it does from the other side too')
+
+// The boxes after it follow, which is what makes this visible at all:
+// four stacked 100px blocks with -40 on the second sit at 0, 60, 160,
+// 260 in Chromium.
+Box negRoot = layoutHtml('<!doctype html><body style="margin:0">'
+    + '<div style="height:100px"></div>'
+    + '<div style="height:100px;margin-top:-40px"></div>'
+    + '<div style="height:100px"></div>'
+    + '<div style="height:100px"></div></body>', 800)
+arr[Box] negAll = []
+collectBoxesForTag(negRoot, 'div', negAll)
+checkEqInt(negAll.length, 4, 'four blocks')
+checkEqInt(negAll[0].y, 0, 'the first is at the top')
+checkEqInt(negAll[1].y, 60, 'the second is pulled up by its negative margin')
+checkEqInt(negAll[2].y, 160, 'and the third follows it')
+checkEqInt(negAll[3].y, 260, 'and so does the fourth')
+
+// A negative `margin-left` already worked, and must still: the two
+// directions answering the same way is the check that does not depend
+// on either number being right on its own.
+Box sideRoot = layoutHtml('<!doctype html><body style="margin:0">'
+    + '<div style="height:100px;margin-left:-30px;width:200px"></div></body>', 800)
+arr[Box] sideAll = []
+collectBoxesForTag(sideRoot, 'div', sideAll)
+checkEqInt(sideAll[0].x, 0 - 30, 'a negative margin-left still moves the box out')
+
 finish('layout')

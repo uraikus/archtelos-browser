@@ -1705,6 +1705,17 @@ int func imageBoxHeight(b:Box, w:int) {
 // The margin that collapses out through the top of `b`: its own top
 // margin joined with its first in-flow child's, when nothing (border,
 // padding) separates them.
+// Two margins collapsed, CSS2 §8.3.1: the largest positive and the most
+// negative, added. It is not the maximum -- the larger of 0 and -40 is
+// 0, which threw every negative `margin-top` away and is why a box
+// declaring one did not move (todo.md). Five pairs measured against
+// Chromium say this exactly.
+int func collapseMargins(a:int, b:int) {
+    int pos = maxInt(maxInt(a, 0), maxInt(b, 0))
+    int neg = minInt(minInt(a, 0), minInt(b, 0))
+    return pos + neg
+}
+
 int func collapsedTopMargin(b:Box, cw:int) {
     int own = resolveLen(b.style.marginTop, cw, 0)
     if b.kind != BOX_BLOCK && b.kind != BOX_ANON { return own }
@@ -1712,7 +1723,7 @@ int func collapsedTopMargin(b:Box, cw:int) {
     if hasInlineContent(b) || b.children.length == 0 { return own }
     Box first = b.children[0]
     if first.kind != BOX_BLOCK && first.kind != BOX_ANON { return own }
-    return maxInt(own, collapsedTopMargin(first, cw))
+    return collapseMargins(own, collapsedTopMargin(first, cw))
 }
 
 int func collapsedBottomMargin(b:Box, cw:int) {
@@ -1723,7 +1734,7 @@ int func collapsedBottomMargin(b:Box, cw:int) {
     if hasInlineContent(b) || b.children.length == 0 { return own }
     Box last = b.children[b.children.length - 1]
     if last.kind != BOX_BLOCK && last.kind != BOX_ANON { return own }
-    return maxInt(own, collapsedBottomMargin(last, cw))
+    return collapseMargins(own, collapsedBottomMargin(last, cw))
 }
 
 // Lays out a block-level box whose containing block's content area
@@ -2972,8 +2983,10 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
             // caller, which used collapsedTopMargin(b))
             applied = true
         } else if !first {
-            // sibling collapse: the gap is the larger margin, not the sum
-            int gap = maxInt(prevBottomMargin, topM)
+            // sibling collapse: the gap is the two margins collapsed
+            // (§8.3.1), which is the larger positive plus the most
+            // negative rather than the sum or the maximum.
+            int gap = collapseMargins(prevBottomMargin, topM)
             y = y - prevBottomMargin + gap
             applied = true
         }

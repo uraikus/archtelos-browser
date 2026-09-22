@@ -750,6 +750,36 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What the negative-margin fix cost, and the page it cannot be measured on
+
+2026-09-22, same machine and script. The change is one function call
+where a `maxInt` was, on the path every block's margins already take.
+On `generated.html`, which declares no negative margin, it reads
+nothing -- every median 0 in both directions but a single -1 of layout.
+
+**And `features.html` cannot answer the question at all**, which is the
+entry's point. A negative margin was added to it for the usual reason,
+so that the benchmark could see the feature -- and that makes the two
+binaries lay out **different pages**. The old one drops the
+`margin-top: -18px` on twenty-five boxes and the new one applies it, so
+the new one has four hundred and fifty fewer pixels of document. Its
+forward reading was +1 of paint against a reversed 0, the shape this
+file calls real, and it is not a cost: it is two different documents
+being timed.
+
+That is a tension worth stating, because both rules are right and they
+pull against each other. **A benchmark page has to exercise a feature
+for the measurement to mean anything, and it must not change shape
+between the two binaries for a paired reading to mean anything.** A
+feature that only adds work -- a new property read, a new pass --
+satisfies both, which is why it has not come up before. A feature that
+*fixes the layout* cannot: the page that shows it working is the page
+whose geometry moved.
+
+So the cost of a layout fix is measured on a page the fix does not
+touch, and the page that exercises it is kept for `--verify` and the
+render suite, where a difference is the point rather than the noise.
+
 ## What finding an out-of-flow box costs
 
 2026-09-22, same machine and script. Nothing, and the reason is

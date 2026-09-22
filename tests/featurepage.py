@@ -87,6 +87,11 @@ def png(path, w, h):
 # document's own <style>, so `tests/chromium.py render` -- which adopts
 # the head's <style> elements along with the body -- gives both engines
 # the same cascade to do.
+NEGMARGIN_CSS = """
+.pull1{height:34px;background:#e8dcc8;padding:4px}
+.pull2{height:34px;background:#cfe3d4;padding:4px;margin-top:-18px;margin-left:24px}
+"""
+
 ZSTACK_CSS = """
 .zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
 .zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
@@ -127,7 +132,7 @@ th{background:#dde}
 # generated counters become no generated content at all, `object-fit`
 # goes back to its initial value and the form controls stop being
 # painted as form controls.
-FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS
+FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS
 
 PLAIN_CSS = FEATURES_CSS + """
 h2::before{content:none}
@@ -164,6 +169,10 @@ PROBES = (
     # Making the parent a context puts it in front, which is the whole
     # of the painting order in one pixel.
     ('stacking-order', '.zstack{z-index:0}'),
+    # A negative `margin-top` pulls the second box up over the first.
+    # Setting it to zero puts them back apart, which moves every box
+    # below them and so the whole page.
+    ('negative-margin', '.pull2{margin-top:0}'),
     ('object-fit', 'img{object-fit:fill}'),
     ('object-position', 'img{object-position:0 0}'),
     ('images', 'img{display:none}'),
@@ -213,6 +222,8 @@ def body():
                     '<button type="button">run</button></form>' % (s, s, s, s)),
         rows.append('<div class="zstack"><div class="zback"></div>'
                     'behind and in front</div>')
+        rows.append('<div class="pull1">pulled</div>'
+                    '<div class="pull2">up over it</div>')
         rows.append('<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>')
         for i in range(6):
             rows.append('<tr><td>row %d.%d</td><td>kind %d</td><td>%d</td></tr>'
