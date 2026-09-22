@@ -320,6 +320,13 @@ says what they are about, and the individual `translate`, `rotate` and
 `matrix()` are dropped, because the canvas composes its matrix from
 translate, rotate and scale and has no call that takes one.
 
+A transformed box is the **containing block** for its positioned
+descendants, `absolute` and `fixed` alike, and an *identity* transform
+still counts — `rotate(0deg)` and `translateX(0px)` compute to the same
+matrix and make one, where `none` does not. **Clicks go through the
+inverse transform**, so a box rotated ninety degrees is clickable along
+the shape it is drawn as rather than the rectangle it was laid out as.
+
 **`::before` and `::after`** generate boxes from `content`, which takes
 quoted strings, `attr()`, `counter()`, `counters()`, the four quote
 keywords and `url()` — an image, which generates a replaced box at its

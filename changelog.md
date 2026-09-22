@@ -5,6 +5,53 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### What a transform makes of a box
+
+Two of the three things Transforms 1 §3 asks of a transformed box, and
+the measurement decided which two were worth taking.
+
+**It is the containing block for its positioned descendants**, and for
+both kinds. The trigger is the computed value rather than the matrix:
+Chromium makes a containing block of `rotate(0deg)`, which computes to
+`matrix(1, 0, 0, 1, 0, 0)` -- byte for byte what `translateX(0px)`
+computes to -- and not of `none`. So the test is `transforms.length`,
+because `none` parses to no functions at all and an identity transform
+parses to one. A `fixed` box's containing block is carried separately
+from an `absolute` one's, since a merely positioned ancestor makes one
+for `absolute` alone and the nearest transformed ancestor can be further
+out than the nearest positioned one.
+
+**Hit testing goes through the inverse transform.** The painter composes
+`translate(origin)`, the functions in the order written, then
+`translate(-origin)`, so the point is undone by the same functions
+inverted and applied in the opposite order, and the box and its whole
+subtree are then searched in that space. A 100x40 box rotated ninety
+degrees is hit along the 40x100 shape it is drawn as and missed at the
+ends of the rectangle it was laid out as, which is what Chromium's
+`elementFromPoint` answers for the same seven points. A zero scale draws
+nothing, so the point is sent somewhere the box is not.
+
+**The stacking context is not taken, and that is a judgement rather than
+an omission.** The observable difference is where a `z-index: -1` child
+paints, and this painter puts every positioned child after the box's own
+background and lines -- so a negative child already paints above a
+background it should be behind. Making `transform` establish a stacking
+context changes nothing until CSS2 §9.9's order is there to change,
+because the negative children of a box that is *not* a stacking context
+have to be painted by the nearest ancestor that is, which is hoisting
+rather than reordering. Shipping the keyword first would be
+`outline-style` again. todo.md carries it with what it needs.
+
+**And the work turned up a bug in hit testing that has nothing to do
+with transforms.** `hitTest` descends only into children whose rectangle
+holds the point, so an out-of-flow box laid out beyond its parent's box
+is unreachable -- an absolutely positioned box at 100,100 inside a body
+of zero height is found by neither. Chromium finds it. Recorded rather
+than fixed here, because the fix is for the descent to use a box's ink
+extent rather than its laid-out one and that wants its own measurement.
+
+position 34 -> 58.
+
 ### `::placeholder`
 
 The placeholder attribute was already laid out as the control's text.

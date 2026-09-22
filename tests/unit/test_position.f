@@ -126,4 +126,132 @@ Box sb6 = staticBox('<div style="height:50px"></div>'
 checkEqInt(sb6.x, 60, 'a declared top leaves the static position across alone')
 checkEqInt(sb6.y, 5, 'while down it is the inset that decides')
 
+// ---- a transform is a containing block (Transforms 1 §3, measured) -----
+//
+// Chromium, on a positioned grandparent holding a middle box holding an
+// out-of-flow child at left/top 0 (todo.md): the child lands on the
+// grandparent when the middle box has no transform and on the **middle
+// box** when it has one, and a `position: fixed` child does the same --
+// it lands on the viewport normally and on the transformed box here.
+//
+// The trigger is the computed value rather than the matrix:
+// `rotate(0deg)` computes to matrix(1, 0, 0, 1, 0, 0), byte for byte
+// what `translateX(0px)` computes to, and both count. Only `none` does
+// not -- which is exactly `transforms.length`.
+
+Box func cbChild(mid:text, kind:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0">'
+        + '<div style="position:relative;left:50px;top:50px;width:400px;height:200px;'
+        + 'border:1px solid #000">'
+        + '<div id="m" style="margin:20px;width:200px;height:100px;' + mid + '">'
+        + '<div id="c" style="position:' + kind + ';left:0;top:0;width:30px;height:30px"></div>'
+        + '</div></div></body>', 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if getAttr(all[i].node, 'id') == 'c' { return all[i] }
+    }
+    return null
+}
+
+Box cbPlainAbs = cbChild('', 'absolute')
+Box cbTxAbs = cbChild('transform:translateX(0px)', 'absolute')
+Box cbNoneAbs = cbChild('transform:none', 'absolute')
+Box cbRotAbs = cbChild('transform:rotate(0deg)', 'absolute')
+
+check(cbPlainAbs != null, 'the absolute child has a box')
+// The grandparent's one-pixel border puts its padding box at 51,51 and
+// stops the middle box's margin collapsing through it, so the middle box
+// is at 71,71 and the two are distinguishable on both axes.
+checkEqInt(cbPlainAbs.x, 51, 'with no transform the absolute child takes the positioned ancestor')
+checkEqInt(cbPlainAbs.y, 51, 'on both axes')
+checkEqInt(cbTxAbs.x, 71, 'a transform makes the middle box the containing block')
+checkEqInt(cbTxAbs.y, 71, 'on both axes')
+
+// `none` is not a transform, so it must agree with declaring nothing --
+// which is the check that does not depend on either number being known.
+checkEqInt(cbNoneAbs.x, cbPlainAbs.x, 'transform: none is not a containing block')
+checkEqInt(cbNoneAbs.y, cbPlainAbs.y, 'on both axes')
+
+// An identity matrix is still a transform, and the two spellings of one
+// must agree rather than each match a number.
+checkEqInt(cbRotAbs.x, cbTxAbs.x, 'rotate(0deg) is a transform as much as translateX(0px)')
+checkEqInt(cbRotAbs.y, cbTxAbs.y, 'on both axes')
+
+// A fixed child resolves against the viewport, and against a
+// transformed ancestor when there is one.
+Box cbPlainFix = cbChild('', 'fixed')
+Box cbTxFix = cbChild('transform:translateX(0px)', 'fixed')
+checkEqInt(cbPlainFix.x, 0, 'a fixed child takes the viewport')
+checkEqInt(cbPlainFix.y, 0, 'on both axes')
+checkEqInt(cbTxFix.x, 71, 'and a transformed ancestor where there is one')
+checkEqInt(cbTxFix.y, 71, 'on both axes')
+
+// ---- hit testing goes through the inverse transform --------------------
+//
+// A 100x40 box rotated 90 degrees about its centre is drawn 40 wide and
+// 100 tall. Chromium's elementFromPoint follows the drawn shape: the
+// points inside it and outside the laid-out rectangle hit it, and the
+// points inside the laid-out rectangle and outside the drawn one miss.
+
+// The body is given a height because hit testing culls by the
+// ancestor's rectangle, so an out-of-flow box outside it is unreachable
+// -- which is its own bug rather than this one's (todo.md).
+Box func hitTransformRoot() {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+        + '<div id="r" style="position:absolute;left:100px;top:300px;'
+        + 'width:100px;height:40px;transform:rotate(90deg)"></div>'
+        + '</body>', 'about:blank', 800)
+    return p.root
+}
+
+Box hitRootT = hitTransformRoot()
+// Drawn: x 130..170, y 270..370, about the centre 150,320.
+Box hitInsideDrawn = hitTest(hitRootT, 150, 280)
+Box hitInsideDrawn2 = hitTest(hitRootT, 150, 360)
+Box hitOutsideDrawn = hitTest(hitRootT, 110, 320)
+Box hitOutsideDrawn2 = hitTest(hitRootT, 190, 320)
+Box hitCentre = hitTest(hitRootT, 150, 320)
+
+check(hitInsideDrawn != null && getAttr(hitInsideDrawn.node, 'id') == 'r',
+      'a point inside the drawn box but outside the laid-out one hits it')
+check(hitInsideDrawn2 != null && getAttr(hitInsideDrawn2.node, 'id') == 'r',
+      'and so does the other end of it')
+check(hitOutsideDrawn == null || getAttr(hitOutsideDrawn.node, 'id') != 'r',
+      'a point inside the laid-out box but outside the drawn one misses')
+check(hitOutsideDrawn2 == null || getAttr(hitOutsideDrawn2.node, 'id') != 'r',
+      'on the other side too')
+check(hitCentre != null && getAttr(hitCentre.node, 'id') == 'r',
+      'the centre is inside both and hits')
+
+// The centre of a rotation does not move, so a box rotated by any angle
+// is hit at its centre -- which needs no number and holds for all four.
+Box func rotatedRoot(angle:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+        + '<div id="r" style="position:absolute;left:100px;top:100px;'
+        + 'width:80px;height:40px;transform:rotate(' + angle + ')"></div>'
+        + '</body>', 'about:blank', 800)
+    return p.root
+}
+Box rc0 = hitTest(rotatedRoot('0deg'), 140, 120)
+Box rc30 = hitTest(rotatedRoot('30deg'), 140, 120)
+Box rc90 = hitTest(rotatedRoot('90deg'), 140, 120)
+Box rc180 = hitTest(rotatedRoot('180deg'), 140, 120)
+check(rc0 != null && getAttr(rc0.node, 'id') == 'r', 'the centre is hit unrotated')
+check(rc30 != null && getAttr(rc30.node, 'id') == 'r', 'and at 30 degrees')
+check(rc90 != null && getAttr(rc90.node, 'id') == 'r', 'and at 90')
+check(rc180 != null && getAttr(rc180.node, 'id') == 'r', 'and at 180')
+
+// A translate moves the drawn box whole, so the point that was inside
+// misses and the point it moved onto hits.
+Page pmove = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+    + '<div id="r" style="position:absolute;left:100px;top:100px;'
+    + 'width:80px;height:40px;transform:translate(200px,0)"></div>'
+    + '</body>', 'about:blank', 800)
+Box mvIn = hitTest(pmove.root, 140, 120)
+Box mvOut = hitTest(pmove.root, 340, 120)
+check(mvIn == null || getAttr(mvIn.node, 'id') != 'r',
+      'a translated box is not where it was laid out')
+check(mvOut != null && getAttr(mvOut.node, 'id') == 'r', 'it is where it was drawn')
+
 finish('position')

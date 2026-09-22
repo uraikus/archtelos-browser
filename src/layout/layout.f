@@ -5822,17 +5822,35 @@ int posCbY = 0
 int posCbW = 0
 int posCbH = 0
 
+// A box whose computed `transform` is anything but `none` is the
+// containing block for its positioned descendants -- `absolute` and
+// `fixed` alike (Transforms 1 §3). The test is on the list's length
+// rather than on the matrix, because an **identity** transform still
+// counts: `rotate(0deg)` computes to matrix(1, 0, 0, 1, 0, 0), byte for
+// byte what `translateX(0px)` computes to, and Chromium makes a
+// containing block of both (todo.md). `none` parses to no functions at
+// all, which is what makes the length the right question.
+bool func boxTransformsPositioned(b:Box) {
+    return cascadeSawTransform && b.style.transforms.length > 0
+}
+
+// `fx*` is the containing block a `fixed` box resolves against: the
+// viewport, until a transformed ancestor replaces it. It is carried
+// separately from `cb*` because a merely positioned ancestor establishes
+// one for `absolute` and not for `fixed`, so the nearest transformed
+// ancestor can be further out than the nearest positioned one.
 void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
-                           viewW:int, viewH:int) {
+                           viewW:int, viewH:int,
+                           fxX:int, fxY:int, fxW:int, fxH:int) {
     if b == null { return }
 
     // An out-of-flow box has no geometry yet: give it one against its
     // containing block before deciding where to put it.
     if boxIsOutOfFlow(b) {
-        int useX = b.style.position == POS_FIXED ? 0 : cbX
-        int useY = b.style.position == POS_FIXED ? 0 : cbY
-        int useW = b.style.position == POS_FIXED ? viewW : cbW
-        int useH = b.style.position == POS_FIXED ? viewH : cbH
+        int useX = b.style.position == POS_FIXED ? fxX : cbX
+        int useY = b.style.position == POS_FIXED ? fxY : cbY
+        int useW = b.style.position == POS_FIXED ? fxW : cbW
+        int useH = b.style.position == POS_FIXED ? fxH : cbH
         layoutBlock(b, useX, useY, useW, false)
         Style s = b.style
         int w = b.w + b.ml + b.mr
@@ -5890,19 +5908,31 @@ void func layoutPositioned(b:Box, cbX:int, cbY:int, cbW:int, cbH:int,
     }
 
     // This box becomes the containing block for its descendants if it
-    // is positioned at all.
+    // is positioned at all -- or if it is transformed, which makes one
+    // for `fixed` as well.
     int nx = cbX
     int ny = cbY
     int nw = cbW
     int nh = cbH
-    if boxIsPositioned(b) {
+    int gx = fxX
+    int gy = fxY
+    int gw = fxW
+    int gh = fxH
+    bool txCb = boxTransformsPositioned(b)
+    if boxIsPositioned(b) || txCb {
         nx = b.x + b.bl
         ny = b.y + b.bt
         nw = b.w - b.bl - b.br
         nh = b.h - b.bt - b.bb
+        if txCb {
+            gx = nx
+            gy = ny
+            gw = nw
+            gh = nh
+        }
     }
     for int i = 0, i < b.children.length, i++ {
-        layoutPositioned(b.children[i], nx, ny, nw, nh, viewW, viewH)
+        layoutPositioned(b.children[i], nx, ny, nw, nh, viewW, viewH, gx, gy, gw, gh)
     }
 }
 
@@ -6758,7 +6788,8 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // layout and as tall as the document turned out to be. A document
     // with no positioned box skips the walk entirely.
     if docHasPositioned {
-        layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight)
+        layoutPositioned(root, 0, 0, width, root.h, width, cssViewportHeight,
+                         0, 0, width, cssViewportHeight)
         // An anchored box resolves against another element's finished
         // rectangle, so it is placed after every other positioned box
         // has one. A page that names no anchor never walks the tree.

@@ -3419,6 +3419,63 @@ void func paintDocument(root:Box, viewTop:int, viewBottom:int) {
 
 // The innermost box under a document point, preferring text runs so
 // links resolve to the element the text belongs to.
+// A point mapped out of the transformed space back into the box's own.
+//
+// The painter composes `translate(origin)`, then each function in the
+// order written, then `translate(-origin)`, so the inverse is the same
+// functions inverted and applied in the opposite order. Two answers out
+// of one function need globals (FINDINGS.md, "one value out of a
+// function").
+int untransformedX = 0
+int untransformedY = 0
+
+void func untransformPoint(b:Box, x:int, y:int) {
+    Style s = b.style
+    // The same reference box the painter takes its origin in, so the
+    // point is undone about exactly the origin it was done about.
+    int rx = b.x
+    int ry = b.y
+    int rw = b.w
+    int rh = b.h
+    if s.transformBoxContent {
+        rx = contentX(b)
+        ry = contentY(b)
+        rw = contentWidth(b)
+        rh = b.h - b.pt - b.pb - b.bt - b.bb
+    }
+    int ox = rx + resolveLen(s.transformOriginX, rw, Math.floorDiv(rw, 2))
+    int oy = ry + resolveLen(s.transformOriginY, rh, Math.floorDiv(rh, 2))
+    float px = (x - ox).toFloat()
+    float py = (y - oy).toFloat()
+    for int i = s.transforms.length - 1, i >= 0, i-- {
+        Transform t = s.transforms[i]
+        if t.kind == TX_TRANSLATE {
+            px = px - resolveLen(t.x, b.w, 0).toFloat()
+            py = py - resolveLen(t.y, b.h, 0).toFloat()
+        } else if t.kind == TX_ROTATE {
+            float rad = (0.0 - t.angle) * CSS_PI / 180.0
+            float c = Math.cos(rad)
+            float sn = Math.sin(rad)
+            float nx = px * c - py * sn
+            float ny = px * sn + py * c
+            px = nx
+            py = ny
+        } else if t.kind == TX_SCALE {
+            // A zero scale draws nothing, so nothing can be hit through
+            // it and the point is sent somewhere the box is not.
+            if t.sx == 0.0 || t.sy == 0.0 {
+                untransformedX = b.x - 1
+                untransformedY = b.y - 1
+                return
+            }
+            px = px / t.sx
+            py = py / t.sy
+        }
+    }
+    untransformedX = ox + roundPx(px)
+    untransformedY = oy + roundPx(py)
+}
+
 Box func hitTest(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     // Inside a scrolled box the content is drawn that much higher than
@@ -3454,8 +3511,21 @@ Box func hitTest(b:Box, x:int, y:int) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h {
-            Box inner = hitTest(c, x, y)
+        // A transformed box is drawn somewhere other than where it was
+        // laid out, so the pointer is tested against the drawn shape:
+        // the point comes back through the inverse transform and
+        // everything below it -- this box and its whole subtree -- is
+        // searched in that space. A document that never said `transform`
+        // pays one boolean here.
+        int hx = x
+        int hy = y
+        if cascadeSawTransform && c.style.transforms.length > 0 {
+            untransformPoint(c, x, y)
+            hx = untransformedX
+            hy = untransformedY
+        }
+        if hx >= c.x && hx < c.x + c.w && hy >= c.y && hy < c.y + c.h {
+            Box inner = hitTest(c, hx, hy)
             if inner != null { return inner }
             if c.style.pointerEvents != PE_NONE { return c }
         }

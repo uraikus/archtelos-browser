@@ -180,13 +180,33 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    `hebrew`, `armenian`, `georgian` and the East Asian ones beyond
    `cjk-decimal`. What is left of Lists 3 is `list-style-image`, which
    needs a fetched image for the marker.
-8. **Transforms 1, completed**: a transformed box should establish a
-   stacking context and a containing block for its positioned
-   descendants, and hit testing should use the inverse transform so a
-   click lands where the box is drawn rather than where it was laid
-   out. `skew()` and `matrix()` are blocked on Festina rather than on
+8. **Transforms 1, completed**: a transformed box is a containing block
+   for its positioned descendants, `absolute` and `fixed` alike, and hit
+   testing goes through the inverse transform so a click lands where the
+   box is drawn. What is left is the **stacking context**, and it is
+   not one line: the observable difference is where a `z-index: -1`
+   child paints, and this painter puts every positioned child after the
+   box's own background and lines, so a negative child already paints
+   above a background it should be behind. Making `transform` a stacking
+   context changes nothing until CSS2 §9.9's order is there to change --
+   the negative children of a box that is *not* a stacking context have
+   to be painted by the nearest ancestor that is, which is hoisting
+   rather than reordering. Declaring it implemented before that would be
+   `outline-style` again: a keyword the instrument scores while no pixel
+   moves. `skew()` and `matrix()` are blocked on Festina rather than on
    effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
+
+   **Hit testing culls by the ancestor's rectangle**, which the
+   transform work turned up. An out-of-flow box laid out beyond its
+   parent's box is unreachable: `hitTest` descends only into children
+   whose rectangle holds the point, and an absolutely positioned box at
+   100,100 inside a body of zero height is found by neither. Chromium
+   finds it. The fix is for the descent to use the box's **ink** extent
+   -- the union of its own rectangle and its out-of-flow descendants' --
+   rather than its laid-out one, which is the same question the painter
+   asks with `inlineInkOverhang`. It wants its own measurement of what
+   that union costs to keep.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does

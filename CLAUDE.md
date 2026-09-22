@@ -354,7 +354,11 @@ valgrind -q --error-exitcode=9 ./x > vg.log 2>&1; echo "VGEXIT=$?"
 
 The same applies to any command whose exit status is the result --
 `tests/run.sh`, the conformance runners. `$?` after a pipe is the last
-stage's.
+stage's, and the status of a `;` chain is the **last command's**: a run
+that ended `tests/run.sh > log; echo $?; grep -c FAIL log` reported
+failure on a suite that had passed, because `grep -c` exits 1 when it
+counts zero. Put the check first, or read the status the run itself
+printed rather than the one the shell hands back.
 
 **Valgrind is the tool that finds Festina's memory bugs, so use it.**
 Both memory-safety findings in FINDINGS.md were invisible in ordinary
