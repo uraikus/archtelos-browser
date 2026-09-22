@@ -750,6 +750,39 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What the transform's containing block and hit testing cost
+
+2026-09-22, same machine and script. Both halves are guarded by
+`cascadeSawTransform`, so a document that never says `transform` pays
+one boolean in the positioned-layout walk and one in `hitTest`. Hit
+testing is not on the render path at all -- it runs when a pointer
+moves, and the benchmark moves none.
+
+`generated.html`, which has no transform on it, says nothing: cascade
+reads **+1 in both directions**, which is what an order effect looks
+like, and every other phase is 0.
+
+`features.html` has a hundred and twenty transforms, and against the
+**parent** it read layout +0 forward and -3 reversed. Against a
+**placement control** it reads nothing:
+
+| features.html | pad -> new | new -> pad |
+|---|---|---|
+| cascade | +0, 10 of 25 | +1, 13 of 25 |
+| layout | **-1**, 7 of 25 | **+1**, 16 of 25 |
+| paint | -1, 8 of 25 | +0, 10 of 25 |
+
+The two layout readings add to zero, which is what nothing looks like.
+The control here is the tightest this file has had: the parent
+recompiled with the change's two functions renamed and called from
+nowhere came out at **3,073,392 bytes, byte for byte the candidate's
+size**. The -3 against the parent was four kilobytes of growth.
+
+That is three features in a row where a reading against the parent
+disagreed with the same reading against a size-matched control, and
+three where the control won. The rule in CLAUDE.md is not a caveat any
+more; it is the measurement.
+
 ## What `::placeholder` cost, and the page that could not have shown it
 
 2026-09-22, same machine and script. This is the first entry here whose
