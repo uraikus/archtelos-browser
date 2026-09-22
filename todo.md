@@ -1455,6 +1455,70 @@ wants a notion of which side the last annotation went, kept across
 sibling rubies; the second is a vertical writing mode, which this
 engine does not have at all.
 
+### The `@page` margin boxes, measured
+
+Chromium 141 **implements them**, which this project had recorded as
+"parsed and dropped because each is a box generated from `content` in
+a place the layout engine has no notion of" and assumed no browser
+reached. `CSSMarginRule` exists, the nested rules survive in
+`cssRules`, and a print lays all sixteen down.
+
+**Reading a print needs no new dependency.** `--print-to-pdf` writes
+Flate streams and `zlib` is in the standard library, so
+`/tmp/claude-0/probe/pdfboxes.py` inflates the content stream, reads
+the `Tm`/`Td`/`Tj` operators, and maps the glyph ids back through the
+standard glyph order the subset uses. That gives every string Chromium
+drew and where its baseline is, in CSS pixels. The same route makes
+`print-color-adjust` measurable, which had been written off here for
+want of a PDF reader.
+
+A 400 by 500 page with 60px margins, one letter in each of the
+sixteen boxes. The bands are the top 60 rows, the bottom 60, the left
+60 columns and the right 60; the corners are their 60 by 60
+intersections, and the edge *regions* are what is left between the
+corners -- x 60 to 340 across, y 60 to 440 down.
+
+| box | x | baseline | reading |
+|---|---|---|---|
+| `@top-left-corner` | 48.44 | 35 | **right**-aligned to x 60 |
+| `@top-left` | 60.00 | 35 | left-aligned in the region |
+| `@top-center` | 194.66 | 35 | centred on x 200 |
+| `@top-right` | 328.44 | 35 | right-aligned to x 340 |
+| `@top-right-corner` | 340.00 | 35 | **left**-aligned from x 340 |
+| `@bottom-*` | the same five | 475 | the same five, in the bottom band |
+| `@left-top` | 24.22 | **74** | centred on x 30, line at the region's top |
+| `@left-middle` | 25.11 | **255** | centred, line centred on y 250 |
+| `@left-bottom` | 22.88 | **436** | centred, line at the region's bottom |
+| `@right-top`, `-middle`, `-bottom` | centred on x 370 | 74, 255, 436 | the same three |
+
+So each box is **vertically centred in its band** on the top and
+bottom edges -- baseline 35 in a 60-tall band is a 19-tall line centred
+-- and the three boxes down each side are top-, middle- and
+bottom-aligned within the side region. The corners align *inward*,
+toward the page content. That is exactly the table CSS Paged Media 3
+§5.2 gives as each box's default `text-align` and `vertical-align`,
+which is worth saying because it means the standard can be implemented
+rather than the browser copied.
+
+**`counter(page)` and `counter(pages)` work, and concatenate.**
+`content: counter(page) " of " counter(pages)` on a three-page
+document draws `1 of 3`, `2 of 3`, `3 of 3`, centred as one run.
+
+**A margin box inherits from the ROOT element, not from `body`.** The
+decisive pair: `html { font: 16px monospace }` makes `MMMM` 38.54 wide,
+which is four monospace advances exactly; `body { font: 16px
+monospace }` leaves it 56.9 wide, which is the default serif. The page
+context inherits from the root element and `body` is not in it.
+
+**`font-size` on a margin box works and keeps it centred**: 32px moves
+the baseline from 35 to 41, which is a 38-tall line centred in the 60
+band. `content: none` and an empty box both draw nothing.
+
+**And `@page :first` selects a margin box.** A `:first` rule's
+`@top-center` replaces the general one on page one and leaves it in
+force on the rest, so the boxes cascade by the same page-selector
+specificity the page box already uses here.
+
 ### A scroll offset outlives the document it belongs to
 
 Found by asking the same question of `resize`'s dragged sizes, which
