@@ -750,6 +750,31 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What finding an out-of-flow box costs
+
+2026-09-22, same machine and script. Nothing, and the reason is
+structural rather than lucky: hit testing does not run during a render
+at all -- it runs when a pointer moves, and the benchmark moves none --
+so the only thing on the measured path is a `push` onto a list as
+`layoutPositioned` passes each out-of-flow box, on a walk that already
+happens.
+
+| features.html | forward | reversed |
+|---|---|---|
+| cascade | +0, 9 of 25 | +0, 8 of 25 |
+| layout | -2, 6 of 25 | +0, 10 of 25 |
+| paint | +0, 9 of 25 | -1, 8 of 25 |
+
+Every median is zero or below in both directions, so there is nothing
+here for a placement control to settle -- that control is for a reading
+that *looks* like a cost, and none of these do.
+
+Worth saying what is **not** measured: the fallback scan itself, which
+walks the out-of-flow list once per click that the ordinary descent
+misses. It is as long as the document has out-of-flow boxes, and a
+click is not on any hot path, so it is left unmeasured rather than
+guessed at.
+
 ## What CSS2 §9.9's painting order cost, and three ways of paying it
 
 2026-09-22, same machine and script. Neither benchmark page had a
