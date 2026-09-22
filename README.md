@@ -306,6 +306,15 @@ shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is
 `auto` are stretched into the rest.
 
+An item spanning several tracks gives them whatever it needs beyond
+what they already hold, the gutters between them counting towards it,
+shared equally among the tracks that can grow. A fixed track takes
+none of it, a track with a length for a maximum stops there and hands
+the rest on, and a track outside the span is untouched. Where two
+spans overlap a track, each plans its share against the sizes they
+both started from and the track takes the larger, so neither span's
+answer depends on which was written first.
+
 That last stretch is what `justify-content` and `align-content` govern:
 they hold for `normal` and `stretch`, and under `start`, `center`,
 `end`, `space-between`, `space-around` and `space-evenly` the tracks

@@ -669,4 +669,185 @@ checkEqInt(findById(acBetween, 'r1').y, 0, 'space-between starts at the top')
 checkEqInt(findById(acBetween, 'r2').y + findById(acBetween, 'r2').h, 400,
            'and ends at the bottom')
 
+// ---- Grid 1 §12.5: a spanning item widens the tracks it spans ---------
+// Measured against Chromium first (todo.md carries the fourteen cases).
+// Every assertion here is a relation rather than one of Chromium's
+// pixel counts, because this engine's font advance is its own: what
+// must hold is that the extra a spanning item needs is shared equally
+// among the spanned intrinsic tracks, that a track outside the span or
+// unable to grow takes none of it, and that two spans overlapping a
+// track resolve by the maximum of what each planned rather than by
+// whichever ran last.
+//
+// Every container here is wide and says `justify-content: start`, which
+// is what makes the instrument able to fail. A grid that shrinks to fit
+// is the obvious fixture and the wrong one: its width already accounts
+// for the spanning item, so §12.8 stretches the tracks to fill it and
+// two of these checks pass against an engine that has no §12.5 at all.
+// Chromium gives the same track sizes either way, so nothing is given
+// up by taking the stretch out of the picture.
+
+text SPAN20 = 'WWWWWWWWWWWWWWWWWWWW'
+text SPAN10 = 'WWWWWWWWWW'
+text SPAN15 = 'WWWWWWWWWWWWWWW'
+
+Box func spanGrid(cols:text, extra:text, items:text) {
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;width:700px;justify-content:start;'
+        + 'grid-template-columns:' + cols + ';' + extra + '">' + items
+        + '</div></body>', 800)
+}
+
+text PROBES = '<div id="c1">x</div><div id="c2">x</div>'
+text PROBES3 = '<div id="c1">x</div><div id="c2">x</div><div id="c3">x</div>'
+
+// The item alone, so the test knows what it is asking the tracks to hold
+// without hard-coding a font advance.
+Box lone = layoutHtml(head + '<div id="w" style="float:left">' + SPAN20
+                      + '</div></body>', 800)
+int span20W = findById(lone, 'w').w
+check(span20W > 100, 'the spanning item is wide enough to be worth sharing')
+
+// Two auto columns with nothing spanning them: the baseline the rest is
+// measured against.
+Box noSpan = spanGrid('auto auto', '', PROBES)
+int probeW = findById(noSpan, 'c1').w
+check(probeW < span20W, 'a track holding one character is narrower than the item')
+
+Box two = spanGrid('auto auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box t1 = findById(two, 'c1')
+Box t2 = findById(two, 'c2')
+check(t1.w > probeW, 'a spanning item widens the first track it spans')
+checkEqInt(t2.w, t1.w, 'and both tracks take an equal share of the extra')
+checkEqInt(t1.w + t2.w, span20W, 'and together they come to hold the item')
+
+// The gutter between the tracks counts against what the item needs, so
+// the tracks grow less by exactly the gap.
+Box gapped = spanGrid('auto auto', 'column-gap:20px',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box gapA = findById(gapped, 'c1')
+Box gapB = findById(gapped, 'c2')
+checkEqInt(gapB.w, gapA.w, 'a gap leaves the shares equal')
+checkEqInt(gapA.w + gapB.w + 20, span20W, 'and the gutter is part of what the item spans')
+
+// A fixed track takes no share: it is not intrinsic, so all of the extra
+// goes to the one track that can grow.
+Box fixed = spanGrid('60px auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+checkEqInt(findById(fixed, 'c1').w, 60, 'a fixed track keeps its length')
+checkEqInt(findById(fixed, 'c2').w, span20W - 60,
+           'and the intrinsic track absorbs the whole of the extra')
+
+// A track stops at its growth limit and hands the remainder on.
+Box limited = spanGrid('minmax(auto,40px) auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+checkEqInt(findById(limited, 'c1').w, 40, 'a track grows no further than its limit')
+checkEqInt(findById(limited, 'c2').w, span20W - 40,
+           'and what it could not take goes to the rest')
+
+// A track outside the span is untouched.
+Box three = spanGrid('auto auto auto', '',
+    PROBES3 + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box t3a = findById(three, 'c1')
+Box t3b = findById(three, 'c2')
+Box t3c = findById(three, 'c3')
+checkEqInt(t3b.w, t3a.w, 'the two spanned tracks share equally')
+checkEqInt(t3a.w + t3b.w, span20W, 'and hold the item between them')
+checkEqInt(t3c.w, probeW, 'the track outside the span is left where it was')
+
+// An item spanning a flexible track contributes to no base size: §12.7
+// gives the `fr` track the leftover afterwards, so the `auto` track
+// stays exactly where it sits with no spanning item at all.
+Box flexed = spanGrid('auto 1fr', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box flexCtl = spanGrid('auto 1fr', '', PROBES)
+checkEqInt(findById(flexed, 'c1').w, findById(flexCtl, 'c1').w,
+           'spanning a flexible track grows no base size')
+
+// Two spans overlapping one track. This is the case a sequential loop
+// cannot produce: the first item needs ten Ws over tracks 1-2 and the
+// second fifteen over 2-3, and growing for one and then the other gives
+// the wrong answer whichever order it runs in. Each track takes the
+// maximum of what the two items planned for it against the original
+// sizes, so track 1 gets half of the first item and tracks 2 and 3 half
+// of the second -- which leaves the first item's pair wider than it
+// asked for.
+Box loneA = layoutHtml(head + '<div id="w" style="float:left">' + SPAN10
+                       + '</div></body>', 800)
+Box loneB = layoutHtml(head + '<div id="w" style="float:left">' + SPAN15
+                       + '</div></body>', 800)
+int span10W = findById(loneA, 'w').w
+int span15W = findById(loneB, 'w').w
+check(span15W > span10W, 'the second spanning item is the wider of the two')
+
+Box over = spanGrid('auto auto auto', '',
+    PROBES3
+    + '<div style="grid-row:2;grid-column:1/3">' + SPAN10 + '</div>'
+    + '<div style="grid-row:3;grid-column:2/4">' + SPAN15 + '</div>')
+Box o1 = findById(over, 'c1')
+Box o2 = findById(over, 'c2')
+Box o3 = findById(over, 'c3')
+checkEqInt(o3.w, o2.w, 'the wider span leaves its two tracks equal')
+checkEqInt(o2.w + o3.w, span15W, 'and they hold the wider item exactly')
+checkEqInt(o1.w, Math.floorDiv(span10W, 2),
+           'the first track takes half of the narrower item, not what is left of it')
+check(o1.w + o2.w > span10W,
+      'so the narrower item ends up with more room than it asked for')
+
+// Grid 1 §8.5 step 1: every item with a definite row *and* column takes
+// its cells before any auto-placed item is positioned, whatever the
+// order they are written in. Marking them as the placement loop reaches
+// them lets an auto item earlier in the document take a cell a later
+// item had named -- measured against Chromium, which puts the second
+// auto item in row 2 either way.
+text CLAIMED = '<div id="s" style="grid-row:1/3;grid-column:2;height:200px">t</div>'
+text AUTOS = '<div id="c1">x</div><div id="c2">x</div>'
+
+Box claimLast = layoutHtml(head
+    + '<div style="display:grid;grid-template-columns:auto auto;width:400px;'
+    + 'justify-content:start">' + AUTOS + CLAIMED + '</div></body>', 800)
+Box claimFirst = layoutHtml(head
+    + '<div style="display:grid;grid-template-columns:auto auto;width:400px;'
+    + 'justify-content:start">' + CLAIMED + AUTOS + '</div></body>', 800)
+checkEqInt(findById(claimLast, 'c1').x, 0, 'the first auto item takes the first column')
+checkEqInt(findById(claimLast, 'c2').x, 0,
+           'and the second goes under it, not into the cell the span named')
+check(findById(claimLast, 'c2').y > 0, 'which is the row below')
+checkEqInt(findById(claimFirst, 'c2').x, findById(claimLast, 'c2').x,
+           'and where the claim is written makes no difference')
+checkEqInt(findById(claimFirst, 'c2').y, findById(claimLast, 'c2').y,
+           'in either axis')
+
+// The block axis answers the same way: a 200px item spanning two auto
+// rows makes them 100 apiece, a declared row keeps its length and the
+// spanned rows take what is left, and a row outside the span is
+// untouched. Measured against Chromium with the same fixtures.
+Box func spanRows(rows:text, items:text) {
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-columns:auto auto;'
+        + 'width:400px;align-content:start;justify-content:start;'
+        + 'grid-template-rows:' + rows + '">' + items + '</div></body>', 800)
+}
+
+text TALL = '<div id="s" style="grid-row:1/3;grid-column:2;height:200px">t</div>'
+
+Box rowSpan = spanRows('auto auto',
+    '<div id="c1">x</div><div id="c2">x</div>' + TALL)
+Box rs1 = findById(rowSpan, 'c1')
+checkEqInt(findById(rowSpan, 's').h, 200, 'the spanning item keeps its declared height')
+checkEqInt(rs1.h, 100, 'and the two rows it spans take half of it each')
+checkEqInt(findById(rowSpan, 'g').h, 200, 'so the grid is exactly as tall as the item')
+
+Box rowFixed = spanRows('60px auto',
+    '<div id="c1">x</div><div id="c2">x</div>' + TALL)
+checkEqInt(findById(rowFixed, 'c1').h, 60, 'a declared row keeps its height')
+checkEqInt(findById(rowFixed, 'g').h, 200, 'and the automatic one absorbs the rest')
+
+Box rowOutside = spanRows('auto auto auto',
+    '<div id="c1">x</div><div id="c2">x</div><div id="c3" style="grid-row:3">x</div>' + TALL)
+checkEqInt(findById(rowOutside, 'c1').h, 100, 'the spanned rows share equally')
+checkEqInt(findById(rowOutside, 'c3').h, 20,
+           'and the row outside the span keeps its one line')
+
 finish('grid')

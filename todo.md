@@ -254,14 +254,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     own beside the keyword. Subgrid itself, named lines,
     `grid-template-areas`, the track sizing functions — `minmax()`,
     `min-content`, `max-content`, `fit-content()` — `repeat()` with
-    `auto-fill` and `auto-fit`, and dense packing are done. Two divergences are left in what is
-    done. A placement naming a line the template does not know leaves
+    `auto-fill` and `auto-fit`, and dense packing are done. One divergence is left in what is
+    done: a placement naming a line the template does not know leaves
     that edge automatic, where the standard creates an implicit line of
     that name after the explicit grid — Chromium puts `grid-area: zz` on
     a two-column grid at the fourth column line and the fourth row line,
-    and this puts it wherever auto-placement does. And a track's size
-    comes from the items that sit in it alone, so an item spanning two
-    tracks grows neither of them.
+    and this puts it wherever auto-placement does.
 12. **Multi-column 1, completed**: a spanner that sits below the
     container's own children, which needs its ancestors broken around
     it; and real fragment boxes, so that a subtree nested
@@ -1567,49 +1565,7 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
-### Grid's two remaining divergences, measured
-
-**A spanning item does widen the tracks it spans.** Fourteen cases
-against Chromium 141, at `font: 16px monospace` where one `W` is
-9.633px and `ab` is 19.266. Every grid is `width: max-content` unless
-the row says otherwise, and the spanning item is twenty `W`s (192.656)
-unless the row says otherwise.
-
-| tracks | the item spans | Chromium's columns |
-|---|---|---|
-| `auto auto` | both | 96.33, 96.33 |
-| `auto auto`, second item `width:150px` | both | 30.95, **161.70** |
-| `60px auto` | both | 60, 132.66 |
-| `auto auto`, `gap: 20px` | both | 86.33, 86.33 |
-| `auto auto`, `width: 400px` | both | 200, 200 |
-| `auto auto auto` | 1-2 | 96.33, 96.33, **19.27** |
-| `min-content auto` | both | 96.33, 96.33 |
-| `minmax(auto,40px) auto` | both | **40**, 152.66 |
-| `auto 1fr`, `width: 300px` | both | **19.27**, 280.73 |
-| `auto auto auto` | all three | 64.22 x3 |
-
-So: the extra a spanning item needs, over the base sizes of the tracks
-it spans **and the gutters between them**, is shared **equally** among
-the spanned tracks whose sizing function is intrinsic. A fixed track
-takes none of it and neither does a track already at its growth limit,
-whose share goes to the rest -- `minmax(auto,40px)` stops at 40 and the
-other track absorbs 152.66. A track outside the span is untouched. And
-an item spanning any **flexible** track contributes to no base size at
-all: `auto 1fr` leaves the `auto` column at its own 19.27, because
-§12.7 gives the `fr` track the leftover afterwards.
-
-**Two overlapping spans pin the algorithm's exact shape.** Three `auto`
-columns, no single-span item, one item spanning 1-2 with ten `W`s
-(96.33) and one spanning 2-3 with fifteen (144.49). Chromium gives
-**48.16, 72.25, 72.25**.
-
-A sequential loop cannot produce that. Growing for the first item and
-then the second gives 48.16, 96.33, 48.16; the other order gives
-12.03, 84.29, 72.25. The answer is §12.5 as written: within a span
-group every item's increase is computed against the **original** base
-sizes -- 5 `W` each for the first item, 7.5 each for the second -- and
-each track then takes the **maximum** of the increases planned for it,
-applied once at the end. 5, max(5, 7.5), 7.5 is 48.16, 72.25, 72.25.
+### Grid's remaining divergence, measured
 
 **An unknown line name makes an implicit line after the explicit
 grid.** On a 2x2 grid of 100px columns and 50px rows in a 400px

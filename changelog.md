@@ -5,6 +5,55 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A spanning grid item widens the tracks it spans
+
+Grid 1 §12.5's second half. A track's size came from the items that sit
+in it alone, so an item spanning two `auto` columns grew neither of
+them: two columns holding `x` stayed ten pixels apiece under an item
+two hundred wide, where Chromium makes them a hundred each.
+
+Fourteen cases were measured before anything was written, and they
+pinned a rule with more corners than it looks like. The extra an item
+needs over what its tracks already hold -- the gutters between them
+counting towards it -- is shared **equally** among the spanned tracks
+that may grow, and which those are depends on the contribution: a
+fixed minimum takes no share of a min-content contribution, and a
+`min-content` maximum takes none of a max-content one. That is why the
+same span widens a `min-content` track for unbreakable text, where the
+two contributions are equal, and leaves it exactly where it was for
+text that wraps. A definite length maximum takes its share and stops
+where it says; `fit-content()` does not, because its clamp is on the
+track's own content rather than on what a spanning item asks of it.
+
+**Two overlapping spans are what settled the algorithm's shape.** Three
+`auto` columns, an item spanning 1-2 that needs ten `W`s and one
+spanning 2-3 that needs fifteen: Chromium gives 48.16, 72.25, 72.25,
+and no sequential loop produces that in either order. It is §12.5 as
+written -- every item in a span group plans its increase against the
+sizes the group started with, each track takes the **maximum** planned
+for it, and the increases are applied once at the end. The first item's
+pair ends up wider than it asked for, which is the giveaway.
+
+The row axis is the same algorithm and needed one more thing: the pass
+that measures items for automatic rows skipped anything spanning more
+than one, so a row-spanning item had no height to contribute. It is
+measured now, at the width of the columns it spans, and only where one
+of the rows it spans is intrinsic.
+
+### A grid item that names both its axes takes its cells first
+
+Found by writing the row-axis test above, which could not be made to
+mean anything until it was fixed. §8.5 step 1 positions every item with
+a definite row **and** column before any auto-placed item, and this
+marked them as the placement loop reached them instead -- so an auto
+item written earlier took a cell a later item had already named. A grid
+with two auto items and a `grid-row: 1/3; grid-column: 2` span put the
+second auto item in the span's own cell, and moving the span to the
+front of the document changed the answer. Chromium puts it in the row
+below either way, and so does this now.
+
+`tests/unit/test_grid.f` 170 -> 202.
+
 ### `justify-content` and `align-content` distribute a grid's tracks
 
 `normal` and `start` were one value on a grid: §12.8's stretch ran

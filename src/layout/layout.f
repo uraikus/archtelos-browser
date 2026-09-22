@@ -4826,12 +4826,18 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     }
     arr[bool] occupied = []
     int cursor = 0
+    // §8.5 step 1: every item that names both of its axes takes its
+    // cells before any auto-placed item is positioned. Marking them as
+    // the loop below reaches them is not the same thing -- an auto item
+    // written earlier would take a cell a later item had already
+    // named, and Chromium puts it in the row below instead.
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
-        if a.col >= 0 && a.row >= 0 {
-            gridMarkOccupied(occupied, a, flowLines, columnFlow)
-            continue
-        }
+        if a.col >= 0 && a.row >= 0 { gridMarkOccupied(occupied, a, flowLines, columnFlow) }
+    }
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        if a.col >= 0 && a.row >= 0 { continue }
         // The two axes are not symmetrical here: one runs along the
         // flow and wraps at flowLines, the other is the cross axis and
         // grows without limit. An item that named one of them keeps it
@@ -4909,13 +4915,19 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     // zero and a grid with no declared rows had no height at all.
     //
     // Only the items an automatic row depends on are measured: a grid
-    // whose rows are all declared lays nothing out twice, and neither
-    // does an item spanning more than one row, which contributes to no
-    // track's size.
+    // whose rows are all declared lays nothing out twice. An item
+    // spanning several rows is measured too, because §12.5 gives the
+    // rows it spans whatever it needs beyond what they already hold --
+    // but only when one of those rows is intrinsic, so a span across
+    // declared rows still costs nothing.
     for int i = 0, i < areas.length, i++ {
         GridArea a = areas[i]
-        if a.rowSpan != 1 || a.row < 0 || a.row >= rowCount { continue }
-        if !trackIsIntrinsic(trackAt(rowTracks, s.gridAutoRows, a.row)) { continue }
+        if a.row < 0 || a.row + a.rowSpan > rowCount { continue }
+        bool rowsIntrinsic = false
+        for int k = a.row, k < a.row + a.rowSpan, k++ {
+            if trackIsIntrinsic(trackAt(rowTracks, s.gridAutoRows, k)) { rowsIntrinsic = true }
+        }
+        if !rowsIntrinsic { continue }
         int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan, colCollapsed)
         Box c = a.box
         c.forcedWidthPx = lenIsAuto(c.style.width) ? measureW : -1
@@ -5057,6 +5069,62 @@ int func gridSpanSize(sizes:arr[int], gap:int, at:int, span:int, collapsed:arr[b
 // when it has none fixed -- which is the block axis of a grid whose
 // height is automatic, where `fr` has nothing to share and an auto
 // track is as big as its content.
+// One item's share of §12.5's spanning increase, planned against the
+// sizes the span group started with rather than applied straight away.
+// `extra` is what the item needs beyond what its tracks already hold;
+// it is shared equally among the spanned tracks `eligible` admits,
+// each stopping at its growth limit where `capped` says it has a real
+// one and its share going to those still growing. Each track keeps the
+// largest increase any item in the group planned for it, which is what
+// makes two overlapping spans resolve the way Chromium resolves them.
+// Returns whether anything was planned at all.
+bool func gridPlanSpanIncrease(planned:arr[int], sizes:arr[int], limits:arr[int],
+                               eligible:arr[bool], capped:arr[bool],
+                               at:int, span:int, extra:int) {
+    if extra <= 0 { return false }
+    // This item's own shares, worked out against the sizes the span
+    // group started with. They are merged into `planned` at the end by
+    // taking the larger of the two, never by adding: an item's
+    // min-content and max-content contributions are two readings of
+    // the same demand, and so are two items over the same track.
+    arr[int] mine = []
+    for int k = 0, k < span, k++ { mine.push(0) }
+    int room = extra
+    bool did = false
+    // Repeated because a track stopping at its limit leaves its share
+    // to the others, exactly as the maximize pass below does.
+    while room > 0 {
+        int growable = 0
+        for int k = 0, k < span, k++ {
+            if !eligible[at + k] { continue }
+            if capped[at + k] && sizes[at + k] + mine[k] >= limits[at + k] { continue }
+            growable++
+        }
+        if growable == 0 { break }
+        int share = maxInt(Math.floorDiv(room, growable), 1)
+        bool moved = false
+        for int k = 0, k < span, k++ {
+            if room <= 0 { break }
+            if !eligible[at + k] { continue }
+            int add = minInt(share, room)
+            if capped[at + k] {
+                int headroom = limits[at + k] - sizes[at + k] - mine[k]
+                if headroom <= 0 { continue }
+                add = minInt(add, headroom)
+            }
+            if add <= 0 { continue }
+            mine[k] = mine[k] + add
+            room = room - add
+            moved = true
+        }
+        if !moved { break }
+    }
+    for int k = 0, k < span, k++ {
+        if mine[k] > planned[at + k] { planned[at + k] = mine[k]  did = true }
+    }
+    return did
+}
+
 // Sizing one axis (Grid 1 §12). Every track has a minimum and a
 // maximum sizing function; the minimum gives the base size it may not
 // go below, the maximum the growth limit it may not pass. Free space is
@@ -5081,6 +5149,9 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
     arr[int] minC = []
     arr[int] maxC = []
     bool anyIntrinsic = false
+    // The widest span any item takes, so §12.5's spanning pass below
+    // knows whether it has anything to do without a walk of its own.
+    int maxSpan = 1
     for int i = 0, i < count, i++ {
         minC.push(0)
         maxC.push(0)
@@ -5091,7 +5162,9 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
             GridArea a = areas[i]
             int at = inline ? a.col : a.row
             int span = inline ? a.colSpan : a.rowSpan
-            if span != 1 || at < 0 || at >= count { continue }
+            if at < 0 || at >= count { continue }
+            if span > maxSpan { maxSpan = span }
+            if span != 1 { continue }
             int mn = 0
             int mx = 0
             if inline {
@@ -5113,6 +5186,9 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
     arr[int] limits = []
     arr[float] frs = []
     arr[bool] stretchy = []
+    arr[bool] spanMinGrows = []
+    arr[bool] spanMaxGrows = []
+    arr[bool] spanCapped = []
     float totalFr = 0.0
     for int i = 0, i < count, i++ {
         Track t = trackAt(explicit, auto, i)
@@ -5165,6 +5241,16 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
         limits.push(limit)
         frs.push(fr)
         stretchy.push(t.kind == TRACK_AUTO && !gone)
+        // What §12.5's spanning pass needs to know about this track: a
+        // fixed minimum takes no share of a min-content contribution, a
+        // `min-content` maximum takes none of a max-content one, and a
+        // definite length maximum takes its share but stops where it
+        // says -- `minmax(auto, 40px)` grows to 40 and no further,
+        // while `fit-content()` clamps a track's own content and not
+        // what a spanning item asks of it.
+        spanMinGrows.push(t.minKind != TRACK_LEN && !gone)
+        spanMaxGrows.push(!gone && t.kind != TRACK_MIN_CONTENT)
+        spanCapped.push(t.kind == TRACK_LEN && definiteLimit)
     }
 
     // A collapsed track's gutter goes with it, so the gaps are counted
@@ -5172,6 +5258,76 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
     int gaps = 0
     for int i = 0, i + 1 < count, i++ {
         if !gridCollapsedAt(collapsed, i) { gaps = gaps + gap }
+    }
+    // §12.5, "increase sizes to accommodate spanning items". An item
+    // spanning several tracks gives them whatever it needs beyond what
+    // they already hold together, gutters included, shared equally
+    // among the spanned tracks that may grow. Which those are depends
+    // on the contribution: a track with a fixed minimum takes no share
+    // of a min-content contribution, and a `min-content` maximum takes
+    // none of a max-content one -- which is why the same span widens a
+    // `min-content` track for unbreakable text and leaves it alone for
+    // text that wraps (todo.md carries the fourteen cases).
+    //
+    // Items are taken in order of increasing span, and within one span
+    // every item plans its increase against the sizes the group started
+    // with; each track then takes the largest planned for it, applied
+    // once at the end. A sequential loop gives a different answer, and
+    // it is the wrong one: two spans overlapping a track come out
+    // 48.16, 72.25, 72.25 in Chromium, which neither order produces.
+    //
+    // A page with no grid never reaches this, and a grid whose every
+    // item sits in one track leaves `maxSpan` at 1 and never enters it.
+    for int sp = 2, sp <= maxSpan, sp++ {
+        arr[int] planned = []
+        bool anyPlanned = false
+        for int i = 0, i < areas.length, i++ {
+            GridArea a = areas[i]
+            if (inline ? a.colSpan : a.rowSpan) != sp { continue }
+            int at = inline ? a.col : a.row
+            if at < 0 || at + sp > count { continue }
+            // An item spanning a flexible track contributes to no base
+            // size: §12.7 hands that track the leftover instead.
+            bool flexible = false
+            for int k = at, k < at + sp, k++ { if frs[k] > 0.0 { flexible = true } }
+            if flexible { continue }
+            // What the tracks already hold between them, the gutters
+            // inside the span counting towards it.
+            int held = 0
+            for int k = at, k < at + sp, k++ {
+                held = held + sizes[k]
+                if k > at && !gridCollapsedAt(collapsed, k - 1) { held = held + gap }
+            }
+            int wantMin = 0
+            int wantMax = 0
+            if inline {
+                computeIntrinsic(a.box)
+                wantMin = a.box.minContent
+                wantMax = a.box.maxContent
+            } else {
+                // In the block axis an item has one contribution: the
+                // height it was laid out to at the width of the columns
+                // it spans.
+                wantMin = a.box.h + a.box.mt + a.box.mb
+                wantMax = wantMin
+            }
+            if planned.length == 0 {
+                for int k = 0, k < count, k++ { planned.push(0) }
+            }
+            if gridPlanSpanIncrease(planned, sizes, limits, spanMinGrows, spanCapped,
+                                    at, sp, wantMin - held) { anyPlanned = true }
+            if gridPlanSpanIncrease(planned, sizes, limits, spanMaxGrows, spanCapped,
+                                    at, sp, wantMax - held) { anyPlanned = true }
+        }
+        if anyPlanned {
+            for int i = 0, i < count, i++ {
+                sizes[i] = sizes[i] + planned[i]
+                // A base size that has grown past its growth limit
+                // raises it: the maximize pass below may not shrink a
+                // track back to a limit the content has overtaken.
+                if limits[i] < sizes[i] { limits[i] = sizes[i] }
+            }
+        }
     }
     // §12.5 maximize tracks: equal shares, each track freezing as it
     // reaches its growth limit and the rest going to those still growable.
