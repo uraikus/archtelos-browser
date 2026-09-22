@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `::placeholder`
+
+The placeholder attribute was already laid out as the control's text.
+What this adds is the pseudo-element that styles it, and the measurement
+is what made it a small change rather than a special case.
+
+**The grey is a declaration, not a fallback.** Chromium computes
+`rgb(117, 117, 117)` on `::placeholder`, and `color` on the input does
+not reach it -- which is not a rule about placeholders at all. The grey
+is declared in the user agent's stylesheet *on the pseudo-element*, and
+an inherited value loses to any declaration whatever origin it comes
+from. So one line in `ua.f` reproduces both answers and nothing had to
+be written to make the colour win. A `value` is not a placeholder and
+still takes the input's colour, which is the check that says the grey
+belongs to the pseudo-element rather than to every text box a control
+makes.
+
+**It is computed on demand, from layout.** Every other pseudo-element
+here is computed in the style pass, because every other one applies to
+elements a document has many of. This one applies to an `<input>` that
+is showing its placeholder, and layout is the only code that knows which
+those are -- so `placeholderStyleFor` is called from the one place that
+builds a control's text box, and a document with no such input never
+calls it.
+
+`formControlText` says which of the two it returned through a global,
+because two answers out of one function need one (FINDINGS.md), and
+asking a second predicate the same question would be the same walk
+written twice.
+
+Chromium ignores `display` on it and this does too, for the plain reason
+that the placeholder's style is used for the text and nothing else.
+
+forms 17 -> 26 and render 54 -> 60.
+
 ### The side a page break asks for
 
 CSS 2 §13.3.1 says `left` and `right` force **one or two** page breaks,

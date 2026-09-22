@@ -283,4 +283,55 @@ check(markerPixel('#m::marker { color: #ff0000 }') == markerRed,
 check(markerPixel('#m:marker { color: #ff0000 }') == plainMarker,
       'a one-colon `:marker` is not a pseudo-element and changes nothing')
 
+// ---- ::placeholder paints (CSS Pseudo-Elements 4 §3.5) ----------------
+//
+// The placeholder's grey is a declaration in the user agent's
+// stylesheet on the pseudo-element, so it reaches the pixels through
+// the ordinary cascade. What is asserted is that the same text with the
+// same layout comes out a different colour when a rule says so, which
+// needs no number: the two renders agree everywhere but the ink.
+
+// A colour found inside a region, so the check does not depend on
+// knowing which pixel of a glyph stem is opaque -- at a small size none
+// of them is (tests/render/paged.f says the same).
+bool func inkColorIn(x0:int, y0:int, x1:int, y1:int, want:color) {
+    for int y = y0, y < y1, y++ {
+        for int x = x0, x < x1, x++ {
+            if getPixelColor(x, y) == want { return true }
+        }
+    }
+    return false
+}
+
+void func shotPlaceholder(css:text) {
+    Page p = pageFromHtml('<!doctype html><head><style>' + css + '</style>'
+        + '<body style="margin:0;font:30px monospace">'
+        + '<input placeholder="III" style="appearance:none;border:0">'
+        + '</body>', 'test.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+color phGrey = '#757575'
+color phBlue = '#0000ff'
+
+shotPlaceholder('')
+check(inkColorIn(0, 0, 200, 60, phGrey), 'a placeholder paints in the user agent grey')
+check(!inkColorIn(0, 0, 200, 60, black), 'and not in the text colour')
+
+shotPlaceholder('input::placeholder { color: #0000ff }')
+check(inkColorIn(0, 0, 200, 60, phBlue), 'a declared colour reaches the pixels')
+check(!inkColorIn(0, 0, 200, 60, phGrey), 'and replaces the grey rather than joining it')
+
+// A value is not a placeholder, so it takes the input's own colour --
+// the same markup, the same place on the canvas, a different rule about
+// which colour wins.
+Page pval = pageFromHtml('<!doctype html><body style="margin:0;font:30px monospace">'
+    + '<input value="III" style="appearance:none;border:0;color:#0000ff">'
+    + '</body>', 'test.html', 400)
+clearCanvas()
+paintPage(pval, 0, 0, 300)
+check(inkColorIn(0, 0, 200, 60, phBlue), 'a value takes the input colour')
+check(!inkColorIn(0, 0, 200, 60, phGrey), 'and never the placeholder grey')
+
 finish('render')

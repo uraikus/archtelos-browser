@@ -370,6 +370,13 @@ has only the two-colon spelling the standard gives it; `:marker` with
 one colon is not a pseudo-element and matches nothing. A counter always
 renders in decimal.
 
+**`::placeholder`** styles the text an `<input>` shows for its
+`placeholder` attribute. The grey is `#757575`, declared on the
+pseudo-element by the user-agent stylesheet, so the input's own `color`
+does not reach it — an inherited value loses to any declaration — while
+the font properties do inherit and a rule on `::placeholder` wins over
+both. A `value` is not a placeholder and takes the input's colour.
+
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
 `flex-basis` and the `flex` shorthand, `justify-content`,

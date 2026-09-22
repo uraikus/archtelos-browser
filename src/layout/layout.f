@@ -661,8 +661,15 @@ int func fieldCharCount(n:Node) {
     return minInt(got, 1000)
 }
 
+// Whether the text `formControlText` last returned was the placeholder
+// rather than a value. Two answers out of one function need a global
+// (FINDINGS.md, "one value out of a function"), and asking a second
+// predicate the same question would be the same walk written twice.
+bool formControlTextWasPlaceholder = false
+
 // The text a form control displays.
 text func formControlText(n:Node) {
+    formControlTextWasPlaceholder = false
     if n.tag == 'input' {
         text ty = textLower(getAttr(n, 'type'))
         if ty == null { ty = 'text' }
@@ -672,7 +679,9 @@ text func formControlText(n:Node) {
             text v = getAttr(n, 'value')
             if v != null && v != '' { return ty == 'password' ? repeatText('*', v.length) : v }
             text ph = getAttr(n, 'placeholder')
-            return ph == null ? '' : ph
+            if ph == null { return '' }
+            formControlTextWasPlaceholder = true
+            return ph
         }
         return ''
     }
@@ -767,9 +776,12 @@ Box func buildBox(n:Node, parentStyle:Style) {
             buildChildren(b, n, s)
         } else {
             text label = formControlText(n)
+            // `::placeholder` styles the placeholder and nothing else, so
+            // the style is asked for only when that is what the label is.
+            Style ls = formControlTextWasPlaceholder ? placeholderStyleFor(n, s) : s
             Node fake = newTextNode(label)
-            fake.style = s
-            addChildBox(b, buildTextBox(fake, s))
+            fake.style = ls
+            addChildBox(b, buildTextBox(fake, ls))
         }
         return b
     }

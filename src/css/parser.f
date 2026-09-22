@@ -746,6 +746,7 @@ Compound func parseCompound() {
             bool isLegacyPseudo = name == 'before' || name == 'after'
                 || name == 'first-line' || name == 'first-letter'
             bool isElementPseudo = isLegacyPseudo || name == 'marker'
+                || name == 'placeholder'
             if doubleColon {
                 if isElementPseudo {
                     comp.pseudoElement = name.toText()

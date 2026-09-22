@@ -1694,6 +1694,30 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     pseudoHasFirstLetter[pseudoKey(n.id, 'first-letter')] = true
 }
 
+// `::placeholder` restyles text that is already there, as
+// `::first-letter` does, and carries no `content`.
+//
+// It is computed **on demand**, from the one place in layout that
+// builds a control's text box, rather than in the style pass beside the
+// other pseudo-elements. Every other one applies to elements a document
+// has many of, so the style pass is where they belong; this one applies
+// only to an `<input>` that is showing its placeholder, and layout is
+// the only code that knows which those are. A document with no such
+// input never calls this, so it costs nothing to ask.
+//
+// The user agent's stylesheet declares the grey on the pseudo-element
+// itself (ua.f), which is what stops the input's own `color` reaching
+// it: an inherited value loses to any declaration, whatever origin the
+// declaration comes from. Measured in Chromium (todo.md).
+Style func placeholderStyleFor(n:Node, own:Style) {
+    arr[Match] matches = collectPseudoMatches(n, 'placeholder')
+    if matches.length == 0 { return own }
+    map[text] props = {}
+    cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    applyMatches(props, matches)
+    return computeStyleValues(n, own, false, props)
+}
+
 // ::first-line restyles the characters that fall on the first line,
 // which is not known until the line has been broken -- so what is kept
 // here is the style, and the layout decides who wears it.

@@ -78,6 +78,7 @@ img { display: inline }
 nobr { white-space: nowrap }
 abbr[title], acronym[title] { text-decoration: underline }
 q { quotes: '"' '"' "'" "'" }
+input::placeholder { color: #757575 }
 q::before { content: open-quote }
 q::after { content: close-quote }
 `
