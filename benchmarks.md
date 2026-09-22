@@ -775,6 +775,19 @@ misses. It is as long as the document has out-of-flow boxes, and a
 click is not on any hot path, so it is left unmeasured rather than
 guessed at.
 
+**Reversing the descent into painting order costs nothing either**, for
+the same structural reason, and the two binaries came out thirty-two
+bytes apart:
+
+| features.html | forward | reversed |
+|---|---|---|
+| cascade | +0, 7 of 25 | +0, 12 of 25 |
+| layout | +0, 12 of 25 | +0, 10 of 25 |
+| paint | +0, 10 of 25 | +1, 13 of 25 |
+
+Three passes over the children where there was one, and a `z` loop over
+the positioned ones -- all of it on a path a render never takes.
+
 ## What CSS2 §9.9's painting order cost, and three ways of paying it
 
 2026-09-22, same machine and script. Neither benchmark page had a
