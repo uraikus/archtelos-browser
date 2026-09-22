@@ -780,6 +780,31 @@ So the cost of a layout fix is measured on a page the fix does not
 touch, and the page that exercises it is kept for `--verify` and the
 render suite, where a difference is the point rather than the noise.
 
+## What resolving an unknown grid line name cost
+
+2026-09-22, same machine and script. Both benchmark pages render
+byte-identically between the two binaries -- neither uses a line name
+the template does not declare -- so the pairing compares code.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate | +0 | +0 | +0 | +0 |
+| reversed, candidate then parent | +0 | **-1** | **-1** | **-1** |
+| `generated.html`, no grid at all | +0 | +0 | -2 | +0 |
+
+Nothing to read: every median is zero or negative, and the reversed
+row's three -1s are the parent paying for running second, which is the
+order effect this file has measured repeatedly on this machine. No
+control was built, because the rule calls for one when a reading looks
+like a cost and none does.
+
+The reason is structural. The resolver runs once per placement edge of
+a grid item that names one, and what it added is a counter in a loop
+that already walked the template's names and one arithmetic expression
+where it used to return 0. `parseGridLine` now walks its tokens rather
+than indexing the first, which is once per declaration at cascade time.
+A page with no grid on it never reaches any of it.
+
 ## What §12.5's spanning pass cost, and three binaries that would not add up
 
 2026-09-22, same machine and script. `features.html` is the right page
