@@ -850,4 +850,61 @@ checkEqInt(findById(rowOutside, 'c1').h, 100, 'the spanned rows share equally')
 checkEqInt(findById(rowOutside, 'c3').h, 20,
            'and the row outside the span keeps its one line')
 
+// ---- Grid 1 §8.3: a name the template does not know -------------------
+// "If not enough lines with that name exist, all implicit grid lines
+// are assumed to have that name for the purpose of finding this
+// position." Every check here asserts that the named placement lands
+// exactly where the numbered one does, rather than at a pixel worked
+// out here: the explicit grid has lines 1, 2 and 3, so a name nothing
+// declares is line 4, and `grid-column: 4` is the same placement said
+// another way.
+
+Box func namedGrid(cols:text, items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:400px;grid-template-rows:50px 50px;'
+        + 'grid-template-columns:' + cols + '">' + items + '</div></body>', 800)
+}
+
+void func sameAs(named:text, numbered:text, cols:text, before:text, what:text) {
+    Box a = namedGrid(cols, before + '<div id="i" style="' + named + '">t</div>')
+    Box b = namedGrid(cols, before + '<div id="i" style="' + numbered + '">t</div>')
+    Box ia = findById(a, 'i')
+    Box ib = findById(b, 'i')
+    checkEqInt(ia.x, ib.x, what)
+    checkEqInt(ia.w, ib.w, what + ', and is as wide')
+    checkEqInt(ia.y, ib.y, what + ', on the other axis too')
+    checkEqInt(ia.h, ib.h, what + ', and as tall')
+}
+
+text TWOCOLS = '100px 100px'
+
+sameAs('grid-column:zz;grid-row:1', 'grid-column:4;grid-row:1', TWOCOLS, '',
+       'an unknown name is the first line after the explicit grid')
+sameAs('grid-column:zz / zz;grid-row:1', 'grid-column:4;grid-row:1', TWOCOLS, '',
+       'the same name on both edges spans one track')
+sameAs('grid-column:zz / span 2;grid-row:1', 'grid-column:4 / span 2;grid-row:1',
+       TWOCOLS, '', 'and a span from it runs on from there')
+sameAs('grid-column:1 / zz;grid-row:1', 'grid-column:1 / 4;grid-row:1', TWOCOLS, '',
+       'an unknown name on the end edge reaches the same line')
+sameAs('grid-row:zz;grid-column:1', 'grid-row:4;grid-column:1', TWOCOLS, '',
+       'and the row axis answers the same way')
+sameAs('grid-area:zz', 'grid-row:4;grid-column:4', TWOCOLS, '',
+       'grid-area names both axes at once')
+
+// A name that exists, but not often enough: the shortfall comes from
+// the implicit lines, so `aa 2` against one `aa` is line 4 as well.
+sameAs('grid-column:aa 2;grid-row:1', 'grid-column:4;grid-row:1', '[aa] 100px 100px', '',
+       'a name short by one takes the shortfall from the implicit lines')
+sameAs('grid-column:aa 3;grid-row:1', 'grid-column:4;grid-row:1', '[aa] 100px [aa] 100px', '',
+       'and short by one of two is the same line')
+// A count the template does satisfy still means what it says.
+sameAs('grid-column:aa 2;grid-row:1', 'grid-column:2;grid-row:1', '[aa] 100px [aa] 100px', '',
+       'a count the template can meet is the line it names')
+
+// The count is against the explicit grid, not the grid as it stands: an
+// item forcing tracks 3 to 5 into being does not move where `zz` is.
+sameAs('grid-column:zz;grid-row:2', 'grid-column:4;grid-row:2', TWOCOLS,
+       '<div style="grid-column:5;grid-row:1">o</div>',
+       'implicit tracks already made do not move an unknown name')
+
 finish('grid')

@@ -254,12 +254,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     own beside the keyword. Subgrid itself, named lines,
     `grid-template-areas`, the track sizing functions — `minmax()`,
     `min-content`, `max-content`, `fit-content()` — `repeat()` with
-    `auto-fill` and `auto-fit`, and dense packing are done. One divergence is left in what is
-    done: a placement naming a line the template does not know leaves
-    that edge automatic, where the standard creates an implicit line of
-    that name after the explicit grid — Chromium puts `grid-area: zz` on
-    a two-column grid at the fourth column line and the fourth row line,
-    and this puts it wherever auto-placement does.
+    `auto-fill` and `auto-fit`, and dense packing are done. What is left
+    is one corner of §8.3: a **backwards** search for a name the
+    template does not declare — `grid-column: span zz / 3` — assumes
+    the name on the implicit lines *before* the explicit grid, and
+    Chromium creates a column ahead of line 1 for it. That renumbers
+    every line and moves every item already placed, so the forward case
+    was taken first and this is left.
 12. **Multi-column 1, completed**: a spanner that sits below the
     container's own children, which needs its ancestors broken around
     it; and real fragment boxes, so that a subtree nested
@@ -1565,52 +1566,17 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
-### Grid's remaining divergence, measured
+### Grid's remaining corner, measured
 
-**A line name the template does not know resolves to an implicit line
-after the explicit grid.** Twelve cases against Chromium 141, every
-grid `grid-template-columns: 100px 100px` and
-`grid-template-rows: 50px 50px` in a 400px container -- so the explicit
-column lines are 1, 2 and 3, and there are 200px of spare for §12.8 to
-stretch into.
-
-| the item says | where it lands | the columns become |
-|---|---|---|
-| `grid-column: zz` | track **4** | 100, 100, 95.17, 104.83 |
-| `grid-column: zz / zz` | track 4 | as above |
-| `grid-area: zz` | column track 4, **row track 4** | rows 50, 50, 0, 20 |
-| `grid-row: zz` | row track 4, column 1 | columns unchanged |
-| `grid-column: zz / span 2` | tracks **4-5** | 100, 100, 63.45, 68.27, 68.27 |
-| `grid-column: 1 / zz` | tracks **1-3** | 100, 100, 200 |
-| `[aa] 100px 100px`, `grid-column: aa 2` | track 4 | as the first row |
-| `[aa] 100px [aa] 100px`, `grid-column: aa 3` | track 4 | as the first row |
-| an item at `grid-column: 5` beside `grid-column: zz` | track **4** | 100, 100, 60.23, 69.88, 69.89 |
-
-So the rule is one line: count the explicit lines carrying the name in
-order, and take the shortfall from the implicit lines, which all carry
-every name. `zz` with nothing named at all and no count is the **first
-line after the explicit grid** -- line 4 here -- and naming line 4
-brings tracks 3 and 4 into existence, which is why two implicit columns
-appear and the item sits in the second of them. `aa 3` where two `aa`
-lines exist is short by one, so it is line 4 as well.
-
-**The count is from the explicit grid and not from the current one.**
-An item at `grid-column: 5` already forces implicit tracks 3, 4 and 5
-into being, and `zz` beside it still resolves to line 4 rather than to
-the first line past track 5.
-
-The implicit tracks then take the container's spare space through
-§12.8, which is why the pair comes out 95.17 and 104.83 rather than
-equal: they take the same *increase*, and one of them starts with the
-item's 9.64 in it.
-
-**One corner is left out deliberately.** A backwards search --
-`grid-column: span zz / 3` -- assumes the name on the implicit lines
-*before* the explicit grid, and Chromium puts the item at x=0 with a
-200px first track, having created a column ahead of line 1. That needs
-implicit tracks on the negative side, which renumbers every line and
-moves every item already placed; the forward case is the one worth
-having first.
+**A backwards search for a name the template does not declare.**
+§8.3 assumes an unknown name on every implicit line, and for
+`grid-column: span zz / 3` the search runs backwards, so the lines it
+finds are the implicit ones *before* the explicit grid. On a grid of
+two 100px columns in a 400px container, Chromium puts the item at
+**x=0 with the columns 200, 100, 100** -- it has created a column ahead
+of line 1 and stretched it. The forward direction is done; this one
+renumbers every line and moves every item already placed, so it is
+left.
 
 ### Which of two overlapping boxes a click lands on, measured
 

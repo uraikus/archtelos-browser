@@ -3005,20 +3005,35 @@ GridLine func parseGridLine(v:ascii) {
         return g
     }
     if asciiLower(t[0]) == 'auto' { return g }
-    parseNumberAt(asciiTrim(t[0]), 0)
-    if numOk && roundPx(numValue) != 0 {
-        g.kind = GRIDLINE_NUMBER
-        g.n = roundPx(numValue)
+    // `<integer> && <custom-ident>` in either order, so the count and
+    // the name are looked for separately rather than by position. A
+    // count without a name is a line number; a name without a count
+    // means the first line carrying it.
+    int count = 0
+    ascii nameTok = null
+    for int i = 0, i < t.length, i++ {
+        ascii tok = asciiTrim(t[i])
+        if tok.length == 0 { continue }
+        parseNumberAt(tok, 0)
+        if numOk {
+            if count == 0 { count = roundPx(numValue) }
+        } else if nameTok == null {
+            nameTok = tok
+        }
+    }
+    if nameTok == null {
+        if count != 0 {
+            g.kind = GRIDLINE_NUMBER
+            g.n = count
+        }
         return g
     }
-    // Anything else is a line name. Which line it is depends on the
-    // container's template, so it is carried as a name and resolved in
-    // layout, where the grid it belongs to is in hand.
-    ascii nameTok = asciiTrim(t[0])
-    if nameTok.length > 0 && !numOk {
-        g.kind = GRIDLINE_NAME
-        g.name = asciiLower(nameTok).toText()
-    }
+    // A name. Which line it is depends on the container's template, so
+    // it is carried as a name and resolved in layout, where the grid it
+    // belongs to is in hand; `n` is which line of that name is wanted.
+    g.kind = GRIDLINE_NAME
+    g.name = asciiLower(nameTok).toText()
+    g.n = count == 0 ? 1 : count
     return g
 }
 

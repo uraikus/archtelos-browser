@@ -306,6 +306,13 @@ shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is
 `auto` are stretched into the rest.
 
+A line name that the template does not declare is not an error and
+does not leave the placement to the flow: every implicit line counts as
+carrying every name, so the name lands on the first line past the
+explicit grid and the tracks around it come into being. A name may be
+asked for by count — `grid-column: a 2` is the second line called `a` —
+and a count the template cannot meet takes the shortfall the same way.
+
 An item spanning several tracks gives them whatever it needs beyond
 what they already hold, the gutters between them counting towards it,
 shared equally among the tracks that can grow. A fixed track takes

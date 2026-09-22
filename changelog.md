@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A grid line name the template does not declare lands after the grid
+
+Grid 1 §8.3: "if not enough lines with that name exist, all implicit
+grid lines are assumed to have that name for the purpose of finding
+this position." This engine left the edge automatic and auto-placed
+the item instead, so `grid-column: zz` went wherever the flow happened
+to put it.
+
+Count the explicit lines carrying the name in order and take the
+shortfall from the implicit ones. A name nothing declares is short by
+one, so it is the first line past the explicit grid -- line 4 on a
+two-column template -- and naming line 4 brings tracks 3 and 4 into
+being, which is why two implicit columns appear and the item sits in
+the second of them. The count is against the **explicit** grid rather
+than the grid as it stands: an item at `grid-column: 5` forces tracks
+3, 4 and 5 into existence and `zz` beside it still resolves to line 4.
+
+**A name could not be asked for by count at all.** `grid-column: a 2`
+parsed as `a` and took the first line of that name, because the parser
+read the first token and dropped the rest. The integer and the name
+are now looked for separately, in either order as the grammar allows,
+so `a 2` is the second line called `a` -- and where the template has
+only one, the shortfall lands on the implicit lines like any other.
+
+Ten cases, each written as the named placement agreeing with the
+numbered one rather than as a pixel worked out here: `grid-column: zz`
+must land exactly where `grid-column: 4` lands, on both axes, in width
+and in height. That is a test that does not depend on either answer
+being known in advance, and it is what caught the two implicit tracks
+rather than one.
+
+Left out deliberately, with the measurement in todo.md: a backwards
+search, `grid-column: span zz / 3`, which assumes the name on the
+implicit lines *before* the explicit grid. Chromium creates a column
+ahead of line 1 for it, which renumbers every line and moves every
+item already placed.
+
+`tests/unit/test_grid.f` 202 -> 242.
+
 ### A spanning grid item widens the tracks it spans
 
 Grid 1 §12.5's second half. A track's size came from the items that sit

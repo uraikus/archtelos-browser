@@ -4474,11 +4474,21 @@ bool gridResolvedAuto = false
 
 // The line a name sits at in `s`'s template for one axis, or 0 for
 // none. Lines count from 1.
-int func gridNamedLine(s:Style, name:text, inline:bool) {
+// How many lines of the name asked for exist, set by gridNamedLine so
+// the caller can tell a name it found from one it was short of.
+int gridNamedLineFound = 0
+
+// The `nth` line carrying `name`, or 0 where the template has fewer
+// than that many. Lines are numbered in order, and a template may give
+// the same name to several of them, so `aa 2` is the second `aa`.
+int func gridNamedLine(s:Style, name:text, inline:bool, nth:int) {
     arr[text] names = inline ? s.gridColLineNames : s.gridRowLineNames
     arr[int] at = inline ? s.gridColLineAt : s.gridRowLineAt
+    gridNamedLineFound = 0
     for int i = 0, i < names.length, i++ {
-        if names[i] == name { return at[i] }
+        if names[i] != name { continue }
+        gridNamedLineFound++
+        if gridNamedLineFound == nth { return at[i] }
     }
     return 0
 }
@@ -4507,8 +4517,14 @@ int func gridAreaLine(s:Style, name:text, inline:bool, edgeStart:bool) {
 // One edge, named: the `-start`/`-end` line an area makes, then a line
 // of that exact name. 0 when the template knows neither, which leaves
 // the edge automatic.
-int func gridResolveName(s:Style, name:text, inline:bool, edgeStart:bool) {
+int func gridResolveName(s:Style, name:text, inline:bool, edgeStart:bool,
+                         nth:int, explicitCount:int) {
     if name == null || name == '' { return 0 }
+    // A count past what the template offers is only meaningful forwards;
+    // a negative one searches backwards from the end of the explicit
+    // grid, which would need implicit tracks before line 1 (todo.md).
+    if nth < 1 { return gridNamedLine(s, name, inline, 1) }
+    if nth == 1 {
     // The bare name of an area: `grid-area: a` on a start edge is the
     // area's first line, on an end edge the line after its last.
     int fromArea = gridAreaLine(s, name, inline, edgeStart)
@@ -4525,17 +4541,28 @@ int func gridResolveName(s:Style, name:text, inline:bool, edgeStart:bool) {
         int n = gridAreaLine(s, lowered.slice(0, lowered.length - 4).toText(), inline, false)
         if n > 0 { return n }
     }
-    int suffixed = gridNamedLine(s, edgeStart ? `${name}-start` : `${name}-end`, inline)
+    int suffixed = gridNamedLine(s, edgeStart ? `${name}-start` : `${name}-end`, inline, 1)
     if suffixed > 0 { return suffixed }
-    return gridNamedLine(s, name, inline)
+    }
+    int exact = gridNamedLine(s, name, inline, nth)
+    if exact > 0 { return exact }
+    // §8.3: where the template has fewer lines of this name than were
+    // asked for, every implicit line is taken to carry it, so the
+    // shortfall is counted on past the end of the explicit grid. A name
+    // nothing declares at all is short by one and lands on the first
+    // line after it -- which brings the tracks around that line into
+    // being. The count is against the explicit grid, so implicit tracks
+    // some other item already forced do not move it.
+    return explicitCount + 1 + (nth - gridNamedLineFound)
 }
 
 // A copy of `g` with any name resolved to a number against `s`.
-GridLine func gridLineResolved(g:GridLine, s:Style, inline:bool, edgeStart:bool) {
+GridLine func gridLineResolved(g:GridLine, s:Style, inline:bool, edgeStart:bool,
+                               explicitCount:int) {
     if g.kind != GRIDLINE_NAME { return g }
     GridLine out
     out.kind = GRIDLINE_AUTO
-    int n = gridResolveName(s, g.name, inline, edgeStart)
+    int n = gridResolveName(s, g.name, inline, edgeStart, maxInt(g.n, 1), explicitCount)
     if n > 0 {
         out.kind = GRIDLINE_NUMBER
         out.n = n
@@ -4787,13 +4814,15 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         a.box = c
         a.colSpan = 1
         a.rowSpan = 1
-        resolveGridEdges(gridLineResolved(c.style.gridColStart, s, true, true),
-                         gridLineResolved(c.style.gridColEnd, s, true, false), explicitCols)
+        resolveGridEdges(gridLineResolved(c.style.gridColStart, s, true, true, explicitCols),
+                         gridLineResolved(c.style.gridColEnd, s, true, false, explicitCols),
+                         explicitCols)
         bool colAuto = gridResolvedAuto
         a.col = gridResolvedStart
         a.colSpan = gridResolvedSpan
-        resolveGridEdges(gridLineResolved(c.style.gridRowStart, s, false, true),
-                         gridLineResolved(c.style.gridRowEnd, s, false, false), explicitRows)
+        resolveGridEdges(gridLineResolved(c.style.gridRowStart, s, false, true, explicitRows),
+                         gridLineResolved(c.style.gridRowEnd, s, false, false, explicitRows),
+                         explicitRows)
         bool rowAuto = gridResolvedAuto
         a.row = gridResolvedStart
         a.rowSpan = gridResolvedSpan
