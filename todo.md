@@ -1519,6 +1519,45 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### A side break's blank page, measured
+
+CSS 2 §13.3.1 and Fragmentation 3 §3.1 say `left` and `right` force
+**one or two** page breaks, so that the next page is formatted as a page
+of the named side. Two means a blank page in between. Chromium does not
+generate it.
+
+The measurement goes through the page size, because `/MediaBox` is plain
+text in the PDF catalogue and needs no content-stream arithmetic. A
+`@page :left` of 300px and a `@page :right` of 500px make each printed
+page say which side rule it was formatted with:
+
+| | page sizes printed |
+|---|---|
+| `break-before: page`, two blocks | 500px, **300px** |
+| `break-before: page`, four blocks | 500, 300, 500, 300 |
+| `break-before: right`, two blocks | 500px, **300px** |
+| `break-before: left`, two blocks | 500px, 300px |
+
+So **Chromium honours `:left` and `:right`, and the first page is a
+right page**, which is what CSS2 §13.2.4 says for a left-to-right
+document and what this engine already assumes. But `break-before: right`
+put its content on the *left* page that followed, where the standard
+asks for a blank left page and the content on the right page after it.
+Counting pages says the same thing from the other side: `left`, `right`,
+`recto` and `verso` all print exactly the page count `page` prints, and
+two consecutive `break-before: right` blocks print three pages where the
+standard asks for five. The CSS2 spelling `page-break-before: right`
+behaves identically, so it is not a question of which syntax is
+recognised.
+
+**So this is a disagreement to be entered deliberately**, like Motion
+Path's ray sizing: the standard is unambiguous, the browser does not
+follow it, and this engine follows the standard and writes Chromium's
+answer down beside it. What that costs is that the page count cannot be
+graded against Chromium here -- the render suite grades it instead,
+since this engine paints one image per page and a generated blank page
+is one with the page box painted and no content on it.
+
 ### `print-color-adjust`, measured
 
 The entry above says the PDF read makes this measurable. It does, but
