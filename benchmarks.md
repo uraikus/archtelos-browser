@@ -750,6 +750,65 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What `::placeholder` cost, and the page that could not have shown it
+
+2026-09-22, same machine and script. This is the first entry here whose
+*first* problem was that neither benchmark page exercised the feature at
+all. `generated.html` has no form control, and `features.html` had
+twenty text inputs and not one `placeholder` attribute, so both pairings
+measured leakage and neither could have measured the work:
+
+| generated.html | forward | reversed |
+|---|---|---|
+| cascade | -1, 7 of 25 | +0, 12 of 25 |
+| layout | +0, 11 of 25 | +0, 11 of 25 |
+| paint | +0, 8 of 25 | +1, 13 of 25 |
+
+Nothing there, which is right and which says nothing about the feature.
+So `tests/featurepage.py` gained a placeholder input per section and
+`PROBES` gained a row for it -- `--verify` renders the page with
+`::placeholder{color:#000}` and requires the pixels to move, so a page
+that stopped exercising this would say so. Twelve features now, all
+twelve live.
+
+**On that page the feature cost two milliseconds of layout.**
+
+| features.html, with placeholders | forward | reversed |
+|---|---|---|
+| layout | **+2** (mean +3.08), 17 of 25 | **-4** (mean -3.60), 3 of 25 |
+
+Both directions say the candidate is the slower one, which is the shape
+that means a cost rather than an order effect. A third binary split it:
+the same head with `placeholderStyleFor` collecting its matches and then
+returning the input's own style -- the selector work without the style
+work -- read layout +1 of the +2. So a third of it was matching and two
+thirds was **building a `Style` for each of the twenty placeholders**.
+
+**The fix was to stop building them.** `computeStyle` has shared a
+computed style between identically-matched elements since the table-cell
+entry above; the same reasoning holds here, because twenty placeholders
+under the same parent matching the same one user-agent rule compute the
+same style. Routing `placeholderStyleFor` through `styleCache` is the
+whole change, and the cache key gains the pseudo-element's name so an
+entry made for `input::placeholder` can never be handed to an `input`.
+
+| cached against uncached, features.html | forward | reversed |
+|---|---|---|
+| layout | **-2** (mean -2.92), 2 of 25 | **+2** (mean +2.28), **24 of 25** |
+
+Twenty-four of twenty-five is the strongest reading this method has
+produced. Against a **placement control** -- the parent recompiled with
+the same code renamed and called from nowhere, forty-eight bytes from
+the candidate -- the cached binary reads a median of 0 in every phase in
+both directions, and the control itself reads 0 against the parent. The
+cost is gone rather than moved.
+
+The lesson is the one about instruments rather than the one about
+caches: **the first two pairings were clean, symmetric and meaningless**,
+because the page had nothing for the feature to do. A benchmark that
+cannot see a feature reports no cost for it, which reads exactly like a
+feature that has none.
+
 ## What the page-side breaks cost, and the millisecond that changed phase
 
 2026-09-22, same machine and script. The change reaches an ordinary page

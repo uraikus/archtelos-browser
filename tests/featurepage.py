@@ -148,6 +148,10 @@ PROBES = (
     ('appearance', '.controls input{appearance:none}'),
     ('accent-color', '.controls input{accent-color:#000}'),
     ('field-sizing', '.controls input[type=text]{field-sizing:fixed}'),
+    # `::placeholder` paints the user agent's grey. Turning it to the
+    # input's own colour is what a page with no placeholder on it cannot
+    # tell apart -- which is why the page has one.
+    ('placeholder', '.controls input::placeholder{color:#000}'),
     ('object-fit', 'img{object-fit:fill}'),
     ('object-position', 'img{object-position:0 0}'),
     ('images', 'img{display:none}'),
@@ -193,7 +197,8 @@ def body():
                     '<label><input type="radio" name="m%d" checked> best</label> '
                     '<label><input type="radio" name="m%d"> mean</label> '
                     '<input type="text" value="section %d"> '
-                    '<button type="button">run</button></form>' % (s, s, s))
+                    '<input type="text" placeholder="search section %d"> '
+                    '<button type="button">run</button></form>' % (s, s, s, s))
         rows.append('<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>')
         for i in range(6):
             rows.append('<tr><td>row %d.%d</td><td>kind %d</td><td>%d</td></tr>'

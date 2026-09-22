@@ -38,6 +38,20 @@ written twice.
 Chromium ignores `display` on it and this does too, for the plain reason
 that the placeholder's style is used for the text and nothing else.
 
+**And it cost two milliseconds of layout until it went through the
+sharing cache.** Neither benchmark page had a `placeholder` on it, so
+the first pairing could not have seen the feature at all;
+`tests/featurepage.py` gained one per section and a `--verify` probe
+that requires it to move pixels. On that page the twenty placeholders
+each built their own `Style`, and a third binary attributed two thirds
+of the cost to exactly that. `placeholderStyleFor` now goes through
+`styleCache`, which has shared a computed style between
+identically-matched elements since the table-cell entry, and the key
+gains the pseudo-element's name so an entry made for
+`input::placeholder` can never be handed to an `input`. Cached against
+uncached reads -2 ms of layout forward and +2 reversed, slower in 24 of
+25 pairs -- the strongest reading this method has produced.
+
 forms 17 -> 26 and render 54 -> 60.
 
 ### The side a page break asks for

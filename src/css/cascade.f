@@ -947,6 +947,12 @@ void func addDimensionHint(matches:arr[Match], prop:text, value:text, w:int) {
 // are the same walk with opposite filters.
 text collectingPseudo = ''
 
+// Which pseudo-element the style being computed is for, as it appears in
+// the sharing cache's key. '' for an element's own style. Globals are
+// not hoisted here, so it sits beside the flag it belongs with rather
+// than beside the function that reads it.
+text collectingPseudoKey = ''
+
 void func collectFromBucket(n:Node, key:text, matches:arr[Match]) {
     if bucketSizes[key] == null { return }
     // the bucket travels as a borrowed parameter: a struct read out of
@@ -1715,7 +1721,20 @@ Style func placeholderStyleFor(n:Node, own:Style) {
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
     applyMatches(props, matches)
-    return computeStyleValues(n, own, false, props)
+    // Through the ordinary sharing cache, because the same reasoning
+    // holds: two placeholders that matched the same declarations in the
+    // same order under the same parent style compute the same style, and
+    // a form full of them matches the same one rule every time. Building
+    // a `Style` each was two thirds of what this cost the page that has
+    // them (benchmarks.md).
+    collectingPseudoKey = 'placeholder'
+    text key = styleCacheKey(n, own, false, matches)
+    collectingPseudoKey = ''
+    Style cached = styleCache[key]
+    if cached != null { return cached }
+    Style s = computeStyleValues(n, own, false, props)
+    styleCache[key] = s
+    return s
 }
 
 // ::first-line restyles the characters that fall on the first line,
@@ -4866,6 +4885,12 @@ text func styleCacheKey(n:Node, parent:Style, isRoot:bool, matches:arr[Match]) {
     arr[text] parts = []
     parts.push(`${parentSerialOf(parent)}`)
     parts.push(isRoot ? 'r' : 'e')
+    // The pseudo-element the style is for, so an entry made for
+    // `input::placeholder` can never be handed to an `input`. The
+    // matched declarations would have to be identical for that to
+    // happen, but a cache whose key omits part of what it was computed
+    // from is one waiting to be wrong.
+    parts.push(collectingPseudoKey)
     parts.push(n.tag)
     for int i = 0, i < matches.length, i++ {
         Decl d = matches[i].decl
