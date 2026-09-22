@@ -203,9 +203,24 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    | this engine | 0, 100, 200, 300 (and `mt` reads 0) |
    | Chromium | 0, **60**, 160, 260 |
 
-   Collapsing wants checking with it: CSS2 §8.3.1 collapses a negative
-   margin by adding the most negative to the largest positive, which is
-   probably the same code.
+   It **is** the collapsing code: the sibling collapse takes
+   `maxInt(prevBottomMargin, topM)`, and the larger of 0 and -40 is 0.
+   CSS2 §8.3.1 says to add the largest positive to the most negative
+   instead, which five pairs of 100px blocks confirm -- the gap between
+   them, measured:
+
+   | `margin-bottom` / `margin-top` | Chromium's gap |
+   |---|---|
+   | +50 / +20 | 50 |
+   | +50 / -20 | **30** |
+   | -30 / -50 | **-50** |
+   | 0 / -40 | **-40** |
+   | -40 / +10 | **-30** |
+
+   Every one is `max(positives, 0) + min(negatives, 0)`. The
+   parent-and-child collapse in `collapsedTopMargin` and
+   `collapsedBottomMargin` takes the same `maxInt` and wants the same
+   correction.
 
    **What is left of hit testing is its order.** An out-of-flow box
    laid out beyond every ancestor's rectangle is found now -- the
