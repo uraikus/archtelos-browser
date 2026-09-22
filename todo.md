@@ -1114,11 +1114,13 @@ Both have values Chromium computes differently from the initial one, so
 either would move the count by one the moment the keyword were stored in
 the computed style. The difference between them is whether a pixel would
 follow. This engine prints — `--print` writes one image per page — so
-`print-color-adjust: exact` has something to be about here, and the PDF
-read in `/tmp/claude-0/probe/pdfboxes.py` (recorded with the margin-box
-measurement below) says Chromium's answer can be read back, so the
-question is measurable rather than a keyword stored and never used. It is
-worth doing. `forced-color-adjust` is not: there is no forced-colors mode
+`print-color-adjust: exact` has something to be about here, and
+Chromium's answer can be read back once the print is asked to omit
+backgrounds, so the question is measurable rather than a keyword stored
+and never used. It is worth doing, and the measurement below says what
+it takes: the property overrides an omission this engine does not yet
+have, so the omission is what has to be built for the keyword to mean
+anything. `forced-color-adjust` is not: there is no forced-colors mode
 for it to be about, so it would be `outline-style` again — a property the
 instrument scores while the engine does nothing with it — and it stays
 unimplemented and counted as such.
@@ -1521,6 +1523,47 @@ band. `content: none` and an empty box both draw nothing.
 `@top-center` replaces the general one on page one and leaves it in
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
+
+### `print-color-adjust`, measured
+
+The entry above says the PDF read makes this measurable. It does, but
+not the way the first probe tried: **Chromium's `--print-to-pdf` prints
+background graphics unconditionally**, so `economy` and `exact` give
+byte-identical fills and the CLI can say nothing about the property at
+all. Three runs agreeing is not evidence when the instrument cannot
+distinguish the two answers.
+
+What distinguishes them is `Page.printToPDF`'s **`printBackground`**,
+which the CLI does not expose. `/tmp/claude-0/probe/cdp.py` is a CDP
+client written for this -- a socket, the WebSocket handshake and its
+framing, standard library only, no dependency -- and it gives the table
+this property is made of. A 200x100 div with `background: #3366cc`, the
+fill operators read out of the content stream:
+
+| `print-color-adjust` | `printBackground: true` | `printBackground: false` |
+|---|---|---|
+| not declared (initial `economy`) | painted | **absent** |
+| `economy` | painted | **absent** |
+| `exact` | painted | **painted** |
+| `-webkit-print-color-adjust: exact` | painted | painted |
+
+So the property is exactly what CSS Color Adjustment 1 §3 says it is,
+and the shape is worth stating plainly: **the user agent decides whether
+to omit backgrounds, and `exact` overrides that decision.** `economy`
+grants a permission and is indistinguishable from the initial value;
+`exact` withdraws it. A renderer that always prints backgrounds cannot
+tell the two apart, which is why the CLI could not, and why this engine
+cannot either as it stands -- `--print` paints every background there is.
+
+**What that implies for the implementation.** Storing the keyword and
+stopping there is `outline-style` again: the instrument would score it
+and no pixel would move. Giving it something to be about means giving
+`--print` the omission the property overrides, which is a switch this
+engine does not have. The default stays as it is, because a `--print`
+that silently stopped printing backgrounds would be a behaviour change
+nothing asked for; the switch is opt-in, and `exact` is what puts a
+background back on the page under it. That is Chromium's own model with
+the flag named differently.
 
 ### A scroll offset outlives the document it belongs to
 
