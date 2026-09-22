@@ -713,6 +713,43 @@ fractions is what a day's difference in machine state looks like, and it
 is why the rendering table's large row is the middle of eight samples
 rather than one run of five -- one run of five is what produced the 104.
 
+## What the `@page` margin boxes cost the pages that have no `@page`
+
+2026-09-22, same machine and script. The margin boxes reach a page
+through two doors and no more: `splitPageBody`, which only
+`parsePageRule` calls, and `paintPageMarginBoxes`, which the paginated
+painter calls once per page behind `anyPageMarginBox`. Neither
+benchmark page has an `@page` rule at all -- `grep -c @page` is 0 on
+both -- so the expected cost is exactly nothing, and what the pairing
+is really checking is whether anything leaked out of those two doors.
+
+| generated.html | forward, parent first | reversed, candidate first |
+|---|---|---|
+| parse | +0, 11 of 25 | +0, 4 of 25 |
+| cascade | **+1**, 13 of 25 | +0, 10 of 25 |
+| layout | -2, 9 of 25 | +1, 13 of 25 |
+| paint | -1, 5 of 25 | -1, 7 of 25 |
+
+The cascade's forward +1 is the shape this file's own rule calls real
+-- a forward millisecond against a reversed zero -- and here it is not,
+which is worth writing down because the rule is a prompt to look at the
+code rather than a verdict. The mean behind that median is **-0.48**,
+the wrong sign for a cost, and the commit does not touch
+`src/css/cascade.f` at all. The reading is noise wearing the pattern's
+clothes; the rule's own instruction is that the question goes to the
+code, and the code answers it.
+
+`features.html`, forward: parse +0, cascade +0, layout -1, paint +0.
+
+The whole-table run beside this one reads 118 ms on `generated.html`
+and 99 on `features.html`, against the 101 and 85 recorded above, while
+Chromium reads 23.7 against the 26.0 recorded -- the control passed at
+8.8% of a 15% band. A machine that is 9% faster for Chromium and 17%
+slower for this browser is not one measurement, so the table above is
+not restated from it. The paired run is the comparison that holds: the
+parent and the candidate were built and run in the same minutes, and
+they read the same.
+
 ## What ruby cost the pages with no ruby in them
 
 2026-09-21, same machine and script. Ruby adds one comparison to
