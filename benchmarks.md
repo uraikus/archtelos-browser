@@ -780,6 +780,57 @@ So the cost of a layout fix is measured on a page the fix does not
 touch, and the page that exercises it is kept for `--verify` and the
 render suite, where a difference is the point rather than the noise.
 
+## What distributing a grid's tracks cost, and a control that read a whole millisecond of nothing
+
+2026-09-22, same machine and script. `features.html` answers this one:
+the fix changes **where** tracks sit and how tall rows are, and both of
+its grids are `normal` on both axes with automatic heights, so the two
+binaries render it **byte-identically** -- checked with `cmp` on the
+screenshots before any timing, which is what the negative-margin entry
+above says to do.
+
+Paired 25 times each way:
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate | +0 | +0 | **+1** | +0 |
+| reversed, candidate then parent | +0 | +0 | **-1** | +0 |
+
+Forward +1 and reversed -1 is this file's own strongest shape for a
+real cost: both rounds say the candidate is a millisecond slower at
+laying out, on a 76 ms phase. The means disagree with the medians in
+both directions (-1.04 and -0.68, the candidate *faster* on average)
+and the candidate is slower in 14 of 25 pairs forward and 11 of 25
+reversed, which is a coin, but the rule says to take the question to
+the control rather than to another round.
+
+The control is the parent recompiled with `gridDistributeTracks`
+appended under a different name and **called from nowhere**. It comes
+out at 3,078,144 bytes, which is the candidate's size exactly, against
+the parent's 3,078,096.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| control then candidate | +0 | +0 | **+1** | +0 |
+| candidate then control | +0 | +0 | **+0** | +0 |
+| parent then control (dead code only) | +0 | +0 | +0 *(mean **+1.52**)* | +0 |
+
+The candidate reads the same +1 against a binary that carries the same
+machine code and never executes a byte of it. And the last row is the
+finding in miniature: the parent against itself-plus-dead-code reads a
+mean **+1.52 ms of layout** from code that cannot run. So the
+millisecond is where the compiler put things, not work done -- the
+fourth time this file has caught it, and the first where the reading
+never reached a conclusion at all, because the control was built the
+moment the mirror image failed rather than after a number had been
+published and had to be withdrawn.
+
+**The real cost is two integer comparisons per grid axis.**
+`gridDistributeTracks` returns on its first line when the distribution
+is `stretch`, which every grid that does not say otherwise is, and it
+is called twice per grid container. A page with no grid on it never
+reaches it.
+
 ## What finding an out-of-flow box costs
 
 2026-09-22, same machine and script. Nothing, and the reason is
