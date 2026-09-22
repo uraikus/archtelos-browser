@@ -1606,6 +1606,55 @@ two extra walks of the box tree, and neither benchmark page has a float
 on it, so `tests/featurepage.py` needs one with a probe before the
 measurement means anything.
 
+### Counter Styles 3's `range` and `fallback`, measured
+
+`@counter-style` here parses `system`, `symbols`, `suffix`, `prefix`,
+`pad` and `negative`. It does **not** parse `range`, `fallback` or
+`speak-as`, and there is no `symbols()` function. The built-in roman
+styles carry a range of their own and answer decimal outside it, so the
+machinery is half there; what is missing is the descriptors.
+
+Measured against Chromium 141 with a style of
+`system: numeric; symbols: '0' '1' '2'` -- base three, so a value's
+length gives it away in a monospace font -- and `range: 2 4`:
+
+| counter | `range: 2 4`, no `fallback` | the same plus `fallback: upper-roman` |
+|---|---|---|
+| 1 | `1` (1 char) | `I` |
+| 2 | `2` | `2` |
+| 3 | `10` (2 chars) | `10` |
+| 4 | `11` | `11` |
+| 8 | `8` (**1 char**) | `VIII` (**4 chars**) |
+| 9 | `9` (1 char) | `IX` (2 chars) |
+
+So a counter inside the range is rendered by the style, and one outside
+it falls to the **declared** `fallback` or to `decimal` where none is
+declared. The 8 and 9 rows are the ones that discriminate: at 1 and 5
+the roman and the decimal are both one character, and the first probe
+could not tell them apart.
+
+**Three instruments were thrown away before that table.**
+`getComputedStyle(li, '::marker').content` answers `normal` whatever
+the style; `getComputedStyle(el, '::before').content` answers the
+*specified* `counter(k, ranged)` rather than the string it resolved to;
+and a DOM `Range` over an element's contents measures zero, because a
+pseudo-element's text is not in the DOM. What works is making the
+element an `inline-block`, whose shrink-to-fit width **is** the
+generated text's width, and dividing by the width of one character.
+
+**`symbols()` is not measured and is not claimed.** The fourth
+instrument -- an `inline-block` `<li>` with
+`list-style-type: symbols(cyclic '*' '#')` and
+`list-style-position: inside` -- reads one character, which is the
+`x` inside the item; a `disc` item beside it reads one character too.
+An instrument that answers the same for a style that certainly works is
+measuring nothing, so what the row says about `symbols()` is nothing
+either, and the function stays unimplemented until something can see
+it.
+
+**`speak-as` will not be taken.** Nothing here speaks, so it would be a
+descriptor parsed and never read, which is `outline-style` again.
+
 ### How Chromium synthesises small caps, measured
 
 `font-variant-caps` is the part of Fonts 4 that needs no font the
