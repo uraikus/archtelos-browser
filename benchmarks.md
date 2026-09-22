@@ -833,6 +833,30 @@ where it used to return 0. `parseGridLine` now walks its tokens rather
 than indexing the first, which is once per declaration at cascade time.
 A page with no grid on it never reaches any of it.
 
+## What `range` and `fallback` cost
+
+2026-09-22, same machine and script. `generated.html` is lists among
+its headings and paragraphs, so it runs `counterStyleLabel` for every
+marker on the page -- which is the function this change touches, and
+the reason the benchmark can see the path even though no page here
+declares a range of its own. Both pages render byte-identically between
+the binaries, `cmp`-checked first.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate | +0 | +0 | +0 | +0 |
+| reversed | +0 | +0 | -2 | +0 |
+
+Nothing to read: every median is zero but the reversed layout, which is
+negative, and a change cannot make the parent slower. No control was
+built, the rule calling for one when a reading looks like a cost.
+
+The structure is why. `counterStyleLabel` gained one comparison on the
+path it already took -- the range test was there, and what is new is
+where it goes afterwards -- and the recursion it can now make is
+bounded at four and reached only by a counter outside its style's
+range, which the predefined styles put at 3999.
+
 ## What synthesised small caps cost, and a cascade millisecond from dead code
 
 2026-09-22, same machine and script. **Neither benchmark page had a
