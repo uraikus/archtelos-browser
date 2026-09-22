@@ -1523,6 +1523,32 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### `::placeholder`, measured
+
+Thirteen inputs on one page, each with its own rule, read back through
+`getComputedStyle(e, '::placeholder')`:
+
+| declared | what the pseudo-element computes to |
+|---|---|
+| nothing | `color: rgb(117, 117, 117)` |
+| `color` on the **input** | still `rgb(117, 117, 117)` |
+| `color` on `::placeholder` | that colour |
+| `font-size` on the input | inherited, 20px |
+| `font-size` on `::placeholder` | that size, 9px |
+| `opacity`, `background-color`, `letter-spacing`, `font-style`, `text-decoration-line`, `visibility` | all take |
+| `display: none` | **ignored**, still `block` |
+
+The first two rows are the interesting pair. The grey is not a default
+the pseudo-element falls back to -- it is a **declaration in the user
+agent's own stylesheet on the pseudo-element itself**, which is why the
+input's `color` cannot reach it: an inherited value loses to any
+declaration, whatever origin the declaration comes from. So one UA rule
+reproduces both rows, and nothing special is needed to make the colour
+win.
+
+`width` computes to whatever is declared and moves no pixel, so it is
+not evidence the property does anything there.
+
 ### `text-decoration-skip-ink`, measured and not taken
 
 Rasterised at 40px monospace, `gjpqy` underlined in blue three pixels
