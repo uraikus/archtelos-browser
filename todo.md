@@ -1554,6 +1554,44 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### What a subgrid owes its parent, measured
+
+Chromium 141, every parent `display: grid` at `width: 700px` with
+`justify-content: start` so §12.8 stretches nothing, one `W` being
+9.633px and `x` 9.641.
+
+**A subgrid's items size the parent's tracks, one track at a time.** A
+parent of two `auto` columns holding a subgrid spanned across both,
+with a twenty-`W` item and an `x` inside it:
+
+| | first column | second column |
+|---|---|---|
+| Chromium | **192.66** | **9.64** |
+| the same content in a plain spanning item | 96.33 | 96.33 |
+| this engine, subgrid or not | 100 | 100 |
+
+So a subgrid is *not* a spanning item that contributes its own
+max-content to the tracks it covers and has it shared equally. Its
+children are placed on the parent's tracks and each contributes to the
+one it sits in. Placing them explicitly, one per track, gives the same
+answer, and an item that spans two parent tracks from inside a subgrid
+is split equally between them exactly as §12.5 splits one written in
+the parent -- 96.33 and 96.33 for twenty `W`s. It is the ordinary track
+sizing, run over items that are a generation further down.
+
+**And a subgrid may name the lines it spans.** `grid-template-columns:
+subgrid [a] [b] [c]` is a name list beside the keyword, and the names
+count from the subgrid's **own** first line rather than the parent's:
+on a three-column parent, a subgrid at `grid-column: 2/4` with those
+names puts `grid-column: a` in the parent's **second** column and
+`grid-column: b` in its third. Fewer names than lines is not an error;
+the remaining lines simply have none. `getComputedStyle` reports the
+list back verbatim, so the names are kept rather than resolved away.
+
+This engine drops the list: the keyword is read and the rest of the
+declaration ignored, so `grid-column: b` finds no such line and the
+item is auto-placed into the first track.
+
 ### Grid's remaining corner, measured
 
 **A backwards search for a name the template does not declare.**
