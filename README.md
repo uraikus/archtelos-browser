@@ -343,8 +343,11 @@ instead; `contain: paint` clips its descendants; and
 `content-visibility: hidden` paints the box and nothing inside it.
 
 **Clicks** land on the topmost box: the search runs the painting order
-backwards, so a positioned box takes the click from an in-flow one
-underneath it and the higher `z-index` wins whatever the document order.
+backwards, pass by pass — the positioned descendants, then the inline
+content, then the floats, then the block-level boxes — so a positioned
+box takes the click from an in-flow one underneath it, a float takes it
+from a block written after it, and the higher `z-index` wins whatever
+the document order.
 It finds a box wherever it was laid out, including past every
 ancestor's edge — an absolutely positioned box in an empty body is
 clickable — and goes through any transform on it, so a rotated box is
@@ -352,12 +355,20 @@ clickable along the shape it is drawn as.
 
 **Painting order** is CSS2 §9.9's: inside a stacking context a box's
 own background and border come first, then its negative-`z-index`
-descendants, then its in-flow content, then the positioned descendants
-at zero and above. A negative descendant of a box that is *not* a
-stacking context is painted by the nearest ancestor that is, which is
-what puts it behind that box's background. A declared `z-index` on a
-positioned box makes a context, and so do a `transform` and an `opacity`
-below 1; `z-index: auto` does not.
+descendants, then its in-flow content in the standard's three separate
+steps, then the positioned descendants at zero and above. The three
+steps are three walks of the subtree rather than one walk in document
+order — the in-flow block-level descendants' own decoration, then the
+non-positioned floats, then every box's lines — so a float paints over
+a block written after it and a line of text paints over both. A box
+that paints as one unit is handed over whole and the walk does not
+descend into it: a positioned box, a nested stacking context, a
+replaced element, and anything that paints through a layer. A negative
+descendant of a box that is *not* a stacking context is painted by the
+nearest ancestor that is, which is what puts it behind that box's
+background. A declared `z-index` on a positioned box makes a context,
+and so do a `transform` and an `opacity` below 1; `z-index: auto` does
+not.
 
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and

@@ -3039,12 +3039,10 @@ void func paintClipped(b:Box) {
     // where they are.
     layer.translate(0 - px - boxScrollLeft(b), 0 - py - boxScrollTop(b))
     paintLayer = layer
-    paintLines(b)
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        paintBox(c)
-    }
+    // The layer holds this box's contents, which is §9.9's steps 3, 4
+    // and 5 and everything positioned after them -- the same three
+    // walks the document gets, over this subtree.
+    paintSubtree(b)
     paintLayer = null
     pDrawImage(layer, px, py)
     paintScrollbars(b)
@@ -3345,27 +3343,63 @@ void func paintNegativeZ(b:Box) {
     }
 }
 
-void func paintBoxInner(b:Box) {
-    // `overflow: hidden` clips this box's descendants to its padding box
-    // (CSS2 §11.1.1). The box itself -- its background and border -- is
-    // not clipped, so it paints normally and only the inside goes to a
-    // layer.
-    // Paint containment clips a box's descendants to its padding box,
-    // which is what `overflow: hidden` does, so it goes through the
-    // same layer (Containment 1 §3.3).
-    // A box whose contents are not rendered at all has nothing to clip,
-    // so it never needs the layer.
-    if (b.style.overflowHidden || b.style.containPaint) && !b.style.contentHidden
-        && !paintingToLayer() && boxClipsAnything(b) {
-        paintClipped(b)
-        return
-    }
+// ---- CSS2 §9.9's steps 3, 4 and 5 ----------------------------------
+//
+// The standard paints a box's in-flow content in three passes rather
+// than one walk in document order: the block-level descendants' own
+// decoration at step 3, the non-positioned floats at step 4, and every
+// box's inline content at step 5. So a float paints over a block
+// written after it, and a line paints over both.
+//
+// One walk in document order cannot produce that, and neither can
+// painting a box's own lines after its own children: step 5 is a
+// property of the whole subtree. An anonymous block holding nothing
+// but inline content is a block-level descendant, so it is step 3
+// while what is in it is step 5 -- which is the ordinary shape of text
+// beside a float or beside a block.
+//
+// The walk is one function run three times, with the phase passed
+// down rather than held in a global: a line can hold an atomic inline,
+// which is painted whole from inside the walk, and a global would come
+// back from that set to whatever the atomic's own subtree left it at.
+// A box that paints as one unit takes its whole subtree with it and
+// the walk does not descend into it: a float at step 4, a positioned
+// box at step 6 and after, a stacking context, a replaced element, and
+// anything that paints through a layer -- `overflow`, paint
+// containment, a `clip-path` -- because a layer is built and blitted
+// once rather than three times.
+const int PHASE_WHOLE = 0
+const int PHASE_BLOCKS = 1
+const int PHASE_FLOATS = 2
+const int PHASE_INLINES = 3
+
+// Whether this box is handed over whole rather than split across the
+// three phases. A float and a positioned box are whole as well, but
+// they are asked for by name because *which* phase paints them differs.
+bool func boxPaintsWhole(b:Box) {
+    if b.kind == BOX_IMAGE || b.kind == BOX_AUDIO || b.kind == BOX_IFRAME { return true }
+    Style s = b.style
+    if s.contentHidden { return true }
+    if s.overflowHidden || s.containPaint { return true }
+    if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
+    if anyOffsetPath && boxHasOffset(b) { return true }
+    return boxIsStackingContext(b)
+}
+
+// Everything a box paints of itself, before any of its contents: its
+// shadows, background, borders and border image, then its outline,
+// column rules, the negative stacking layer it owns, its list marker
+// and its form control. Answers whether its contents are to be walked
+// at all -- a replaced element has painted its own, an empty cell
+// hiding its decoration has none to show, and `content-visibility:
+// hidden` says there are none.
+bool func paintBoxSelf(b:Box) {
     Style s = b.style
     // empty-cells: hide -- a cell with nothing in it draws neither
     // background nor border in the separated borders model (CSS2
     // 17.6.1.1). The cell still takes its space; only its own
     // decoration goes.
-    if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return }
+    if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return false }
     if b.kind != BOX_ANON && !s.hidden {
         // a shadow is cast by the border box and lies under it
         paintShadows(b.x, b.y, b.w, b.h, s)
@@ -3384,23 +3418,23 @@ void func paintBoxInner(b:Box) {
     }
     if b.kind == BOX_IMAGE {
         if !s.hidden { paintImage(b) }
-        return
+        return false
     }
     if b.kind == BOX_AUDIO {
         paintAudioControls(b)
-        return
+        return false
     }
     if b.kind == BOX_IFRAME {
         if !s.hidden { paintFrame(b) }
-        return
+        return false
     }
     if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
     if s.columnRuleWidth > 0 && !s.hidden { paintColumnRules(b) }
     // content-visibility: hidden skips the contents entirely
     // (Containment 2 §4). The box's own background, border and outline
     // are not contents, so they are already painted above; everything
-    // below this line is.
-    if s.contentHidden { return }
+    // after this is.
+    if s.contentHidden { return false }
     // CSS2 §9.9 step 3: the negative descendants of this stacking
     // context, after its own background and border and before anything
     // of its content. A document that declares no negative `z-index`
@@ -3408,53 +3442,117 @@ void func paintBoxInner(b:Box) {
     if cascadeSawNegativeZ && boxIsStackingContext(b) { paintNegativeZ(b) }
     if b.isListItem && !s.hidden { paintListMarker(b) }
     if !s.hidden { paintFormControl(b) }
-    paintLines(b)
-    // In-flow children first, then the positioned ones in z-index order:
-    // a positioned box paints above its in-flow siblings whatever the
-    // document order (CSS2 §9.9). This is the painting order for the
-    // common case, not the full stacking-context algorithm -- there is
-    // no opacity or transform layer to sort against yet.
-    // A document with no positioned box anywhere needs neither the
-    // skip test nor the second pass: one loop in document order is the
-    // whole painting order.
-    if !docHasPositioned {
-        for int i = 0, i < b.children.length, i++ {
-            Box c = b.children[i]
-            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+    return true
+}
+
+// One phase of the walk over a box's in-flow, non-positioned subtree.
+void func paintPhaseWalk(b:Box, phase:int) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // An in-flow inline-level child is step 5 content reached
+        // through the line that holds it, as the atomic it was placed
+        // as -- `paintLines` paints it from its own box. Walking into
+        // it here as well paints it twice, which is invisible until a
+        // `border-radius` blends its antialiased edge against itself.
+        // A flex or grid item is block-level however it was declared,
+        // so this does not take one of those away from its container.
+        if isInlineLevelBox(c) { continue }
+        if docHasPositioned && boxIsPositioned(c) { continue }
+        if anyAnchorHidden && anchorHides(c) { continue }
+        if !boxVisible(c) { continue }
+        if docHasFloats && boxIsFloated(c) {
+            if phase != PHASE_FLOATS { continue }
             paintBox(c)
+            continue
         }
+        if boxPaintsWhole(c) {
+            // A box that paints whole did so in the first phase, and
+            // took its own floats and lines with it.
+            if phase != PHASE_BLOCKS { continue }
+            paintBox(c)
+            continue
+        }
+        if phase == PHASE_BLOCKS {
+            if !paintBoxSelf(c) { continue }
+        } else if phase == PHASE_INLINES {
+            paintLines(c)
+        }
+        paintPhaseWalk(c, phase)
+        // The grabber goes over the box's own content, so it goes on
+        // in the last phase. A page that never says `resize` pays one
+        // boolean here.
+        if phase == PHASE_INLINES && anyResize { paintResizeGrabber(c) }
+    }
+}
+
+// The positioned descendants this box paints at steps 6 and after: its
+// own positioned children and those of every in-flow descendant the
+// three walks descend into, because the walks step over a positioned
+// box wherever they meet one. A box that paints whole keeps its own,
+// and so does a float.
+void func collectPositionedIn(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) {
+            out.push(c)
+            continue
+        }
+        if boxIsFloated(c) { continue }
+        if boxPaintsWhole(c) { continue }
+        collectPositionedIn(c, out)
+    }
+}
+
+// Them, lowest z first and in document order within a z. The negative
+// ones are not here: they belong to the nearest stacking context and
+// were painted before any of this box's content.
+void func paintPositionedIn(b:Box) {
+    arr[Box] pos = []
+    collectPositionedIn(b, pos)
+    if pos.length == 0 { return }
+    int highest = 0
+    for int i = 0, i < pos.length, i++ {
+        if pos[i].style.zIndex > highest { highest = pos[i].style.zIndex }
+    }
+    for int z = 0, z <= highest, z++ {
+        for int i = 0, i < pos.length, i++ {
+            if pos[i].style.zIndex != z { continue }
+            paintBox(pos[i])
+        }
+    }
+}
+
+// A box's contents, in §9.9's order. Run for every box that paints
+// whole, so a float and a clipped subtree get the same three passes
+// the document does.
+void func paintSubtree(b:Box) {
+    paintPhaseWalk(b, PHASE_BLOCKS)
+    // Step 4 is skipped outright on a document with no float in it.
+    if docHasFloats { paintPhaseWalk(b, PHASE_FLOATS) }
+    paintLines(b)
+    paintPhaseWalk(b, PHASE_INLINES)
+    if docHasPositioned { paintPositionedIn(b) }
+}
+
+void func paintBoxInner(b:Box) {
+    // `overflow: hidden` clips this box's descendants to its padding box
+    // (CSS2 §11.1.1). The box itself -- its background and border -- is
+    // not clipped, so it paints normally and only the inside goes to a
+    // layer.
+    // Paint containment clips a box's descendants to its padding box,
+    // which is what `overflow: hidden` does, so it goes through the
+    // same layer (Containment 1 §3.3).
+    // A box whose contents are not rendered at all has nothing to clip,
+    // so it never needs the layer.
+    if (b.style.overflowHidden || b.style.containPaint) && !b.style.contentHidden
+        && !paintingToLayer() && boxClipsAnything(b) {
+        paintClipped(b)
         return
     }
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if boxIsPositioned(c) { continue }
-        paintBox(c)
-    }
-    int lowest = 0
-    int highest = 0
-    bool anyPositioned = false
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if !boxIsPositioned(c) { continue }
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if !anyPositioned || c.style.zIndex < lowest { lowest = c.style.zIndex }
-        if !anyPositioned || c.style.zIndex > highest { highest = c.style.zIndex }
-        anyPositioned = true
-    }
-    if !anyPositioned { return }
-    for int z = lowest, z <= highest, z++ {
-        for int i = 0, i < b.children.length, i++ {
-            Box c = b.children[i]
-            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-            if !boxIsPositioned(c) { continue }
-            if c.style.zIndex != z { continue }
-            // A negative one was painted by the stacking context it
-            // belongs to, before any of this box's content.
-            if cascadeSawNegativeZ && z < 0 { continue }
-            paintBox(c)
-        }
-    }
+    if !paintBoxSelf(b) { return }
+    paintSubtree(b)
 }
 
 // A frame paints the document it loaded, translated into its content
@@ -3627,6 +3725,119 @@ Box func hitChild(c:Box, x:int, y:int) {
     return null
 }
 
+// This box's own inline content, at the point. The fragments are in
+// paint order within a line and no two overlap, so the first one the
+// point falls in is the answer.
+Box func hitLines(b:Box, x:int, y:int) {
+    for int i = 0, i < b.lines.length, i++ {
+        Line ln = b.lines[i]
+        if y < ln.y || y >= ln.y + ln.h { continue }
+        for int j = 0, j < ln.frags.length, j++ {
+            Fragment f = ln.frags[j]
+            if f.kind == FRAG_INLINE_BG { continue }
+            // An atomic inline is painted from its own box rather
+            // than from the fragment, and a negative margin puts the
+            // two in different places: the fragment is the margin box,
+            // so `margin-left: -80px` on a 60-wide box gives it a
+            // width of -20 at the line's own x. So it is hit through
+            // `hitChild` like every other box, against the rectangle
+            // the painter drew it in.
+            if f.kind == FRAG_ATOMIC {
+                Box got = hitChild(f.box, x, y)
+                if got != null { return got }
+                continue
+            }
+            if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
+                // pointer-events: none takes a box out of hit testing so
+                // that what is behind it is found instead.
+                if f.box.style.pointerEvents == PE_NONE { continue }
+                return f.box
+            }
+        }
+    }
+    return null
+}
+
+// One of the painter's three phases, read backwards: latest in document
+// order first, and a box's subtree before the box itself, because both
+// painted later. It is the painter's `paintPhaseWalk` with every
+// "paint" replaced by "answer if it is there", so the two cannot drift.
+Box func hitPhaseWalk(b:Box, x:int, y:int, phase:int) {
+    for int i = b.children.length - 1, i >= 0, i-- {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // Reached through the line that holds it, exactly as the
+        // painter reaches it.
+        if isInlineLevelBox(c) { continue }
+        if docHasPositioned && boxIsPositioned(c) { continue }
+        if docHasFloats && boxIsFloated(c) {
+            if phase != PHASE_FLOATS { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+            continue
+        }
+        if boxPaintsWhole(c) {
+            if phase != PHASE_BLOCKS { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+            continue
+        }
+        if x < c.x || x >= c.x + c.w { continue }
+        if y < c.y || y >= c.y + c.h { continue }
+        Box deep = hitPhaseWalk(c, x, y, phase)
+        if deep != null { return deep }
+        if phase == PHASE_INLINES {
+            Box own = hitLines(c, x, y)
+            if own != null { return own }
+        } else if phase == PHASE_BLOCKS {
+            // pointer-events: none takes a box out of hit testing so
+            // that what is behind it is found instead.
+            if c.style.pointerEvents != PE_NONE { return c }
+        }
+    }
+    return null
+}
+
+// The positioned descendants this box paints at steps 6 and after,
+// topmost first: highest z, and latest in document order within a z.
+Box func hitPositionedIn(b:Box, x:int, y:int) {
+    arr[Box] pos = []
+    collectPositionedIn(b, pos)
+    if pos.length == 0 { return null }
+    int highest = 0
+    for int i = 0, i < pos.length, i++ {
+        if pos[i].style.zIndex > highest { highest = pos[i].style.zIndex }
+    }
+    for int z = highest, z >= 0, z-- {
+        for int i = pos.length - 1, i >= 0, i-- {
+            if pos[i].style.zIndex != z { continue }
+            Box got = hitChild(pos[i], x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
+// The negative ones, which this stacking context painted before any of
+// its own content, so they are the last thing a click can reach.
+Box func hitNegativeIn(b:Box, x:int, y:int) {
+    arr[Box] neg = []
+    collectNegativeZ(b, neg)
+    if neg.length == 0 { return null }
+    int lowest = neg[0].style.zIndex
+    for int i = 1, i < neg.length, i++ {
+        if neg[i].style.zIndex < lowest { lowest = neg[i].style.zIndex }
+    }
+    for int z = 0 - 1, z >= lowest, z-- {
+        for int i = neg.length - 1, i >= 0, i-- {
+            if neg[i].style.zIndex != z { continue }
+            Box got = hitChild(neg[i], x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
 Box func hitTest(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     // Inside a scrolled box the content is drawn that much higher than
@@ -3637,72 +3848,28 @@ Box func hitTest(b:Box, x:int, y:int) {
     if scrolled > 0 { y = y + scrolled }
     int across = boxScrollLeft(b)
     if across > 0 { x = x + across }
-    // Reverse painting order (CSS2 §9.9 read backwards): the positioned
-    // children at zero and above, highest z first and latest first
-    // within a z; then this box's own inline content; then the in-flow
-    // children, latest first; then the negative ones. A document with
-    // no positioned box anywhere skips the first and last passes
-    // entirely and is one loop run backwards.
-    int hiZ = 0
-    int loZ = 0
-    bool anyPos = false
+    // CSS2 §9.9 read backwards: the positioned descendants at zero and
+    // above, highest z first and latest first within a z; then step 5,
+    // the in-flow inline content, deepest and latest first; then step
+    // 4, the floats; then step 3, the block-level boxes; then the
+    // negative ones this stacking context owns.
     if docHasPositioned {
-        for int i = 0, i < b.children.length, i++ {
-            Box c = b.children[i]
-            if !boxIsPositioned(c) { continue }
-            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-            if !anyPos || c.style.zIndex > hiZ { hiZ = c.style.zIndex }
-            if !anyPos || c.style.zIndex < loZ { loZ = c.style.zIndex }
-            anyPos = true
-        }
+        Box over = hitPositionedIn(b, x, y)
+        if over != null { return over }
     }
-    if anyPos {
-        for int z = hiZ, z >= 0, z-- {
-            for int i = b.children.length - 1, i >= 0, i-- {
-                Box c = b.children[i]
-                if !boxIsPositioned(c) || c.style.zIndex != z { continue }
-                Box got = hitChild(c, x, y)
-                if got != null { return got }
-            }
-        }
+    Box deepLine = hitPhaseWalk(b, x, y, PHASE_INLINES)
+    if deepLine != null { return deepLine }
+    Box ownLine = hitLines(b, x, y)
+    if ownLine != null { return ownLine }
+    if docHasFloats {
+        Box floated = hitPhaseWalk(b, x, y, PHASE_FLOATS)
+        if floated != null { return floated }
     }
-    for int i = 0, i < b.lines.length, i++ {
-        Line ln = b.lines[i]
-        if y < ln.y || y >= ln.y + ln.h { continue }
-        for int j = 0, j < ln.frags.length, j++ {
-            Fragment f = ln.frags[j]
-            if f.kind == FRAG_INLINE_BG { continue }
-            if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
-                // pointer-events: none takes a box out of hit testing so
-                // that what is behind it is found instead. Its
-                // descendants are still searched, because a child may
-                // ask for pointer events back.
-                if f.kind == FRAG_ATOMIC {
-                    Box inner = hitTest(f.box, x, y)
-                    if inner != null { return inner }
-                    if f.box.style.pointerEvents != PE_NONE { return f.box }
-                    continue
-                }
-                if f.box.style.pointerEvents == PE_NONE { continue }
-                return f.box
-            }
-        }
-    }
-    for int i = b.children.length - 1, i >= 0, i-- {
-        Box c = b.children[i]
-        if anyPos && boxIsPositioned(c) { continue }
-        Box got = hitChild(c, x, y)
-        if got != null { return got }
-    }
-    if anyPos && loZ < 0 {
-        for int z = 0 - 1, z >= loZ, z-- {
-            for int i = b.children.length - 1, i >= 0, i-- {
-                Box c = b.children[i]
-                if !boxIsPositioned(c) || c.style.zIndex != z { continue }
-                Box got = hitChild(c, x, y)
-                if got != null { return got }
-            }
-        }
+    Box blockLevel = hitPhaseWalk(b, x, y, PHASE_BLOCKS)
+    if blockLevel != null { return blockLevel }
+    if cascadeSawNegativeZ && boxIsStackingContext(b) {
+        Box behind = hitNegativeIn(b, x, y)
+        if behind != null { return behind }
     }
     // Nothing in the tree under this point. A box laid out past every
     // ancestor's rectangle is unreachable by that descent, so the

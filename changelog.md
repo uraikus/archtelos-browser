@@ -5,6 +5,63 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS2 §9.9's steps 3, 4 and 5, separated
+
+The standard paints a box's in-flow content in three steps -- the
+block-level descendants' own decoration, then the non-positioned
+floats, then the inline-level content -- and this painter did all three
+in one walk in document order, with a box's own lines before its
+children. So a float painted among its in-flow siblings instead of
+above them, and inline content painted below the blocks it overlapped.
+Both are now three walks of the subtree, run for every box that paints
+whole, and `hitTest` runs the same three backwards.
+
+**It could not be fixed in the hit tester, and it could not be fixed
+per box.** Painter and hit tester agreed with each other while both
+diverged from the standard, so moving one alone would make a click and
+a pixel disagree -- which is worse. And step 5 is a property of the
+whole subtree rather than of a box's siblings: an anonymous block
+holding nothing but inline content is a block-level descendant, so it
+is step 3 while what is in it is step 5, which is the ordinary shape of
+text beside a float or beside a block. Two attempts that moved one box's
+own lines were reverted for that reason before this one was written.
+
+**A box that paints whole is a phase boundary.** A float takes its
+whole subtree at step 4, and so does a positioned box, a nested
+stacking context, a replaced element, and anything that paints through
+a layer -- `overflow`, paint containment, a `clip-path` -- because a
+layer is built and blitted once rather than three times.
+
+**The cost is two extra walks of the box tree, unconditionally.** The
+float pass is behind `docHasFloats`, but the inline pass cannot be
+behind anything: the second of the two fixtures that measure this has
+no float on it at all. `tests/featurepage.py` grew a float section with
+a probe so that the pass that *can* be skipped is measured rather than
+skipped on the benchmark page.
+
+**And an inline-level box is painted once.** It is step 5 content,
+reached through the line that holds it -- and it is a child box as
+well, so a walk over the children that does not step over it paints the
+whole of it a second time. This painter's did not, and had not since
+the beginning. Nothing showed it while everything was opaque, because
+the same pixels landed on the same pixels; a `border-radius` on an
+inline-block is where it surfaced, its antialiased corner blended
+against itself and so half a shade too solid. The suite asks it of an
+`opacity: 0.5` inline-block against a block of the same colour and
+opacity, which is painted once by any order at all, and requires the
+two to land on the same pixel -- a number nobody has to know in
+advance. It is why the two binaries do not render the benchmark page
+identically, which benchmarks.md records beside the timing.
+
+**An atomic inline is now hit through its own box.** The fragment a
+line holds for one is the *margin* box, so `margin-left: -80px` on a
+60-wide inline-block gives the fragment a width of **-20** at the
+line's own x while the box itself sits 80 pixels to the left. The
+painter always drew it from the box; hit testing read the fragment, so
+the click landed nowhere near the pixels. It goes through the same
+`hitChild` as every other box now, which takes it through the inverse
+transform as well.
+
 ### `@counter-style` takes a `range` and a `fallback`
 
 Counter Styles 3's two remaining descriptors this engine can act on.

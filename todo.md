@@ -195,39 +195,26 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rather than on effort: the canvas has no call that takes a matrix (FINDINGS.md,
    finding 33, festina.md §3n).
 
-   **What is left of hit testing is §9.9's steps 3, 4 and 5, and it is
-   not a hit-testing job.** An out-of-flow box laid out beyond every
-   ancestor's rectangle is found -- the out-of-flow boxes are kept in a
-   list as layout passes them, and the search falls back to it once the
-   ordinary descent has come back empty. The descent runs in reverse
-   painting order -- the positioned children at zero and above, highest
-   `z-index` first and latest first within a z; then this box's own
-   inline content; then the in-flow children, latest first; then the
-   negative ones -- and the out-of-flow fallback runs the same way, so
-   the topmost box takes the click rather than the first one found.
+   **Hit testing reads the painter's order backwards, step by step.**
+   An out-of-flow box laid out beyond every ancestor's rectangle is
+   found -- the out-of-flow boxes are kept in a list as layout passes
+   them, and the search falls back to it once the ordinary descent has
+   come back empty. The descent runs the painter's passes in reverse:
+   the positioned descendants at zero and above, highest `z-index`
+   first and latest first within a z; then step 5, the in-flow inline
+   content; then step 4, the floats; then step 3, the block-level
+   boxes; then the negative ones. Each of those is `hitPhaseWalk`,
+   which is `paintPhaseWalk` with every "paint" replaced by "answer if
+   it is there", so a click and a pixel cannot drift apart.
 
-   What the standard separates and this does not is steps 3, 4 and 5:
-   the in-flow **block-level** descendants, then the **floats**, then
-   the in-flow **inline-level** descendants. Here the painter draws a
-   box's own lines and then its children in document order, so a float
-   paints among its in-flow siblings rather than above them, and a
-   box's own inline content paints below its block children rather than
-   above them. Hit testing reads that same order backwards, so a click
-   and a pixel agree with each other and diverge from the standard
-   together -- which is the one redeeming thing about it, and the
-   reason this cannot be fixed in the hit tester alone.
-
-   **An attempt that was reverted is worth recording.** Giving floats
-   their own pass in `hitTest`, between the inline-content pass and the
-   in-flow one, fixes the case that discriminates -- a float against a
-   block written after it -- and breaks the case above it, because the
-   inline content that should beat the float lives in an *anonymous
-   block child* rather than in this box's own lines. Step 5 is a
-   property of the whole subtree, not of a box's siblings, so the
-   faithful form is three walks of the subtree per stacking context, in
-   the painter first and in the hit tester to match. That is the shape
-   of the work, and it has a cost question of its own: most pages have
-   a float.
+   **What is left is the outline, which paints with its box rather
+   than at step 10.** The standard paints every outline in a stacking
+   context after everything else in it, so an outline draws over a
+   later sibling that overlaps it. Here an outline is part of what
+   `paintBoxSelf` draws, which is step 3 for an in-flow block, so a
+   later sibling covers it. Nothing measures it yet: it wants a
+   Chromium probe of an outline against an overlapping sibling before
+   it is worth a fourth walk.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does
@@ -1566,49 +1553,6 @@ of line 1 and stretched it. The forward direction is done; this one
 renumbers every line and moves every item already placed, so it is
 left.
 
-### Separating §9.9's steps 3, 4 and 5: what it would take
-
-This is the largest thing left in the engine's painting, and it is a
-project rather than a step. Both halves are measured -- in clicks below
-and in pixels above -- and two attempts have been made and reverted, so
-what follows is the design rather than another attempt.
-
-**Why the hit tester cannot be fixed alone.** The painter draws a box's
-own lines and then its children in document order; hit testing reads
-that backwards. Change one and a click and a pixel disagree, which is
-worse than both being wrong together.
-
-**Why a per-box reordering is not enough either.** Step 5 is a property
-of the whole subtree. An anonymous block holding nothing but inline
-content is a block-level descendant, so it is step 3, while its content
-is step 5 -- and that is the ordinary shape of text beside a float or
-beside a block. Both failing cases above have their inline content one
-generation down, so painting a box's own lines after its own children
-fixes neither.
-
-**What it needs.** Per stacking context, three walks of the subtree,
-each stopping at nested stacking contexts and positioned boxes:
-
-1. the in-flow block-level descendants -- each box's background,
-   border, border image, shadows, outline, but **not** its lines
-2. the non-positioned floats, each painted whole
-3. every box's lines
-
-`paintBoxInner` is nearly split that way already: everything above its
-`paintLines` call is the decorations and everything below is the
-contents. What resists is the rest: `paintClipped` paints a whole
-subtree into a layer for `overflow: hidden` and paint containment, so a
-clipping box has to become a phase boundary of its own; and the early
-returns for an image, an audio control and an iframe are contents
-reached from inside the decorations.
-
-**And the cost is not avoidable by a flag.** The float half could hide
-behind `docHasFloats`, but the inline half cannot -- the second
-measurement above has no float on the page at all. So every page pays
-two extra walks of the box tree, and neither benchmark page has a float
-on it, so `tests/featurepage.py` needs one with a probe before the
-measurement means anything.
-
 ### Counter Styles 3's `range` and `fallback`, measured
 
 `@counter-style` here parses `system`, `symbols`, `suffix`, `prefix`,
@@ -1693,36 +1637,36 @@ row above is 46 tall at 40px, the same as the normal run beside it.
 ### What §9.9's steps 3, 4 and 5 look like in pixels
 
 The hit-testing table below says which box a *click* lands on. This is
-the same divergence read off the screen, with `tests/chromium.py pixels`
-against this engine's own `--screenshot`, every rectangle checked with
-`getBoundingClientRect` before a row was read.
+the same order read off the screen, with `tests/chromium.py pixels`,
+every rectangle checked with `getBoundingClientRect` before a row was
+read. Both fixtures are in `tests/render/stacking.f`, which asserts the
+pixels and the click at the same four points.
 
 **A float against a later in-flow block.** A 100x100 blue float, a
 100-tall red block after it, and a 60x60 green inline-block pulled over
 both. At row 60, across 300 pixels:
 
-| | blue (float, step 4) | green (inline, step 5) | red (block, step 3) |
-|---|---|---|---|
-| Chromium | 0-19 and 80-99 | 20-79 | 100-299 |
-| this engine | **nowhere** | 20-79 | 0-299 |
+| blue (float, step 4) | green (inline, step 5) | red (block, step 3) |
+|---|---|---|
+| 0-19 and 80-99 | 20-79 | 100-299 |
 
-The float is not merely under the inline content; it is under the
-block, so it disappears entirely.
+The float is above the block written after it and below the inline
+content pulled over it, which is the whole of steps 3, 4 and 5 in one
+row of pixels.
 
 **And it is not only about floats.** A 100x60 green inline-block and a
 red block after it with `margin-top: -40px`, no float anywhere:
 
-| | green (step 5) | red (step 3) |
-|---|---|---|
-| Chromium | 0-99 | 100-299 |
-| this engine | **nowhere** | 0-299 |
+| green (step 5) | red (step 3) |
+|---|---|
+| 0-99 | 100-299 |
 
-So `paintLines` running before a box's children is a divergence in its
-own right, on any page where inline content and a block overlap. **A
-`docHasFloats` guard would not be an honest one**, and neither
-benchmark page has a float on it at all -- so a guarded change would
-read free while the benchmark saw nothing, which is the shape this file
-records three times already.
+So step 5 is not only about floats: it is every page where inline
+content and a block overlap. **A `docHasFloats` guard would not be an
+honest one**, because this second fixture has no float on it at all --
+which is why the two extra walks of the box tree are unconditional and
+`tests/featurepage.py` now puts a float on the benchmark page so that
+step 4's walk is measured rather than skipped.
 
 ### Where a float sits in the hit-testing order, measured
 
@@ -1742,8 +1686,9 @@ was asked for:
 
 The first is the one that discriminates: the block comes later in
 document order, so a search running the in-flow children latest-first
--- which is what this engine does, floats among them -- answers the
-block where Chromium answers the float.
+with the floats among them answers the block. Giving the floats a pass
+of their own, between step 5's and step 3's, is what makes it answer
+the float.
 
 **Two fixtures had to be thrown away for overlapping nothing.** A float
 written after inline content on the same line shortens that line and is

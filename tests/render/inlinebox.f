@@ -305,4 +305,30 @@ scanInk(56)
 checkEqInt(inkFirst - sliceL2First, 10,
            'a continuation is pushed across by the opening edge clone gives it')
 
+// ---- an inline-level box is painted once -------------------------------
+//
+// An in-flow inline-level box is CSS2 §9.9's step 5, reached through
+// the line that holds it. It is also a child box, so a walk over the
+// children that does not step over it paints the whole of it a second
+// time. Nothing shows that while everything is opaque: the same pixels
+// land on the same pixels. An `opacity` below 1 is what makes it
+// visible, because a half-transparent box over itself is three
+// quarters rather than a half.
+//
+// The number is not written down. The inline-block is asked for beside
+// a *block* of the same colour at the same opacity, which is painted
+// once by any order at all, and the two must land on the same pixel.
+Page pop = pageFromHtml('<!doctype html><head><style>body{margin:0}'
+    + '#wrap{background:#ffffff;line-height:0}'
+    + '.half{opacity:0.5;background:#0000ff;width:60px;height:40px}'
+    + '#ib{display:inline-block}'
+    + '</style><body><div id="wrap"><span id="ib" class="half"></span></div>'
+    + '<div id="bl" class="half"></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(pop, 0, 0, 300)
+color ibPixel = getPixelColor(30, 20)
+color blPixel = getPixelColor(30, 60)
+check(ibPixel == blPixel,
+      'a half-transparent inline-block is painted once, as a block is')
+
 finish('inline box')

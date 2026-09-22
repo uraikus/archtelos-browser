@@ -93,4 +93,86 @@ paintPage(pz, 0, 0, 400)
 check(getPixelColor(30, 30) == magenta,
       'a later z-index: auto box paints over an earlier z-index: 0 one')
 
+// ---- §9.9's steps 3, 4 and 5 -------------------------------------------
+//
+// The three in-flow steps are separate: the block-level descendants'
+// own decoration at step 3, the non-positioned floats at step 4, and
+// the inline-level content at step 5 -- so a float paints over a block
+// written after it, and inline content paints over both.
+//
+// Chromium's row 60 of the fixture below, read with
+// `tests/chromium.py pixels` at 300x300 and every rectangle checked
+// with `getBoundingClientRect` first (todo.md):
+//
+//   0-19 blue (the float)      20-79 green (the inline-block)
+//   80-99 blue                 100-299 red (the block written after it)
+
+color red = '#ff0000'
+
+text floatOrderBody = '<div id="f"></div><div id="r"></div>'
+    + '<div id="w"><span id="i"></span></div>'
+Page pfo = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:300px}'
+    + '#f{float:left;width:100px;height:100px;background:#0088ff}'
+    + '#r{height:100px;background:#ff0000}'
+    + '#w{margin-top:-60px}'
+    + '#i{display:inline-block;width:60px;height:60px;background:#00ff00;'
+    + 'margin-left:-80px}'
+    + '</style><body>' + floatOrderBody + '</body>', 'test.html', 400)
+clearCanvas()
+paintPage(pfo, 0, 0, 400)
+check(getPixelColor(10, 60) == blue, 'a float paints over a block written after it')
+check(getPixelColor(90, 60) == blue, 'on the far side of the float as well')
+check(getPixelColor(50, 60) == green, 'and under the in-flow inline content')
+check(getPixelColor(150, 60) == red, 'the block shows where nothing covers it')
+
+// What a pixel says is on top and what a click lands on are two ways of
+// saying the same thing, and this change moves both -- so they are
+// asked of the same four points rather than each against a number.
+Box hitFloat = hitTest(pfo.root, 10, 60)
+check(hitFloat != null && getAttr(hitFloat.node, 'id') == 'f',
+      'the click at 10,60 lands where the pixel is the float')
+Box hitFloatFar = hitTest(pfo.root, 90, 60)
+check(hitFloatFar != null && getAttr(hitFloatFar.node, 'id') == 'f',
+      'and at 90,60 the same way')
+Box hitInline = hitTest(pfo.root, 50, 60)
+check(hitInline != null && getAttr(hitInline.node, 'id') == 'i',
+      'the click at 50,60 lands where the pixel is the inline-block')
+// Away from the float the two part company, and Chromium says they
+// should: at 150,60 the pixel is the earlier block's red because the
+// later block has no background, while `elementFromPoint` names the
+// later block -- hit testing is about the box, not the ink in it. At
+// 150,20 only the earlier block is there and both name it.
+Box hitLater = hitTest(pfo.root, 150, 60)
+check(hitLater != null && getAttr(hitLater.node, 'id') == 'w',
+      'a later in-flow block takes the click where it has no ink')
+Box hitBlock = hitTest(pfo.root, 150, 20)
+check(hitBlock != null && getAttr(hitBlock.node, 'id') == 'r',
+      'and at 150,20 the block below it does')
+
+// It is not only about floats. A 100x60 inline-block and a block after
+// it pulled over it by a negative margin, no float anywhere: Chromium
+// gives green 0-99 and red 100-299 at row 30.
+Page pio = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:300px;line-height:0}'
+    + '#i{display:inline-block;width:100px;height:60px;background:#00ff00}'
+    + '#r{height:100px;background:#ff0000;margin-top:-40px}'
+    + '</style><body><div id="wr"><span id="i"></span></div>'
+    + '<div id="r"></div></body>',
+    'test.html', 400)
+clearCanvas()
+paintPage(pio, 0, 0, 400)
+check(getPixelColor(50, 30) == green, 'inline content paints over a block that overlaps it')
+check(getPixelColor(150, 30) == red, 'and the block shows beside it')
+Box hitOverlap = hitTest(pio.root, 50, 30)
+check(hitOverlap != null && getAttr(hitOverlap.node, 'id') == 'i',
+      'the click agrees with the pixel there too')
+Box hitBeside = hitTest(pio.root, 150, 30)
+check(hitBeside != null && getAttr(hitBeside.node, 'id') == 'r',
+      'and beside it')
+Box hitAbove = hitTest(pio.root, 150, 10)
+check(hitAbove != null && getAttr(hitAbove.node, 'id') == 'wr',
+      'and above it the wrapper the inline content sits in')
+
+
 finish('stacking')

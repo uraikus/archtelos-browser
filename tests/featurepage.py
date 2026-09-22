@@ -96,6 +96,20 @@ SMALLCAPS_CSS = """
 .caps{font-variant-caps:small-caps;letter-spacing:0}
 """
 
+# CSS2 §9.9 paints a non-positioned float at step 4, between the in-flow
+# block-level descendants and the in-flow inline content, so a page with
+# a float on it walks its box tree once more than a page without one.
+# The float is given enough text beside it to be taller than it is, so
+# it stays inside its own container and nothing after it paints over
+# where it is -- the paint order moves, the pixels do not, which is what
+# a paired benchmark of this needs.
+FLOAT_CSS = """
+.flow{margin:8px 0}
+.flow .fl{float:left;width:90px;height:60px;background:#dfe6ee;
+          border:1px solid #ccd;margin:0 10px 6px 0}
+.flow p{margin:0 0 4px 0}
+"""
+
 ZSTACK_CSS = """
 .zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
 .zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
@@ -136,7 +150,7 @@ th{background:#dde}
 # generated counters become no generated content at all, `object-fit`
 # goes back to its initial value and the form controls stop being
 # painted as form controls.
-FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS + SMALLCAPS_CSS
+FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS + SMALLCAPS_CSS + FLOAT_CSS
 
 PLAIN_CSS = FEATURES_CSS + """
 h2::before{content:none}
@@ -149,6 +163,7 @@ img{object-fit:fill;object-position:0 0}
 .cols{column-count:1}
 .steps li::before{content:none}
 .controls input{appearance:none;field-sizing:fixed}
+.flow .fl{float:none}
 """
 
 # One rule per feature, each turning that feature off, and the whole
@@ -182,6 +197,11 @@ PROBES = (
     # Setting it to zero puts them back apart, which moves every box
     # below them and so the whole page.
     ('negative-margin', '.pull2{margin-top:0}'),
+    # A float paints at step 4, above the in-flow blocks and below the
+    # in-flow inline content, and a page with one on it walks its box
+    # tree a third time. Taking the float away reflows the text that
+    # was beside it, so a page without one cannot tell the two apart.
+    ('float', '.flow .fl{float:none}'),
     ('object-fit', 'img{object-fit:fill}'),
     ('object-position', 'img{object-position:0 0}'),
     ('images', 'img{display:none}'),
@@ -235,6 +255,8 @@ def body():
                     'behind and in front</div>')
         rows.append('<div class="pull1">pulled</div>'
                     '<div class="pull2">up over it</div>')
+        rows.append('<div class="flow"><div class="fl"></div><p>%s</p>'
+                    '<p>%s</p></div>' % (paragraph(s + 2, 20), paragraph(s + 5, 18)))
         rows.append('<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>')
         for i in range(6):
             rows.append('<tr><td>row %d.%d</td><td>kind %d</td><td>%d</td></tr>'
