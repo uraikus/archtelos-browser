@@ -750,6 +750,75 @@ not restated from it. The paired run is the comparison that holds: the
 parent and the candidate were built and run in the same minutes, and
 they read the same.
 
+## What `print-color-adjust` cost, and the control that unmasked it
+
+2026-09-22, same machine and script. The property reaches a page
+through one door: `printsBackground`, which `paintBoxInner` asks once
+per box and which returns true without reading anything whenever
+`printOmitBackgrounds` is false -- every render but a
+`--no-background-graphics` print. The cascade's applier is behind
+`cascadeSawPrintColorAdjust`, and neither benchmark page says the
+property, so the expected cost is nothing.
+
+| generated.html | forward, parent first | reversed, candidate first |
+|---|---|---|
+| parse | +0, 6 of 25 | +0, 11 of 25 |
+| cascade | -1, 7 of 25 | +0, 8 of 25 |
+| layout | **+1**, 15 of 25 | **-1**, 4 of 25 |
+| paint | +0, 12 of 25 | +0, 8 of 25 |
+
+Those two layout readings do **not** cancel. A forward +1 against a
+reversed -1 says the candidate is a millisecond slower in layout
+whichever order it runs in, which is this file's strongest shape for a
+real cost -- and the diff does not touch `src/layout/` at all, so the
+rule's instruction to take the question to the code had nowhere to take
+it.
+
+**Two controls, and the second one answered it.** The same binary
+paired against a copy of itself reads a median of 0 in every phase, so
+the harness is not inventing the millisecond; the mean of -1.64 on
+layout is the order effect this file already knows about, whichever
+binary runs second reading faster here.
+
+The second control is the new one. The **parent plus dead code** -- the
+four globals and the one reader function of this change appended to
+`src/css/style.f` under different names, called from nowhere, compiled
+in and never executed:
+
+| generated.html | parent -> parent + dead code |
+|---|---|
+| parse | +0, 6 of 25 |
+| cascade | +0, 9 of 25 |
+| layout | **+1** (mean +1.20), 16 of 25 |
+| paint | +0, 7 of 25 |
+
+Dead code cannot run, so that millisecond is **where the compiler put
+the machine code**, not work anyone asked for. It is the candidate's
+forward reading to the digit -- +1 of layout, 15 and 16 of 25 -- and it
+belongs to the binary having grown, not to the feature.
+
+**Paired against that control, the feature reads zero.** Both binaries
+then carry the same growth and differ only by the live code:
+
+| | pad -> new | new -> pad |
+|---|---|---|
+| `generated.html` cascade | +0, 7 of 25 | +0, 9 of 25 |
+| `generated.html` layout | +0, 8 of 25 | +0, 11 of 25 |
+| `generated.html` paint | +0, 9 of 25 | +0, 7 of 25 |
+| `features.html` cascade | +0, 5 of 25 | +1, 13 of 25 |
+| `features.html` layout | -1, 9 of 25 | +1, 13 of 25 |
+| `features.html` paint | +0, 7 of 25 | +0, 5 of 25 |
+
+Every `generated.html` median is 0 in both directions, and every
+`features.html` pair adds to zero. The feature costs the pages that do
+not use it nothing.
+
+The lesson is that **a paired reading can survive its own mirror image
+and still not be a cost**. Adding code moves code, and on a phase the
+diff never touches that is the only mechanism left; the control that
+separates the two is a binary that grows by the same amount and does
+nothing with it.
+
 ## What ruby cost the pages with no ruby in them
 
 2026-09-21, same machine and script. Ruby adds one comparison to

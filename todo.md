@@ -1548,17 +1548,18 @@ to omit backgrounds, and `exact` overrides that decision.** `economy`
 grants a permission and is indistinguishable from the initial value;
 `exact` withdraws it. A renderer that always prints backgrounds cannot
 tell the two apart, which is why the CLI could not, and why this engine
-cannot either as it stands -- `--print` paints every background there is.
+could not before it had a way to omit one.
 
-**What that implies for the implementation.** Storing the keyword and
-stopping there is `outline-style` again: the instrument would score it
-and no pixel would move. Giving it something to be about means giving
-`--print` the omission the property overrides, which is a switch this
-engine does not have. The default stays as it is, because a `--print`
-that silently stopped printing backgrounds would be a behaviour change
-nothing asked for; the switch is opt-in, and `exact` is what puts a
-background back on the page under it. That is Chromium's own model with
-the flag named differently.
+**What that implied for the implementation.** Storing the keyword and
+stopping there would have been `outline-style` again: the instrument
+scores it and no pixel moves. Giving it something to be about meant
+giving `--print` the omission the property overrides, so
+`--no-background-graphics` is that switch, named after the print
+dialog's own setting. It is off by default, because a `--print` that
+silently stopped printing backgrounds would be a behaviour change
+nothing asked for; under it a background is drawn only where the
+computed value is `exact`. That is Chromium's own model with the flag
+named differently.
 
 ### A scroll offset outlives the document it belongs to
 

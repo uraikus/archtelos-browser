@@ -247,6 +247,19 @@ That is also what caught the one real cost beside it — a forward +1
 against a reversed 0 is an order effect *plus* a millisecond, and a
 third binary then pinned the millisecond to one loop.
 
+**A cost that survives its mirror image may still be the compiler
+moving code.** `print-color-adjust` read +1 of layout forward and -1
+reversed -- the shape this file calls strongest for a real cost -- on a
+diff with no line in `src/layout/` at all, so the instruction to take
+the question to the code had nowhere to take it. The parent recompiled
+with the change's globals and reader function appended under different
+names, **called from nowhere**, read the same +1. Dead code cannot run,
+so the millisecond was where the compiler put the machine code, not
+work. When a paired reading lands on a phase the diff does not touch,
+that is the control to build: a binary that grows by the same amount
+and does nothing with it, and then the candidate paired against *that*
+rather than against the parent.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.
