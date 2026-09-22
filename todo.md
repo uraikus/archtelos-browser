@@ -1561,6 +1561,49 @@ of line 1 and stretched it. The forward direction is done; this one
 renumbers every line and moves every item already placed, so it is
 left.
 
+### Separating §9.9's steps 3, 4 and 5: what it would take
+
+This is the largest thing left in the engine's painting, and it is a
+project rather than a step. Both halves are measured -- in clicks below
+and in pixels above -- and two attempts have been made and reverted, so
+what follows is the design rather than another attempt.
+
+**Why the hit tester cannot be fixed alone.** The painter draws a box's
+own lines and then its children in document order; hit testing reads
+that backwards. Change one and a click and a pixel disagree, which is
+worse than both being wrong together.
+
+**Why a per-box reordering is not enough either.** Step 5 is a property
+of the whole subtree. An anonymous block holding nothing but inline
+content is a block-level descendant, so it is step 3, while its content
+is step 5 -- and that is the ordinary shape of text beside a float or
+beside a block. Both failing cases above have their inline content one
+generation down, so painting a box's own lines after its own children
+fixes neither.
+
+**What it needs.** Per stacking context, three walks of the subtree,
+each stopping at nested stacking contexts and positioned boxes:
+
+1. the in-flow block-level descendants -- each box's background,
+   border, border image, shadows, outline, but **not** its lines
+2. the non-positioned floats, each painted whole
+3. every box's lines
+
+`paintBoxInner` is nearly split that way already: everything above its
+`paintLines` call is the decorations and everything below is the
+contents. What resists is the rest: `paintClipped` paints a whole
+subtree into a layer for `overflow: hidden` and paint containment, so a
+clipping box has to become a phase boundary of its own; and the early
+returns for an image, an audio control and an iframe are contents
+reached from inside the decorations.
+
+**And the cost is not avoidable by a flag.** The float half could hide
+behind `docHasFloats`, but the inline half cannot -- the second
+measurement above has no float on the page at all. So every page pays
+two extra walks of the box tree, and neither benchmark page has a float
+on it, so `tests/featurepage.py` needs one with a probe before the
+measurement means anything.
+
 ### What §9.9's steps 3, 4 and 5 look like in pixels
 
 The hit-testing table below says which box a *click* lands on. This is
