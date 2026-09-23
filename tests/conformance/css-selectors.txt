@@ -3,9 +3,11 @@
 # implemented when it matches exactly the elements Chromium matches --
 # not merely when it parses.
 #
-# The list is Selectors 3's own feature set plus the parts of Selectors
-# 4 the snapshot's lowest class mentions, so the count says what is left
-# rather than only what works. It may not go down (CLAUDE.md §2).
+# The list is Selectors 3's own feature set plus every part of
+# Selectors 4 this fixture can grade without being changed, so the count
+# says what is left rather than only what works. The number that passes
+# may not go down (CLAUDE.md §2); adding a row that fails is how the
+# denominator grows, and is the point.
 #
 # A selector that matches nothing in the fixture proves nothing: an
 # engine that drops it agrees with one that implements it. Every
@@ -87,3 +89,42 @@ li:not(:first-child)
 div:has(.lead)
 li:not(:first-child, :last-child)
 [data-kind="ALPHA" i]
+
+# --- Selectors 4: the link and form-state pseudo-classes
+:any-link
+a:any-link
+input:read-write
+p:read-only
+input:optional
+input:default
+option:default
+input:valid
+
+# --- Selectors 4: :dir()
+p:dir(ltr)
+
+# --- Selectors 4: a complex selector inside :is(), :where(), :not()
+# and :has(). Each takes a <complex-selector-list> in §3.1, not a
+# compound, and :has() takes a relative selector -- so a leading
+# combinator in it names a child or a sibling rather than a descendant.
+:is(div > p)
+:where(div > p)
+p:not(div > p)
+:is(h2):is(#h1)
+:not(:not(p))
+div:has(> p)
+div:has(+ div)
+p:has(+ p)
+div:not(:has(p))
+
+# --- Selectors 4: :nth-child()'s `of S` clause, which filters which
+# siblings are counted before An+B is applied to them
+p:nth-child(2 of .lead)
+:nth-child(1 of p)
+li:nth-child(even of :not(.x))
+
+# --- Selectors 4: combinations the list did not otherwise reach
+*|p
+:root > body
+:checked + input
+input:enabled:checked

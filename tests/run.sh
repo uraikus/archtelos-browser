@@ -95,7 +95,7 @@ fi
 # fixture document. The expectations are checked in; when Chromium is
 # present they are regenerated first, so a selector whose meaning this
 # project got wrong cannot be frozen into the file it is graded against.
-SELECTORS_MIN=61
+SELECTORS_MIN=70
 if [ -n "$(python3 tests/chromium.py which 2>/dev/null)" ]; then
     python3 tests/chromium.py selectors tests/fixtures/selectors.html \
         tests/conformance/css-selectors.txt > "$BUILD/chromium-selectors.txt" 2>/dev/null \

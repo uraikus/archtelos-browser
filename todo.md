@@ -2450,8 +2450,8 @@ properties the instrument can grade change what this engine renders
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
-`tests/conformance/selectors.f` how many of 61 selectors match the same
-elements as Chromium (61). Most entries in the work above should move
+`tests/conformance/selectors.f` how many of 86 selectors match the same
+elements as Chromium (70). Most entries in the work above should move
 the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed

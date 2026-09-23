@@ -59,3 +59,28 @@ li:not(:first-child)	l2 l3 l4 l5 l6
 div:has(.lead)	d1
 li:not(:first-child, :last-child)	l2 l3 l4 l5
 [data-kind="ALPHA" i]	d1
+:any-link	a1
+a:any-link	a1
+input:read-write	i1
+p:read-only	p1 p2 p3 p4 p5 p6 p7 p8 p9
+input:optional	i1 i2 i3 i4
+input:default	i3
+option:default	o1
+input:valid	i1 i3 i4
+p:dir(ltr)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+:is(div > p)	p1 p2 p3 p4 p5 p6 p7
+:where(div > p)	p1 p2 p3 p4 p5 p6 p7
+p:not(div > p)	p8 p9
+:is(h2):is(#h1)	h1
+:not(:not(p))	p1 p2 p3 p4 p5 p6 p7 p8 p9
+div:has(> p)	d1 d2 d3
+div:has(+ div)	d1 d2 d3
+p:has(+ p)	p1 p2 p6 p8
+div:not(:has(p))	d4 d5
+p:nth-child(2 of .lead)	p3
+:nth-child(1 of p)	p1 p5 p6 p8
+li:nth-child(even of :not(.x))	l2 l4 l6
+*|p	p1 p2 p3 p4 p5 p6 p7 p8 p9
+:root > body	body
+:checked + input	i4
+input:enabled:checked	i3
