@@ -1608,7 +1608,7 @@ Before this engine derived the inner curve it drew the second, which
 left eleven pixels of the page showing between the border and the
 background.
 
-### A background image is not cut to the border-radius, measured
+### Where a background image's curve comes from, and what still differs
 
 A 120x120 box with `border-radius: 40px` on a green page, painted twice:
 once with `background-color: #ff0000` and once with
@@ -1616,22 +1616,38 @@ once with `background-color: #ff0000` and once with
 `background-size: 100% 100%`. Read with `tests/chromium.py pixels` at
 200x200:
 
-| row | Chromium, colour | Chromium, image | this engine, colour | this engine, image |
-|---|---|---|---|---|
-| 4 | green to 20, red from 23 | the same | green to 19, red from 23 | red from 0 |
-| 20 | green to 4, red from 6 | the same | green to 3, red from 6 | red from 0 |
+| row | Chromium, colour | Chromium, image |
+|---|---|---|
+| 4 | green to 20, red from 23 | the same |
+| 20 | green to 4, red from 6 | the same |
 
 **Chromium's two renders are byte-identical**, which is what makes the
-test number-free: the same box painted with an image has to land on the
-same pixels as the same box painted with the colour, and neither answer
-has to be known in advance. Here the colour is cut to the curve and the
-image is a rectangle, so the corner the page should show through is
-painted over.
+test number-free: the same box painted with an image has to land where
+the same box painted with the colour does, and neither answer has to be
+known in advance. Before the image was cut to the curve it was painted
+as a rectangle from x=0 on every row, which that comparison catches at
+44 rows out of 130.
 
-With `background-clip: padding-box` and a border wide enough to cover
-the difference it looks right, which is why it survived: the image's
-square corner sticks out past the padding box's curve and the border
-paints over it. Take the border away and the rectangle is back.
+**This engine's two cannot be byte-identical, and the difference is
+worth knowing.** The colour is filled through the canvas's own path,
+which draws a corner as a *bezier* and antialiases it; an image is
+painted into a layer and blitted back a row at a time, cut to the
+*ellipse* itself. The two agree to a pixel through the body of the
+curve and part company where it runs flattest:
+
+| row | bezier (the colour) | ellipse (the image) | Chromium |
+|---|---|---|---|
+| 0 | 31 | 34 | |
+| 4 | 20 | 22 | 21 |
+
+At row 4 the ellipse's own arithmetic is
+`40 - 40*sqrt(1 - (35.5/40)^2)`, which is 21.6. So the two answers
+straddle Chromium's rather than one of them being wrong, and the check
+allows three pixels on the five rows nearest each tangent and one
+everywhere else. Closing it means giving the bezier up on the canvas
+path, or antialiasing the span on the layer -- and the layer has no
+path API to do it with (FINDINGS.md, "an image is a drawable surface
+with a smaller API").
 
 ### Where an inset shadow's curve comes from, measured
 

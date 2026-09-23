@@ -1342,6 +1342,104 @@ BgLayer bgPaint
 // the second image of a cross-fade, so nothing else pays for it.
 float bgFadeAlpha = 1.0
 
+// The curve of the painting area the current layer is clipped to
+// (Backgrounds and Borders 3 Sec 3.5). A box with no `border-radius`
+// leaves `bgClipRound` false and its image is blitted back whole, so a
+// page of square boxes pays one field read per layer painted.
+bool bgClipRound = false
+int bgClipRTLX = 0
+int bgClipRTLY = 0
+int bgClipRTRX = 0
+int bgClipRTRY = 0
+int bgClipRBRX = 0
+int bgClipRBRY = 0
+int bgClipRBLX = 0
+int bgClipRBLY = 0
+
+// The eight radii of the area `clip` names, and whether any of them
+// curves. The border box keeps its own; the padding and content boxes
+// reduce it by what lies outside them, which is the rule the colour
+// applies too -- `paintBackground` works the same two cases out inline,
+// and the render suite requires the two to land on the same pixel.
+bool func backgroundClipRadii(clip:int, s:Style, w:int, h:int,
+                              bl:int, bt:int, br:int, bb:int,
+                              pl:int, pt:int, pr:int, pb:int) {
+    if s.borderRadius <= 0 { return false }
+    if clip == BGCLIP_BORDER {
+        resolveCornerRadii(s, w, h)
+        bgClipRTLX = radTLX  bgClipRTLY = radTLY
+        bgClipRTRX = radTRX  bgClipRTRY = radTRY
+        bgClipRBRX = radBRX  bgClipRBRY = radBRY
+        bgClipRBLX = radBLX  bgClipRBLY = radBLY
+        return radTLX > 0 || radTLY > 0 || radTRX > 0 || radTRY > 0
+            || radBRX > 0 || radBRY > 0 || radBLX > 0 || radBLY > 0
+    }
+    int dl = bl
+    int dt = bt
+    int dr = br
+    int db = bb
+    if clip == BGCLIP_CONTENT {
+        dl = bl + pl
+        dt = bt + pt
+        dr = br + pr
+        db = bb + pb
+    }
+    if !insetShapeRadii(s, w, h, dl, dt, dr, db) { return false }
+    bgClipRTLX = inRadTLX  bgClipRTLY = inRadTLY
+    bgClipRTRX = inRadTRX  bgClipRTRY = inRadTRY
+    bgClipRBRX = inRadBRX  bgClipRBRY = inRadBRY
+    bgClipRBLX = inRadBLX  bgClipRBLY = inRadBLY
+    return true
+}
+
+// Blits a layer back cut to that curve, a row at a time, because the
+// canvas has no clip region (FINDINGS.md, "an image is a drawable
+// surface with a smaller API"). The span function is the one the
+// shadows and the clipped colour ask for, so a background image and a
+// background colour cannot disagree about where the corner is.
+void func pDrawImageRounded(layer:img, x:int, y:int, w:int, h:int) {
+    int capX = Math.floorDiv(w, 2)
+    int capY = Math.floorDiv(h, 2)
+    int ax = minInt(bgClipRTLX, capX)
+    int ay = minInt(bgClipRTLY, capY)
+    int bx = minInt(bgClipRTRX, capX)
+    int by = minInt(bgClipRTRY, capY)
+    int cx = minInt(bgClipRBRX, capX)
+    int cy = minInt(bgClipRBRY, capY)
+    int dx = minInt(bgClipRBLX, capX)
+    int dy = minInt(bgClipRBLY, capY)
+    // The rows a corner does not reach span the whole width, and they
+    // are most of a box: a 6px radius on a 200px card leaves twelve
+    // rows curved and 188 straight. Those go back as ONE region rather
+    // than 188. It is worth two of the nine milliseconds the cut cost
+    // before it and no pixel, and no more than that, because the price
+    // is the copying rather than the number of regions: a blit has no
+    // source rectangle here, so the box's pixels go through twice
+    // whatever shape they are cut into. benchmarks.md has the reading.
+    int runFrom = 0 - 1
+    for int j = 0, j < h, j++ {
+        shadowSpanAt(j.toFloat() + 0.5, w, h, ax, ay, bx, by, cx, cy, dx, dy)
+        int lo = roundPx(shadowSpanLo)
+        int hi = roundPx(shadowSpanHi)
+        if lo <= 0 && hi >= w {
+            if runFrom < 0 { runFrom = j }
+            continue
+        }
+        if runFrom >= 0 {
+            img band = cutRegion(layer, 0, runFrom, w, j - runFrom)
+            if band != null { pDrawImage(band, x, y + runFrom) }
+            runFrom = 0 - 1
+        }
+        if hi <= lo { continue }
+        img piece = cutRegion(layer, lo, j, hi - lo, 1)
+        if piece != null { pDrawImage(piece, x + lo, y + j) }
+    }
+    if runFrom >= 0 {
+        img band = cutRegion(layer, 0, runFrom, w, h - runFrom)
+        if band != null { pDrawImage(band, x, y + runFrom) }
+    }
+}
+
 void func bgLayerOfStyle(s:Style) {
     bgPaint.url = s.backgroundUrl
     if anyCrossFade {
@@ -1397,6 +1495,11 @@ void func paintBackgroundLayer(x:int, y:int, w:int, h:int,
         clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
         if clipW <= 0 || clipH <= 0 { return }
     }
+    // The painting area curves when the box does, and the image is cut
+    // to it exactly as the colour under it is. A box with no radius
+    // stops at the field read.
+    bgClipRound = backgroundClipRadii(bgPaint.clip, s, w, h,
+                                      bl, bt, br, bb, pl, pt, pr, pb)
     backgroundArea(bgPaint.origin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
                    x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
     int origX = bgAreaX
@@ -1522,7 +1625,8 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 // of the painting area, the clip region the canvas does not have.
 void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
                                origX:int, origY:int, origW:int, origH:int, s:Style) {
-    if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
+    if !bgClipRound && origX == clipX && origY == clipY
+        && origW == clipW && origH == clipH {
         if bgPaint.image.conic {
             paintConicGradient(clipX, clipY, clipW, clipH, bgPaint.image, s.effectiveOpacity)
         } else if bgPaint.image.radial {
@@ -1547,7 +1651,8 @@ void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
     }
     paintLayer = prev
     fillAlpha(s.effectiveOpacity)
-    pDrawImage(layer, clipX, clipY)
+    if bgClipRound { pDrawImageRounded(layer, clipX, clipY, clipW, clipH) }
+    else { pDrawImage(layer, clipX, clipY) }
     fillAlpha(1.0)
 }
 
@@ -1667,7 +1772,8 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
     // again as the layer is composited -- and leaving it unset paints a
     // fully opaque image on a half-transparent box.
     fillAlpha(bgFadeAlpha == 1.0 ? s.effectiveOpacity : s.effectiveOpacity * bgFadeAlpha)
-    pDrawImage(layer, clipX, clipY)
+    if bgClipRound { pDrawImageRounded(layer, clipX, clipY, clipW, clipH) }
+    else { pDrawImage(layer, clipX, clipY) }
     fillAlpha(1.0)
 }
 

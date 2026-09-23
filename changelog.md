@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A background image is cut to the curve its colour is
+
+A background layer's image is painted into an image the size of its
+painting area and blitted back, and the blit was a rectangle: a box
+with a `border-radius` had its colour cut to the curve and its image
+painted over the corner the page should show through. With
+`background-clip: padding-box` and a border wide enough it looked
+right, because the image's square corner sticks out past the padding
+box's curve and the border paints over it.
+
+The blit is cut a row at a time now, from the same span function the
+shadows and the clipped colour ask for, against the radii of whichever
+box `background-clip` names -- the border box's own, or those less the
+border and the padding for the inner two. A box with no radius reads
+one field per layer painted and blits its image whole.
+
+The test is the agreement rather than a number: the same box painted
+with an image of one colour has to show the page through its corners
+where the same box painted with that colour does. Chromium's two
+renders are byte-identical; these two are not, and the reason is worth
+having. The colour goes through the canvas's path, which draws a corner
+as a bezier; the image is cut to the ellipse. They agree to a pixel
+through the body of the curve and differ by three where it runs
+flattest -- at row 4 of a 40px radius the ellipse says 21.6 and the
+bezier says 20, where Chromium says 21, so the engine's two answers
+straddle the browser's. todo.md carries it.
+
+**The first draft of the second check could not fail.** It put the
+inset on a `border: 20px solid transparent` so the page would show
+through the corner, and disabling the branch it was meant to grade
+changed nothing at all. The inset is padding now, with
+`background-clip: content-box`, and disabling that branch moves 16 rows.
+
+It costs seven milliseconds of paint on sixty rounded gradient boxes,
+because a blit has no source rectangle here and cutting one means
+copying the region out of the layer first -- the box's pixels go
+through twice. Neither benchmark page reaches it, so benchmarks.md
+measures it on a page built for it and says so. The rows a corner does
+not reach go back as one band rather than one each, which is two of
+the nine it cost before and changes no pixel.
+
 ### A page is painted from its own answers
 
 The painter asks a set of per-document questions -- has this document

@@ -745,4 +745,119 @@ check(getPixelColor(20, 6) == clipAtB, 'and on its other side')
 check(getPixelColor(60, 60) == clipAtC, 'and in the middle')
 
 
+// A background IMAGE is clipped to the same area the colour is, curve
+// and all (Backgrounds and Borders 3 §3.5). So the same box painted
+// with an image of one colour has to show the page through its corners
+// exactly where the same box painted with that colour does, and
+// neither answer is written down here. Chromium's two renders are
+// byte-identical; todo.md has the reading.
+//
+// These two cannot be, and the check says where the edge is rather
+// than what the pixel on it holds. The colour is filled through the
+// canvas's own path, which draws the corner as a **bezier** and
+// antialiases it; an image is painted into a layer and blitted back a
+// row at a time, and the span it is cut to is the **ellipse** itself.
+//
+// Those two curves part company where the corner runs flattest, and
+// only there: at row 4 of a 40px radius the ellipse puts the edge at
+// `40 - 40*sqrt(1 - (35.5/40)^2)`, which is 21.6, and the bezier puts
+// it at 20. Chromium puts it at 21. So the rows nearest the tangent
+// are allowed three pixels and the body of the curve one, and the
+// engine's two answers straddle the browser's rather than one of them
+// being wrong. todo.md carries the measurement.
+//
+// The image is a gradient between one colour and itself rather than a
+// `url()`, because it has to cover the box exactly and a tile does not.
+//
+// The box carries NO border on purpose. With one, the image's square
+// corner sticks out past the padding box's curve into the border area
+// and the border paints over it, so a bordered box reads clean whether
+// the image is cut to the curve or not.
+text curveBody = '<div id="a"></div>'
+text curveCss = '<!doctype html><head><style>body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border-radius:40px;'
+color curvePage = '#00ff00'
+
+// The first column of a row that the page does not show through, or
+// the width if it shows through all of it.
+int func curveEdge(row:int) {
+    for int cx = 0, cx < 130, cx++ {
+        if !(getPixelColor(cx, row) == curvePage) { return cx }
+    }
+    return 130
+}
+
+Page curveColour = pageFromHtml(curveCss + 'background-color:#ff0000}</style><body>'
+    + curveBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(curveColour, 0, 0, 200)
+arr[int] curveWas = []
+for int cy = 0, cy < 130, cy++ { curveWas.push(curveEdge(cy)) }
+
+// A corner this cuts away is a corner the comparison can speak about.
+// A radius of 40 puts the edge 40 columns in at the very top and none
+// at the middle, so a fixture that cut nothing could not pass this.
+int curveDeepest = 0
+for int cy = 0, cy < 130, cy++ {
+    if curveWas[cy] > curveDeepest && curveWas[cy] < 130 { curveDeepest = curveWas[cy] }
+}
+check(curveDeepest > 30, 'the colour render leaves the page showing at the corners')
+
+Page curveImage = pageFromHtml(curveCss
+    + 'background-image:linear-gradient(#ff0000,#ff0000)}</style><body>'
+    + curveBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(curveImage, 0, 0, 200)
+int curveOff = 0
+int curveBodyOff = 0
+for int cy = 0, cy < 130, cy++ {
+    int d = curveEdge(cy) - curveWas[cy]
+    if d < 0 { d = 0 - d }
+    if d > 3 { curveOff++ }
+    // Away from the tangent the two curves are the same curve, so
+    // there the slack is the antialiased pixel and nothing more. The
+    // tangent is the first and last few rows of a 120px box: that is
+    // where a half-pixel of height becomes three of width.
+    if d > 1 && cy >= 5 && cy < 115 { curveBodyOff++ }
+}
+checkEqInt(curveOff, 0, 'and a background image is cut to the same curve')
+checkEqInt(curveBodyOff, 0, 'exactly, away from the rows where it runs flattest')
+
+
+// And the content box's own curve, which is the border box's less the
+// border and the padding on each side -- a different branch of the
+// same rule. The inset is padding rather than a border so that nothing
+// is painted over the corner the image is cut at: a border would cover
+// the difference and the check would read clean either way.
+text innerCss = '<!doctype html><head><style>body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:80px;height:80px;padding:20px;border-radius:40px;'
+    + 'background-clip:content-box;'
+Page innerColour = pageFromHtml(innerCss + 'background-color:#ff0000}</style><body>'
+    + curveBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(innerColour, 0, 0, 200)
+arr[int] innerWas = []
+for int cy = 0, cy < 130, cy++ { innerWas.push(curveEdge(cy)) }
+int innerDeepest = 0
+for int cy = 0, cy < 130, cy++ {
+    if innerWas[cy] > innerDeepest && innerWas[cy] < 130 { innerDeepest = innerWas[cy] }
+}
+// The inner radius is 40 less 20, so the edge reaches about 20 columns
+// past the content box's own left edge, which is itself 20 in.
+check(innerDeepest > 30, 'the content box clips the colour to its own curve')
+
+Page innerImage = pageFromHtml(innerCss
+    + 'background-image:linear-gradient(#ff0000,#ff0000)}</style><body>'
+    + curveBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(innerImage, 0, 0, 200)
+int innerOff = 0
+for int cy = 0, cy < 130, cy++ {
+    int d = curveEdge(cy) - innerWas[cy]
+    if d < 0 { d = 0 - d }
+    if d > 3 { innerOff++ }
+}
+checkEqInt(innerOff, 0, 'and the image is cut to the content box\'s curve too')
+
+
 finish('background images')

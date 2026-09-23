@@ -2965,3 +2965,48 @@ The restore is unconditional, which is why `generated.html` -- a page
 that raises almost none of those answers -- is the row that matters: it
 reads zero in paint, so a page that uses none of this pays nothing for
 a page that does.
+
+
+## What cutting a background image to the curve costs
+
+2026-09-23, same machine and script. A layer's image is blitted back
+cut to the painting area's curve rather than as a rectangle. Paired,
+25 iterations, 800px. The control qualified at 0.4%.
+
+**Neither benchmark page reaches the path**, and both render
+byte-identically between the binaries: `features.html`'s rounded boxes
+carry background *colours*, and the gradient pages' boxes carry no
+`border-radius`. So their rows below are structural zeros -- the shape
+this file warns about, where a feature no page exercises reads exactly
+like a feature that costs nothing.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate, `features.html` | +0 | -2 | +3 | -1 |
+| reversed | +0 | +2 | -1 | -1 |
+| forward, `generated.html` | +0 | -1 | +0 | +0 |
+| reversed | +0 | +1 | -2 | -1 |
+
+Nothing to read: every figure is mirrored by its opposite.
+
+So the cost is measured on a page built for it: 60 boxes of 760x60
+with a `border-radius` and a `linear-gradient`, which is the gradient
+benchmark's shape with a radius added.
+
+| | paint, forward | paint, reversed |
+|---|---|---|
+| 60 rounded gradient boxes, radius 24 | **+7 ms of 4**, 25 of 25 | **-6 ms**, 0 of 25 |
+| the same, radius 6 | **+7 ms of 4**, 15 of 15 | |
+
+**That is real and it is large**: the paint phase goes from 4 ms to 11.
+A blit has no source rectangle here, so cutting one means copying the
+region out of the layer first, and the box's pixels are copied twice
+instead of once -- which is why the small radius costs the same as the
+large one. It is not the number of regions: the rows a corner does not
+reach go back as one band rather than one each, which took the radius
+24 page from +9 to +7 and the radius 6 page from +9 to +7, changing no
+pixel. The remaining seven milliseconds are the second copy.
+
+A page with no `border-radius` on a box with a background image reads
+one field per layer painted and blits the image whole, which is what
+the two zeros above are.
