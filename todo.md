@@ -2198,6 +2198,67 @@ remain open, and the last of those is the one with real work behind it:
 a JavaScript regular expression engine written by hand, because Festina
 has none and this project links what Festina links.
 
+### What a sweep of the CSS Cascade row found, measured
+
+Thirty claims from css-2026.md's **CSS Cascade 4** and **CSS Cascade 5**
+rows were put to Chromium one document each -- thirty `<iframe srcdoc>`
+frames in one page, so `getComputedStyle` has a rendered element to
+answer about -- and the same thirty were put to this engine. Twenty-six
+agree. Two of the four are one bug each, and both are the kind that
+loses a rule on a real page.
+
+**1. A sub-layer belongs inside its parent, and a layer's own rules come
+after it.** This engine reads `a.b` as another top-level layer whose
+place is where it was first named, so `a` and `a.b` sort as siblings in
+declaration order. CSS Cascade 5 nests them: `a.b` is inside `a`, so it
+takes `a`'s place in the outer order, and within `a` the sub-layers come
+first and `a`'s own rules last -- the implicit outer layer rule applied
+one level down.
+
+| | Chromium | this engine |
+|---|---|---|
+| `@layer a{@layer b{div{green}} div{red}}` | **red** | green |
+| `@layer a{div{red}}@layer a.b{div{green}}` | **red** | green |
+| `@layer a.b{div{green}}@layer a{div{red}}` | **red** | green |
+| `@layer a,b;@layer a.z{div{red}}@layer b{div{green}}` | **green** | red |
+
+The first three are the same fact written three ways, and the engine
+gets all three the other way round: it puts `a.b` after `a` whenever
+`a.b` is named later, and the standard puts a layer's own rules last
+however they are written. The fourth is the other half -- `a.z` is
+inside `a`, so it loses to `b`, where the engine declares it as a new
+top-level layer after `b` and lets it win.
+
+`@layer a.x{...}@layer a.y{...}` agrees by coincidence: two sub-layers
+of one parent keep their declaration order either way.
+
+**2. `revert` does not reach the user-agent sheet through the `font`
+shorthand.**
+
+| | Chromium | this engine |
+|---|---|---|
+| `b{font:italic 400 20px/2 serif}#t{font:revert}` | **700** | 400 |
+| `b{font-weight:400}#t{font-weight:revert}` | 700 | 700 |
+
+The longhand reverts to the user-agent sheet's `b { font-weight: bold }`
+and the shorthand does not. It is the `font` shorthand specifically:
+`padding: revert` on a `<ul>`, whose user-agent `padding-left` is 40px,
+gives 40px both ways, and `font: unset` and `font: initial` on the same
+`<b>` both give 400 in both. `font: revert` does reach font-style --
+both leave it `normal` -- so the expansion happens and it is the
+rollback that lands in the wrong origin.
+
+**Two more rows differ and neither is a cascade bug.** `all: inherit` on
+a non-inherited property gives the parent's width in Chromium and `auto`
+here, which is the gap css-2026.md's row already names as the one thing
+missing from CSS Cascade 4. And an `<h1>`'s user-agent `margin-top` of
+`0.67em` computes to 21.44px in Chromium and 21px here: this engine
+rounds a length to the pixel where Chromium keeps the fraction, which is
+a different question from the cascade and is recorded here rather than
+chased.
+
+The measurement alone; the tests and the fixes follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
