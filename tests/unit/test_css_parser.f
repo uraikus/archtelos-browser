@@ -13,7 +13,13 @@ Stylesheet s2 = parseStylesheet('a:hover { x: 1 } li:nth-child(odd) { y: 2 } p::
 //
 // `:nth-child(odd)` keeps its An+B form -- 2n+1 -- rather than the word
 // it was written as, because that is what the matcher works from.
-checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\np::before{2} { z: 3; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{0}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
+//
+// The `{1024}` inside `:not()` is the alternative's own specificity,
+// one class. It read `{0}` while an alternative was a bare compound the
+// dump wrapped in a `Selector` it never computed a specificity for; an
+// alternative is a whole selector now, so the number is the one the
+// cascade uses.
+checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\np::before{2} { z: 3; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{1024}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
 
 cssViewportWidth = 500
 Stylesheet s3 = parseStylesheet('@charset "utf-8"; @import url(x.css); @media screen and (max-width: 600px) { p { a: 1 } } @media print { p { b: 2 } } @media (min-width: 900px), all { p { c: 3 } } @font-face { font-family: X; src: url(x) } @media not screen { p { d: 4 } } q { e: 5 }')

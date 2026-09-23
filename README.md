@@ -17,7 +17,9 @@ Festina should gain as a result is in [festina.md](festina.md).
 the standard's own tree-construction corpus it passes **1,535 of 1,652**
 cases — the same number Chromium 141 passes on the same corpus, and 84
 of the 117 each fails are the same cases. **CSS selectors match the same
-elements Chromium matches in all 61 cases** the instrument asks. CSS
+elements Chromium matches in 84 of the 94 cases** the instrument asks;
+the ten that differ are all from Selectors 4, and css-2026.md names
+them. CSS
 targets the [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose
 official definition of CSS is 24 specifications; the engine implements
 part of 22 and no part of 2 — Compositing and Blending, which needs a

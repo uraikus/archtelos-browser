@@ -369,4 +369,93 @@ checkEqInt(escById(attrList, 'n').style.color, packColor(0, 0, 255, 255),
 checkEqInt(escById(attrList, 'q').style.color, packColor(0, 0, 255, 255),
            'and the selector holding it still matches')
 
+// ---- a complex selector inside :is(), :where(), :not() and :has() ----
+// Selectors 4 §3.1 gives each of the four a <complex-selector-list>,
+// and §4.2 makes `:has()`'s a *relative* selector list -- so an
+// alternative may open with the combinator that says how the match
+// stands to the element being tested. Which elements each one matches
+// is graded against Chromium by tests/conformance/selectors.f; what
+// the instrument cannot ask is what follows.
+
+// 1. The specificity a complex alternative contributes, which no
+// "which ids" comparison can see. Measured in Chromium: `:is(div > p)`
+// is (0,0,2) and beats a plain `p` written after it, while
+// `:where(div > p)` is (0,0,0) and loses to one written before it.
+cascadeReset()
+Node spc = parseHtmlText('<html><head><style>'
+    + '#w1 :is(div > p){color:#ff0000}#w1 p{color:#0000ff}'
+    + '#w2 :where(div > p){color:#ff0000}#w2 p{color:#0000ff}'
+    + '#w3 p{color:#0000ff}#w3 :where(div > p){color:#ff0000}'
+    + '</style></head><body>'
+    + '<div id="w1"><div><p id="s1">x</p></div></div>'
+    + '<div id="w2"><div><p id="s2">x</p></div></div>'
+    + '<div id="w3"><div><p id="s3">x</p></div></div>'
+    + '</body></html>')
+cascadeAddDocumentStyles(spc)
+computeStyles(spc)
+checkEqInt(escById(spc, 's1').style.color, packColor(255, 0, 0, 255),
+           ':is() with a complex alternative carries that alternative\'s specificity')
+checkEqInt(escById(spc, 's2').style.color, packColor(0, 0, 255, 255),
+           ':where() carries none of it')
+checkEqInt(escById(spc, 's3').style.color, packColor(0, 0, 255, 255),
+           'and still none of it written second')
+
+// 2. Which lists forgive and which do not, which the instrument cannot
+// ask because an invalid selector and a selector that matches nothing
+// are the same answer there. Chromium: `:is(p, &&&bogus)` matches every
+// `p`; `:not(p, &&&bogus)` and `:has(p, &&&bogus)` are SyntaxErrors, and
+// a rule whose selector is unparseable is dropped whole (§4).
+int func forgivingColor(sel:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>p{color:#cccccc}'
+        + sel + '{color:#ff0000}</style></head>'
+        + '<body><div><p id="q">x</p></div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    return e == null ? 0 : e.style.color
+}
+checkEqInt(forgivingColor('p:is(.nothing, &&&bogus)'), attrGrey,
+           'a forgiving list drops what it cannot read')
+checkEqInt(forgivingColor('p:is(:nth-child(1), &&&bogus)'), attrRed,
+           'and keeps what it can, beside it')
+checkEqInt(forgivingColor('p:where(:nth-child(1), &&&bogus)'), attrRed,
+           ':where() forgives the same way')
+checkEqInt(forgivingColor('p:is(&&&bogus)'), attrGrey,
+           'a forgiving list that forgave everything matches nothing')
+checkEqInt(forgivingColor('p:is(:nth-child(1), > span)'), attrRed,
+           'a leading combinator outside :has() is one more thing to forgive')
+// The unforgiving three. Each rule below is dropped whole, so the grey
+// from the rule before it stands -- and the check can tell that apart
+// from "matched nothing" only because a *valid* selector of the same
+// shape is red above.
+checkEqInt(forgivingColor('p:not(&&&bogus)'), attrGrey,
+           ':not() does not forgive: the whole rule is dropped')
+checkEqInt(forgivingColor('p:not(> span)'), attrGrey,
+           'and a leading combinator in it is a syntax error, not a relation')
+checkEqInt(forgivingColor('div:has(p, &&&bogus)'), attrGrey,
+           ':has() does not forgive either')
+
+// 3. `:has()`'s relation is per alternative, so one `:has()` may name
+// two of them -- which Chromium answers both of, asked directly.
+cascadeReset()
+Node rel = parseHtmlText('<html><head><style>i{color:#cccccc}'
+    + 'i:has(> b, + u){color:#ff0000}'
+    + '</style></head><body>'
+    + '<i id="r1"><b>x</b></i>'
+    + '<i id="r2"></i><u>x</u>'
+    + '<i id="r3"><em><b>x</b></em></i>'
+    + '<i id="r4"></i>'
+    + '</body></html>')
+cascadeAddDocumentStyles(rel)
+computeStyles(rel)
+checkEqInt(escById(rel, 'r1').style.color, attrRed,
+           'one alternative of a :has() names a child')
+checkEqInt(escById(rel, 'r2').style.color, attrRed,
+           'and the other names the next sibling')
+checkEqInt(escById(rel, 'r3').style.color, attrGrey,
+           'a grandchild is not a child, so the child relation is a relation')
+checkEqInt(escById(rel, 'r4').style.color, attrGrey,
+           'and an element neither relation reaches is left alone')
+
 finish('cascade rules')

@@ -76,7 +76,15 @@ p:not(div > p)	p8 p9
 div:has(> p)	d1 d2 d3
 div:has(+ div)	d1 d2 d3
 p:has(+ p)	p1 p2 p6 p8
+li:has(~ li)	l1 l2 l3 l4 l5
 div:not(:has(p))	d4 d5
+:is(p, &&&bogus)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+:where(p, &&&bogus)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+:is(p, :totally-unknown)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+:is(p, > span)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+p:is(:nth-child(1), .lead)	p1 p3 p6 p8
+div:has(> p, + div)	d1 d2 d3
+ul:has(> li + li)	u1
 p:nth-child(2 of .lead)	p3
 :nth-child(1 of p)	p1 p5 p6 p8
 li:nth-child(even of :not(.x))	l2 l4 l6

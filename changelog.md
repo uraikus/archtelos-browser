@@ -5,6 +5,64 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A complex selector inside `:is()`, `:where()`, `:not()` and `:has()`
+
+Selectors 4 §3.1 gives all four a `<complex-selector-list>`. This engine
+gave them a list of *compounds*, so `:is(h2, span)` worked and
+`:is(div > p)` was refused -- and a refused selector drops its whole
+rule, so a page using one lost it. Each alternative is a whole
+`Selector` now, matched by the same right-to-left walk an ordinary
+selector uses.
+
+**`:has()` takes a relative selector list** (§4.2), which is the same
+change wearing a different hat: an alternative may open with the
+combinator that says how the match stands to the element being tested --
+`:has(> p)` a child, `:has(+ p)` the next sibling, `:has(~ p)` any later
+one -- and the bare form means a descendant. The relation is stored per
+alternative, because `:has(> p, + div)` names two of them and Chromium
+answers both, asked directly.
+
+The relation is checked where the walk runs out of compounds: the
+leftmost one has matched some element, and that element must stand to
+the tested element as the relation says. Which elements can be the
+subject follows from the same relation -- a descendant or child relation
+puts the whole match inside the element's own subtree, a sibling
+relation inside a following sibling's -- so `:has()` walks those and not
+the document.
+
+**`:is()` and `:where()` forgive; `:not()` and `:has()` do not.** An
+alternative the engine cannot read is dropped from a forgiving list and
+the rest still work, so `:is(p, &&&bogus)` matches every `p`; a
+forgiving list that forgave everything matches nothing rather than
+invalidating its rule. In the other two one bad alternative drops the
+whole rule, and a leading combinator outside `:has()` is a syntax error
+rather than a relation. Every one of those was asked of Chromium before
+it was written.
+
+**A complex alternative carries its whole specificity**, which no
+"which ids does this match" comparison can see: `:is(div > p)` is
+(0,0,2) and beats a plain `p` written after it, while
+`:where(div > p)` is (0,0,0) and loses to one written before it. The
+unit suite asserts all three, and the specificity of a sub-selector is
+now the inner selector's rather than its first compound's.
+
+**Where the call is written cost two milliseconds.** `matchSelector`,
+called from inside `matchCompound`'s own loop over sub-selectors, put
+that function in a cycle -- `matchCompound` → `matchSelector` →
+`matchFrom` → `matchCompound` -- and a page with no `:is()`, no `:not()`
+and no `:has()` in it paid two milliseconds of cascade for a loop it
+runs zero times. The loop lives in `matchSubSelectors` now, called only
+when there is a sub-selector to match, and the cost goes back to
+nothing. benchmarks.md has both readings and the reason the second one
+is not the first one repeated.
+
+The instrument went from 61 rows to 94 and from 61/61 to 84/94: 25 rows
+were added as the measurement, then 8 more that this work made worth
+asking -- the relations, the mixed-relation form, a complex selector
+under a relation, and the five forgiving cases. The ten that fail are
+`:nth-child()`'s `of S` clause and the form-state and direction
+pseudo-classes.
+
 ### An attribute selector's brackets, quotes and escapes
 
 Selectors 4 §6.1 builds `[name matcher value]` out of two CSS Syntax 3

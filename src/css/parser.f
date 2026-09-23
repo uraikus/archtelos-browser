@@ -45,7 +45,18 @@ const int SUBSEL_HAS = 3
 
 struct SubSelector {
     kind:int
-    alternatives:arr[Compound]
+    // Selectors 4 §3.1 gives `:is()`, `:where()`, `:not()` and `:has()`
+    // a <complex-selector-list>, not a list of compounds, so each
+    // alternative is a whole selector: `:is(div > p)` is one of them.
+    alternatives:arr[Selector]
+    // `:has()`'s argument is a *relative* selector list, so each
+    // alternative may open with a combinator naming how the match
+    // stands to the element being tested: COMB_CHILD for `:has(> p)`,
+    // COMB_ADJACENT for `:has(+ p)`, COMB_SIBLING for `:has(~ p)`, and
+    // COMB_DESCENDANT for the bare `:has(p)`. One per alternative,
+    // because `:has(> p, + div)` names two different relations and
+    // Chromium answers both.
+    leads:arr[int]
 }
 
 struct Compound {
@@ -930,23 +941,61 @@ Compound func parseCompound() {
                     sub.kind = name == 'not' ? SUBSEL_NOT
                              : (name == 'has' ? SUBSEL_HAS
                              : (name == 'where' ? SUBSEL_WHERE : SUBSEL_IS))
+                    // §3.1: `:is()` and `:where()` take a *forgiving*
+                    // selector list -- an alternative this engine
+                    // cannot read is dropped and the rest still work,
+                    // so `:is(p, &&&bogus)` matches every `p`.
+                    // `:not()` and `:has()` do not, and one bad
+                    // alternative makes the whole selector invalid.
+                    // Chromium was asked all four, and the answers are
+                    // in todo.md.
+                    bool forgiving = sub.kind == SUBSEL_IS || sub.kind == SUBSEL_WHERE
                     int savedPos = selPos
                     ascii savedSrc = dup(selSrc)
                     arr[ascii] alts = splitOnCommas(arg)
                     for int k = 0, k < alts.length, k++ {
                         ascii alt = asciiTrim(alts[k])
-                        // `:has(> p)` names a relation this engine does
-                        // not distinguish, so a leading combinator is
-                        // what makes the selector unsupported rather
-                        // than silently a descendant test.
-                        if alt.length == 0 { comp.unsupported = true  continue }
-                        selSrc = alt
-                        selPos = 0
-                        Compound inner = parseCompound()
-                        if selPos < alt.length { comp.unsupported = true }
-                        sub.alternatives.push(inner)
+                        if alt.length == 0 {
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        // `:has()` takes a *relative* selector, so it
+                        // may open with the combinator that says how
+                        // the match stands to this element. The other
+                        // three take an ordinary complex selector, and
+                        // a leading combinator in one of those is a
+                        // syntax error rather than a relation.
+                        int lead = COMB_DESCENDANT
+                        int at = 0
+                        int lc = alt.charCodeAt(0)
+                        if lc == CH_GT { lead = COMB_CHILD  at = 1 }
+                        else if lc == CH_PLUS { lead = COMB_ADJACENT  at = 1 }
+                        else if lc == CH_TILDE { lead = COMB_SIBLING  at = 1 }
+                        if at > 0 && sub.kind != SUBSEL_HAS {
+                            // A leading combinator is a relation, and
+                            // only `:has()` takes one. `:not(> p)` is a
+                            // syntax error; `:is(> p)` is a dropped
+                            // alternative, because the list forgives.
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        if at > 0 {
+                            alt = asciiTrim(alt.slice(at, alt.length))
+                            if alt.length == 0 { comp.unsupported = true  continue }
+                        }
+                        Selector innerSel = parseSelector(alt)
+                        if innerSel.unsupported || innerSel.parts.length == 0 {
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        sub.alternatives.push(innerSel)
+                        sub.leads.push(lead)
                     }
-                    if sub.alternatives.length == 0 { comp.unsupported = true }
+                    // A forgiving list that forgave everything is still
+                    // a valid selector; it simply matches nothing,
+                    // which is what an empty alternative list already
+                    // means to `:is()` and `:where()` in the matcher.
+                    if sub.alternatives.length == 0 && !forgiving { comp.unsupported = true }
                     comp.subs.push(sub)
                     selSrc = savedSrc
                     selPos = savedPos
@@ -1205,7 +1254,7 @@ int func compoundSpecificity(c:Compound) {
         if c.subs[i].kind == SUBSEL_WHERE { continue }
         int best = 0
         for int k = 0, k < c.subs[i].alternatives.length, k++ {
-            int inner = compoundSpecificity(c.subs[i].alternatives[k])
+            int inner = computeSpecificity(c.subs[i].alternatives[k])
             if inner > best { best = inner }
         }
         s = specAdd(s, best)
@@ -2290,9 +2339,11 @@ text func dumpSelector(sel:Selector) {
                        : (sub.kind == SUBSEL_WHERE ? 'where' : 'is'))
             text inner = ''
             for int k = 0, k < sub.alternatives.length, k++ {
-                Selector one
-                one.parts.push(sub.alternatives[k])
-                inner = inner + (k > 0 ? ',' : '') + dumpSelector(one)
+                int ld = k < sub.leads.length ? sub.leads[k] : COMB_DESCENDANT
+                text mark = ld == COMB_CHILD ? '> '
+                          : (ld == COMB_ADJACENT ? '+ '
+                          : (ld == COMB_SIBLING ? '~ ' : ''))
+                inner = inner + (k > 0 ? ',' : '') + mark + dumpSelector(sub.alternatives[k])
             }
             out = `${out}:${fname}(${inner})`
         }

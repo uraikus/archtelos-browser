@@ -703,21 +703,133 @@ bool func nthMatches(pos:int, stepA:int, offB:int) {
     return Math.floorDiv(diff, stepA) >= 0
 }
 
-// `:has()` asks whether anything inside the element matches. The
-// standard's relative selectors can name a combinator -- `:has(> p)` --
-// and this engine does not distinguish them, so a leading one makes the
-// selector unsupported rather than quietly a descendant test.
-bool func hasMatchingDescendant(nid:int, sub:SubSelector) {
+// Whether `anc` is an ancestor of `nid`.
+bool func isAncestorOf(anc:int, nid:int) {
+    int p = nodeRegistry[nid].parentId
+    while p > 0 {
+        if p == anc { return true }
+        p = nodeRegistry[p].parentId
+    }
+    return false
+}
+
+// `:has()` takes a *relative* selector (Selectors 4 §4.2): its leading
+// combinator says how the element it finds stands to the element being
+// tested, and the bare form means a descendant. So the argument is a
+// whole complex selector anchored at one end to this element, and the
+// question is whether any element satisfies it.
+//
+// The anchor is checked where the walk runs out of compounds: the
+// leftmost one has matched some element, and that element must stand to
+// `scope` in the relation `lead` names. Without that the argument would
+// be an ordinary selector and `div:has(> p)` would find a `p` anywhere
+// below.
+bool func relAnchorHolds(nid:int, scope:int, lead:int) {
+    if lead == COMB_CHILD { return nodeRegistry[nid].parentId == scope }
+    if lead == COMB_ADJACENT { return prevElementSiblingOf(nid) == scope }
+    if lead == COMB_SIBLING {
+        int prev = prevElementSiblingOf(nid)
+        while prev > 0 {
+            if prev == scope { return true }
+            prev = prevElementSiblingOf(prev)
+        }
+        return false
+    }
+    return isAncestorOf(scope, nid)
+}
+
+// matchFrom, with the extra condition that the leftmost compound's
+// element stands to `scope` as `lead` says.
+bool func matchFromRelative(nid:int, sel:Selector, index:int, scope:int, lead:int) {
+    if !matchCompound(nid, sel.parts[index]) { return false }
+    if index == 0 { return relAnchorHolds(nid, scope, lead) }
+    int comb = sel.parts[index].combinator
+    if comb == COMB_CHILD {
+        int parent = nodeRegistry[nid].parentId
+        if parent <= 0 { return false }
+        return matchFromRelative(parent, sel, index - 1, scope, lead)
+    }
+    if comb == COMB_ADJACENT {
+        int prev = prevElementSiblingOf(nid)
+        if prev == 0 { return false }
+        return matchFromRelative(prev, sel, index - 1, scope, lead)
+    }
+    if comb == COMB_SIBLING {
+        int prev = prevElementSiblingOf(nid)
+        while prev > 0 {
+            if matchFromRelative(prev, sel, index - 1, scope, lead) { return true }
+            prev = prevElementSiblingOf(prev)
+        }
+        return false
+    }
+    int anc = nodeRegistry[nid].parentId
+    while anc > 0 {
+        if nodeRegistry[anc].kind != NODE_ELEMENT { return false }
+        if matchFromRelative(anc, sel, index - 1, scope, lead) { return true }
+        anc = nodeRegistry[anc].parentId
+    }
+    return false
+}
+
+// Every element of the subtree rooted at `nid`, itself excluded, tried
+// as the subject of one alternative.
+bool func relSubtreeMatches(nid:int, scope:int, alt:Selector, lead:int) {
     arr[Node] kids = nodeRegistry[nid].children
     for int i = 0, i < kids.length, i++ {
         int kid = kids[i].id
         if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
-        for int k = 0, k < sub.alternatives.length, k++ {
-            if matchCompound(kid, sub.alternatives[k]) { return true }
-        }
-        if hasMatchingDescendant(kid, sub) { return true }
+        if matchFromRelative(kid, alt, alt.parts.length - 1, scope, lead) { return true }
+        if relSubtreeMatches(kid, scope, alt, lead) { return true }
     }
     return false
+}
+
+// One alternative of a `:has()`, with the relation it opened with.
+//
+// Where the subject can be follows from that relation: a descendant or
+// child relation puts the whole match inside this element's subtree, a
+// sibling relation puts it in a following sibling's. Walking only those
+// is what keeps `:has()` from being a scan of the document.
+bool func relMatches(nid:int, alt:Selector, lead:int) {
+    if lead == COMB_ADJACENT || lead == COMB_SIBLING {
+        int sib = nextElementSiblingOf(nid)
+        while sib > 0 {
+            if matchFromRelative(sib, alt, alt.parts.length - 1, nid, lead) { return true }
+            if relSubtreeMatches(sib, nid, alt, lead) { return true }
+            if lead == COMB_ADJACENT { return false }
+            sib = nextElementSiblingOf(sib)
+        }
+        return false
+    }
+    return relSubtreeMatches(nid, nid, alt, lead)
+}
+
+bool func hasMatchingDescendant(nid:int, sub:SubSelector) {
+    for int k = 0, k < sub.alternatives.length, k++ {
+        int lead = k < sub.leads.length ? sub.leads[k] : COMB_DESCENDANT
+        if relMatches(nid, sub.alternatives[k], lead) { return true }
+    }
+    return false
+}
+
+bool func matchSubSelectors(nid:int, c:Compound) {
+    for int i = 0, i < c.subs.length, i++ {
+        SubSelector sub = c.subs[i]
+        if sub.kind == SUBSEL_HAS {
+            if !hasMatchingDescendant(nid, sub) { return false }
+            continue
+        }
+        bool any = false
+        for int k = 0, k < sub.alternatives.length, k++ {
+            if matchSelector(nid, sub.alternatives[k]) { any = true }
+        }
+        // `:not()` wants none of them to match; `:is()` and `:where()`
+        // want any. That is the whole difference between the three.
+        if sub.kind == SUBSEL_NOT {
+            if any { return false }
+        } else if !any { return false }
+    }
+    return true
 }
 
 bool func matchCompound(nid:int, c:Compound) {
@@ -743,22 +855,13 @@ bool func matchCompound(nid:int, c:Compound) {
     for int i = 0, i < c.pseudos.length, i++ {
         if !pseudoMatches(nid, c.pseudos[i]) { return false }
     }
-    for int i = 0, i < c.subs.length, i++ {
-        SubSelector sub = c.subs[i]
-        if sub.kind == SUBSEL_HAS {
-            if !hasMatchingDescendant(nid, sub) { return false }
-            continue
-        }
-        bool any = false
-        for int k = 0, k < sub.alternatives.length, k++ {
-            if matchCompound(nid, sub.alternatives[k]) { any = true }
-        }
-        // `:not()` wants none of them to match; `:is()` and `:where()`
-        // want any. That is the whole difference between the three.
-        if sub.kind == SUBSEL_NOT {
-            if any { return false }
-        } else if !any { return false }
-    }
+    // The four functional pseudo-classes live in their own function
+    // rather than in this loop, and this call is guarded by a length.
+    // Inlined here, the call to `matchSelector` that `:is()` needs put
+    // `matchCompound` inside a cycle the compiler would not inline, and
+    // a page with no `:is()`, `:not()` or `:has()` on it paid two
+    // milliseconds of cascade for a loop it ran zero times.
+    if c.subs.length > 0 && !matchSubSelectors(nid, c) { return false }
     return true
 }
 

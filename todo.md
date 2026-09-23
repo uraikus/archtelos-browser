@@ -1850,16 +1850,16 @@ Passing already, and so worth adding to the list as it stands:
 | `:is(h2):is(#h1)` | `h1` |
 | `:not(:not(p))` | every `p` |
 
-Failing, in three families:
+Failing at the time of the measurement, in three families:
 
 **1. A complex selector inside `:is()`, `:where()`, `:not()` and
 `:has()`.** Each of those takes a full `<complex-selector-list>` in
-§3.1, and this engine takes a compound: `:is(h2, span)` works and
-`:is(div > p)` does not. `:has()` is the same restriction wearing a
-different hat -- it is a descendant test here, so a leading combinator
-is refused rather than read.
+§3.1, and the engine took a compound: `:is(h2, span)` worked and
+`:is(div > p)` did not. `:has()` was the same restriction wearing a
+different hat -- a descendant test, so a leading combinator was refused
+rather than read. **This family is closed**; the two below are open.
 
-| row | Chromium | this engine |
+| row | Chromium | this engine, before |
 |---|---|---|
 | `:is(div > p)` | `p1`..`p7` | nothing |
 | `:where(div > p)` | `p1`..`p7` | nothing |
@@ -1895,10 +1895,14 @@ dropped it. `p|p` is invalid with no namespace declared, and `:scope`,
 `:defined` and `:has(:is(.lead))` match `html`, which has no id, so the
 comparison cannot name what they matched.
 
-**The 25 gradeable rows are the deliverable here**: adding them takes
-the list from 61 to 86 and the count from 61/61 to 70/86 before any
-code is written, so the number says what is left instead of only what
-works.
+**The 25 gradeable rows were the deliverable here**: adding them took
+the list from 61 to 86 and the count from 61/61 to 70/86 before a line
+was written, so the number says what is left instead of only what
+works. Family 1 is closed, along with eight further rows the same work
+made gradeable -- the relations `:has()` can name, and the forgiving
+lists -- and the list stands at 94 with 84 passing. What is left is
+families 2 and 3: `:nth-child()`'s `of S` clause and the form-state and
+direction pseudo-classes.
 
 ### Where an inset shadow's curve comes from, measured
 
@@ -2450,8 +2454,8 @@ properties the instrument can grade change what this engine renders
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
-`tests/conformance/selectors.f` how many of 86 selectors match the same
-elements as Chromium (70). Most entries in the work above should move
+`tests/conformance/selectors.f` how many of 94 selectors match the same
+elements as Chromium (84). Most entries in the work above should move
 the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed

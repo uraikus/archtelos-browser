@@ -3205,3 +3205,45 @@ The benchmark pages have no attribute selector in them at all, so
 them: what is measured above is the two comparisons in the list scan,
 and nothing else. All three pages render byte-identically between the
 binaries, `cmp`-checked before any timing.
+
+## What one call in a hot function cost, and the loop it was moved out of
+
+2026-09-23. Giving `:is()`, `:where()`, `:not()` and `:has()` a complex
+selector list means an alternative is matched by `matchSelector` rather
+than by `matchCompound`. Written inside `matchCompound`'s own loop over
+sub-selectors, that call put the function in a cycle --
+`matchCompound` → `matchSelector` → `matchFrom` → `matchCompound` --
+and cost two milliseconds of cascade on a page that contains no `:is()`,
+no `:not()` and no `:has()` at all.
+
+Paired, 20 iterations, 800px, `generated.html`, whose cascade is about
+34 ms and whose `collect` step runs 8,578 selector tests:
+
+| `cascade` | forward | reversed | slower in, forward |
+|---|---|---|---|
+| the call inside the loop | **+2** (mean +2.10) | **-2** (mean -2.45) | 15 of 20 |
+| the loop in its own function | -0 (mean -0.40) | -1 (mean -0.30) | 8 of 20 |
+
+The first row is the shape this file calls real: a reading and its
+mirror image that flip sign, and three quarters of the pairs agreeing
+with the median. It is also a cost the page could not be doing the work
+for -- the counts either side are identical, 8,578 selector tests and
+11,614 matched declarations, and the loop that grew iterates **zero**
+times on 8,576 of those tests. What changed was the code the compiler
+emitted for the function around it.
+
+Moving the loop into `matchSubSelectors`, called only when
+`c.subs.length > 0`, takes it back. The second row is two non-positive
+readings, which is no difference. The engine's own binary grew 40 bytes.
+
+So the rule this file states for a feature -- that it must not cost
+anything to the pages that do not use it -- has a form that is not about
+passes or predicates at all: **a call added to a hot function can cost
+the pages that never reach it**, and the fix is where the call is
+written rather than what it does. The per-phase breakdown found it:
+`collect`, which is where selector matching happens, moved and the other
+steps did not.
+
+Both binaries render `generated.html` byte-identically, `cmp`-checked
+before any timing, and the machine was idle at a one-minute load under
+0.25 for every reading above.

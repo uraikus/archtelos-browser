@@ -127,6 +127,21 @@ whether the feature occurs at all. Anything that adds a pass over the
 tree, or a test inside a loop over every box or every declaration, gets
 that flag before it lands, not after a benchmark notices.
 
+**And a call added to a hot function costs the pages that never reach
+it.** Giving `:is()` a complex selector list meant calling
+`matchSelector` from inside `matchCompound`'s loop over sub-selectors.
+That loop runs zero times on a page with no `:is()`, `:not()` or
+`:has()` on it, and such a page paid two milliseconds of cascade all the
+same: the call put `matchCompound` in a cycle --
+`matchCompound` → `matchSelector` → `matchFrom` → `matchCompound` --
+that the compiler would not inline through, so every one of 8,578
+selector tests paid for code none of them ran. The counts either side
+were identical, which is how it is told apart from work. So the flag
+above is not the only shape of this rule: **where a call is written is
+itself a cost**, and a call that the common case skips belongs in its
+own function, guarded at the call site, rather than in the loop it
+serves.
+
 **An instrument must be able to fail.** A property row reading `initial`
 computes to the initial value, so the property can never register as
 implemented however complete the implementation is. A selector that

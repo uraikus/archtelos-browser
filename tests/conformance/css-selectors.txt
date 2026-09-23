@@ -115,7 +115,23 @@ p:not(div > p)
 div:has(> p)
 div:has(+ div)
 p:has(+ p)
+li:has(~ li)
 div:not(:has(p))
+# `:is()` and `:where()` take a forgiving selector list (§3.1): an
+# alternative neither engine can read is dropped and the rest still
+# work. `:not()` and `:has()` do not -- but an invalid selector matches
+# nothing in Chromium, so those cannot be rows here and the unit suite
+# asserts them instead.
+:is(p, &&&bogus)
+:where(p, &&&bogus)
+:is(p, :totally-unknown)
+:is(p, > span)
+p:is(:nth-child(1), .lead)
+
+# One `:has()` may name two relations, which Chromium answers both of
+div:has(> p, + div)
+# and a relative selector may be complex under its own relation
+ul:has(> li + li)
 
 # --- Selectors 4: :nth-child()'s `of S` clause, which filters which
 # siblings are counted before An+B is applied to them
