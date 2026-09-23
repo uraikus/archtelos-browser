@@ -207,14 +207,15 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    which is `paintPhaseWalk` with every "paint" replaced by "answer if
    it is there", so a click and a pixel cannot drift apart.
 
-   **What is left is the outline, which paints with its box rather
-   than at step 10.** The standard paints every outline in a stacking
-   context after everything else in it, so an outline draws over a
-   later sibling that overlaps it. Here an outline is part of what
-   `paintBoxSelf` draws, which is step 3 for an in-flow block, so a
-   later sibling covers it. Nothing measures it yet: it wants a
-   Chromium probe of an outline against an overlapping sibling before
-   it is worth a fourth walk.
+   **The outlines are a pass of their own**, above the in-flow content
+   and below anything positioned, which is where Chromium draws them
+   rather than at the very end §9.9's wording suggests -- measured
+   against all four things an outline can overlap, in the section
+   below. What is left of it is narrow: a box that paints whole draws
+   its own outline inside its own subtree, so a float's outline, or a
+   clipping box's, sits at that box's step relative to its siblings
+   rather than above them. Nothing has measured whether Chromium
+   agrees, and no page here notices.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does

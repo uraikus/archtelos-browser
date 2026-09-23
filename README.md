@@ -363,10 +363,12 @@ non-positioned floats, then every box's lines — so a float paints over
 a block written after it and a line of text paints over both. A box
 that paints as one unit is handed over whole and the walk does not
 descend into it: a positioned box, a nested stacking context, a
-replaced element, and anything that paints through a layer. A negative
-descendant of a box that is *not* a stacking context is painted by the
-nearest ancestor that is, which is what puts it behind that box's
-background. A declared `z-index` on a positioned box makes a context,
+replaced element, and anything that paints through a layer. Then the outlines,
+in a pass of their own above all of that and below anything positioned
+— which is where Chromium draws them rather than at the very end. A
+negative descendant of a box that is *not* a stacking context is
+painted by the nearest ancestor that is, which is what puts it behind
+that box's background. A declared `z-index` on a positioned box makes a context,
 and so do a `transform` and an `opacity` below 1; `z-index: auto` does
 not.
 

@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An outline paints in a pass of its own
+
+CSS2 §9.9 draws the outlines of a stacking context and its descendants
+after everything else in it. Here an outline was drawn with the box's
+own background and border, which is step 3, so anything painted later
+covered it: an in-flow block written after it, a float, a line of text
+pulled over it.
+
+Four overlaps against Chromium say where it belongs, and the fourth is
+the one that settles it:
+
+| the outline overlaps | Chromium draws |
+|---|---|
+| an in-flow block written after it | the **outline** |
+| a float | the **outline** |
+| an inline-block pulled over it | the **outline** |
+| an absolutely positioned box | the **positioned box** |
+
+So it is not the last thing of all, as §9.9's wording suggests, but a
+pass between step 5 and step 8. It is that now, walking the marks the
+step 3 walk already leaves on each box, and a document that declares no
+outline does not walk for them at all.
+
+**A clipping box's own outline goes on after the blit.** Such a box
+paints its contents into a layer the size of its padding box, and an
+outline lies outside the border box, so an outline drawn in there falls
+outside the layer and vanishes -- which is what used to happen to it,
+`paintClipped` having never drawn one.
+
+**The optimization that worked above did not work here.** Recording on
+each box, during the step 3 walk, whether it asks for an outline -- so
+the outline pass reads no `Style` of its own, which is what took the
+three-step separation from 7 ms to zero -- paired against the
+straightforward version at +1 ms of paint one way and 0 the other. No
+gain, so it is not in the code. The same shape of change is worth a
+great deal in one place and nothing a few lines away.
+
+**One fixture had to be rebuilt for asking the wrong question.** The
+float case put the outlined box twenty pixels down with a
+`margin-top`, which Chromium honours by moving the whole body and this
+engine drops, because a margin that collapses all the way through to
+the root is dropped here. Both engines were right about their own
+layout and the test was measuring that instead. A spacer box does the
+same job with no margin in it.
+
 ### CSS2 §9.9's steps 3, 4 and 5, separated
 
 The standard paints a box's in-flow content in three steps -- the

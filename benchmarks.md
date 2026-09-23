@@ -2843,3 +2843,33 @@ was the first explanation and is measured wrong: a Festina struct of
 244 fields, 16 of them `text` and 14 of them arrays — `Style`'s own
 shape — read forty thousand times does not register at millisecond
 resolution. todo.md keeps the question.
+
+## What giving the outline its own pass cost
+
+CSS2 §9.9 draws outlines after the in-flow content and before the
+positioned descendants, which is a pass of its own over the marks the
+step 3 walk leaves. Paired, 25 iterations, both directions:
+
+| paint | forward | reversed |
+|---|---|---|
+| `generated.html`, which declares no outline | 0 ms of 19, 9 of 25 | 0 ms, 9 of 25 |
+| `features.html`, 96 outlined figures | +1 ms of 31, 16 of 25 | +2 ms |
+
+The two binaries render `generated.html` byte for byte the same, so the
+first row is the whole of what a page that does not use the feature
+pays: one boolean, `docHasOutline`, asked once per subtree. On
+`features.html` the pass runs and the two binaries differ by 1,424
+pixels of 6.4 million — the outlines that now show where a neighbour
+used to cover them — which is the feature working rather than the page
+changing shape: the layout is identical and the same outlines are drawn
+either way, in a different order.
+
+**A third binary said the obvious optimization was not one.** Recording
+on each box, during the step 3 walk, whether it asks for an outline, so
+that the outline pass never reads a `Style` of its own, is the same
+trick that took the three-step separation above from 7 ms to zero.
+Paired against the straightforward version on `features.html` it read
+**+1 ms of paint one way and 0 the other** — no gain, and it is not in
+the code. The same shape of change is worth a great deal in one place
+and nothing a few lines away, which is why it gets measured each time
+rather than assumed.

@@ -124,7 +124,8 @@ h2::before{content:"Part " counter(part) ". ";color:#667}
 .wide .pic{grid-area:pic}
 .wide .note{grid-area:note}
 .wide .meta{grid-area:meta;color:#667}
-figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc}
+figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc;
+       outline:1px solid #c8cee0}
 img{width:96px;height:64px;object-fit:cover;object-position:center}
 .tall img{object-fit:contain}
 figcaption{font-size:12px;color:#556}
@@ -164,6 +165,7 @@ img{object-fit:fill;object-position:0 0}
 .steps li::before{content:none}
 .controls input{appearance:none;field-sizing:fixed}
 .flow .fl{float:none}
+figure{outline:none}
 """
 
 # One rule per feature, each turning that feature off, and the whole
@@ -197,6 +199,13 @@ PROBES = (
     # Setting it to zero puts them back apart, which moves every box
     # below them and so the whole page.
     ('negative-margin', '.pull2{margin-top:0}'),
+    # An outline paints in a pass of its own, above the in-flow content
+    # and below anything positioned, so a page with one on it walks the
+    # marks the first pass left. `figure` is a plain in-flow block
+    # rather than the badge beside it, which has a `transform` and so
+    # paints whole and draws its own outline inside itself -- the pass
+    # this measures would never see it.
+    ('outline', 'figure{outline:none}'),
     # A float paints at step 4, above the in-flow blocks and below the
     # in-flow inline content, and a page with one on it walks its box
     # tree a third time. Taking the float away reflows the text that

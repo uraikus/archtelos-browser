@@ -3042,10 +3042,13 @@ void func paintClipped(b:Box) {
     // The layer holds this box's contents, which is §9.9's steps 3, 4
     // and 5 and everything positioned after them -- the same three
     // walks the document gets, over this subtree.
-    paintSubtree(b)
+    paintContents(b, false)
     paintLayer = null
     pDrawImage(layer, px, py)
     paintScrollbars(b)
+    // Its own outline goes on after the blit, outside the layer it
+    // would otherwise have been clipped out of.
+    if docHasOutline { paintOutlineFor(b) }
 }
 
 // The scrollbars a scroll container reserved room for, drawn inside its
@@ -3450,7 +3453,10 @@ bool func paintBoxSelf(b:Box) {
         if !s.hidden { paintFrame(b) }
         return false
     }
-    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+    // The outline is not drawn here. §9.9 puts it after the whole of
+    // this box's in-flow content and before its positioned descendants,
+    // measured against all four in todo.md, so it is a pass of its own
+    // below.
     if s.columnRuleWidth > 0 && !s.hidden { paintColumnRules(b) }
     // content-visibility: hidden skips the contents entirely
     // (Containment 2 §4). The box's own background, border and outline
@@ -3521,6 +3527,27 @@ void func paintFloatsWalk(b:Box) {
     }
 }
 
+// §9.9's outline pass: this box's outline, if its caller wants it
+// drawn here, and then its in-flow descendants', in tree order. A box
+// that paints whole drew its own inside its own subtree.
+void func paintOutlineFor(b:Box) {
+    Style s = b.style
+    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+}
+
+void func paintOutlineWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep != PSTEP_SPLIT { continue }
+        // Recording which boxes ask for an outline, so this pass never
+        // reads a `Style`, was tried and measured: paired against this
+        // on the feature page it read +1 ms of paint one way and 0 the
+        // other, so it bought nothing and is not here.
+        paintOutlineFor(c)
+        paintOutlineWalk(c)
+    }
+}
+
 // Step 5: every in-flow box's lines, in tree order.
 void func paintInlinesWalk(b:Box) {
     for int i = 0, i < b.children.length, i++ {
@@ -3584,13 +3611,27 @@ void func paintPositionedIn(b:Box) {
 // A box's contents, in §9.9's order. Run for every box that paints
 // whole, so a float and a clipped subtree get the same three passes
 // the document does.
-void func paintSubtree(b:Box) {
+// `ownOutline` is false where the caller draws this box's outline
+// itself: a clipping box paints its contents into a layer the size of
+// its padding box, and an outline lies outside its border box, so an
+// outline drawn in there would fall outside the layer and vanish.
+void func paintContents(b:Box, ownOutline:bool) {
     paintBlocksWalk(b)
     // Step 4 is skipped outright on a document with no float in it.
     if docHasFloats { paintFloatsWalk(b) }
     paintLines(b)
     paintInlinesWalk(b)
+    // The outlines, above everything in flow and below anything
+    // positioned. A document that declares none does not walk for them.
+    if docHasOutline {
+        if ownOutline { paintOutlineFor(b) }
+        paintOutlineWalk(b)
+    }
     if docHasPositioned { paintPositionedIn(b) }
+}
+
+void func paintSubtree(b:Box) {
+    paintContents(b, true)
 }
 
 void func paintBoxInner(b:Box) {

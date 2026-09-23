@@ -175,4 +175,67 @@ check(hitAbove != null && getAttr(hitAbove.node, 'id') == 'wr',
       'and above it the wrapper the inline content sits in')
 
 
+// ---- §9.9's outlines ---------------------------------------------------
+//
+// An outline is drawn after everything else in its stacking context's
+// in-flow content and before the positioned descendants. Chromium's
+// answers for a 200x60 blue box with `outline: 6px solid red`, against
+// something laid over the band the outline occupies (todo.md):
+//
+//   an in-flow block written after it   the outline
+//   a float                             the outline
+//   an inline-block pulled over it      the outline
+//   an absolutely positioned box        the positioned box
+
+Page func outlinePage(body:text, extra:text) {
+    return pageFromHtml('<!doctype html><head><style>'
+        + 'body{margin:0;width:300px}'
+        + '#a{width:200px;height:60px;background:#0088ff;'
+        + 'outline:6px solid #ff0000}'
+        + '#t{line-height:0}'
+        + '#i{display:inline-block;width:200px;height:20px;background:#ff00ff}'
+        + '#f{float:left;width:100px;height:100px;background:#00ff00}'
+        + '#p{position:absolute;left:0;top:56px;width:200px;height:40px;'
+        + 'background:#00ff00}'
+        + extra
+        + '</style><body>' + body + '</body>', 'test.html', 400)
+}
+
+// A block written after it, whose background reaches the outline's band.
+Page poBlock = outlinePage('<div id="a"></div><div id="b"></div>',
+    '#b{width:200px;height:60px;background:#00ff00}')
+clearCanvas()
+paintPage(poBlock, 0, 0, 400)
+check(getPixelColor(100, 62) == red, 'an outline paints over a block written after it')
+
+// An inline-block on the line below, reaching up into the band.
+Page poInline = outlinePage('<div id="a"></div><div id="t"><span id="i"></span></div>', '')
+clearCanvas()
+paintPage(poInline, 0, 0, 400)
+check(getPixelColor(100, 62) == red, 'and over the in-flow inline content')
+
+// A float beside it, and a spacer to put the outlined box's top edge
+// twenty pixels down so the outline's band crosses the float. The
+// spacer is a box rather than a `margin-top`, because a margin that
+// collapses all the way through to the root is dropped here and moves
+// the document down in Chromium -- a divergence of its own, and one
+// this fixture must not be asking about.
+Page poFloat = outlinePage(
+    '<div id="f"></div><div id="s"></div><div id="a"></div>',
+    '#s{height:20px}')
+clearCanvas()
+paintPage(poFloat, 0, 0, 400)
+check(getPixelColor(50, 16) == red, 'and over a float')
+check(getPixelColor(50, 40) == green, 'while the float still covers the box itself')
+
+// And under a positioned box, which is the row that says the outline is
+// a pass between step 5 and step 8 rather than the last thing of all.
+Page poPos = outlinePage('<div id="a"></div><div id="p"></div>',
+    'body{position:relative}')
+clearCanvas()
+paintPage(poPos, 0, 0, 400)
+check(getPixelColor(100, 62) == green, 'a positioned box paints over an outline')
+check(getPixelColor(202, 62) == red, 'which still shows where the positioned box does not reach')
+
+
 finish('stacking')

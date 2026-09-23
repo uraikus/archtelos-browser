@@ -497,6 +497,11 @@ bool docHasFloats = false
 // separating the steps cost (CLAUDE.md, "a feature must not cost
 // anything to the pages that do not use it").
 bool docHasWholePaint = false
+// Set while the box tree is built when any box asks for an outline.
+// CSS2 §9.9 draws outlines in a pass of their own, after the in-flow
+// content and before the positioned descendants, and a document that
+// declares none skips that pass rather than walking the tree for it.
+bool docHasOutline = false
 // Set while the box tree is built when any text holds a right-to-left
 // character. A page with none never runs the bidirectional algorithm
 // at all (CLAUDE.md, "a feature must not cost anything to the pages
@@ -599,6 +604,7 @@ Box func newBox(kind:int, node:Node, style:Style) {
         if style.floatSide != FLOAT_NONE { docHasFloats = true }
         if style.overflowHidden || style.containPaint || style.contentHidden
             || style.opacity < 1.0 { docHasWholePaint = true }
+        if style.outlineWidth > 0 { docHasOutline = true }
     }
     return b
 }
@@ -7184,6 +7190,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     anyRtlText = false
     docHasFloats = false
     docHasWholePaint = false
+    docHasOutline = false
     inlineInkOverhang = 0
     currentFontKey = ''         // the canvas font may have been changed behind our back
     Node html = findElement(doc, 'html')
