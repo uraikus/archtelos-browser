@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A page is painted from its own answers
+
+The painter asks a set of per-document questions -- has this document
+a float, a positioned box, a box that paints whole, an outline, a
+transform, a clip, a corner shape, small caps -- and each was a global
+raised while a box tree was built or the cascade ran, then read while
+a document was painted. One document at a time made the two agree.
+Two documents alive did not: a page painted after another had been
+laid out was painted with the other page's answers.
+
+A `Page` now carries a `DocFlags` captured as its layout finishes and
+put back before it is painted, so painting is a function of the page
+rather than of the order. Not every answer is a boolean: the values a
+property keeps by the computed style's serial live in maps that
+`cascadeReset` replaces, so the page holds the old map and the next
+document fills a new one.
+
+**The deliverable is `tests/render/pagestate.f`, not the list.** It
+paints a rich page, builds and paints a plain one, paints the rich one
+again and requires the same pixels, then does it the other way round.
+A list of flags can be incomplete; the invariant cannot. It found
+three separate things: the flags themselves (248 sampled pixels
+moved), `font-variant-caps`, whose values the reset threw away while
+the flag said they were there (20 more), and the shadow bug below
+(21 more), which was never a page-state leak at all.
+
+### A cached shadow corner is not scaled by the last strip's alpha
+
+A blurred `inset` shadow's rounded corners are a correction blitted
+over the square answer, and the correction is cached by the geometry
+it depends on. A blit carries `fillAlpha`, and the two strip passes
+that draw the square answer leave `fillAlpha` wherever their last row
+put it. A corner that has to be *built* ends its own builder at one,
+so only a corner served from the cache was scaled by whatever the
+strips left -- which made the first painting of a shadow differ from
+every later one, and every box after the first on a page differ from
+the first.
+
+The check that earns its place asks two boxes with the same shadow to
+land on the same pixel, and its first draft could not fail: at a blur
+of 20 against a radius of 40 the correction is small enough that
+halving it rounds to the same byte. The geometry it grades now -- a
+blur of 8 against a radius of 24 -- moves 1204 pixels of a 100x60 box
+when the alpha is wrong.
+
 ### A `border-radius` survives a layer
 
 A clipped subtree is painted into an image and blitted back, because

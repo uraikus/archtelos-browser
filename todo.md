@@ -1569,39 +1569,26 @@ paints whole, which moves it in §9.9's walk, and puts its inset shadow
 inside a layer. So it wants its own pass, with the render suites
 re-read afterwards rather than assumed.
 
-### A page's painting flags belong to whichever page was laid out last
+### What the page-state invariant has not been pointed at yet
 
-The painter asks a handful of per-document questions -- does this
-document have a float, a positioned box, a box that paints whole, an
-outline -- and each is a global raised while a box tree is **built**
-and read while one is **painted**. The browser holds one document at a
-time, so the two always agree there. A test file does not: it can
-build page A, build page B, and then paint A, and A will be painted
-with B's answers.
+`tests/render/pagestate.f` requires painting a page twice, with another
+page built and painted in between, to give the same pixels, and
+`DocFlags` is what makes that true: the painter's per-document answers
+are captured as a page's layout finishes and put back before it is
+painted. The invariant is the guard, because a list of flags can be
+incomplete and an invariant cannot -- but it only guards what its
+fixture reaches. Its page has a float, a positioned box, a negative
+z-index, a transform, an outline, a clip holding a rounded box with an
+inset shadow, a bevelled corner and small capitals. It has no grid, no
+multicol, no ruby, no anchor, no motion path, no `initial-letter`, no
+container query and no printed page, and every one of those raises
+answers of its own.
 
-It cost an hour to find, because the instrument that hit it reported
-success. A check written as "the clipped shape agrees with the
-unclipped one" painted the clipped page, built the unclipped one,
-painted it, then painted the clipped page **again** -- and that second
-painting silently took the unclipped page's flags, which say no box
-paints whole, so the clipping box was never given a layer and the
-comparison compared the unclipped rendering with itself. Two checks
-beside it, written against a literal colour, failed correctly
-throughout and are what showed the agreement checks were lying.
-
-**The rule for now is that every render suite paints a page
-immediately after building it and never paints an earlier one again**,
-which is what all of them already did.
-
-**The durable fix** is to snapshot those flags on the `Page` as its
-layout finishes and restore them in `paintPage`, so painting is a
-function of the page rather than of the order. There are more of them
-than the four above -- the cascade raises its own for transforms,
-clips, offset paths, anchors, corner shapes, small caps -- so the
-change is mechanical but wide, and it wants the invariant test that
-proves it: build A, build B, paint A, and require its pixels to equal
-what painting A first gives. That test is the deliverable, not the
-list of flags; a list can be incomplete and the invariant cannot.
+Widening the fixture is cheap and each addition is a real check, so
+the next feature that raises a per-document answer should add its
+shape to that page as part of landing. What it must not do is paint
+something whose geometry depends on the answers being wrong, or the
+suite grades the leak instead of catching it.
 
 ### Where a clipped background's curve comes from, measured
 

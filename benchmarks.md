@@ -2933,3 +2933,35 @@ ninety-six times over; it would also make each figure a box that paints
 whole and move its inset shadow inside a layer, so it is a page change
 worth making on its own rather than beside this one. todo.md carries
 it.
+
+
+## What restoring a page's painting flags costs
+
+2026-09-23, same machine and script. A `Page` carries the painter's
+per-document answers and puts them back before it is painted: fifteen
+global writes once per paint, and one `fillAlpha` before a blurred
+inset shadow's corner blits. Paired, 25 iterations, 800px.
+
+Both pages render identically between the binaries except where the
+alpha fix changes them: `generated.html` has no inset shadow at all,
+and `features.html`'s figures carry one, so the second column is the
+fix as well as the restore.
+
+| | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| forward, parent then candidate, `features.html` | +0 | +0 | -3 | +0 |
+| reversed | +0 | +1 | +2 | +1 |
+| forward, `generated.html` | +0 | +1 | +0 | +0 |
+| reversed | +0 | +0 | -1 | +0 |
+
+Nothing to read. The one figure worth a second look is `features.html`'s
+layout, -3 forward against +2 reversed, and a change with no line in
+`src/layout/` cannot make layout faster: the two are a mirror image of
+each other and add to about zero, which is this file's own test for an
+order effect. No control was built, the rule calling for one when a
+reading survives its mirror image.
+
+The restore is unconditional, which is why `generated.html` -- a page
+that raises almost none of those answers -- is the row that matters: it
+reads zero in paint, so a page that uses none of this pays nothing for
+a page that does.

@@ -16,6 +16,11 @@ struct Page {
     height:int          // document height after layout
     error:text
     loaded:bool
+    // What the painter needs to know about this document, taken when
+    // its layout finished and put back before it is painted. See
+    // DocFlags in paint.f: the questions are globals, and a second
+    // document laid out afterwards would otherwise answer them.
+    flags:DocFlags
 }
 
 int maxImagesPerPage = 60
@@ -339,6 +344,10 @@ void func layoutPage(page:Page, width:int) {
     page.width = width
     cssViewportWidth = width
     page.root = layoutDocument(page.doc, width)
+    // The painter's per-document questions are answered while the box
+    // tree is built, so they belong to this page and not to whichever
+    // page is laid out next. See DocFlags in paint.f.
+    page.flags = captureDocFlags()
     if page.root == null {
         page.height = 0
         return
@@ -469,6 +478,7 @@ void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, roo
 
 void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int, total:int) {
     if page.root == null { return }
+    restoreDocFlags(page.flags)
     int t0 = now()
     int areaW = pageAreaWidth(box)
     // How much of the sheet this page actually carries: a page that ends
@@ -502,6 +512,7 @@ void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int
 
 void func paintPage(page:Page, top:int, scrollY:int, viewHeight:int) {
     if page.root == null { return }
+    restoreDocFlags(page.flags)
     int t0 = now()
     int bg = canvasBackground(page.root)
     applyFillColor(bg)

@@ -1255,6 +1255,12 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
     // company. Everything above this is the square answer; each corner
     // is one blit that turns it into the round one.
     if round && layer != null {
+        // The strip passes above leave `fillAlpha` wherever their last
+        // row put it, and a blit carries it. A corner that has to be
+        // BUILT puts it back itself, so only a corner served from the
+        // cache would be scaled by it -- which makes the first painting
+        // of a shadow differ from every later one.
+        fillAlpha(1.0)
         int htlx = innerRadius(inRadTLX, spread)
         int htly = innerRadius(inRadTLY, spread)
         int htrx = innerRadius(inRadTRX, spread)
@@ -4062,6 +4068,85 @@ int func canvasBackground(root:Box) {
         if c.node.tag == 'body' && colorIsPaintable(c.style.background) { return c.style.background }
     }
     return COLOR_WHITE
+}
+
+// ---- a document's painting flags -------------------------------------
+//
+// The painter asks a set of per-document questions -- has this document
+// a float, a positioned box, a box that paints whole, an outline, a
+// transform, a clip, a corner shape, small caps -- and each is a global
+// raised while the box tree is **built** or the cascade runs, then read
+// while the document is **painted**. One document at a time makes the
+// two agree; two documents alive does not, and then a page is painted
+// with whichever document was laid out last.
+//
+// So a page carries its own answers and puts them back before it is
+// painted. The list below is bound to be incomplete one day, which is
+// why `tests/render/pagestate.f` asks the invariant rather than the
+// list: paint a page, build and paint another, paint the first again,
+// and require the same pixels. A flag added and forgotten fails that.
+struct DocFlags {
+    floats:bool
+    positioned:bool
+    wholePaint:bool
+    outline:bool
+    rtlText:bool
+    sawClip:bool
+    sawNegativeZ:bool
+    sawTransform:bool
+    anchorHidden:bool
+    clipMargin:bool
+    cornerShape:bool
+    crossFade:bool
+    offsetPath:bool
+    resize:bool
+    smallCaps:bool
+    // Not every answer is a boolean. The values a property keeps by
+    // the computed style's serial live in maps that `cascadeReset`
+    // REPLACES rather than empties, so holding the old map here keeps
+    // this document's answers alive while the next document fills a
+    // new one.
+    fontCaps:map[int]
+}
+
+DocFlags func captureDocFlags() {
+    DocFlags f
+    f.floats = docHasFloats
+    f.positioned = docHasPositioned
+    f.wholePaint = docHasWholePaint
+    f.outline = docHasOutline
+    f.rtlText = anyRtlText
+    f.sawClip = cascadeSawClip
+    f.sawNegativeZ = cascadeSawNegativeZ
+    f.sawTransform = cascadeSawTransform
+    f.anchorHidden = anyAnchorHidden
+    f.clipMargin = anyClipMargin
+    f.cornerShape = anyCornerShape
+    f.crossFade = anyCrossFade
+    f.offsetPath = anyOffsetPath
+    f.resize = anyResize
+    f.smallCaps = anySmallCaps
+    f.fontCaps = fontCapsOfSerial
+    return f
+}
+
+void func restoreDocFlags(f:DocFlags) {
+    docHasFloats = f.floats
+    docHasPositioned = f.positioned
+    docHasWholePaint = f.wholePaint
+    docHasOutline = f.outline
+    anyRtlText = f.rtlText
+    cascadeSawClip = f.sawClip
+    cascadeSawNegativeZ = f.sawNegativeZ
+    cascadeSawTransform = f.sawTransform
+    anyAnchorHidden = f.anchorHidden
+    anyClipMargin = f.clipMargin
+    anyCornerShape = f.cornerShape
+    anyCrossFade = f.crossFade
+    anyOffsetPath = f.offsetPath
+    anyResize = f.resize
+    anySmallCaps = f.smallCaps
+    fontCapsOfSerial = f.fontCaps
 }
 
 // Paints the whole document; the caller sets any transform first.

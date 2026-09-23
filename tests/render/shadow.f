@@ -523,4 +523,42 @@ check(getPixelColor(14, 95) == insetTL, 'the bottom-left matches it too')
 check(getPixelColor(105, 95) == insetTL, 'and the bottom-right')
 
 
+// The corner correction is cached by the geometry it depends on, so the
+// second box asking for the same one gets a blit instead of a build. A
+// blit carries `fillAlpha`, and the two strip passes above it leave
+// `fillAlpha` wherever their last row put it -- so a corner that is
+// built paints at the alpha its own builder ends on and a corner served
+// from the cache paints at whatever the strips left. Two boxes asking
+// for the same shadow must land on the same pixel.
+//
+// Nothing above this would notice. Every check up to here grades a page
+// carrying one shadowed box, and the four-corner check renders the same
+// box a second time, so it compares four cached corners with each other
+// and they would be wrong together. The geometry is the one where the
+// correction is strong enough to survive the eight bits a pixel gets:
+// at a blur of 20 against a radius of 40 the correction is small enough
+// that halving it rounds to the same byte, and the check reads clean
+// however wrong the alpha is.
+Page insetPair = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#ffffff}'
+    + '.p{width:100px;height:60px;border-radius:24px;background:#334488;'
+    + 'box-shadow:inset 0 0 8px 0 #ffffff}'
+    + '</style><body><div class="p"></div><div class="p"></div></body>',
+    'test.html', 200)
+clearCanvas()
+paintPage(insetPair, 0, 0, 200)
+int pairMoved = 0
+int pairInked = 0
+color pairWhite = '#ffffff'
+for int py = 0, py < 60, py++ {
+    for int px = 0, px < 100, px++ {
+        color topPx = getPixelColor(px, py)
+        if !(topPx == pairWhite) { pairInked++ }
+        if !(topPx == getPixelColor(px, py + 60)) { pairMoved++ }
+    }
+}
+checkEqInt(pairMoved, 0, 'a second box with the same inset shadow gets the same corner')
+check(pairInked > 2000, "and what the two agree on is the box, not the page behind it")
+
+
 finish('box shadow')

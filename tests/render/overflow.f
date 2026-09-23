@@ -485,15 +485,15 @@ check(getPixelColor(110, 75) == red, 'while still painting inside its padding bo
 // out to x=20 and the box from 23, and row 20 is the backdrop out to
 // x=4 and the box from 6.
 //
-// **Each page is painted immediately after it is built**, and none is
-// painted twice. The per-document flags the painter reads -- whether
-// the document has a float, a positioned box, a box that paints whole
-// -- are set while a box tree is *built* and read while one is
-// *painted*, so with two pages alive they describe whichever was laid
-// out last. Painting an earlier page again reads the later page's
-// answers: the first draft of this test did exactly that and its
-// agreement checks passed while comparing a page with itself. todo.md
-// carries it.
+// The painter's per-document answers -- whether the document has a
+// float, a positioned box, a box that paints whole -- are settled
+// while a box tree is *built* and read while one is *painted*, and a
+// `Page` carries its own so that painting is a function of the page
+// rather than of the order. The first draft of this test was written
+// before it did, painted an earlier page again, read the later page's
+// answers and compared a page with itself while reporting success.
+// `tests/render/pagestate.f` is the invariant that would have caught
+// it.
 color rcGreen = '#00ff00'
 color rcRed = '#ff0000'
 
