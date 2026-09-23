@@ -254,12 +254,16 @@ void func pFillRoundedEllipses(x:int, y:int, w:int, h:int,
     if paintLayer == null {
         roundedRectPathEllipses(x, y, w, h, tlx, tly, trx, trry, brx, bry, blx, bly)
         fillPath()
-    } else {
-        // no path API on a layer, so the corners come out square
-        // (FINDINGS.md, "an image is a drawable surface with a smaller
-        // API")
-        paintLayer.drawRect(x, y, w, h)
+        return
     }
+    // A layer has no path API (FINDINGS.md, "an image is a drawable
+    // surface with a smaller API"), so the shape is filled a row at a
+    // time from the same span function the shadows ask for. The corners
+    // come out where they belong and hard-edged, rather than square: a
+    // `border-radius` inside an `overflow: hidden` box used to be drawn
+    // as a rectangle, which is an ordinary thing for a page to ask for
+    // and a plain error on the screen.
+    fillRoundedOnLayer(x, y, w, h, tlx, tly, trx, trry, brx, bry, blx, bly)
 }
 
 void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
@@ -583,6 +587,37 @@ void func shadowSpanAt(vc:float, w:int, h:int,
     shadowSpanHi = w.toFloat()
         - maxFloat(cornerInsetShaped(trx, trys, trys.toFloat() - vc, pathKTR),
                    cornerInsetShaped(brx, brys, vc - (h - brys).toFloat(), pathKBR))
+}
+
+// A rounded rectangle filled into a layer, a row at a time, from the
+// span function above -- which is why it lives here rather than beside
+// `pFillRoundedEllipses`: a function is hoisted in Festina and a global
+// is not, and this reads `shadowSpanLo`.
+void func fillRoundedOnLayer(x:int, y:int, w:int, h:int,
+                             tlx:int, tly:int, trx:int, trry:int,
+                             brx:int, bry:int, blx:int, bly:int) {
+    int capX = Math.floorDiv(w, 2)
+    int capY = Math.floorDiv(h, 2)
+    int ax = minInt(tlx, capX)
+    int ay = minInt(tly, capY)
+    int bx = minInt(trx, capX)
+    int by = minInt(trry, capY)
+    int cx = minInt(brx, capX)
+    int cy = minInt(bry, capY)
+    int dx = minInt(blx, capX)
+    int dy = minInt(bly, capY)
+    if ax <= 0 && ay <= 0 && bx <= 0 && by <= 0
+        && cx <= 0 && cy <= 0 && dx <= 0 && dy <= 0 {
+        paintLayer.drawRect(x, y, w, h)
+        return
+    }
+    for int j = 0, j < h, j++ {
+        shadowSpanAt(j.toFloat() + 0.5, w, h, ax, ay, bx, by, cx, cy, dx, dy)
+        int lo = roundPx(shadowSpanLo)
+        int hi = roundPx(shadowSpanHi)
+        if hi <= lo { continue }
+        paintLayer.drawRect(x + lo, y + j, hi - lo, 1)
+    }
 }
 
 // One corner of a rounded shadow, as an image carrying the blurred

@@ -472,4 +472,56 @@ paintPage(hid, 0, 0, 300)
 check(getPixelColor(95, 75) == white, 'overflow: hidden ignores the clip margin')
 check(getPixelColor(110, 75) == red, 'while still painting inside its padding box')
 
+// ---- a border-radius survives the layer --------------------------------
+//
+// A layer has no path API, so a rounded box painted into one used to
+// come out square -- and `overflow: hidden` with a `border-radius`
+// inside it is an ordinary thing for a page to do. The shape is filled
+// a row at a time instead, from the same span function the shadows ask
+// for.
+//
+// Chromium on a 120x120 box of `border-radius: 40px` inside a 150x150
+// `overflow: hidden` container, on a green page: row 4 is the backdrop
+// out to x=20 and the box from 23, and row 20 is the backdrop out to
+// x=4 and the box from 6.
+//
+// **Each page is painted immediately after it is built**, and none is
+// painted twice. The per-document flags the painter reads -- whether
+// the document has a float, a positioned box, a box that paints whole
+// -- are set while a box tree is *built* and read while one is
+// *painted*, so with two pages alive they describe whichever was laid
+// out last. Painting an earlier page again reads the later page's
+// answers: the first draft of this test did exactly that and its
+// agreement checks passed while comparing a page with itself. todo.md
+// carries it.
+color rcGreen = '#00ff00'
+color rcRed = '#ff0000'
+
+text rcBox = '<div id="a" style="width:120px;height:120px;border-radius:40px;'
+    + 'background:#ff0000"></div>'
+
+// The same box outside a clip, painted through the canvas's own path.
+// Its answers are the ones the clipped shape has to agree with, and
+// none of them is written down here.
+Page rcPlain = pageFromHtml('<!doctype html><body style="margin:0;background:#00ff00">'
+    + rcBox + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(rcPlain, 0, 0, 200)
+color rcAt4 = getPixelColor(4, 4)
+color rcAt20 = getPixelColor(2, 20)
+color rcIn = getPixelColor(30, 30)
+color rcMid = getPixelColor(60, 60)
+check(rcAt4 == rcGreen, 'the unclipped box has its corner cut away')
+check(rcIn == rcRed, 'and is painted inside the curve')
+
+Page rcClipped = pageFromHtml('<!doctype html><body style="margin:0;background:#00ff00">'
+    + '<div style="overflow:hidden;width:150px;height:150px">' + rcBox
+    + '</div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(rcClipped, 0, 0, 200)
+check(getPixelColor(4, 4) == rcAt4, 'a rounded box inside a clip keeps its corner')
+check(getPixelColor(2, 20) == rcAt20, 'down the side of that corner as well')
+check(getPixelColor(30, 30) == rcIn, 'and is still painted inside the curve')
+check(getPixelColor(60, 60) == rcMid, 'and in the middle')
+
 finish('overflow')

@@ -2915,3 +2915,21 @@ Chromium to one or two, which is the offset the outer shadows already
 carry. The feature page's figures now carry both an unblurred inset
 shadow and a blurred one, so the two paths are measured together and
 one probe turns both off.
+
+
+## What filling a rounded rectangle into a layer costs
+
+A `border-radius` inside a clipped subtree is filled a row at a time
+rather than drawn as a rectangle. Paired, forward, 20 iterations:
+`generated.html` 0 ms of 19 and `features.html` 0 ms of 40.
+
+Both zeros are structural rather than lucky: neither page has a rounded
+box inside a layer, so neither reaches the path at all. **That also
+makes it unmeasured**, which is the shape this file warns about
+elsewhere -- a feature no page exercises reads exactly like a feature
+that costs nothing. Putting `overflow: hidden` on the feature page's
+`figure`, which already has a `border-radius`, would exercise it
+ninety-six times over; it would also make each figure a box that paints
+whole and move its inset shadow inside a layer, so it is a page change
+worth making on its own rather than beside this one. todo.md carries
+it.

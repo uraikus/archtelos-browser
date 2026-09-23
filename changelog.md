@@ -5,6 +5,34 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `border-radius` survives a layer
+
+A clipped subtree is painted into an image and blitted back, because
+the canvas has no clip region -- and an image has no path API, so a
+rounded box painted into one came out **square**. `overflow: hidden`
+with a `border-radius` inside it is an ordinary thing for a page to
+ask for, and what it got was a rectangle: on a 120x120 box of
+`border-radius: 40px` inside a 150x150 clip, Chromium leaves the
+backdrop showing out to x=20 on row 4 and this engine painted the box
+from x=0.
+
+The shape is filled a row at a time now, from the same span function
+the shadows ask for, so the corners come out where they belong. They
+are hard-edged rather than antialiased, which is the one thing the
+layer cannot do, and the boundary lands within a pixel of Chromium's.
+
+**The test needed no number, and its first draft was wrong in a way
+worth recording.** The same box outside a clip is painted through the
+canvas's own path, so the two have to agree away from that edge. The
+first version painted the clipped page, built the unclipped one,
+painted it, then painted the clipped page *again* -- and the painter's
+per-document flags are raised while a box tree is built and read while
+one is painted, so the second painting took the unclipped page's
+answers, never gave the clipping box a layer, and compared the
+unclipped rendering with itself. Two checks beside it, written against
+a literal colour, kept failing correctly and are what gave it away.
+todo.md carries the hazard and the durable fix.
+
 ### A clipped background follows the inner curve
 
 `background-clip: padding-box` cuts the background to the padding box,
