@@ -473,14 +473,60 @@ void func setCssViewport(w:int, h:int) {
 
 // ---- comments and block skipping -----------------------------------
 
+// Comments are consumed by the tokenizer (CSS Syntax 3 §4.3), so a
+// `/*` is only a comment where a token can begin: not inside a string,
+// and not inside an unquoted `url()`. A scan that did not know that
+// turned `content: "/*"` into a comment running to the end of the
+// stylesheet and dropped every rule after it.
+//
+// The other direction matters as much and is the easier one to get
+// wrong: a comment ends at the FIRST `*/` whatever is inside it, so a
+// quote there is ordinary text and `/* "*/` really does leave a string
+// open. Chromium loses the rest of that sheet and so does this, which
+// the suite asserts.
+//
+// A page with no comment in it at all pays one `asciiIndexOf`, as it
+// did before.
 ascii func stripCssComments(src:ascii) {
     if asciiIndexOf(src, '/*', 0) < 0 { return src }
     text out = ''
     int n = src.length
     int runStart = 0
     int i = 0
+    // 0 outside anything, otherwise the character that ends the run:
+    // a quote for a string, ')' for an unquoted url().
+    int closer = 0
+    // Built once rather than per character: this loop visits every byte
+    // of every stylesheet, and an `ascii` allocated inside it would be
+    // one allocation per byte.
+    ascii urlOpen = 'url('.toAscii()
     while i < n {
-        if src.charCodeAt(i) == CH_SLASH && i + 1 < n && src.charCodeAt(i + 1) == CH_STAR {
+        int c = src.charCodeAt(i)
+        if closer != 0 {
+            // A backslash escapes the next character inside a string.
+            // An unquoted url() takes one too (§4.3.6), so both are
+            // handled the same way here.
+            if c == CH_BACKSLASH { i = i + 2  continue }
+            if c == closer { closer = 0 }
+            i++
+            continue
+        }
+        if c == CH_QUOTE || c == CH_APOS { closer = c  i++  continue }
+        // `url(` opens a run only when what follows is unquoted; a
+        // quoted one is an ordinary string and the branch above takes
+        // it at the quote.
+        // The letter is tested first so that the prefix compare runs
+        // only where it can match: `u` or `U` and nothing else.
+        if (c == 117 || c == 85) && asciiStartsWithLower(src, urlOpen, i) {
+            int j = i + 4
+            while j < n && isSpaceCode(src.charCodeAt(j)) { j++ }
+            if j < n && src.charCodeAt(j) != CH_QUOTE && src.charCodeAt(j) != CH_APOS {
+                closer = CH_RPAREN
+            }
+            i = j
+            continue
+        }
+        if c == CH_SLASH && i + 1 < n && src.charCodeAt(i + 1) == CH_STAR {
             if i > runStart {
                 text run = src.slice(runStart, i).toText()
                 out = out + run

@@ -3054,3 +3054,50 @@ floor said another way.
 
 Both benchmark pages render byte-identically between the binaries,
 checked with `cmp` before any timing.
+
+
+## What a string-aware comment scan costs, and the host's spread in one day
+
+2026-09-23. `stripCssComments` now tracks whether it is inside a
+string or an unquoted `url()`. It visits every byte of every
+stylesheet, so this is the kind of change that should be measured on a
+stylesheet rather than on a page.
+
+**Neither benchmark page has a `/*` in its CSS**, so both take the
+early return and only the user-agent sheet's two comments reach the new
+loop. Their rows are structural again:
+
+| `features.html` | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, parent then candidate | +0 | +0 | +0 | -2 | +1 |
+| reversed | +0 | +0 | +1 | -3 | +0 |
+
+So the reading that counts is a stylesheet built for it: 970 KB, 6,000
+rules, each with a comment, a string and an unquoted `url()`. Its
+`stylesheets` phase is 33 ms, which is where any cost would land.
+
+| 6,000 commented rules | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward | +0 | **-1** | +0 | +0 | +0 |
+| reversed | +0 | **+1** | +0 | +0 | +0 |
+
+Minus one against plus one is the order effect and nothing else: the
+scan costs under a millisecond on a stylesheet approaching a megabyte.
+Both pages render byte-identically between the binaries, `cmp`-checked
+before any timing.
+
+**The host moved by a factor of 2.4 in one day, and the control caught
+it both ways.** Three `tests/bench.sh` runs this morning and afternoon
+put Chromium's render of `generated.html` at 25.9 ms, then 48.6, then
+20.0, against the 26.0 this file records. The first qualified; the
+second failed the 15% band as too slow and the third as too **fast**,
+which is the band working as intended -- a run where the reference
+browser is a quarter quicker would have written this engine's row down
+as a quarter quicker too.
+
+None of the three later runs' numbers are copied here. What the spread
+says about the band is a judgement for whoever next has this machine
+quiet: 15% of 26.0 is 22.1 to 29.9, and today's host produced 20.0 and
+48.6 with nothing visibly running. Either the band is too tight for
+this host or the host is not one to benchmark on, and widening it to
+make bad runs pass is the one answer this file has already ruled out.

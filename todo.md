@@ -1678,12 +1678,16 @@ mid-declaration and never closes. A single `content: "/*"` in a site's
 stylesheet therefore drops every rule after it, which is not a corner
 so much as a page that renders blank.
 
-The fix is to make the scan aware of the three places a `/*` is not a
-comment -- inside `'...'`, inside `"..."` and inside an unquoted
-`url(...)` -- with a backslash escaping the next character in the two
-quoted forms. The check needs no number: the same sheet with the string
-emptied has to paint the same, and it is the *following* rule that says
-whether the scan stopped where it should.
+The scan knows those three places now. What it deliberately does not
+do is the other direction: a comment ends at the **first** `*/`
+whatever is inside it, so `/* "*/` leaves a `"` open and swallows the
+rest of the sheet -- Chromium loses that rule too, measured, and the
+suite asserts the loss so that a later "fix" cannot quietly introduce
+a divergence.
+
+What is still open in CSS Syntax 3 is the rest of that row: escapes are
+accepted in identifiers and never decoded, so `.a\.b` can never match,
+and `<!--`/`-->` are not recognised.
 
 ### Where an inset shadow's curve comes from, measured
 

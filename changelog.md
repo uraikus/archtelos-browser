@@ -5,6 +5,29 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `/*` inside a string is not a comment
+
+Comments are consumed by the tokenizer (CSS Syntax 3 §4.3), so a `/*`
+is only a comment where a token can begin. The scan that strips them
+ran first and knew none of that, so `font-family: "/*"` opened a
+comment that ran to the next `*/` -- and where the sheet had none, to
+its end. Both rules of the two-rule fixture were lost, not just the one
+holding it: a single `content: "/*"` in a site's stylesheet dropped
+every rule after it.
+
+The scan knows the three places now -- `'...'`, `"..."` and an unquoted
+`url(...)`, with a backslash escaping the next character in each -- and
+a stylesheet with no `/*` in it pays the one search it paid before. The
+prefix the `url(` test compares against is built once outside the loop
+rather than per byte, and the letter is checked first so the compare
+runs only where it can match.
+
+**The other direction is the easier one to get wrong, and the suite
+pins it.** A comment ends at the *first* `*/` whatever is inside it, so
+a quote there is ordinary text and `/* "*/` really does leave a string
+open and swallow the rest of the sheet. Chromium loses that rule too,
+measured, so the check asserts the loss rather than fixing it.
+
 ### Grid 1 §8.3's named spans, in both directions
 
 `span <custom-ident>` counts lines carrying that name rather than

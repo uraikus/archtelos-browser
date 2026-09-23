@@ -65,4 +65,47 @@ checkAnb('2n+', false, 0, 0, 'a sign with no integer after it')
 checkAnb('2n 1', false, 0, 0, 'a missing sign')
 checkAnb('2m+1', false, 0, 0, 'the wrong letter')
 
+// ---- CSS Syntax 3 §4.3: where a `/*` is not a comment ------------------
+// Comments are consumed by the tokenizer, so a `/*` inside a string or
+// inside an unquoted `url()` is ordinary characters. The scan that
+// strips them runs before anything else and has to know the same three
+// places the semicolon scan above already knows.
+//
+// The rule AFTER the one holding it is what these assert on: a comment
+// opened by mistake runs to the next `*/`, and where the sheet has none
+// it takes everything to the end -- so it is the second rule surviving
+// that says the scan stopped where it should.
+Stylesheet sq1 = parseStylesheet('p { font-family: "/*" } q { color: red }')
+checkEq(dumpStylesheet(sq1), 'p{1} { font-family: "/*"; }\nq{1} { color: red; }\n',
+        'a comment opener inside a double-quoted string is not a comment')
+Stylesheet sq2 = parseStylesheet("p { font-family: '/*' } q { color: red }")
+checkEq(dumpStylesheet(sq2), 'p{1} { font-family: \'/*\'; }\nq{1} { color: red; }\n',
+        'nor inside a single-quoted one')
+Stylesheet sq3 = parseStylesheet('p { background: url(a/*b.png) } q { color: red }')
+checkEq(dumpStylesheet(sq3), 'p{1} { background: url(a/*b.png); }\nq{1} { color: red; }\n',
+        'nor inside an unquoted url()')
+// The other direction, which is the one a fix can get wrong: a quote
+// inside a comment is ordinary text, and a comment ends at the FIRST
+// `*/` whatever follows it. So `/* " */` is a whole comment and the
+// rule after it survives...
+Stylesheet sq4 = parseStylesheet('p { a: 1 } /* " */ q { color: red }')
+checkEq(dumpStylesheet(sq4), 'p{1} { a: 1; }\nq{1} { color: red; }\n',
+        'a quote inside a comment is part of the comment')
+// ...while `/* "*/` ends at that `*/` and leaves a `"` open, which
+// swallows the rest of the sheet. Chromium loses the rule there too,
+// measured -- so this is what the scan must NOT fix.
+Stylesheet sq4b = parseStylesheet('p { a: 1 } /* "*/" */ q { color: red }')
+checkEq(dumpStylesheet(sq4b), 'p{1} { a: 1; }\n',
+        'and a comment ends at the first terminator, open quote or not')
+// A backslash escapes the next character, so the quote here does not
+// end the string and the `/*` after it is still inside one.
+Stylesheet sq5 = parseStylesheet('p { font-family: "a\\"/*" } q { color: red }')
+checkEq(dumpStylesheet(sq5), 'p{1} { font-family: "a\\"/*"; }\nq{1} { color: red; }\n',
+        'an escaped quote does not end the string the scan is in')
+// The ordinary case still works: a comment between two declarations is
+// removed, and one spanning a rule boundary takes what is between.
+Stylesheet sq6 = parseStylesheet('p { a: 1; /* gone */ b: 2 } /* r */ q { color: red }')
+checkEq(dumpStylesheet(sq6), 'p{1} { a: 1; b: 2; }\nq{1} { color: red; }\n',
+        'and a comment that is one is still stripped')
+
 finish('css parser')
