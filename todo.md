@@ -211,11 +211,9 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    and below anything positioned, which is where Chromium draws them
    rather than at the very end §9.9's wording suggests -- measured
    against all four things an outline can overlap, in the section
-   below. What is left of it is narrow: a box that paints whole draws
-   its own outline inside its own subtree, so a float's outline, or a
-   clipping box's, sits at that box's step relative to its siblings
-   rather than above them. Nothing has measured whether Chromium
-   agrees, and no page here notices.
+   below. A box that paints whole draws its own outline inside its own
+   subtree, so a float's outline sits at step 4 with the float -- which
+   is measured, and is what Chromium does. §9.9 is complete here.
 9. **Containment 1, completed**: layout and style containment are
    computed and change nothing, because nothing escapes a box that way
    yet — there is no counter or quote scope to cut, and a float does
@@ -1556,6 +1554,14 @@ over the band its outline occupies:
 | a float | the **outline** |
 | an inline-block pulled over it | the **outline** |
 | an absolutely positioned box over it | the **positioned box** |
+
+And the pass is over the stacking context's **in-flow** content rather
+than over everything in it: a *float's* own outline travels with the
+float at step 4, so an inline-block pulled over the float covers its
+outline along with its background. Chromium draws that inline-block
+across 0-199 on the float's rows and on its outline's band alike, which
+is what this engine does already -- a float paints whole at step 4 and
+draws its own outline inside itself.
 
 So the outline is above steps 3, 4 and 5 and below step 8, which is
 one pass of its own between the inline content and the positioned

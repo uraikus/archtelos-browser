@@ -28,6 +28,12 @@ pass between step 5 and step 8. It is that now, walking the marks the
 step 3 walk already leaves on each box, and a document that declares no
 outline does not walk for them at all.
 
+**The pass is over the in-flow content, not over everything in the
+context.** A float's own outline travels with the float at step 4, so
+an inline-block pulled over the float covers its outline along with its
+background -- measured, and already what this engine did, since a float
+paints whole. That is §9.9 complete here.
+
 **A clipping box's own outline goes on after the blit.** Such a box
 paints its contents into a layer the size of its padding box, and an
 outline lies outside the border box, so an outline drawn in there falls

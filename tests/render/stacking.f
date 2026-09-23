@@ -238,4 +238,24 @@ check(getPixelColor(100, 62) == green, 'a positioned box paints over an outline'
 check(getPixelColor(202, 62) == red, 'which still shows where the positioned box does not reach')
 
 
+// A float's own outline is not hoisted into that pass: it travels with
+// the float, at step 4, so in-flow inline content pulled over it covers
+// it. Chromium draws the inline-block across 0-199 on both the float's
+// rows and its outline's band, which is what says the outline pass is
+// over the in-flow content rather than over everything (todo.md).
+Page poFloatOwn = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:300px}'
+    + '#f{float:left;width:100px;height:60px;background:#0088ff;'
+    + 'outline:6px solid #ff0000}'
+    + '#s{height:40px}#t{line-height:0}'
+    + '#i{display:inline-block;width:200px;height:40px;background:#ff00ff;'
+    + 'margin-left:-100px}'
+    + '</style><body><div id="f"></div><div id="s"></div>'
+    + '<div id="t"><span id="i"></span></div></body>', 'test.html', 400)
+clearCanvas()
+paintPage(poFloatOwn, 0, 0, 400)
+check(getPixelColor(50, 45) == magenta, 'inline content covers a float it is pulled over')
+check(getPixelColor(50, 62) == magenta, "and covers that float's own outline with it")
+
+
 finish('stacking')
