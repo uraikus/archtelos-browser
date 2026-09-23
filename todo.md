@@ -1725,6 +1725,40 @@ An escaped space is not on the list because HTML cannot express the
 element it would need: `class="c d"` is two classes, not one class
 named `c d`, and Chromium leaves `.c\ d` unmatched there too.
 
+### What `<!--` in a stylesheet costs, measured
+
+CSS Syntax 3 §5.4.1 ignores a CDO (`<!--`) and a CDC (`-->`) at the top
+level of a stylesheet: they are the wrapper pages once put round a
+`<style>` element so that a browser which did not know the tag would
+not print its contents. Here they are neither recognised nor skipped,
+so they are swept into the selector beside them and take a rule with
+them.
+
+Two sheets of two rules, on a 200px page whose divs are sized by those
+rules:
+
+```css
+<!--
+#a{width:100px;height:20px;background:#ff0000}
+#b{width:100px;height:20px;background:#0000ff}
+-->
+```
+
+```css
+#a{width:100px;height:20px;background:#ff0000}
+--> #b{width:100px;height:20px;background:#0000ff}
+```
+
+| | Chromium | this engine |
+|---|---|---|
+| wrapped in `<!--`/`-->` | both rules apply | `#a` lost; the `-->` takes nothing, because a trailing one ends the sheet |
+| a `-->` before the second rule | both rules apply | `#b` lost |
+
+**Inside a declaration block the two already agree**: `#a{--> background:#0000ff}`
+leaves the earlier `background` standing in both, because the
+declaration's name is not one either engine knows. So the fix is at the
+top level only, where a rule is read.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
