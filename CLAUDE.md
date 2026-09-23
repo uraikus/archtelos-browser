@@ -263,6 +263,19 @@ a band that gets ignored. A new reference browser is a new control, so
 raise `CONTROL_MS` and record the new spread; do not widen the
 tolerance to make a bad run pass.
 
+**One round is not a measurement, and the first round is the one that
+lies.** Two diffs in one day, each adding a function the benchmark page
+never calls, read two to three milliseconds on their first round and
+nothing on their second: `:nth-child()`'s `of` clause gave layout +2
+forward and then -2 forward, and the validity conditions gave cascade
++2 and layout +3 forward and then -1 and -1. Both first rounds had the
+shapes this file calls real -- a mirror image that flips sign, three
+quarters of the pairs agreeing with the median -- and both were
+contradicted by simply running them again. So a reading earns a
+question to the code only once **two forward rounds agree with each
+other**; a pair of rounds is the cheapest check there is and comes
+before the mirror image, the control and every explanation.
+
 **A cost that survives two rounds still has to survive its own
 mirror image.** Pair the two binaries the other way round as well: if
 the candidate reads a millisecond slower running second, and the
