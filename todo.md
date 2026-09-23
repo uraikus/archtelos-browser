@@ -1766,6 +1766,61 @@ leaves the earlier `background` standing in both, because the
 declaration's name is not one either engine knows. So the fix is at the
 top level only, where a rule is read.
 
+### What an attribute selector cannot say, measured
+
+A sweep of 37 attribute selectors, each asked of the element it names
+with `element.matches()` in Chromium and against the same element's
+laid-out width here, divides cleanly. Twenty-one agree. Two are the
+engine ahead: Selectors 4 §6.3's `s` modifier is implemented here and
+throws a `SyntaxError` in Chromium, so `[data-x="ab" s]` reads `ERR`
+there and `Y` here. The remaining fourteen are one gap with three
+places in it -- **nothing on the selector path is aware that a `]` or a
+`[` inside a string is not a bracket, and nothing decodes an escape
+inside `[...]`**.
+
+| selector | element's `data-x` | Chromium | this engine |
+|---|---|---|---|
+| `[data-x="a]b"]` | `a]b` | matches | no match |
+| `[data-x="]"]` | `]` | matches | no match |
+| `[data-x^="a]"]` | `a]b` | matches | no match |
+| `[data-x="a[b"]` | `a[b` | matches | no match |
+| `[data-x="a\"b"]` | `a"b` | matches | no match |
+| `[data-x="a\'b"]` | `a'b` | matches | no match |
+| `[data-x="a\\b"]` | `a\b` | matches | no match |
+| `[data-x="a\65 b"]` | `aeb` | matches | no match |
+| `[data\-x="ab"]` | `ab` | matches | no match |
+| `[data\-x]` | `ab` | matches | no match |
+| `[data-x=a\ b]` | `a b` | matches | no match |
+| `[data-x=a\]b]` | `a]b` | matches | no match |
+| `[data-x=a\=b]` | `a=b` | matches | no match |
+| `[data-x=a\62 ]` | `ab` | matches | no match |
+
+The three places, each found by dumping what the parser built rather
+than by reading it:
+
+1. **`parseSelectorList` counts brackets without skipping strings.**
+   `[data-x="a[b"]` leaves its depth at 1 when the list ends, so the
+   one and only selector is never pushed and the rule is dropped whole.
+   `dumpStylesheet` of `[data-x="a[b"]{width:50px}#z{color:red}` prints
+   the `#z` rule alone.
+2. **The compound parser takes the first `]` it finds.**
+   `asciiIndexOf(selSrc, ']', selPos)` cuts `[data-x="a]b"]` at the `]`
+   inside the quotes, and the `"]` left over marks the selector
+   unsupported, which drops the rule for a second reason.
+3. **`parseAttrSel` decodes nothing.** The name scan stops at the
+   backslash of `data\-x`, the quoted-value scan ends at a `"` however
+   it is escaped, and the unquoted-value scan reads `a\ b` as the value
+   `a\` followed by a flag. `cssDecodeIdent`, which already decodes an
+   identifier elsewhere in this file, is not reached from here at all.
+
+An escaped space earns its place in the table where it could not in the
+class-selector measurement: `class="c d"` is two classes and no element
+can carry one named `c d`, but `data-x="a b"` is a single attribute
+value with a space in it, so `[data-x=a\ b]` has something real to
+match.
+
+The measurement alone; the test and the fix follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
