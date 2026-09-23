@@ -1584,12 +1584,24 @@ builds a struct of 244 fields, 16 of them `text` and 14 of them arrays
 -- `Style`'s own shape -- and forty thousand reads of the form
 `Big s = n.big` do not register at millisecond resolution.
 
-So roughly a microsecond a call is going somewhere in
-`boxPaintsWhole`'s handful of field reads and guarded calls, and
-nothing here has found where. The shipped painter does not pay it -- it
-asks the question once and writes the answer on the box -- so this is
-a question about Festina rather than about the browser, and the next
-answer to it belongs in FINDINGS.md.
+Part of it is now accounted for and part is not. Binding an element of
+an `arr` to a local costs about 0.14 microseconds where passing it
+straight to a call costs nothing (FINDINGS.md, finding 41), and the
+walks bind `Box c = b.children[i]` once per child, so three walks of
+2,728 boxes is about a millisecond of the seven. The other six are
+still unattributed.
+
+**And the obvious way to attribute them does not work.** Asking
+`boxPaintsWhole` ten times a box instead of once reads **zero** extra
+milliseconds, because the function is pure and the compiler folds the
+nine repeats into the one. An instrument that measures a call by making
+more of the same call cannot measure a call the optimizer can prove
+redundant, which is worth remembering before reaching for it again.
+
+The shipped painter does not pay any of this -- it asks the question
+once and writes the answer on the box -- so what is left is a question
+about Festina rather than about the browser, and the next answer to it
+belongs in FINDINGS.md.
 
 ### Grid's remaining corner, measured
 

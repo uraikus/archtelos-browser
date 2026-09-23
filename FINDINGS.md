@@ -1347,6 +1347,16 @@ generated.html's 20 ms paint into 543. What works instead is to write an int on 
 box as the first pass goes and have the later passes read it, which is
 the same shape finding 1 forces on the box tree's parents.
 
+**Binding an element to a local is the same cost in miniature.**
+`walk(n.kids[i])` and `Node c = n.kids[i]` followed by `walk(c)` do the
+same work, and the second is not free: twenty walks of a 1,093-node
+tree are 0 ms passing the element straight to the call and **3 ms**
+binding it first, which is about 0.14 microseconds a bind. Unlike the
+push it is a flat cost rather than a walk -- a struct of 52 fields, ten
+of them arrays and ten `text`, binds in exactly the same 3 ms as one of
+two. So it is a retain and a release rather than a traversal, and it is
+worth knowing where a loop over a tree binds a child it uses once.
+
 And it is worth saying what this is *not*: reading a struct-valued
 field is free. A `Style` here has 244 fields, 16 of them `text` and 14
 of them arrays, and forty thousand reads of one that size --
