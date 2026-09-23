@@ -1689,6 +1689,33 @@ What is still open in CSS Syntax 3 is the rest of that row: escapes are
 accepted in identifiers and never decoded, so `.a\.b` can never match,
 and `<!--`/`-->` are not recognised.
 
+### What an undecoded escape costs a selector, measured
+
+CSS Syntax 3 §4.3.7 decodes an escape as it consumes an identifier: a
+backslash before a non-hex character stands for that character, and a
+backslash before up to six hex digits stands for the code point they
+name, with one following space consumed as the terminator. Here the
+backslash is accepted and kept, so the identifier the selector holds is
+never the identifier the document has, and the rule can never match.
+
+Four selectors, each against the element it names, on a page whose
+`div` is grey until one matches:
+
+| selector | element | Chromium | this engine |
+|---|---|---|---|
+| `.a\.b` | `class="a.b"` | matches | no match |
+| `#x\#y` | `id="x#y"` | matches | no match |
+| `.\41 bc` | `class="Abc"` | matches | no match |
+| `.e\2d f` | `class="e-f"` | matches | no match |
+
+The last two are the hex form, where the space after the digits is the
+escape's terminator rather than a descendant combinator -- which is the
+part a scan that only strips backslashes would still get wrong.
+
+An escaped space is not on the list because HTML cannot express the
+element it would need: `class="c d"` is two classes, not one class
+named `c d`, and Chromium leaves `.c\ d` unmatched there too.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
