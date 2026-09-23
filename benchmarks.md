@@ -3010,3 +3010,47 @@ pixel. The remaining seven milliseconds are the second copy.
 A page with no `border-radius` on a box with a background image reads
 one field per layer painted and blits the image whole, which is what
 the two zeros above are.
+
+
+## What Grid's named spans cost, and a machine that would not hold still
+
+2026-09-23. `span <custom-ident>` resolves by counting named lines
+instead of being a span of one. Per grid item that is two boolean reads
+and a comparison in the placement pass; per grid axis it is one call
+that hands the track list straight back unless a backwards span
+actually ran off the front.
+
+**The run is disqualified for absolute numbers and reported anyway.**
+`tests/bench.sh`'s control read Chromium at 48.6 ms on
+`generated.html` against the 26.0 recorded -- 86.9% out, where 15% is
+allowed -- so none of its table is copied here. Nothing on this machine
+was visibly running; the load average sat between 1.0 and 1.8 on four
+cores with one runnable task.
+
+The paired readings are the measurement that survives that, because
+each pair runs both binaries back to back and a machine that drifts
+drifts under both halves. Even so, here is the same pairing three
+times, forward, on `features.html`:
+
+| run | parse | cascade | layout | paint |
+|---|---|---|---|---|
+| first | +1 | +0 | **-6** | +0 |
+| second | +0 | +0 | **+1** | +1 |
+| third | +0 | +2 | **-3** | +0 |
+
+and reversed once: parse +0, cascade -2, layout +5, paint +1.
+
+**Seven milliseconds of spread between three runs of two binaries that
+did not change** is the floor this reading can resolve, and it is far
+above anything two boolean reads per grid item could cost. The mirror
+agrees: whichever binary runs second is the slower one, forward and
+reversed alike.
+
+`generated.html` is the row worth reading, because it has no grid on it
+at all and so cannot be affected by this change: forward parse +1,
+cascade +2, layout -4, paint +1; reversed +0, -2, +2, +0. Four
+milliseconds of layout on a page the diff cannot touch is the same
+floor said another way.
+
+Both benchmark pages render byte-identically between the binaries,
+checked with `cmp` before any timing.

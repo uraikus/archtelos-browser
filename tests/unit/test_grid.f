@@ -941,6 +941,48 @@ checkEqInt(backI.w, backWI.w, 'and the item spans it')
 checkEqInt(backJ.x, backWJ.x, 'the line it added renumbers the rest')
 checkEqInt(backJ.w, backWJ.w, 'so an auto-placed sibling lands in that column')
 
+// Forward, the same sentence has a numbered equivalent on the template
+// as written, because the line it reaches is after the explicit grid:
+// `1 / span zz` counts forward from line 1, finds no `zz`, and takes
+// the first implicit line -- which is line 4.
+sameAs('grid-column:1 / span zz;grid-row:1', 'grid-column:1 / 4;grid-row:1',
+       TWOCOLS, '', 'a named span forward reaches the first implicit line')
+sameAs('grid-column:2 / span zz;grid-row:1', 'grid-column:2 / 4;grid-row:1',
+       TWOCOLS, '', 'from wherever it starts')
+// And a name the template does declare is counted rather than assumed.
+// The declared line is two tracks along on purpose: one track along is
+// a span of one, which is what a dropped name gives, so the check
+// would read clean either way.
+sameAs('grid-column:1 / span aa;grid-row:1', 'grid-column:1 / 3;grid-row:1',
+       '100px 100px [aa] 100px', '', 'a span to a name the template declares stops there')
+sameAs('grid-column:1 / span aa 2;grid-row:1', 'grid-column:1 / 3;grid-row:1',
+       '100px [aa] 100px [aa] 100px', '', 'and a count picks which one')
+
+// A subgrid has no implicit tracks of its own (Grid 2 §3.1): its lines
+// are its parent's and that is all of them, so a backwards search that
+// would run off the front is clamped to line 1 rather than making one.
+// `grid-auto-columns` is what makes the difference visible -- without a
+// size on it the track the engine should not create comes out zero
+// wide and the check reads clean either way.
+Box func subNoImplicit(colStyle:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:400px;'
+        + 'grid-template-columns:100px 100px 100px 100px">'
+        + '<div style="display:grid;grid-column:1 / 5;'
+        + 'grid-template-columns:subgrid;grid-auto-columns:50px">'
+        + '<div id="i" style="' + colStyle + '">t</div>'
+        + '<div id="j">u</div></div></div></body>', 800)
+}
+Box subNamed = subNoImplicit('grid-column:span zz / 3')
+Box subPlain = subNoImplicit('grid-column:1 / 3')
+checkEqInt(findById(subPlain, 'i').w, 200, 'the subgrid fixture spans two of its parent\'s tracks')
+checkEqInt(findById(subNamed, 'i').x, findById(subPlain, 'i').x,
+           'a backwards span in a subgrid makes no track of its own')
+checkEqInt(findById(subNamed, 'i').w, findById(subPlain, 'i').w,
+           'and is clamped to the subgrid\'s first line')
+checkEqInt(findById(subNamed, 'j').x, findById(subPlain, 'j').x,
+           'so the sibling beside it does not move either')
+
 // ---- Grid 2 §3: what a subgrid owes its parent -------------------------
 // A subgrid is not a spanning item. Its children are placed on the
 // parent's tracks and each contributes to the one it sits in, so the

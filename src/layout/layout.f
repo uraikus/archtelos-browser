@@ -4562,6 +4562,14 @@ struct GridArea {
 int gridResolvedStart = 0
 int gridResolvedSpan = 1
 bool gridResolvedAuto = false
+// How many implicit tracks a backwards named span put BEFORE the
+// explicit grid (§8.3). Every other placement is an index from line 1,
+// so this is the one thing that can move line 1 itself: the placement
+// pass shifts every item over by it and `layoutGrid` puts that many
+// tracks in front of the template. Zero on every grid that does not
+// ask, which is every grid that never writes `span <name>`.
+int gridLeadCols = 0
+int gridLeadRows = 0
 
 // ---- named grid lines ------------------------------------------------------
 //
@@ -4660,6 +4668,48 @@ int func gridResolveName(s:Style, name:text, inline:bool, edgeStart:bool,
     return explicitCount + 1 + (nth - gridNamedLineFound)
 }
 
+// §8.3's search for the line a `span <custom-ident>` reaches. It runs
+// outward from `fromLine` in one direction, counting only lines that
+// carry the name; `gridNamedLineFound` is left holding how many the
+// template could supply, so a shortfall can be taken from the implicit
+// lines on that side. Returns 0 when the template has too few.
+int func gridNamedLineFrom(s:Style, name:text, inline:bool, nth:int,
+                           fromLine:int, forward:bool) {
+    arr[text] names = inline ? s.gridColLineNames : s.gridRowLineNames
+    arr[int] at = inline ? s.gridColLineAt : s.gridRowLineAt
+    gridNamedLineFound = 0
+    if forward {
+        for int i = 0, i < names.length, i++ {
+            if names[i] != name || at[i] <= fromLine { continue }
+            gridNamedLineFound++
+            if gridNamedLineFound == nth { return at[i] }
+        }
+        return 0
+    }
+    for int i = names.length - 1, i >= 0, i-- {
+        if names[i] != name || at[i] >= fromLine { continue }
+        gridNamedLineFound++
+        if gridNamedLineFound == nth { return at[i] }
+    }
+    return 0
+}
+
+// The index a named span reaches, given the line it starts from and the
+// direction it runs in. `explicitCount` is the number of tracks in the
+// explicit grid, so its last line is at index `explicitCount`. Where
+// the template has too few lines of the name, the shortfall is counted
+// on through the implicit lines on that side -- which is what brings
+// them into being, including the ones BEFORE line 1 when the search
+// runs backwards. The answer may therefore be negative.
+int func gridSpanNameIndex(s:Style, name:text, inline:bool, nth:int,
+                           fromIdx:int, forward:bool, explicitCount:int) {
+    int hit = gridNamedLineFrom(s, name, inline, nth, fromIdx + 1, forward)
+    if hit > 0 { return hit - 1 }
+    int short = nth - gridNamedLineFound
+    if forward { return explicitCount + short }
+    return 0 - short
+}
+
 // A copy of `g` with any name resolved to a number against `s`.
 GridLine func gridLineResolved(g:GridLine, s:Style, inline:bool, edgeStart:bool,
                                explicitCount:int) {
@@ -4674,7 +4724,12 @@ GridLine func gridLineResolved(g:GridLine, s:Style, inline:bool, edgeStart:bool,
     return out
 }
 
-void func resolveGridEdges(startL:GridLine, endL:GridLine, explicitCount:int) {
+bool func gridSpanNamed(g:GridLine) {
+    return g.kind == GRIDLINE_SPAN && g.name != null && g.name != ''
+}
+
+void func resolveGridEdges(startL:GridLine, endL:GridLine, explicitCount:int,
+                           s:Style, inline:bool) {
     gridResolvedAuto = false
     gridResolvedSpan = 1
     gridResolvedStart = 0
@@ -4689,10 +4744,33 @@ void func resolveGridEdges(startL:GridLine, endL:GridLine, explicitCount:int) {
     }
     if startN >= 0 {
         gridResolvedStart = startN
+        if gridSpanNamed(endL) {
+            int to = gridSpanNameIndex(s, endL.name, inline, maxInt(endL.n, 1),
+                                       startN, true, explicitCount)
+            gridResolvedSpan = maxInt(to - startN, 1)
+            return
+        }
         gridResolvedSpan = endL.kind == GRIDLINE_SPAN ? maxInt(endL.n, 1) : 1
         return
     }
     if endN >= 0 {
+        // A named span here runs BACKWARDS, so a name the template does
+        // not carry reaches the implicit lines before line 1 -- which
+        // is the one place a grid item's start line can be negative.
+        // `gridPlaceItems` shifts the whole grid over afterwards.
+        if gridSpanNamed(startL) {
+            int from = gridSpanNameIndex(s, startL.name, inline, maxInt(startL.n, 1),
+                                         endN, false, explicitCount)
+            // A subgrid has no implicit tracks of its own (Grid 2 §3.1):
+            // its lines are its parent's and that is all of them, so a
+            // search that runs off the front stops at its first line
+            // rather than making a track there. The span shrinks with
+            // it, because the end line is where the item still ends.
+            if from < 0 && (inline ? s.gridColsSubgrid : s.gridRowsSubgrid) { from = 0 }
+            gridResolvedStart = from
+            gridResolvedSpan = maxInt(endN - from, 1)
+            return
+        }
         int span = startL.kind == GRIDLINE_SPAN ? maxInt(startL.n, 1) : 1
         gridResolvedStart = maxInt(endN - span, 0)
         gridResolvedSpan = span
@@ -4863,6 +4941,14 @@ arr[int] func gridSpannedSizes(sizes:arr[int], at:int, span:int) {
 arr[GridArea] func gridPlaceItems(b:Box, s:Style, explicitCols:int, explicitRows:int) {
     arr[GridArea] areas = []
     arr[Box] autoItems = []
+    // -1 marks an axis for auto-placement, and a backwards named span
+    // can resolve to a negative line, so the two cannot share the
+    // sentinel: which axes are automatic is kept beside the areas until
+    // the shift below has been applied.
+    arr[bool] colAutos = []
+    arr[bool] rowAutos = []
+    int leastCol = 0
+    int leastRow = 0
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
@@ -4873,19 +4959,32 @@ arr[GridArea] func gridPlaceItems(b:Box, s:Style, explicitCols:int, explicitRows
         a.rowSpan = 1
         resolveGridEdges(gridLineResolved(c.style.gridColStart, s, true, true, explicitCols),
                          gridLineResolved(c.style.gridColEnd, s, true, false, explicitCols),
-                         explicitCols)
+                         explicitCols, s, true)
         bool colAuto = gridResolvedAuto
         a.col = gridResolvedStart
         a.colSpan = gridResolvedSpan
         resolveGridEdges(gridLineResolved(c.style.gridRowStart, s, false, true, explicitRows),
                          gridLineResolved(c.style.gridRowEnd, s, false, false, explicitRows),
-                         explicitRows)
+                         explicitRows, s, false)
         bool rowAuto = gridResolvedAuto
         a.row = gridResolvedStart
         a.rowSpan = gridResolvedSpan
-        if colAuto { a.col = -1 }
-        if rowAuto { a.row = -1 }
+        if !colAuto && a.col < leastCol { leastCol = a.col }
+        if !rowAuto && a.row < leastRow { leastRow = a.row }
+        colAutos.push(colAuto)
+        rowAutos.push(rowAuto)
         areas.push(a)
+    }
+    // A negative line means implicit tracks in front of the explicit
+    // grid, so the whole grid moves over and line 1 is no longer index
+    // zero. Nothing else in the pass has to know: after this every
+    // index is against the grid as it now stands.
+    gridLeadCols = 0 - leastCol
+    gridLeadRows = 0 - leastRow
+    for int i = 0, i < areas.length, i++ {
+        GridArea a = areas[i]
+        if colAutos[i] { a.col = -1 } else { a.col = a.col + gridLeadCols }
+        if rowAutos[i] { a.row = -1 } else { a.row = a.row + gridLeadRows }
     }
     // Auto-placement: the cursor walks the grid in the flow's order and
     // takes the first run of free cells wide enough for the item. An
@@ -4977,6 +5076,28 @@ arr[GridArea] func gridPlaceItems(b:Box, s:Style, explicitCols:int, explicitRows
     }
 
     return areas
+}
+
+// The tracks a backwards named span put in front of the explicit grid.
+// They are implicit tracks, so they take `grid-auto-columns` or
+// `grid-auto-rows` the way the ones after it do, cycling that list and
+// falling back to `auto`. The leading ones are prepended to the
+// template rather than asked for by index, because every index from
+// here on is against the grid as it now stands.
+arr[Track] func gridWithLeadingTracks(explicit:arr[Track], auto:arr[Track], lead:int) {
+    if lead <= 0 { return explicit }
+    arr[Track] out = []
+    for int i = 0, i < lead, i++ {
+        if auto.length > 0 { out.push(auto[i % auto.length]) }
+        else {
+            Track t
+            t.kind = TRACK_AUTO
+            t.minKind = TRACK_AUTO
+            out.push(t)
+        }
+    }
+    for int i = 0, i < explicit.length, i++ { out.push(explicit[i]) }
+    return out
 }
 
 // Grid 2 §3: a subgrid's items sit on the tracks of the grid above it,
@@ -5093,9 +5214,20 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     int explicitCols = maxInt(colTracks.length, s.gridAreaCols)
     int explicitRows = maxInt(rowTracks.length, areaRows)
     arr[GridArea] areas = gridPlaceItems(b, s, explicitCols, explicitRows)
+    // A backwards named span can have put tracks in front of the
+    // explicit grid, in which case the placement pass has already moved
+    // every item over and the template needs them at its head. Zero on
+    // every grid that does not write `span <name>`, and the two lists
+    // are handed straight back when it is.
+    int leadCols = gridLeadCols
+    int leadRows = gridLeadRows
+    colTracks = gridWithLeadingTracks(colTracks, s.gridAutoCols, leadCols)
+    rowTracks = gridWithLeadingTracks(rowTracks, s.gridAutoRows, leadRows)
+    int colAutoAt = s.gridColsAutoAt + leadCols
+    int rowAutoAt = s.gridRowsAutoAt + leadRows
     // ---- pass 2: size the tracks -----------------------------------
-    int colCount = maxInt(explicitCols, 1)
-    int rowCount = maxInt(explicitRows, 1)
+    int colCount = maxInt(explicitCols + leadCols, 1)
+    int rowCount = maxInt(explicitRows + leadRows, 1)
     for int i = 0, i < areas.length, i++ {
         colCount = maxInt(colCount, areas[i].col + areas[i].colSpan)
         rowCount = maxInt(rowCount, areas[i].row + areas[i].rowSpan)
@@ -5103,10 +5235,10 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     // `auto-fit` collapses the tracks of its repeat that hold no item,
     // which can only be known once the items are placed.
     arr[bool] colCollapsed = s.gridColsAutoFit
-        ? gridCollapsedTracks(areas, colCount, s.gridColsAutoAt, colRepeatSpan, true)
+        ? gridCollapsedTracks(areas, colCount, colAutoAt, colRepeatSpan, true)
         : gridNoCollapse
     arr[bool] rowCollapsed = s.gridRowsAutoFit
-        ? gridCollapsedTracks(areas, rowCount, s.gridRowsAutoAt, rowRepeatSpan, false)
+        ? gridCollapsedTracks(areas, rowCount, rowAutoAt, rowRepeatSpan, false)
         : gridNoCollapse
     // The inline axis is sized from the subgrid-expanded list, so a
     // subgrid's children size the tracks they sit on rather than the

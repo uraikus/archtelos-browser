@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Grid 1 §8.3's named spans, in both directions
+
+`span <custom-ident>` counts lines carrying that name rather than
+tracks. The name was dropped at the parser, so every named span was a
+span of one whichever way it ran, and both halves of the sentence were
+wrong: `grid-column: 1 / span zz` should reach the first implicit line
+past the explicit grid, and `grid-column: span zz / 3` the first one
+*before* line 1 -- which puts a track in front of the grid and
+renumbers every line after it.
+
+The parser keeps the name now, `[ <integer> || <custom-ident> ]` in
+either order, and the search runs outward from the line the other edge
+fixes, counting only lines that carry the name and taking the shortfall
+from the implicit lines on that side. Where that lands before line 1
+the placement pass moves every item over by it and the template gets
+that many tracks at its head, from `grid-auto-columns`. A grid that
+never writes `span <name>` is handed its own track list back.
+
+The tests are agreements rather than pixels, because the track the
+search creates is one the template could have written:
+`100px 100px` with `span zz / 3` has to land where
+`auto 100px 100px` with `1 / 4` lands, item and auto-placed sibling
+alike -- and the sibling is what makes the check about the renumbering
+rather than only about the item, since it moves only if line 1 moved.
+
+**A subgrid is the exception, and only a measurement found it.** Grid 2
+§3.1 gives a subgrid no implicit tracks of its own, so a backwards
+search that runs off its front stops at its first line and the span
+shrinks with it. The first implementation made a track there, and the
+check read clean: without a size on it the track comes out zero wide.
+Putting `grid-auto-columns: 50px` on the subgrid is what showed it --
+Chromium 200 against this engine's 250 -- and that is the fixture the
+suite grades now.
+
 ### A background image is cut to the curve its colour is
 
 A background layer's image is painted into an image the size of its

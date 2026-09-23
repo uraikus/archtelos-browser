@@ -3020,11 +3020,23 @@ GridLine func parseGridLine(v:ascii) {
     arr[ascii] t = cssTokens(v)
     if t.length == 0 { return g }
     if asciiLower(t[0]) == 'span' {
+        // `span [ <integer> || <custom-ident> ]`, in either order. The
+        // name is not decoration: §8.3 counts only lines carrying it,
+        // and assumes it on the implicit lines when the template has
+        // too few -- so `span zz` is a span to the implicit grid, not a
+        // span of one.
         g.kind = GRIDLINE_SPAN
         g.n = 1
-        if t.length > 1 {
-            parseNumberAt(asciiTrim(t[1]), 0)
-            if numOk { g.n = maxInt(roundPx(numValue), 1) }
+        bool sawCount = false
+        for int i = 1, i < t.length, i++ {
+            ascii tok = asciiTrim(t[i])
+            if tok.length == 0 { continue }
+            parseNumberAt(tok, 0)
+            if numOk {
+                if !sawCount { g.n = maxInt(roundPx(numValue), 1)  sawCount = true }
+            } else if g.name == null || g.name == '' {
+                g.name = tok.toText()
+            }
         }
         return g
     }

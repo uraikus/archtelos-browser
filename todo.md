@@ -239,17 +239,14 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    compositing operator, and the runtime sets `CAIRO_OPERATOR_SOURCE`
    everywhere with no call to change it. Cairo has every Porter-Duff
    and separable blend operator; the entry point is what is missing.
-11. **Grid, completed**: subgrid itself, its own line names, its items'
+11. **Grid**: subgrid itself, its own line names, its items'
     contribution to the parent's track sizing, named lines,
     `grid-template-areas`, the track sizing functions — `minmax()`,
     `min-content`, `max-content`, `fit-content()` — `repeat()` with
-    `auto-fill` and `auto-fit`, and dense packing are done. What is left
-    is one corner of §8.3: a **backwards** search for a name the
-    template does not declare — `grid-column: span zz / 3` — assumes
-    the name on the implicit lines *before* the explicit grid, and
-    Chromium creates a column ahead of line 1 for it. That renumbers
-    every line and moves every item already placed, so the forward case
-    was taken first and this is left.
+    `auto-fill` and `auto-fit`, dense packing, and §8.3's named spans
+    in both directions are done. What is left is the parts of Grid 2
+    beyond a subgrid's tracks: `masonry` and the `grid-template`
+    shorthand's subgrid forms.
 12. **Multi-column 1, completed**: a spanner that sits below the
     container's own children, which needs its ancestors broken around
     it; and real fragment boxes, so that a subtree nested
@@ -1738,7 +1735,7 @@ once and writes the answer on the box -- so what is left is a question
 about Festina rather than about the browser, and the next answer to it
 belongs in FINDINGS.md.
 
-### Grid's remaining corner, measured
+### Where Grid's named spans come from, measured
 
 **A backwards search for a name the template does not declare.**
 §8.3 assumes an unknown name on every implicit line, and for
@@ -1746,8 +1743,8 @@ belongs in FINDINGS.md.
 finds are the implicit ones *before* the explicit grid. On a grid of
 two 100px columns in a 400px container, Chromium puts the item at
 **x=0 with the columns 200, 100, 100** -- it has created a column ahead
-of line 1 and stretched it. The forward direction is done; this one
-renumbers every line and moves every item already placed.
+of line 1 and stretched it, which renumbers every line and moves every
+item already placed.
 
 **The test needs no number, because the column it creates is one the
 template could have written.** These two render identically in
@@ -1763,17 +1760,26 @@ So the check is that the two agree, and it catches the renumbering
 rather than only the placement: the sibling is auto-placed, so it moves
 only if line 1 really did move.
 
-**The forward direction of the same sentence is wrong here too**, and
-for the same reason: `span <custom-ident>` drops the name at the
-parser, so every named span is a span of one. On the same grid,
+**The forward direction of the same sentence came from the same
+place**: `span <custom-ident>` dropped the name at the parser, so every
+named span was a span of one. On the same grid,
 `grid-column: 1 / span zz` should count forward from line 1 for a line
 named `zz`, find none, and take the first implicit line after the
 explicit grid -- line 4, a span of three.
 
-| | Chromium | this engine |
+| | Chromium | this engine, before |
 |---|---|---|
 | `grid-column: 1 / span zz` | item 400 wide, sibling 100 at x=0 | item 100 wide, sibling 100 at x=100 |
 | `grid-column: span zz / 3` | item 400 wide, sibling 200 at x=0 | item 100 at x=100, sibling 100 at x=0 |
+
+**A subgrid is the exception, and it had to be measured to be found.**
+Grid 2 §3.1 gives a subgrid no implicit tracks of its own, so a
+backwards search that runs off its front stops at its first line rather
+than making one. The first implementation made one, and it read clean
+until `grid-auto-columns: 50px` was put on the subgrid to give that
+track a size: Chromium 200 against this engine's 250, on a subgrid of
+four 100px columns with `grid-column: span zz / 3`. Without a size on
+it the track comes out zero wide and nothing shows.
 
 Its numbered equivalent is `grid-column: 1 / 4`, on the template as
 written: the implicit track it creates comes *after* the explicit grid,
