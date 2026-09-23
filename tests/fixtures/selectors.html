@@ -52,6 +52,30 @@
     </form>
   </div>
   <div id="d6" dir="rtl"><p id="p10">right to left</p></div>
+  <!-- dir="auto" resolves to the direction of the first strong
+       character of the element's text, and these are the cases that
+       tell an implementation of that apart from one that guesses.
+       The Hebrew below is real: the question is what the DOM stores
+       and how it classifies, so an escape in the source would not
+       ask it. -->
+  <div id="d7">
+    <p id="au1" dir="auto">hello there</p>
+    <p id="au2" dir="auto">שלום</p>
+    <p id="au3" dir="auto">123 "שלום" said</p>
+    <p id="au4" dir="auto">abc שלום</p>
+    <p id="au5" dir="auto"><span id="au6" dir="ltr">שלום</span> שלום</p>
+    <p id="au7" dir="auto"><span id="au8"><b id="au9">שלום</b></span> abc</p>
+    <p id="au10" dir="auto"><textarea id="au11">שלום</textarea> abc</p>
+    <p id="au12" dir="auto"><select id="au13"><option id="au14">abc</option></select> שלום</p>
+    <p id="au15" dir="auto"></p>
+    <bdi id="au16">שלום</bdi>
+    <bdi id="au17">abc</bdi>
+    <p id="au18" dir="bogus">שלום</p>
+    <input id="au19" dir="auto" value="שלום">
+    <input id="au20" dir="auto" value="abc">
+    <textarea id="au23" dir="auto">שלום</textarea>
+  </div>
+  <div id="d8" dir="rtl"><bdi id="au21">abc</bdi><p id="au22" dir="auto">plain english</p></div>
   <div id="d5"><span id="s2">an only child</span></div>
   <section id="sec1">
     <p id="p8">in a section</p>

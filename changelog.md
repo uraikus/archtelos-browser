@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `dir="auto"`, and the option that was selected without saying so
+
+`:dir()` read the nearest ancestor declaring a direction and passed
+`auto` over, so an element under one fell back to `ltr` whatever its
+text said. `auto` computes rather than inherits: the direction is that
+of the **first strong character** of the element's own text, and `ltr`
+when it has none. `<bdi>` is the same thing written as an element, which
+is why English inside a right-to-left division reads left to right.
+
+A digit, a quotation mark and whitespace are not strong, so
+`123 "שלום" said` reads right to left. **Which descendants count is the
+part the name does not say**, and it was measured rather than derived: a
+descendant with a *valid* `dir`, a `bdi`, a `script`, a `style`, a
+textarea's contents, an input's value and an `alt` are all passed over,
+while a `select`'s options are not. A control with `dir="auto"` that
+holds its own value -- an input, a textarea -- reads that rather than
+its children.
+
+The fixture gained fourteen elements for it, written in UTF-8 with real
+Hebrew in them: an escape in the source would ask a different question,
+because what is being measured is what the DOM stores and how
+`bidiClass` classifies it.
+
+**And the fixture found a bug it was not written for.** Giving it a
+`<select>` whose option carries no `selected` broke `option:checked`,
+which had read the attribute alone: a single-selection `<select>` with
+nothing declared selects its **first** option (HTML §4.10.7), and
+Chromium matches it. That row had passed for as long as every select in
+the fixture declared its selection.
+
+One divergence recorded rather than copied: a `dir="auto"` element
+holding `U+2066 שלום U+2069 abc` is right to left in Chromium, where
+passing over the text between an isolate initiator and its matching PDI
+would leave ` abc` and give left to right. Scanning for the first strong
+character with no isolate handling is what agrees with the browser.
+
+Seven more instrument rows and the `option:checked` correction, 119/119
+to 126/126.
+
 ### HTML's form-state and direction pseudo-classes
 
 Selectors 4 §11 and §14.2: `:read-write`, `:read-only`, `:required`,

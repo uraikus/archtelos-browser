@@ -125,6 +125,18 @@ p:dir(ltr)
 p:dir(rtl)
 div:dir(rtl)
 :dir(rtl)
+# `dir="auto"` is the direction of the first strong character of the
+# element's own text. What counts as "its text" is the part the name
+# does not say: a descendant with a valid `dir`, a `bdi`, a textarea's
+# contents and an input's value are all passed over, and a `select`'s
+# options are not. todo.md holds the measurement.
+bdi:dir(rtl)
+bdi:dir(ltr)
+input:dir(rtl)
+textarea:dir(rtl)
+span:dir(rtl)
+b:dir(rtl)
+option:dir(ltr)
 
 # --- Selectors 4: a complex selector inside :is(), :where(), :not()
 # and :has(). Each takes a <complex-selector-list> in §3.1, not a

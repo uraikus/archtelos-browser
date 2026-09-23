@@ -2028,11 +2028,10 @@ with no focus cannot give them anything to match; they stay out of the
 instrument.
 
 All of it is implemented and every row of it passes. What is **not**
-read, and waits here for a fixture that could grade it: `dir="auto"`,
-which asks for the first strong character of the element's own text and
-falls back to `ltr` instead; and the rest of HTML's validity list -- a
-type mismatch on `email` or `url`, a `pattern`, a `step` -- beside the
-missing value and the range that are read. `:focus-within`,
+read, and waits here for a fixture that could grade it: the rest of
+HTML's validity list -- a type mismatch on `email` or `url`, a
+`pattern`, a `step` -- beside the missing value and the range that are
+read. `:focus-within`,
 `:user-valid` and `:user-invalid` need a focus and a user this browser
 does not have.
 
@@ -2106,7 +2105,13 @@ with no isolate handling at all is what agrees with the browser here, so
 that is what this engine does, and the divergence is this note rather
 than a row.
 
-The measurement alone; the fixture, the rows and the code follow.
+The whole of it is implemented and ten rows of the instrument grade it,
+along with the `<bdi>` cases and the two controls that read their own
+value. One pre-existing bug came out of the fixture that was written for
+it, which is what a fixture is for: `option:checked` read the `selected`
+attribute alone, and a single-selection `<select>` with nothing declared
+selects its **first** option, so the row failed the moment the document
+held such a select.
 
 ### Where an inset shadow's curve comes from, measured
 
@@ -2658,8 +2663,8 @@ properties the instrument can grade change what this engine renders
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
-`tests/conformance/selectors.f` how many of 119 selectors match the same
-elements as Chromium (119). Most entries in the work above should move
+`tests/conformance/selectors.f` how many of 126 selectors match the same
+elements as Chromium (126). Most entries in the work above should move
 the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed

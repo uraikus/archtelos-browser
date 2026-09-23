@@ -3298,3 +3298,20 @@ Every phase reads zero or negative in both directions, which is no
 difference in either. The binary grew 9,016 bytes and both render
 `generated.html` and `features.html` byte-identically, `cmp`-checked
 before any timing, on a machine idle at a one-minute load of 0.16.
+
+## What `dir="auto"` costs
+
+2026-09-23. The scan for a first strong character runs only where a
+`:dir()` selector reaches an element that declares `auto`, and
+`generated.html` has neither. Paired, 20 iterations, 800px.
+
+| median | forward | reversed |
+|---|---|---|
+| `cascade` | -2 | +0 |
+| `layout` | -2 | -1 |
+| `parse`, `stylesheets`, `paint` | +0 | +0 |
+
+Nothing reads positive in either direction on any phase. The binary grew
+8,472 bytes and both render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.19.

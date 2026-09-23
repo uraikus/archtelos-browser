@@ -787,20 +787,94 @@ bool func hasInvalidControl(nid:int, form:int) {
     return false
 }
 
-// The element's directionality: the nearest ancestor-or-self declaring
-// `dir`, defaulting to ltr. `dir="auto"` asks for the first strong
-// character of the element's text, which todo.md records as not read.
+// The value of `dir` on this element, lowercased, or '' when it has
+// none or one neither engine recognises. `dir="bogus"` is not a
+// declaration at all and falls through to the parent, measured.
+text func dirAttrOf(nid:int) {
+    if !hasAttrOf(nid, 'dir') { return '' }
+    text v = attrOf(nid, 'dir')
+    ascii a = v == null ? null : v.toAscii()
+    text low = a == null ? '' : asciiLower(a).toText()
+    if low == 'rtl' || low == 'ltr' || low == 'auto' { return low }
+    return ''
+}
+
+// Whether this element's text counts towards an ancestor's `dir="auto"`
+// (HTML §3.2.6.4). A descendant that declares its own direction is
+// answering the question for itself, so it is passed over; so are the
+// elements whose text is not the document's prose. A `select` is not on
+// the list, which is the row no reading of the name would give: a
+// textarea's own contents are skipped and an option's are not.
+bool func dirAutoSkips(nid:int) {
+    if dirAttrOf(nid) != '' { return true }
+    text tag = nodeRegistry[nid].tag
+    return tag == 'bdi' || tag == 'script' || tag == 'style'
+        || tag == 'textarea' || tag == 'input'
+}
+
+// The first strong character of a run of text, as a direction, or ''.
+// UAX #9's L is left-to-right and R and AL are right-to-left; a digit, a
+// quotation mark and whitespace are none of those, which is why
+// `123 "<hebrew>" said` reads right-to-left.
+text func firstStrongOf(t:text) {
+    if t == null { return '' }
+    for int i = 0, i < t.length, i++ {
+        int cls = bidiClass(t.charCodeAt(i))
+        if cls == BIDI_L { return 'ltr' }
+        if cls == BIDI_R || cls == BIDI_AL { return 'rtl' }
+    }
+    return ''
+}
+
+// The first strong character in this element's subtree, skipping the
+// descendants that do not count.
+text func firstStrongIn(nid:int) {
+    arr[Node] kids = nodeRegistry[nid].children
+    for int i = 0, i < kids.length, i++ {
+        Node k = kids[i]
+        if k.kind == NODE_TEXT {
+            text got = firstStrongOf(k.data)
+            if got != '' { return got }
+            continue
+        }
+        if k.kind != NODE_ELEMENT { continue }
+        if dirAutoSkips(k.id) { continue }
+        text got = firstStrongIn(k.id)
+        if got != '' { return got }
+    }
+    return ''
+}
+
+// `dir="auto"`, and `bdi` with no `dir` at all, which is the same thing
+// written as an element. A control that holds its own value reads that
+// rather than its children.
+text func autoDirectionOf(nid:int) {
+    text tag = nodeRegistry[nid].tag
+    text got = ''
+    if tag == 'input' {
+        if inputTakesReadonly(inputTypeOf(nid)) { got = firstStrongOf(controlValueOf(nid)) }
+    } else if tag == 'textarea' {
+        got = firstStrongOf(controlValueOf(nid))
+    } else {
+        got = firstStrongIn(nid)
+    }
+    return got == '' ? 'ltr' : got
+}
+
+// The element's directionality: the nearest ancestor-or-self that
+// declares one. `auto` is a declaration that computes rather than
+// inherits, so it stops the walk too.
 text func directionalityOf(nid:int) {
     int cur = nid
     while cur > 0 {
         if nodeRegistry[cur].kind != NODE_ELEMENT { break }
-        if hasAttrOf(cur, 'dir') {
-            text v = attrOf(cur, 'dir')
-            ascii a = v == null ? null : v.toAscii()
-            text low = a == null ? '' : asciiLower(a).toText()
-            if low == 'rtl' { return 'rtl' }
-            if low == 'ltr' { return 'ltr' }
-        }
+        text d = dirAttrOf(cur)
+        if d == 'rtl' || d == 'ltr' { return d }
+        if d == 'auto' { return autoDirectionOf(cur) }
+        // `<bdi>` is `dir="auto"` with no attribute, which is the whole
+        // reason the element exists: English inside a right-to-left
+        // division reads left to right.
+        if nodeRegistry[cur].tag == 'bdi' { return autoDirectionOf(cur) }
         cur = nodeRegistry[cur].parentId
     }
     return 'ltr'
@@ -858,6 +932,52 @@ bool func formStateMatches(nid:int, name:text, a:ascii) {
     return false
 }
 
+// Whether an `<option>` is selected. The attribute is not the whole
+// answer: a single-selection `<select>` with nothing declared selects
+// its **first** option (HTML §4.10.7), so `option:checked` matches it
+// although the document says nothing. Found by the selector instrument
+// when the fixture gained a select whose option carries no `selected`,
+// which is the point of putting one there.
+bool func optionIsSelected(nid:int) {
+    if hasAttrOf(nid, 'selected') { return true }
+    int sel = 0
+    int cur = nodeRegistry[nid].parentId
+    while cur > 0 {
+        if nodeRegistry[cur].tag == 'select' { sel = cur  break }
+        if nodeRegistry[cur].tag != 'optgroup' { break }
+        cur = nodeRegistry[cur].parentId
+    }
+    if sel == 0 { return false }
+    if hasAttrOf(sel, 'multiple') { return false }
+    // A `size` above one is a list box, which selects nothing of its own.
+    text sz = attrOf(sel, 'size')
+    if sz != null && sz != '' && sz.toInt() > 1 { return false }
+    return firstSelectableOption(sel, sel) == nid
+}
+
+// The first `<option>` of a select in tree order, or the first one
+// carrying `selected` if any does -- in which case this one is not the
+// default and the caller's attribute test has already answered.
+int func firstSelectableOption(nid:int, sel:int) {
+    arr[Node] kids = nodeRegistry[nid].children
+    int first = 0
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        if nodeRegistry[kid].tag == 'option' {
+            if hasAttrOf(kid, 'selected') { return 0 }
+            if first == 0 { first = kid }
+            continue
+        }
+        if nodeRegistry[kid].tag == 'optgroup' {
+            int deep = firstSelectableOption(kid, sel)
+            if deep == 0 && first == 0 { return 0 }
+            if deep > 0 && first == 0 { first = deep }
+        }
+    }
+    return first
+}
+
 bool func pseudoMatches(nid:int, name:text) {
     if name == 'first-child' { return prevElementSiblingOf(nid) == 0 }
     if name == 'last-child' { return nextElementSiblingOf(nid) == 0 }
@@ -896,7 +1016,7 @@ bool func pseudoMatches(nid:int, name:text) {
     }
     if name == 'checked' {
         text tag = nodeRegistry[nid].tag
-        if tag == 'option' { return hasAttrOf(nid, 'selected') }
+        if tag == 'option' { return optionIsSelected(nid) }
         if tag != 'input' { return false }
         text t = attrOf(nid, 'type')
         text lower = t == null ? '' : asciiLower(t.toAscii()).toText()
