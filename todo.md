@@ -1688,9 +1688,10 @@ a divergence.
 What is still open in CSS Syntax 3 is the shape of the parser itself:
 there is no tokenizer in the standard's sense, so every rule of §4.3
 that the index scan does not happen to agree with is a divergence
-waiting to be found the way the comment, the escape and the CDO ones
-were. Three in a row came out of reading one row of css-2026.md and
-asking Chromium; the row is worth reading again.
+waiting to be found the way the comment, the escape, the CDO and the
+attribute selector's own escapes were. Four in a row came out of
+reading one row of css-2026.md and asking Chromium; the row is worth
+reading again.
 
 ### Where a selector's escapes come from, measured
 
@@ -1766,7 +1767,7 @@ leaves the earlier `background` standing in both, because the
 declaration's name is not one either engine knows. So the fix is at the
 top level only, where a rule is read.
 
-### What an attribute selector cannot say, measured
+### What an attribute selector could not say, measured
 
 A sweep of 37 attribute selectors, each asked of the element it names
 with `element.matches()` in Chromium and against the same element's
@@ -1778,7 +1779,7 @@ places in it -- **nothing on the selector path is aware that a `]` or a
 `[` inside a string is not a bracket, and nothing decodes an escape
 inside `[...]`**.
 
-| selector | element's `data-x` | Chromium | this engine |
+| selector | element's `data-x` | Chromium | this engine, before |
 |---|---|---|---|
 | `[data-x="a]b"]` | `a]b` | matches | no match |
 | `[data-x="]"]` | `]` | matches | no match |
@@ -1819,7 +1820,12 @@ can carry one named `c d`, but `data-x="a b"` is a single attribute
 value with a space in it, so `[data-x=a\ b]` has something real to
 match.
 
-The measurement alone; the test and the fix follow.
+The two rows the sweep found that are **not** a gap here are the two
+where Chromium throws: Selectors 4 §6.3's `s` modifier is not shipped
+there, so `element.matches('[data-x="ab" s]')` raises a `SyntaxError`
+and the selector conformance instrument can never grade it against a
+browser. It has unit checks of its own in `tests/unit/`, because
+nothing else here could notice if it stopped working.
 
 ### Where an inset shadow's curve comes from, measured
 

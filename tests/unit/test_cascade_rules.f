@@ -234,4 +234,139 @@ computeStyles(escU)
 checkEqInt(escById(escU, 'u').style.color, packColor(255, 0, 0, 255),
            'a hex escape above ASCII is the character the document carries')
 
+
+
+// ---- an attribute selector's brackets, quotes and escapes -------------
+// Selectors 4 §6.1 builds `[name matcher value]` out of two CSS Syntax 3
+// tokens: the name is an identifier and the value is an identifier or a
+// string. So both take escapes, and a string takes any character at all
+// -- including the `]` that ends the selector, the `[` that began it,
+// and the quote around it. Three places here read a bracket wherever
+// they saw one and decoded nothing: see todo.md, "What an attribute
+// selector cannot say, measured".
+//
+// Every check below is a pair. A value spelled two ways -- quoted
+// against escaped, one quote character against the other, a hex escape
+// against the character it names -- must land on the same element,
+// which is an assertion neither spelling can satisfy alone. A check
+// against a colour worked out by hand catches the case that was thought
+// of; a check that two spellings agree catches the one that was not.
+// See CLAUDE.md, "When two things must agree, test them against each
+// other".
+
+int attrGrey = packColor(204, 204, 204, 255)
+int attrRed = packColor(255, 0, 0, 255)
+
+int func attrColor(sel:text, attrHtml:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>div{color:#cccccc}'
+        + sel + '{color:#ff0000}</style></head><body><div id="q" '
+        + attrHtml + '>x</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    return e == null ? 0 : e.style.color
+}
+
+void func attrAgree(a:text, b:text, attrHtml:text, label:text) {
+    int ca = attrColor(a, attrHtml)
+    int cb = attrColor(b, attrHtml)
+    check(ca == cb && ca == attrRed, label)
+}
+
+// A `]` inside a string is not the end of the selector, and the same
+// value written with the `]` escaped instead must reach the same place.
+attrAgree('[data-x="a]b"]', '[data-x=a\\]b]', 'data-x="a]b"',
+          'a quoted `]` and an escaped `]` name the same value')
+// The whole value is the bracket, so the first `]` in the source is the
+// one inside the quotes.
+attrAgree('[data-x="]"]', '[data-x=\\]]', 'data-x="]"',
+          'a value that is nothing but `]`')
+// A `[` inside a string is not a bracket either. This one is dropped a
+// level higher up than the others -- the selector list never pushes it
+// -- so the rule disappears rather than failing to match.
+attrAgree('[data-x="a[b"]', '[data-x=a\\[b]', 'data-x="a[b"',
+          'a quoted `[` and an escaped `[` name the same value')
+// A quote inside a string, escaped, against the same value written
+// inside the other quote character, where it needs no escape.
+attrAgree('[data-x="a\\"b"]', '[data-x=\'a"b\']', 'data-x=\'a"b\'',
+          'an escaped quote and the other quote name the same value')
+attrAgree('[data-x=\'a\\\'b\']', '[data-x="a\'b"]', 'data-x="a\'b"',
+          'and the same the other way round')
+// A hex escape in the value, against the character it names.
+attrAgree('[data-x="a\\65 b"]', '[data-x="aeb"]', 'data-x="aeb"',
+          'a hex escape in a quoted value is the character it names')
+attrAgree('[data-x=a\\62 ]', '[data-x="ab"]', 'data-x="ab"',
+          'and in an unquoted one, with its terminating space')
+// An escaped space in an unquoted value is part of the value, not the
+// gap before a case-sensitivity flag. `class="c d"` could not test this
+// -- it is two classes -- but one attribute value holds the space.
+attrAgree('[data-x=a\\ b]', '[data-x="a b"]', 'data-x="a b"',
+          'an escaped space is part of an unquoted value')
+// An escape in the name, not the value, in both forms of the selector.
+attrAgree('[data\\-x="ab"]', '[data-x="ab"]', 'data-x="ab"',
+          'an escape in the attribute name')
+attrAgree('[data\\-x]', '[data-x]', 'data-x="ab"',
+          'and in the name of an existence test')
+// A backslash meaning a backslash.
+attrAgree('[data-x="a\\\\b"]', '[data-x=a\\\\b]', 'data-x="a\\b"',
+          'a doubled backslash is one backslash in the value')
+
+// The other half: an element the selector does not name is left alone.
+// Without these, a parser that cut the value at the first `]` would
+// satisfy every check above by matching everything.
+checkEqInt(attrColor('[data-x="a]b"]', 'data-x="a"'), attrGrey,
+           'a value cut at the `]` does not match the part before it')
+checkEqInt(attrColor('[data-x^="a]"]', 'data-x="ab"'), attrGrey,
+           'and a prefix holding a `]` is the whole prefix')
+checkEqInt(attrColor('[data-x=a\\62 ]', 'data-x="a62"'), attrGrey,
+           'a hex escape is the code point, not the digits')
+checkEqInt(attrColor('[data\\-x]', 'data-y="ab"'), attrGrey,
+           'an escape in a name does not widen what the name matches')
+checkEqInt(attrColor('[data-x=a\\ b]', 'data-x="a"'), attrGrey,
+           'and an escaped space does not end the value')
+
+// The `s` modifier (Selectors 4 §6.3) asks for a case-sensitive match
+// where the attribute would otherwise be matched without regard to
+// case. No attribute here is matched that way -- `attrMatches` in
+// `src/css/cascade.f` lowercases only under the `i` flag -- so `s` is
+// accepted and changes nothing, which is the behaviour §6.3 describes
+// for exactly that situation. What the checks below can tell apart is
+// a parser that read any trailing letter as `i`, and one that swallowed
+// the flag into the value.
+//
+// The selector conformance instrument cannot ask this: Chromium has
+// not shipped `s`, so `element.matches('[data-x="ab" s]')` throws a
+// SyntaxError there and the row would be graded against nothing. See
+// CLAUDE.md, "A claim about a function, a unit or an at-rule has no
+// instrument behind it".
+checkEqInt(attrColor('[data-x="ab" s]', 'data-x="ab"'), attrRed,
+           'the `s` flag is accepted after a quoted value')
+checkEqInt(attrColor('[data-x="AB" s]', 'data-x="ab"'), attrGrey,
+           'and is not read as the `i` flag')
+checkEqInt(attrColor('[data-x=ab s]', 'data-x="ab"'), attrRed,
+           'the `s` flag is accepted after an unquoted value too')
+checkEqInt(attrColor('[data-x=AB s]', 'data-x="ab"'), attrGrey,
+           'and is not read as the `i` flag there either')
+
+// A `[` inside a string, in one selector of a list, must not cost the
+// other selector beside it. `parseSelectorList` counted that bracket,
+// so the comma after it was never top-level and the two selectors were
+// run together into one that names nothing. The check is that the
+// *other* selector still arrives. Asserting the rule as its own
+// statement would grade nothing: the prelude scan already steps over
+// strings, so a rule on its own survives this bug and only its
+// selector list is lost.
+cascadeReset()
+Node attrList = parseHtmlText('<html><head><style>'
+    + 'div{color:#cccccc}[data-x="a[b"], #n{color:#0000ff}'
+    + '</style></head><body><div id="q" data-x="a[b">x</div>'
+    + '<div id="n">y</div></body></html>')
+cascadeAddDocumentStyles(attrList)
+computeStyles(attrList)
+checkEqInt(escById(attrList, 'n').style.color, packColor(0, 0, 255, 255),
+           'a `[` inside a string does not swallow the selector beside it')
+checkEqInt(escById(attrList, 'q').style.color, packColor(0, 0, 255, 255),
+           'and the selector holding it still matches')
+
 finish('cascade rules')

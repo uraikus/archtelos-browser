@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An attribute selector's brackets, quotes and escapes
+
+Selectors 4 §6.1 builds `[name matcher value]` out of two CSS Syntax 3
+tokens: the name is an identifier, and the value is an identifier or a
+string. So both take escapes, and a string takes any character at all --
+including the `]` that ends the selector, the `[` that opened it, and
+the quote around it. Three places read a bracket wherever they saw one
+and decoded nothing:
+
+- `parseSelectorList` counted the `[` inside `[data-x="a[b"]`, so the
+  comma after it was never top-level and `[data-x="a[b"], #n` became one
+  selector naming nothing -- the rule dropped whole, `#n` with it.
+- The compound parser took the first `]` it found, cutting
+  `[data-x="a]b"]` inside the quotes and leaving `"]` over, which marked
+  the selector unsupported and dropped its rule for a second reason.
+- `parseAttrSel` decoded no escape, so `[data\-x=a\ b]` looked for an
+  attribute called `data` holding the value `a\` -- neither of which any
+  document has.
+
+All three skip strings and escapes now, and the name and both forms of
+value go through the same `cssDecodeIdent` the identifier scan already
+used. A selector with no backslash and no quote in it is unchanged: the
+decoder hands back an identifier it finds no backslash in.
+
+Measured first, against Chromium, as a sweep of 37 attribute selectors
+asked with `element.matches()`: 14 differed, and every one of them is
+one of the three above. The suite pins them as pairs -- a value spelled
+quoted against the same value spelled with the character escaped, one
+quote character against the other, a hex escape against the character it
+names -- because a pair asserts the two spellings agree without either
+answer being known in advance.
+
+Two rows of that sweep are the engine ahead of the browser: Selectors 4
+§6.3's `s` modifier works here and throws a `SyntaxError` in Chromium,
+so the selector conformance instrument can never grade it. It has unit
+checks of its own instead.
+
 ### `<!--` and `-->` are ignored where a rule is read
 
 CSS Syntax 3 §5.4.1 ignores a CDO and a CDC at the top level of a

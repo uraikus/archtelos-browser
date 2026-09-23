@@ -3171,3 +3171,37 @@ check than a placement control, and worth doing before building one.
 
 The three benchmark pages render byte-identically between the binaries,
 `cmp`-checked before any timing.
+
+## What a string-aware selector list costs, and an order effect in both rounds
+
+2026-09-23. `parseSelectorList` steps over a string and an escape before
+it counts a bracket, and `parseAttrSel` decodes the name and either form
+of value. Only the first of those runs on a page with no attribute
+selector, and it adds two integer comparisons per character of every
+prelude. Paired, 15 iterations, 800px, on the 970 KB stylesheet of 6,000
+rules; its `stylesheets` phase is about 33 ms.
+
+| `stylesheets` median | forward | reversed |
+|---|---|---|
+| round 1 | **-1** | **+1** |
+| round 2 | **-1** | **+1** |
+
+Both rounds agree, and both say the same thing: **the binary running
+second pays a millisecond, whichever binary that is.** A cost of the
+diff would read `+1` forward and `-1` reversed; this reads the opposite
+sign forward, so the quantity is the order and not the code. The mean
+tells the same story less tidily -- forward -0.33 and 0.00, reversed
++3.33 and +1.27 -- because one pair in fifteen runs long and the mean
+carries it where the median does not.
+
+On `generated.html`, whose stylesheet is small enough that the phase is
+2 ms, `stylesheets` reads 0 both ways with means of +0.00 and -0.08.
+`parse`, `cascade`, `layout` and `paint` all read non-negative in both
+directions there, which is the same order effect on phases the diff has
+no line in.
+
+The benchmark pages have no attribute selector in them at all, so
+`attrSelEnd` and the decoding in `parseAttrSel` never run on any of
+them: what is measured above is the two comparisons in the list scan,
+and nothing else. All three pages render byte-identically between the
+binaries, `cmp`-checked before any timing.

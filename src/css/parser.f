@@ -797,6 +797,25 @@ text func identAt(from:int, to:int) {
     return cssDecodeIdent(selSrc.slice(from, to))
 }
 
+// The index of the `]` that closes the attribute selector opened at
+// `at`, or -1. Selectors 4 §6.1 takes a string for the value, and a
+// string takes any character, so the first `]` in the source is not
+// necessarily the selector's: `[data-x="a]b"]` cut there leaves `"]`
+// over, which marked the whole selector unsupported and dropped its
+// rule. An escape is stepped over for the same reason.
+int func attrSelEnd(s:ascii, at:int) {
+    int n = s.length
+    int i = at + 1
+    while i < n {
+        int c = s.charCodeAt(i)
+        if c == CH_BACKSLASH { i = cssEscapeEnd(s, i)  continue }
+        if c == CH_QUOTE || c == CH_APOS { i = skipQuoted(s, i)  continue }
+        if c == CH_RBRACKET { return i }
+        i++
+    }
+    return 0 - 1
+}
+
 // Parses one compound selector starting at selPos (which must not be
 // at whitespace); leaves selPos after it.
 // The type selector after a namespace part: a name, or `*` for any.
@@ -862,7 +881,7 @@ Compound func parseCompound() {
             selPos = end
             any = true
         } else if c == CH_LBRACKET {
-            int end = asciiIndexOf(selSrc, ']', selPos)
+            int end = attrSelEnd(selSrc, selPos)
             if end < 0 { end = n }
             parseAttrSel(comp, selSrc.slice(selPos + 1, end))
             selPos = end + 1
@@ -1003,14 +1022,26 @@ int func matchParen(s:ascii, open:int) {
     return n
 }
 
+// Both halves of `[name matcher value]` are CSS Syntax 3 tokens, so
+// both take escapes (§4.3.7): the name is an identifier, and the value
+// is an identifier or a string. Nothing here decoded one, so
+// `[data\-x=a\ b]` looked for an attribute called `data` holding the
+// value `a\` -- neither of which any document has.
 void func parseAttrSel(comp:Compound, inner:ascii) {
     AttrSel a
     a.op = ATTR_EXISTS
     a.value = ''
     int n = inner.length
     int i = 0
-    while i < n && isNameCode(inner.charCodeAt(i)) { i++ }
-    a.name = asciiLower(inner.slice(0, i)).toText()
+    bool nameEscaped = false
+    while i < n {
+        int nc = inner.charCodeAt(i)
+        if nc == CH_BACKSLASH { nameEscaped = true  i = cssEscapeEnd(inner, i)  continue }
+        if isNameCode(nc) { i++  continue }
+        break
+    }
+    a.name = nameEscaped ? textLower(cssDecodeIdent(inner.slice(0, i)))
+                         : asciiLower(inner.slice(0, i)).toText()
     while i < n && isSpaceCode(inner.charCodeAt(i)) { i++ }
     if i < n {
         int c = inner.charCodeAt(i)
@@ -1028,8 +1059,16 @@ void func parseAttrSel(comp:Compound, inner:ascii) {
         if i < end && (inner.charCodeAt(i) == CH_QUOTE || inner.charCodeAt(i) == CH_APOS) {
             int q = inner.charCodeAt(i)
             int close = i + 1
-            while close < end && inner.charCodeAt(close) != q { close++ }
-            a.value = inner.slice(i + 1, close).toText()
+            // A backslash before the closing quote is that quote, not
+            // the end of the string, so `[a="x\"y"]` holds `x"y`.
+            while close < end {
+                int cc = inner.charCodeAt(close)
+                if cc == CH_BACKSLASH { close = cssEscapeEnd(inner, close)  continue }
+                if cc == q { break }
+                close++
+            }
+            if close > end { close = end }
+            a.value = cssDecodeIdent(inner.slice(i + 1, close))
             // A trailing `i` or `s` after the closing quote is the
             // case-sensitivity flag (Selectors 4 §6.3). It was parsed
             // and thrown away, which made `[a="X" i]` an ordinary
@@ -1042,23 +1081,31 @@ void func parseAttrSel(comp:Compound, inner:ascii) {
                 if flag == 73 || flag == 105 { a.caseInsensitive = true }   // I or i
             }
         } else {
-            int valueEnd = end
-            // an unquoted value may carry the same flag, separated by
-            // whitespace
-            int sp = valueEnd
-            while sp > i && !isSpaceCode(inner.charCodeAt(sp - 1)) { sp-- }
-            if sp > i && sp < valueEnd && valueEnd - sp == 1 {
-                int flag = inner.charCodeAt(sp)
-                if flag == 73 || flag == 105 {
-                    a.caseInsensitive = true
-                    valueEnd = sp - 1
-                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
-                } else if flag == 83 || flag == 115 {
-                    valueEnd = sp - 1
-                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
-                }
+            // An unquoted value ends at the first whitespace that is
+            // not part of an escape, and may be followed by the same
+            // flag. Scanning backwards from the end for that whitespace
+            // read `a\ b` as the value `a\` and the flag `b`, and read
+            // the space that terminates `a\62 ` as the gap before one.
+            int valueEnd = i
+            while valueEnd < end {
+                int vc = inner.charCodeAt(valueEnd)
+                if vc == CH_BACKSLASH { valueEnd = cssEscapeEnd(inner, valueEnd)  continue }
+                if isSpaceCode(vc) { break }
+                valueEnd++
             }
-            a.value = inner.slice(i, valueEnd).toText()
+            if valueEnd > end { valueEnd = end }
+            int after = valueEnd
+            while after < end && isSpaceCode(inner.charCodeAt(after)) { after++ }
+            if after >= end {
+                // nothing follows the value
+            } else if end - after == 1 {
+                int flag = inner.charCodeAt(after)
+                if flag == 73 || flag == 105 { a.caseInsensitive = true }
+                else if flag != 83 && flag != 115 { valueEnd = end }
+            } else {
+                valueEnd = end
+            }
+            a.value = cssDecodeIdent(inner.slice(i, valueEnd))
         }
     }
     comp.attrs.push(a)
@@ -1175,13 +1222,23 @@ int func computeSpecificity(sel:Selector) {
 }
 
 // Splits a selector list on top-level commas.
+//
+// A `[` inside a string is not a bracket. `[data-x="a[b"], #n` left the
+// depth at one when the list ended, so the comma was never top-level
+// and both selectors were run together into one that names nothing --
+// which is a rule dropped whole rather than a rule that fails to match.
+// A backslash is stepped over for the same reason, so `[a=x\[]` counts
+// no bracket either.
 arr[Selector] func parseSelectorList(prelude:ascii) {
     arr[Selector] out = []
     int n = prelude.length
     int depth = 0
     int start = 0
-    for int i = 0, i <= n, i++ {
+    int i = 0
+    while i <= n {
         int c = i < n ? prelude.charCodeAt(i) : CH_COMMA
+        if c == CH_BACKSLASH && i < n { i = cssEscapeEnd(prelude, i)  continue }
+        if (c == CH_QUOTE || c == CH_APOS) && i < n { i = skipQuoted(prelude, i)  continue }
         if c == CH_LPAREN || c == CH_LBRACKET { depth++ }
         else if c == CH_RPAREN || c == CH_RBRACKET { depth-- }
         else if c == CH_COMMA && depth <= 0 {
@@ -1189,6 +1246,7 @@ arr[Selector] func parseSelectorList(prelude:ascii) {
             if piece.length > 0 { out.push(parseSelector(piece)) }
             start = i + 1
         }
+        i++
     }
     return out
 }
