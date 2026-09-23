@@ -1904,6 +1904,61 @@ lists -- and the list stands at 94 with 84 passing. What is left is
 families 2 and 3: `:nth-child()`'s `of S` clause and the form-state and
 direction pseudo-classes.
 
+### What `:nth-child()`'s `of S` clause is, measured
+
+Selectors 4 §6.6.5 writes the structural pseudo-class as
+`:nth-child( <An+B> [of <complex-selector-list>]? )`. The `of` clause
+filters *which siblings are counted* before An+B is applied to the
+position, so `p:nth-child(2 of .lead)` is the second `.lead` among its
+siblings rather than a `.lead` that happens to be second. This engine
+reads the An+B and refuses the clause, which drops the rule.
+
+Fifteen forms were put to Chromium against
+`tests/fixtures/selectors.html`:
+
+| selector | Chromium | this engine |
+|---|---|---|
+| `p:nth-child(2 of .lead)` | `p3` | nothing |
+| `:nth-child(1 of p)` | `p1 p5 p6 p8` | nothing |
+| `li:nth-child(even of :not(.x))` | `l2 l4 l6` | nothing |
+| `:nth-child(2n of li)` | `l2 l4 l6` | nothing |
+| `:nth-child(odd of li)` | `l1 l3 l5` | nothing |
+| `:nth-child(-n+2 of li)` | `l1 l2` | nothing |
+| `:nth-last-child(1 of p)` | `p4 p5 p7 p9` | nothing |
+| `:nth-last-child(2 of li)` | `l5` | nothing |
+| `:nth-child(1 of .lead, .tail)` | `p1 p9` | nothing |
+| `:nth-child(2 of div > p)` | `p2 p7` | nothing |
+| `li:nth-child(1 of li:not(:first-child))` | `l2` | nothing |
+| `p:nth-child(1 of :is(.lead, .tail))` | `p1 p9` | nothing |
+
+What the answers settle, none of which the grammar alone says:
+
+- **`S` is a whole `<complex-selector-list>`**, not a compound:
+  `div > p`, `:not(.x)`, `:is(.lead, .tail)` and a comma-separated list
+  all work, and `:nth-child(2 of div > p)` counts only the siblings that
+  match the complex selector -- `p2` in the first `div` and `p7` in the
+  third, each the second such sibling of its own parent.
+- **Only `:nth-child()` and `:nth-last-child()` take it.**
+  `:nth-of-type(1 of p)` is a `SyntaxError`.
+- **`S`'s specificity counts.** `:nth-child(1 of #s1)` beats
+  `.lead.lead` in either source order, so the pseudo-class's own (0,1,0)
+  is added to the most specific alternative's rather than standing
+  alone.
+- **The keyword needs whitespace around it**: `:nth-child(1of p)` is a
+  `SyntaxError`, because `1of` is one token.
+
+**And one disagreement.** Chromium refuses `:nth-child(2 OF .lead)` and
+`:nth-child(2 Of .lead)`, so it reads `of` case-sensitively. CSS is
+ASCII case-insensitive as a general rule, and nothing in the grammar
+marks this keyword as an exception, so this engine accepts all three
+spellings and the difference is recorded rather than copied. It cannot
+be an instrument row -- the runner needs Chromium to match something --
+so the unit suite asserts it. The snapshot itself is not fetchable from
+this network (CLAUDE.md §2), so the general rule is what is being
+applied here rather than a clause read directly.
+
+The measurement alone; the rows, the test and the fix follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
