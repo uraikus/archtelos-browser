@@ -1648,6 +1648,43 @@ path, or antialiasing the span on the layer -- and the layer has no
 path API to do it with (FINDINGS.md, "an image is a drawable surface
 with a smaller API").
 
+### What a `/*` inside a string costs a stylesheet, measured
+
+Comments are stripped before anything else is parsed, by a scan that
+does not know where a string or a `url()` begins. CSS Syntax 3 §4.3
+consumes comments in the tokenizer, so a `/*` inside a string token is
+two ordinary characters; here it opens a comment that runs to the next
+`*/` and, where there is none, **to the end of the stylesheet**.
+
+Two sheets, each two rules, on a 200px page:
+
+```css
+#a{font-family:"/*";width:100px;height:40px;background:#00ff00}
+#b{width:100px;height:40px;background:#ff0000}
+```
+
+```css
+#a{background-image:url(no/*such.png);width:100px;height:40px;background-color:#00ff00}
+#b{width:100px;height:40px;background:#ff0000}
+```
+
+| | Chromium | this engine |
+|---|---|---|
+| `#a` | green | nothing painted |
+| `#b` | red | nothing painted |
+
+Both rules are lost, not just the one the `/*` is in: the comment opens
+mid-declaration and never closes. A single `content: "/*"` in a site's
+stylesheet therefore drops every rule after it, which is not a corner
+so much as a page that renders blank.
+
+The fix is to make the scan aware of the three places a `/*` is not a
+comment -- inside `'...'`, inside `"..."` and inside an unquoted
+`url(...)` -- with a backslash escaping the next character in the two
+quoted forms. The check needs no number: the same sheet with the string
+emptied has to paint the same, and it is the *following* rule that says
+whether the scan stopped where it should.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
