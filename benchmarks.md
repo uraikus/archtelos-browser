@@ -2898,3 +2898,20 @@ and one as runs, and the strip version is the one that paints over the
 corner. `tests/featurepage.py` grew the shadow and a probe in the same
 change, because nothing else on either benchmark page casts a shadow at
 all — the whole of `box-shadow` was unmeasured here until now.
+
+**And the blurred one's corner correction is another 2 ms.** Each
+corner takes one more blit of an image carrying `1 - round / (fx*fy)`,
+built by the same outer-integral sum an outer shadow's corner uses and
+cached by the same key, so a page of identical figures builds four and
+blits them 384 times:
+
+| paint | forward | reversed |
+|---|---|---|
+| `generated.html`, no shadow on it | 0 ms of 18, 6 of 20 | 0 ms, 7 of 20 |
+| `features.html`, 96 blurred rounded inset shadows | +2 ms of 36, 18 of 25 | +2 ms |
+
+What it buys is the corner going from **59 units of 255 out** against
+Chromium to one or two, which is the offset the outer shadows already
+carry. The feature page's figures now carry both an unblurred inset
+shadow and a blurred one, so the two paths are measured together and
+one probe turns both off.

@@ -709,6 +709,143 @@ img func shadowCorner(key:text, x0:int, y0:int, cw:int, ch:int,
     return out
 }
 
+// The correction a blurred `inset` shadow's rounded corner needs.
+//
+// Its two strip passes leave `1 - fx*fy`, the complement of the
+// *square* hole's blurred coverage. What it wants is the complement of
+// the **rounded** hole's, and a rounded hole lies inside the square
+// one, so its coverage is the smaller and the shadow belongs darker at
+// a corner than the strips make it -- by as much as 59 units of 255 on
+// the fixture todo.md records.
+//
+// Painting over accumulates rather than adds: `a` then `d` gives
+// `a + d(1 - a)`. Setting that equal to `1 - round`, with `a` the
+// `1 - fx*fy` already there, solves to
+//
+//     d = 1 - round / (fx*fy)
+//
+// which is between zero and one precisely because the rounded coverage
+// never exceeds the square one. So the correction is paintable, and
+// that is what makes this possible at all: the canvas has no operator
+// that subtracts (FINDINGS.md, and CSS Compositing is blocked on it).
+//
+// The sum is the same outer integral `shadowCorner` takes, over the
+// hole's own shape; what differs is the pixel written at the end.
+map[img] insetCornerFixes = {}
+
+img func insetCornerFix(key:text, x0:int, y0:int, cw:int, ch:int,
+                        w:int, h:int, sigma:float, reach:int, shade:int,
+                        tlx:int, tly:int, trx:int, trys:int,
+                        brx:int, brys:int, blx:int, blys:int) {
+    img hit = insetCornerFixes[key]
+    if hit != null { return hit }
+    img out = blankImage(cw, ch)
+    insetCornerFixes[key] = out
+    int v0 = maxInt(y0 - reach, 0)
+    int v1 = minInt(y0 + ch + reach, h)
+    if v1 <= v0 { return out }
+
+    arr[float] segT0 = []
+    arr[float] segT1 = []
+    arr[float] segLo = []
+    arr[float] segHi = []
+    int topBand = maxInt(tly, trys)
+    int botBand = maxInt(brys, blys)
+    int runFrom = 0 - 1
+    float step = 1.0 / SHADOW_SLICES.toFloat()
+    for int v = v0, v < v1, v++ {
+        if v >= topBand && v + 1 <= h - botBand {
+            if runFrom < 0 { runFrom = v }
+            continue
+        }
+        if runFrom >= 0 {
+            shadowSpanAt((runFrom + v).toFloat() / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            segT0.push(runFrom.toFloat())
+            segT1.push(v.toFloat())
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+            runFrom = 0 - 1
+        }
+        for int k = 0, k < SHADOW_SLICES, k++ {
+            float t0 = v.toFloat() + step * k.toFloat()
+            float t1 = t0 + step
+            shadowSpanAt((t0 + t1) / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            if shadowSpanLo >= shadowSpanHi { continue }
+            segT0.push(t0)
+            segT1.push(t1)
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+        }
+    }
+    if runFrom >= 0 {
+        shadowSpanAt((runFrom + v1).toFloat() / 2.0, w, h,
+                     tlx, tly, trx, trys, brx, brys, blx, blys)
+        segT0.push(runFrom.toFloat())
+        segT1.push(v1.toFloat())
+        segLo.push(shadowSpanLo)
+        segHi.push(shadowSpanHi)
+    }
+    int nv = segT0.length
+    if nv == 0 { return out }
+
+    float fw = w.toFloat()
+    float fh = h.toFloat()
+    arr[float] hf = []
+    arr[float] sqx = []
+    for int i = 0, i < cw, i++ {
+        float px = (x0 + i).toFloat() + 0.5
+        sqx.push(blurAxis(px, 0.0, fw, sigma))
+        for int k = 0, k < nv, k++ {
+            hf.push(blurAxis(px, segLo[k], segHi[k], sigma))
+        }
+    }
+    arr[float] vw = []
+    arr[float] sqy = []
+    arr[int] kLo = []
+    arr[int] kHi = []
+    for int j = 0, j < ch, j++ {
+        float py = (y0 + j).toFloat() + 0.5
+        sqy.push(blurAxis(py, 0.0, fh, sigma))
+        int first = nv
+        int last = 0 - 1
+        for int k = 0, k < nv, k++ {
+            float a = blurAxis(py, segT0[k], segT1[k], sigma)
+            vw.push(a)
+            if a > 0.000001 {
+                if k < first { first = k }
+                last = k
+            }
+        }
+        kLo.push(first)
+        kHi.push(last)
+    }
+
+    fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
+    for int j = 0, j < ch, j++ {
+        int vb = j * nv
+        int k0 = kLo[j]
+        int k1 = kHi[j]
+        float vy = sqy[j]
+        for int i = 0, i < cw, i++ {
+            // Where the square hole barely covers the pixel there is
+            // nothing to correct: the strips already left it opaque.
+            float sq = sqx[i] * vy
+            if sq <= 0.0005 { continue }
+            int hb = i * nv
+            float a = 0.0
+            for int k = k0, k <= k1, k++ { a = a + hf[hb + k] * vw[vb + k] }
+            float d = 1.0 - a / sq
+            if d <= 0.002 { continue }
+            fillAlpha(d > 1.0 ? 1.0 : d)
+            out.drawPixel(i, j)
+        }
+    }
+    fillAlpha(1.0)
+    return out
+}
+
 // One axis's profile as a one pixel tall image, so a whole row of a
 // blurred square corner can be drawn with one blit rather than a pixel
 // at a time: `drawImage` multiplies the image's own alpha by
@@ -1023,7 +1160,8 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
         int ih = ph - sh.spread - sh.spread
         if sh.blur > 0 {
             paintInsetBlur(px, py, pw, ph, ix, iy, iw, ih,
-                           sh.color, s.effectiveOpacity, sh.blur, round)
+                           sh.color, s.effectiveOpacity, sh.blur, round,
+                           sh.spread)
             continue
         }
         paintFill(sh.color, s.effectiveOpacity)
@@ -1047,7 +1185,8 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
 // how the strips are kept inside the padding box without a clip region.
 void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
                          hx:int, hy:int, hw:int, hh:int,
-                         c:int, opacity:float, blur:int, round:bool) {
+                         c:int, opacity:float, blur:int, round:bool,
+                         spread:int) {
     if pw <= 0 || ph <= 0 { return }
     int shade = colorWithOpacity(c, opacity)
     if !colorIsPaintable(shade) { return }
@@ -1076,6 +1215,61 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
         fillAlpha(a > 1.0 ? 1.0 : a)
         if layer == null { pDrawRect(px, py + j, pw, 1) }
         else { layer.drawRect(0, j, pw, 1) }
+    }
+    // The corners, where the rounded hole and the square one part
+    // company. Everything above this is the square answer; each corner
+    // is one blit that turns it into the round one.
+    if round && layer != null {
+        int htlx = innerRadius(inRadTLX, spread)
+        int htly = innerRadius(inRadTLY, spread)
+        int htrx = innerRadius(inRadTRX, spread)
+        int htry = innerRadius(inRadTRY, spread)
+        int hbrx = innerRadius(inRadBRX, spread)
+        int hbry = innerRadius(inRadBRY, spread)
+        int hblx = innerRadius(inRadBLX, spread)
+        int hbly = innerRadius(inRadBLY, spread)
+        int reach = maxInt(roundPx(sigma * 3.0), 1)
+        // Half the hole either way, so two corners' bands can never
+        // overlap and correct the same pixel twice.
+        int halfW = Math.floorDiv(hw + reach + reach + 1, 2)
+        int halfH = Math.floorDiv(hh + reach + reach + 1, 2)
+        int colsL = minInt(maxInt(htlx, hblx) + reach, halfW)
+        int colsR = minInt(maxInt(htrx, hbrx) + reach, halfW)
+        int rowsT = minInt(maxInt(htly, htry) + reach, halfH)
+        int rowsB = minInt(maxInt(hbry, hbly) + reach, halfH)
+        text ck = `${blur}|${shade}|${hw}|${hh}|${htlx},${htly},${htrx},${htry}`
+            + `|${hbrx},${hbry},${hblx},${hbly}|${colsL},${colsR},${rowsT},${rowsB}`
+            + `|${reach}`
+        int ox = hx - px
+        int oy = hy - py
+        if colsL > 0 && rowsT > 0 && (htlx > 0 || htly > 0) {
+            layer.drawImage(insetCornerFix(ck + '|tl', 0 - reach, 0 - reach,
+                                           colsL, rowsT, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox - reach, oy - reach)
+        }
+        if colsR > 0 && rowsT > 0 && (htrx > 0 || htry > 0) {
+            layer.drawImage(insetCornerFix(ck + '|tr', hw - colsR + reach, 0 - reach,
+                                           colsR, rowsT, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox + hw - colsR + reach, oy - reach)
+        }
+        if colsL > 0 && rowsB > 0 && (hblx > 0 || hbly > 0) {
+            layer.drawImage(insetCornerFix(ck + '|bl', 0 - reach, hh - rowsB + reach,
+                                           colsL, rowsB, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox - reach, oy + hh - rowsB + reach)
+        }
+        if colsR > 0 && rowsB > 0 && (hbrx > 0 || hbry > 0) {
+            layer.drawImage(insetCornerFix(ck + '|br', hw - colsR + reach, hh - rowsB + reach,
+                                           colsR, rowsB, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox + hw - colsR + reach, oy + hh - rowsB + reach)
+        }
     }
     if layer != null {
         fillAlpha(own)

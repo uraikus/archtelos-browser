@@ -478,4 +478,49 @@ check(!(getPixelColor(30, 6) == ringGreen), 'while still being painted inside th
 check(!(getPixelColor(30, 6) == ringWhite), 'over the box\'s own background')
 
 
+// And its falloff follows the curve, not just its edge. The two strip
+// passes leave the complement of the *square* hole's blurred coverage;
+// a rounded hole is inside the square one, so the shadow belongs darker
+// at a corner than the strips make it. Each corner takes one more blit
+// carrying `1 - round / (fx*fy)`, which is between zero and one because
+// the rounded coverage never exceeds the square one -- so it can be
+// painted over rather than subtracted, which matters, since the canvas
+// cannot subtract.
+//
+// The check needs no number from anywhere: the same box with no radius
+// paints exactly the square answer, so the two must **differ** where a
+// corner curves and **agree** where no corner reaches. A blur of 20
+// reaches 30 pixels, so the corner band is the top 70 rows and row 60
+// is outside it.
+void func insetShot(radius:text) {
+    Page p = pageFromHtml('<!doctype html><head><style>'
+        + 'body{margin:0;width:200px;background:#00ff00}'
+        + '#a{width:120px;height:120px;background:#ffffff;'
+        + 'box-shadow:inset 0 0 20px 0 #ff0000;' + radius + '}'
+        + '</style><body><div id="a"></div></body>', 'test.html', 200)
+    clearCanvas()
+    paintPage(p, 0, 0, 200)
+}
+
+insetShot('border-radius:0')
+color insetSqCorner = getPixelColor(6, 20)
+color insetSqEdge = getPixelColor(6, 60)
+color insetSqDeep = getPixelColor(16, 16)
+insetShot('border-radius:40px')
+check(!(getPixelColor(6, 20) == insetSqCorner),
+      "a blurred inset shadow's corner is not the square answer")
+check(!(getPixelColor(16, 16) == insetSqDeep),
+      'nor is the point on the corner\'s own diagonal')
+check(getPixelColor(6, 60) == insetSqEdge,
+      'and away from every corner the two agree exactly')
+
+// The four corners of a square box with equal radii must carry the
+// same alpha, which no asymmetry in the correction could survive.
+insetShot('border-radius:40px')
+color insetTL = getPixelColor(14, 24)
+check(getPixelColor(105, 24) == insetTL, 'the top-right corner matches the top-left')
+check(getPixelColor(14, 95) == insetTL, 'the bottom-left matches it too')
+check(getPixelColor(105, 95) == insetTL, 'and the bottom-right')
+
+
 finish('box shadow')

@@ -44,14 +44,28 @@ strips, using the same span function the outer shadows' corners already
 ask for. Against Chromium on that fixture every edge lands within a
 pixel, and the rows below the corners are unchanged.
 
-**A blurred one is cut back to the same curve** rather than reshaped.
-The strips stay square and go into a layer, which is blitted one
-scanline at a time through the inner curve, the way a `clip-path` is
-cut -- so the shadow stops where the box does. What that leaves is the
-falloff: the band's alpha is still measured from the *square* hole, so
-along the diagonal it is thinner than Chromium's. The shape it wants is
-the complement of the outer corner sum, which the outer shadows already
-compute; todo.md carries that.
+**A blurred one now follows the curve as well.** Its two strip passes
+leave the complement of the *square* hole's blurred coverage, and a
+rounded hole lies inside the square one, so its coverage is the smaller
+and the shadow belongs darker at a corner than the strips make it -- by
+**59 units of 255** on the fixture above, which is a quarter of the
+range and plainly visible.
+
+Painting over accumulates rather than adds, so the correction is not
+the difference itself: `a` then `d` gives `a + d(1 - a)`, and setting
+that equal to `1 - round`, with `a` the `1 - fx*fy` already there,
+solves to `d = 1 - round / (fx*fy)`. That is between zero and one
+precisely because a rounded hole never covers more than a square one --
+which is what makes this possible at all, the canvas having no operator
+that subtracts. Each corner is one more blit of an image carrying `d`,
+built by the same outer-integral sum an outer shadow's corner uses and
+cached the same way. The corner error goes from 59 units to **one or
+two**, which is the offset the outer shadows already carry against
+Skia's three box blurs.
+
+The strips still go into a layer that is blitted through the inner
+curve a scanline at a time, which is what stops the shadow painting
+over the corner the box rounded away.
 
 **A box that has only an outer shadow never asks.** The curve is
 resolved on reaching the first `inset` shadow rather than at the top of

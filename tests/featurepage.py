@@ -125,7 +125,7 @@ h2::before{content:"Part " counter(part) ". ";color:#667}
 .wide .note{grid-area:note}
 .wide .meta{grid-area:meta;color:#667}
 figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc;
-       outline:1px solid #c8cee0;box-shadow:inset 0 0 0 2px #e6ebf5}
+       outline:1px solid #c8cee0;box-shadow:inset 0 0 0 2px #e6ebf5, inset 0 0 6px 0 #d3dcee}
 img{width:96px;height:64px;object-fit:cover;object-position:center}
 .tall img{object-fit:contain}
 figcaption{font-size:12px;color:#556}
@@ -199,9 +199,9 @@ PROBES = (
     # Setting it to zero puts them back apart, which moves every box
     # below them and so the whole page.
     ('negative-margin', '.pull2{margin-top:0}'),
-    # An inset shadow on a rounded box is two runs a row between the
-    # padding box's curve and the hole's, where a square one is four
-    # strips. `figure` has a `border-radius`, so turning the shadow off
+    # Two inset shadows, one of each kind: the unblurred one is two runs
+    # a row between the padding box's curve and the hole's, and the
+    # blurred one is the strips plus a correction blit per corner. `figure` has a `border-radius`, so turning the shadow off
     # takes that path away -- and nothing else on the page casts a
     # shadow at all, so without this row the whole of `box-shadow` is
     # unmeasured here.

@@ -138,26 +138,24 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    a painted pixel back, and the language cannot (FINDINGS.md, "a
    painted pixel can be compared but never read").
 
-   **An `inset` shadow follows the inner curve**, and an unblurred one
-   is exact: two runs a row between the padding box's curve and the
-   hole's, within a pixel of Chromium on every edge. What is left is
-   the *blurred* one's falloff. Its strips are still square and are cut
-   back to the curve by a per-scanline blit, which stops it painting
-   over the corner but leaves the band thinner than Chromium's along
-   the diagonal, because the alpha is measured from the square hole
-   rather than the round one.
+   **An `inset` shadow follows the inner curve**, blurred or not. The
+   unblurred one is two runs a row between the padding box's curve and
+   the hole's, within a pixel of Chromium on every edge. The blurred
+   one keeps its two strip passes -- which leave the complement of the
+   *square* hole's coverage -- and adds one blit per corner carrying
+   `1 - round / (fx*fy)`, which is what painting over rather than
+   adding requires: `a` then `d` gives `a + d(1 - a)`, and that equals
+   `1 - round` exactly at that `d`. It is between zero and one because
+   a rounded hole never covers more than a square one, which is what
+   makes it paintable at all, the canvas having no operator that
+   subtracts. The corner error goes from 59 units of 255 to one or two.
 
-   **What the curved falloff would take**, written down rather than
-   attempted: the inset alpha is one minus the hole's blurred coverage,
-   and near a corner the rounded hole covers *less* than the square one,
-   so the rounded answer is the square one plus a non-negative
-   difference. Painting over accumulates alpha, so the two strip passes
-   can stay exactly as they are and each corner can take one more blit
-   carrying `fx*fy - roundCoverage` over its band -- both terms already
-   exist, the first as the product the strips use and the second as the
-   sum `shadowCorner` computes for an outer shadow. It needs no
-   subtraction, which is what makes it possible at all: the canvas has
-   no compositing operator (FINDINGS.md, finding on blending).
+   **What is left of §6 is `text-shadow`'s blur**, above, and the
+   square corners' cache: a round corner is one image built once per
+   distinct shadow and blitted, a square one is a one-pixel ramp
+   blitted once per row of the blur's reach. On a page of 355 cards
+   sharing a shadow the round path measures 27-31 ms against the square
+   path's 43-48.
 
    **A square shadow corner could be cached the way a round one is.**
    A round corner is one image, built once per distinct shadow and
