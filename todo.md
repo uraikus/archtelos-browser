@@ -1827,6 +1827,79 @@ and the selector conformance instrument can never grade it against a
 browser. It has unit checks of its own in `tests/unit/`, because
 nothing else here could notice if it stopped working.
 
+### What the selector instrument has never asked, measured
+
+The instrument grades 61 selectors and every one of them passes, which
+says what those 61 are rather than what the engine can do. Selectors 4
+has a great deal the list has never contained. Forty-five candidate
+rows were put to Chromium against the same fixture,
+`tests/fixtures/selectors.html`, with no change to the document; 25 of
+them match at least one element there, so 25 can be graded today. The
+engine agrees on 9 of the 25.
+
+Passing already, and so worth adding to the list as it stands:
+
+| row | matches |
+|---|---|
+| `:any-link`, `a:any-link` | `a1` |
+| `div:not(:has(p))` | `d4 d5` |
+| `*|p` | every `p` |
+| `:root > body` | `body` |
+| `:checked + input` | `i4` |
+| `input:enabled:checked` | `i3` |
+| `:is(h2):is(#h1)` | `h1` |
+| `:not(:not(p))` | every `p` |
+
+Failing, in three families:
+
+**1. A complex selector inside `:is()`, `:where()`, `:not()` and
+`:has()`.** Each of those takes a full `<complex-selector-list>` in
+§3.1, and this engine takes a compound: `:is(h2, span)` works and
+`:is(div > p)` does not. `:has()` is the same restriction wearing a
+different hat -- it is a descendant test here, so a leading combinator
+is refused rather than read.
+
+| row | Chromium | this engine |
+|---|---|---|
+| `:is(div > p)` | `p1`..`p7` | nothing |
+| `:where(div > p)` | `p1`..`p7` | nothing |
+| `p:not(div > p)` | `p8 p9` | nothing |
+| `div:has(> p)` | `d1 d2 d3` | nothing |
+| `div:has(+ div)` | `d1 d2 d3` | nothing |
+| `p:has(+ p)` | `p1 p2 p6 p8` | nothing |
+
+**2. `:nth-child(An+B of S)`.** The `An+B` grammar is complete; the
+`of S` clause that filters which siblings are counted is not read at
+all.
+
+| row | Chromium | this engine |
+|---|---|---|
+| `p:nth-child(2 of .lead)` | `p3` | nothing |
+| `:nth-child(1 of p)` | `p1 p5 p6 p8` | nothing |
+| `li:nth-child(even of :not(.x))` | `l2 l4 l6` | nothing |
+
+**3. The form-state and direction pseudo-classes**, none of which the
+engine has: `:read-write` (`i1`), `:read-only` (every `p`),
+`:optional` (`i1`..`i4`), `:default` (`i3`), `option:default` (`o1`),
+`:valid` (`i1 i3 i4`) and `:dir(ltr)` (every `p`).
+
+Sixteen of the other twenty match nothing in this fixture, so they
+cannot be graded without changing the document -- `:required`,
+`:placeholder-shown`, `:indeterminate`, `:invalid`, `:in-range`,
+`:out-of-range`, `:focus-within`, `:host`, `:open`, `:modal`,
+`:popover-open`, `:autofill`, `:user-valid`, `:user-invalid`,
+`li:nth-child(2 of .lead)` and `p:nth-last-child(2 of .tail)`. The
+runner refuses such a row outright, which is the rule from CLAUDE.md
+working: an ungradeable row would read as implemented in an engine that
+dropped it. `p|p` is invalid with no namespace declared, and `:scope`,
+`:defined` and `:has(:is(.lead))` match `html`, which has no id, so the
+comparison cannot name what they matched.
+
+**The 25 gradeable rows are the deliverable here**: adding them takes
+the list from 61 to 86 and the count from 61/61 to 70/86 before any
+code is written, so the number says what is left instead of only what
+works.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
