@@ -2113,6 +2113,87 @@ attribute alone, and a single-selection `<select>` with nothing declared
 selects its **first** option, so the row failed the moment the document
 held such a select.
 
+### What is left of HTML's validity list, measured
+
+`:valid` and `:invalid` read two of HTML's conditions -- a missing
+required value and a value outside a declared range. Thirty-eight more
+cases were put to Chromium to find out what the rest of the list does
+from markup alone.
+
+**A type mismatch**, which is the largest of them:
+
+| value on `type="email"` | Chromium | | value on `type="url"` | Chromium |
+|---|---|---|---|---|
+| `a@b.co` | valid | | `https://example.com/` | valid |
+| `a@b` | **valid** | | `foo:bar` | **valid** |
+| `A@B.CO` | valid | | `mailto:a@b.co` | valid |
+| `not-an-email` | invalid | | `nope` | invalid |
+| `a@@b.co` | invalid | | `//example.com` | invalid |
+| `@b.co` | invalid | | `http://` | **invalid** |
+| `a@` | invalid | | | |
+| `a b@c.co` | invalid | | | |
+| `` (empty) | valid | | | |
+| `a@b.co, c@d.co` with `multiple` | valid | | | |
+
+So a bare label after the `@` is allowed and a missing host after `//`
+is not; an empty value is never a type mismatch, because an empty
+required value is a different condition.
+
+**A step mismatch**, where the surprise is the base:
+
+| | Chromium |
+|---|---|
+| `step=5 value=7` | **valid** |
+| `step=5 value=10` | valid |
+| `min=1 step=5 value=6` | valid |
+| `min=1 step=5 value=7` | **invalid** |
+| `min=1 step=2.5 value=3.5` | valid |
+| `step=0 value=3` | valid |
+| `type=range min=0 max=10 step=5 value=7` | **valid** |
+
+The step base is the `min` attribute when there is one and **the
+`value` content attribute** otherwise, so `step=5 value=7` measures 7
+from 7 and is a whole zero steps. A step mismatch can only come out of
+markup when `min` is there too. `step=0` is not a step and is ignored,
+and a `range` sanitises its value to the nearest step before anything
+asks.
+
+**What `required` means, per control:**
+
+| | Chromium |
+|---|---|
+| `<input type=checkbox required>` | invalid |
+| the same, `checked` | valid |
+| `<input type=radio name=g required>` | invalid |
+| the same, `checked` | valid |
+| `<select required><option value="">none</option></select>` | invalid |
+| `<select required><option value=x selected>` | valid |
+| `<select required><option>x</option></select>` | **valid** |
+| `<select required multiple><option>x</option></select>` | **invalid** |
+| `<textarea required></textarea>` | invalid |
+
+A checkbox's or radio's value for this purpose is whether it is checked.
+A single-selection select is satisfied by its automatically selected
+first option, whose value is its own text when it declares none -- and a
+`multiple` select selects nothing of its own, so the same markup fails.
+
+**Two conditions cannot come out of markup at all**, and both are
+recorded here rather than implemented:
+
+- `minlength` and `maxlength` apply only once the control's value has
+  been edited by a user (HTML's *dirty value flag*).
+  `<input minlength=5 value="abc">` is **valid** in Chromium, and
+  nothing this browser can do to a document makes it otherwise.
+- `pattern` needs a JavaScript regular expression engine.
+  `<input pattern="[0-9]+" value="abc">` is invalid and
+  `<input pattern="[0-9" value="abc">` is valid, because an
+  unparseable pattern is ignored -- so even declining it correctly
+  needs a parser for the syntax. Festina has no regular expressions and
+  this project links what Festina links, so it would have to be written
+  by hand. It is the one item on the list with real work behind it.
+
+The measurement alone; the rows and the code follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
