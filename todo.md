@@ -136,13 +136,28 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    rectangle, so the closed form `box-shadow` uses does not carry over:
    what would is blurring the glyphs' own coverage, which means reading
    a painted pixel back, and the language cannot (FINDINGS.md, "a
-   painted pixel can be compared but never read"). **And an `inset`
-   shadow does not follow a `border-radius`** where an outer one now
-   does: it is drawn as a frame of strips whatever the box's corners do.
-   The shape is the complement of the outer one, so the sum over rows an
-   outer corner uses carries over, but the strips it would replace are
-   also what keeps an inset shadow inside the padding box, and that
-   clip has to be made to follow the inner curve at the same time.
+   painted pixel can be compared but never read").
+
+   **An `inset` shadow follows the inner curve**, and an unblurred one
+   is exact: two runs a row between the padding box's curve and the
+   hole's, within a pixel of Chromium on every edge. What is left is
+   the *blurred* one's falloff. Its strips are still square and are cut
+   back to the curve by a per-scanline blit, which stops it painting
+   over the corner but leaves the band thinner than Chromium's along
+   the diagonal, because the alpha is measured from the square hole
+   rather than the round one.
+
+   **What the curved falloff would take**, written down rather than
+   attempted: the inset alpha is one minus the hole's blurred coverage,
+   and near a corner the rounded hole covers *less* than the square one,
+   so the rounded answer is the square one plus a non-negative
+   difference. Painting over accumulates alpha, so the two strip passes
+   can stay exactly as they are and each corner can take one more blit
+   carrying `fx*fy - roundCoverage` over its band -- both terms already
+   exist, the first as the product the strips use and the second as the
+   sum `shadowCorner` computes for an outer shadow. It needs no
+   subtraction, which is what makes it possible at all: the canvas has
+   no compositing operator (FINDINGS.md, finding on blending).
 
    **A square shadow corner could be cached the way a round one is.**
    A round corner is one image, built once per distinct shadow and
@@ -1539,6 +1554,24 @@ band. `content: none` and an empty box both draw nothing.
 `@top-center` replaces the general one on page one and leaves it in
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
+
+### Where an inset shadow's curve comes from, measured
+
+A 120x120 box with `border-radius: 40px`, a white background on a green
+page and `box-shadow: inset 0 0 0 12px #ff0000`, read with
+`tests/chromium.py pixels` at 200x200:
+
+| row | what Chromium draws |
+|---|---|
+| 6 | green to 16, red 19-100, green from 103 |
+| 20 | green to 4, red 5-18, white 21-98, red 101-113, green from 115 |
+| 40 | red 0-11, white 12-107, red 108-119, green from 120 |
+
+Row 40 is below both corners and is the straight band; rows 6 and 20
+are the curve. Row 20 is what settles the hole's radius: the outer edge
+at 5 is a radius of 40 -- `40 * (1 - sqrt(1 - (20/40)^2))` is 5.4 --
+and the hole's edge at 20 is a radius of **28**, because 28 gives 8.4
+and 40 would give 16. So the spread shrinks the hole's radius with it.
 
 ### Where an outline paints, measured
 

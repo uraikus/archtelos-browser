@@ -901,6 +901,90 @@ void func fillFrame(ox:int, oy:int, ow:int, oh:int, ix:int, iy:int, iw:int, ih:i
     if right < ox + ow { pDrawRect(right, top, ox + ow - right, bottom - top) }
 }
 
+// The padding box's own corners: the border box's, less the border on
+// each side and floored at zero, which is the inner curve (Backgrounds
+// and Borders 3 §5.2). Eight values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int inRadTLX = 0
+int inRadTLY = 0
+int inRadTRX = 0
+int inRadTRY = 0
+int inRadBRX = 0
+int inRadBRY = 0
+int inRadBLX = 0
+int inRadBLY = 0
+
+int func innerRadius(r:int, b:int) {
+    if r <= 0 { return 0 }
+    return maxInt(r - b, 0)
+}
+
+// Answers whether any of them is round, so a box whose borders have
+// eaten every corner takes the straight path below rather than the
+// per-row one.
+bool func insetShapeRadii(s:Style, w:int, h:int, bl:int, bt:int, br:int, bb:int) {
+    resolveCornerRadii(s, w, h)
+    inRadTLX = innerRadius(radTLX, bl)
+    inRadTLY = innerRadius(radTLY, bt)
+    inRadTRX = innerRadius(radTRX, br)
+    inRadTRY = innerRadius(radTRY, bt)
+    inRadBRX = innerRadius(radBRX, br)
+    inRadBRY = innerRadius(radBRY, bb)
+    inRadBLX = innerRadius(radBLX, bl)
+    inRadBLY = innerRadius(radBLY, bb)
+    return inRadTLX > 0 || inRadTLY > 0 || inRadTRX > 0 || inRadTRY > 0
+        || inRadBRX > 0 || inRadBRY > 0 || inRadBLX > 0 || inRadBLY > 0
+}
+
+// The span of the inner curve at one row of the padding box, as
+// absolute x. Two values out of a function need globals.
+int insetRowLo = 0
+int insetRowHi = 0
+
+void func insetRowSpan(px:int, py:int, pw:int, ph:int, row:int) {
+    shadowSpanAt((row - py).toFloat() + 0.5, pw, ph,
+                 inRadTLX, inRadTLY, inRadTRX, inRadTRY,
+                 inRadBRX, inRadBRY, inRadBLX, inRadBLY)
+    insetRowLo = px + roundPx(shadowSpanLo)
+    insetRowHi = px + roundPx(shadowSpanHi)
+}
+
+// The band between two rounded rectangles, a row at a time. An inset
+// shadow is the padding box minus the hole the offset and the spread
+// leave, and where the box is round both of those follow a curve, so
+// each row is two runs rather than the four strips a square box needs.
+// The hole's radii are the padding box's less the spread, which is what
+// Chromium does: 40 less a 12 spread puts the hole's edge where a 40
+// would not (todo.md).
+void func fillRoundedFrame(px:int, py:int, pw:int, ph:int,
+                           hx:int, hy:int, hw:int, hh:int, spread:int) {
+    int htlx = innerRadius(inRadTLX, spread)
+    int htly = innerRadius(inRadTLY, spread)
+    int htrx = innerRadius(inRadTRX, spread)
+    int htry = innerRadius(inRadTRY, spread)
+    int hbrx = innerRadius(inRadBRX, spread)
+    int hbry = innerRadius(inRadBRY, spread)
+    int hblx = innerRadius(inRadBLX, spread)
+    int hbly = innerRadius(inRadBLY, spread)
+    for int j = 0, j < ph, j++ {
+        int row = py + j
+        insetRowSpan(px, py, pw, ph, row)
+        int lo = insetRowLo
+        int hi = insetRowHi
+        if hi <= lo { continue }
+        int cutLo = hi
+        int cutHi = hi
+        if hw > 0 && hh > 0 && row >= hy && row < hy + hh {
+            shadowSpanAt((row - hy).toFloat() + 0.5, hw, hh,
+                         htlx, htly, htrx, htry, hbrx, hbry, hblx, hbly)
+            cutLo = clampInt(hx + roundPx(shadowSpanLo), lo, hi)
+            cutHi = clampInt(hx + roundPx(shadowSpanHi), lo, hi)
+        }
+        if cutLo > lo { pDrawRect(lo, row, cutLo - lo, 1) }
+        if hi > cutHi { pDrawRect(cutHi, row, hi - cutHi, 1) }
+    }
+}
+
 // `inset` shadows (Backgrounds and Borders 3 §6). The shadow is the
 // padding box minus that box offset by the shadow's lengths and shrunk
 // by its spread, so it reads as a band inside an edge rather than a
@@ -919,21 +1003,32 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
     int pw = w - bl - br
     int ph = h - bt - bb
     if pw <= 0 || ph <= 0 { return }
+    // The inner curve, worked out once for the box rather than once per
+    // shadow -- and not at all until an `inset` shadow is actually
+    // reached, because most boxes that carry a shadow carry an outer
+    // one and would otherwise pay for a curve nothing here draws.
+    bool round = false
+    bool askedRound = false
     for int i = s.shadows.length - 1, i >= 0, i-- {
         Shadow sh = s.shadows[i]
         if !sh.inset { continue }
         if !colorIsPaintable(sh.color) { continue }
+        if !askedRound {
+            askedRound = true
+            round = s.borderRadius > 0 && insetShapeRadii(s, w, h, bl, bt, br, bb)
+        }
         int ix = px + sh.dx + sh.spread
         int iy = py + sh.dy + sh.spread
         int iw = pw - sh.spread - sh.spread
         int ih = ph - sh.spread - sh.spread
         if sh.blur > 0 {
             paintInsetBlur(px, py, pw, ph, ix, iy, iw, ih,
-                           sh.color, s.effectiveOpacity, sh.blur)
+                           sh.color, s.effectiveOpacity, sh.blur, round)
             continue
         }
         paintFill(sh.color, s.effectiveOpacity)
-        fillFrame(px, py, pw, ph, ix, iy, iw, ih)
+        if round { fillRoundedFrame(px, py, pw, ph, ix, iy, iw, ih, sh.spread) }
+        else { fillFrame(px, py, pw, ph, ix, iy, iw, ih) }
         fillAlpha(1.0)
     }
 }
@@ -952,7 +1047,7 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
 // how the strips are kept inside the padding box without a clip region.
 void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
                          hx:int, hy:int, hw:int, hh:int,
-                         c:int, opacity:float, blur:int) {
+                         c:int, opacity:float, blur:int, round:bool) {
     if pw <= 0 || ph <= 0 { return }
     int shade = colorWithOpacity(c, opacity)
     if !colorIsPaintable(shade) { return }
@@ -960,7 +1055,13 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
     float sigma = blur.toFloat() / 2.0
     float fw = maxInt(hw, 0).toFloat()
     float fh = maxInt(hh, 0).toFloat()
-    img layer = own >= 0.999 ? null : blankImage(pw, ph)
+    // A round box needs the layer whatever its alpha, because the
+    // strips are square and the padding box is not: the layer is what
+    // the inner curve cuts them back to, one scanline at a time, the
+    // way a `clip-path` is cut. The band's own falloff is still
+    // measured from the square hole -- todo.md has what the curved one
+    // would take.
+    img layer = round || own < 0.999 ? blankImage(pw, ph) : null
     fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
     for int i = 0, i < pw, i++ {
         float a = 1.0 - blurAxis((px + i - hx).toFloat() + 0.5, 0.0, fw, sigma)
@@ -978,7 +1079,19 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
     }
     if layer != null {
         fillAlpha(own)
-        pDrawImage(layer, px, py)
+        if !round {
+            pDrawImage(layer, px, py)
+        } else {
+            for int j = 0, j < ph, j++ {
+                int row = py + j
+                insetRowSpan(px, py, pw, ph, row)
+                int lo = insetRowLo
+                int hi = insetRowHi
+                if hi <= lo { continue }
+                img piece = cutRegion(layer, lo - px, j, hi - lo, 1)
+                if piece != null { pDrawImage(piece, lo, row) }
+            }
+        }
     }
     fillAlpha(1.0)
 }

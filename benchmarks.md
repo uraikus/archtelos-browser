@@ -2873,3 +2873,28 @@ Paired against the straightforward version on `features.html` it read
 the code. The same shape of change is worth a great deal in one place
 and nothing a few lines away, which is why it gets measured each time
 rather than assumed.
+
+## What making an inset shadow follow the inner curve cost
+
+An unblurred inset shadow on a rounded box is now two runs a row
+between two curves where it was four straight strips, and a blurred one
+is cut back to that curve one scanline at a time. Paired, both
+directions:
+
+| paint | forward | reversed |
+|---|---|---|
+| `generated.html`, no shadow on it at all | 0 ms of 19, 10 of 20 | 0 ms, 5 of 20 |
+| `features.html`, 96 rounded figures with an inset shadow | +1 ms of 33, 13 of 25 | +1 ms |
+
+The first row is the point of the lazy flag: `paintInsetShadows`
+returns on a box with no shadow before anything else happens, and the
+curve is not resolved until an `inset` shadow is actually reached, so a
+box carrying only an outer shadow does not pay for a curve nothing
+draws.
+
+The second row is the feature's own cost on a page that uses it, not a
+regression: the two binaries paint the same 96 shadows, one as strips
+and one as runs, and the strip version is the one that paints over the
+corner. `tests/featurepage.py` grew the shadow and a probe in the same
+change, because nothing else on either benchmark page casts a shadow at
+all — the whole of `box-shadow` was unmeasured here until now.

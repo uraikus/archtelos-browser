@@ -409,4 +409,73 @@ color sqHard = getPixelColor(88, 88)
 check(sqHard == black, 'an unblurred square shadow fills its own corner')
 check(!(rdHard == black), 'and an unblurred round one does not')
 
+// ---- an inset shadow follows the inner curve ---------------------------
+//
+// An inset shadow is the padding box minus that box offset and shrunk
+// by the spread, and both of those are rounded where the box is. A
+// 120x120 box with `border-radius: 40px` and `inset 0 0 0 12px`, read
+// off Chromium with `tests/chromium.py pixels` at 200x200 (todo.md):
+//
+//   row 6    green to 16, red 19-100, green from 103
+//   row 20   green to 4, red 5-18, white 21-98, red 101-113, green from 115
+//   row 40   red 0-11, white 12-107, red 108-119, green from 120
+//
+// Row 40 is below both corners and is the square case the engine
+// already drew; rows 6 and 20 are the curve. The spread shrinks the
+// hole's radius with it -- 40 less 12 is 28, which is what puts the
+// hole's edge at 20 on row 20 rather than at 28.
+
+color ringGreen = '#00ff00'
+color ringRed = '#ff0000'
+color ringWhite = '#ffffff'
+
+Page inset = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border-radius:40px;background:#ffffff;'
+    + 'box-shadow:inset 0 0 0 12px #ff0000}'
+    + '</style><body><div id="a"></div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(inset, 0, 0, 200)
+
+// The corner: the shadow must not be painted where the box is not.
+check(getPixelColor(5, 6) == ringGreen, 'an inset shadow stops at the rounded corner')
+check(getPixelColor(60, 6) == ringRed, 'and is painted across the top between the corners')
+check(getPixelColor(124, 6) == ringGreen, 'on the far corner as well')
+
+// Row 20 crosses both edges of the band, and both follow a curve: the
+// outer one the box's 40, the inner one the 28 the spread leaves.
+int ringOuter = -1
+int ringInner = -1
+for int x = 0, x < 60, x++ {
+    if ringOuter < 0 && getPixelColor(x, 20) == ringRed { ringOuter = x }
+    if ringOuter >= 0 && ringInner < 0 && getPixelColor(x, 20) == ringWhite { ringInner = x }
+}
+checkNear(ringOuter, 5, 1, "the band's outer edge follows the box's own radius")
+checkNear(ringInner, 21, 1, "and its inner edge the radius the spread leaves")
+
+// Below the corners it is the straight band it always was, which is
+// what says the change did not move the easy case.
+check(getPixelColor(5, 60) == ringRed, 'below the corners the band is unchanged')
+check(getPixelColor(60, 60) == ringWhite, 'with the hole still open in the middle')
+check(getPixelColor(112, 60) == ringRed, 'and the far side of the band still there')
+
+
+// The blurred one is cut back to the same curve. Its falloff is still
+// measured from the square hole -- what the curved one would take is in
+// todo.md -- but it no longer paints over the corner the box rounded
+// away. Chromium has the backdrop at x=0, 6 and 12 on row 6 and at x=0
+// on row 20, and the shadow from there inwards.
+Page insetBlur = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border-radius:40px;background:#ffffff;'
+    + 'box-shadow:inset 0 0 20px 0 #ff0000}'
+    + '</style><body><div id="a"></div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(insetBlur, 0, 0, 200)
+check(getPixelColor(12, 6) == ringGreen, 'a blurred inset shadow stops at the corner too')
+check(getPixelColor(0, 20) == ringGreen, 'and on the row below it')
+check(!(getPixelColor(30, 6) == ringGreen), 'while still being painted inside the curve')
+check(!(getPixelColor(30, 6) == ringWhite), 'over the box\'s own background')
+
+
 finish('box shadow')

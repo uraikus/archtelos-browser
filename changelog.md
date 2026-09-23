@@ -5,6 +5,37 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An `inset` shadow follows the inner curve
+
+An inset shadow is the padding box minus the hole its offset and spread
+leave, and on a rounded box both of those follow a curve. This painter
+drew four straight strips whatever the corners did, so on a 120x120 box
+with `border-radius: 40px` and `inset 0 0 0 12px` it painted the band
+straight across the corner the box had rounded away.
+
+The padding box's corners are the border box's less the border on each
+side, floored at zero, and the hole takes those less the spread again
+-- 40 against a 12 spread is 28, which the pixels say is what Chromium
+does: it is what puts the hole's edge at 20 on row 20 rather than at
+28. Each row is then two runs between two curves rather than four
+strips, using the same span function the outer shadows' corners already
+ask for. Against Chromium on that fixture every edge lands within a
+pixel, and the rows below the corners are unchanged.
+
+**A blurred one is cut back to the same curve** rather than reshaped.
+The strips stay square and go into a layer, which is blitted one
+scanline at a time through the inner curve, the way a `clip-path` is
+cut -- so the shadow stops where the box does. What that leaves is the
+falloff: the band's alpha is still measured from the *square* hole, so
+along the diagonal it is thinner than Chromium's. The shape it wants is
+the complement of the outer corner sum, which the outer shadows already
+compute; todo.md carries that.
+
+**A box that has only an outer shadow never asks.** The curve is
+resolved on reaching the first `inset` shadow rather than at the top of
+the function, because most boxes that carry a shadow carry an outer
+one.
+
 ### An outline paints in a pass of its own
 
 CSS2 §9.9 draws the outlines of a stacking context and its descendants
