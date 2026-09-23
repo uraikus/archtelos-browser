@@ -1608,6 +1608,31 @@ Before this engine derived the inner curve it drew the second, which
 left eleven pixels of the page showing between the border and the
 background.
 
+### A background image is not cut to the border-radius, measured
+
+A 120x120 box with `border-radius: 40px` on a green page, painted twice:
+once with `background-color: #ff0000` and once with
+`background-image: linear-gradient(#ff0000, #ff0000)` at
+`background-size: 100% 100%`. Read with `tests/chromium.py pixels` at
+200x200:
+
+| row | Chromium, colour | Chromium, image | this engine, colour | this engine, image |
+|---|---|---|---|---|
+| 4 | green to 20, red from 23 | the same | green to 19, red from 23 | red from 0 |
+| 20 | green to 4, red from 6 | the same | green to 3, red from 6 | red from 0 |
+
+**Chromium's two renders are byte-identical**, which is what makes the
+test number-free: the same box painted with an image has to land on the
+same pixels as the same box painted with the colour, and neither answer
+has to be known in advance. Here the colour is cut to the curve and the
+image is a rectangle, so the corner the page should show through is
+painted over.
+
+With `background-clip: padding-box` and a border wide enough to cover
+the difference it looks right, which is why it survived: the image's
+square corner sticks out past the padding box's curve and the border
+paints over it. Take the border away and the rectangle is back.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
