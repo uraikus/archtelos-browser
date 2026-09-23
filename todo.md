@@ -1555,6 +1555,24 @@ band. `content: none` and an empty box both draw nothing.
 force on the rest, so the boxes cascade by the same page-selector
 specificity the page box already uses here.
 
+### Where a clipped background's curve comes from, measured
+
+An 80x80 box with `border: 20px solid blue`, `border-radius: 40px`, a
+red background and `background-clip: padding-box`, on a green page:
+
+| row | what Chromium draws |
+|---|---|
+| 22 | green to 2, blue 5-28, red from 32 |
+| 30 | green at 0, blue 2-21, red from 23 |
+| 60 | blue 0-19, red from 20 |
+
+The inner radius is 40 less 20, which is 20: at row 22 that puts the
+background's edge at 31.3 -- `20 * (1 - sqrt(1 - (18/20)^2))` past the
+padding box's left edge -- where a radius of 40 would put it at 47.5.
+Before this engine derived the inner curve it drew the second, which
+left eleven pixels of the page showing between the border and the
+background.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green

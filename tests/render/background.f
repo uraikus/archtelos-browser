@@ -685,4 +685,64 @@ fadePage('background-image:cross-fade(url(red.png) 75%, url(tile.png) 25%)' + no
 check(getPixelColor(2, 2) == fadeRev, 'reversing the two images reverses the mix')
 check(getPixelColor(7, 2) == fadeRevG, 'on the green half too')
 
+// ---- a clipped background follows the inner curve ----------------------
+//
+// `background-clip: padding-box` cuts the background to the padding
+// box, and on a rounded box that box's corners are the border box's
+// less the border on each side (Backgrounds and Borders 3 §5.2) -- not
+// the border box's own, which cuts too much away and leaves the page
+// showing through between the border and the background.
+//
+// A 80x80 box with a 20px border and `border-radius: 40px`, read off
+// Chromium with `tests/chromium.py pixels` at 200x200 (todo.md):
+//
+//   row 22   green to 2, blue 5-28, red from 32
+//   row 30   green at 0, blue 2-21, red from 23
+//   row 60   blue 0-19, red from 20
+//
+// The inner radius is 40 less 20, which is 20: at row 22 that puts the
+// background's edge at 31 where a radius of 40 would put it at 48.
+
+color clipGreen = '#00ff00'
+color clipRed = '#ff0000'
+color clipBlue = '#0000ff'
+
+Page clipped = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:80px;height:80px;border:20px solid #0000ff;border-radius:40px;'
+    + 'background:#ff0000;background-clip:padding-box}'
+    + '</style><body><div id="a"></div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(clipped, 0, 0, 200)
+
+check(getPixelColor(40, 22) == clipRed, 'a padding-box background reaches the inner curve')
+check(getPixelColor(38, 22) == clipRed, 'with no gap left between it and the border')
+check(getPixelColor(35, 30) == clipRed, 'on the row below as well')
+check(getPixelColor(10, 22) == clipBlue, 'the border is still where it was')
+check(getPixelColor(1, 22) == clipGreen, 'and the page still shows outside the box')
+check(getPixelColor(25, 60) == clipRed, 'below the corners nothing moved')
+
+// Reducing a radius by a border of zero is the identity, so a box with
+// no border must paint the same whichever box its background is
+// clipped to. Neither answer is written down here.
+text clipBody = '<div id="a"></div>'
+text clipCss = '<!doctype html><head><style>body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border:0;border-radius:40px;background:#ff0000;'
+Page clipBorder = pageFromHtml(clipCss + 'background-clip:border-box}</style><body>'
+    + clipBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(clipBorder, 0, 0, 200)
+color clipAtA = getPixelColor(6, 20)
+color clipAtB = getPixelColor(20, 6)
+color clipAtC = getPixelColor(60, 60)
+Page clipPadding = pageFromHtml(clipCss + 'background-clip:padding-box}</style><body>'
+    + clipBody + '</body>', 'test.html', 200)
+clearCanvas()
+paintPage(clipPadding, 0, 0, 200)
+check(getPixelColor(6, 20) == clipAtA,
+      'with no border the two clips agree on the corner')
+check(getPixelColor(20, 6) == clipAtB, 'and on its other side')
+check(getPixelColor(60, 60) == clipAtC, 'and in the middle')
+
+
 finish('background images')

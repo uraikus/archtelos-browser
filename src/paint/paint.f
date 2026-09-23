@@ -1226,16 +1226,41 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 
     if colorIsPaintable(s.background) {
         paintFill(s.background, s.effectiveOpacity)
-        if s.borderRadius > 0 {
-            // The radii are the border box's, and a percentage is of it:
-            // a clipped background keeps that curve rather than deriving
-            // the smaller inner one.
+        if s.borderRadius <= 0 {
+            pDrawRect(clipX, clipY, clipW, clipH)
+        } else if colourClip == BGCLIP_BORDER {
+            // A percentage radius is of the border box, so the border
+            // box's own curve needs no reduction.
             resolveCornerRadii(s, w, h)
             pFillRoundedEllipses(clipX, clipY, clipW, clipH,
                                  radTLX, radTLY, radTRX, radTRY,
                                  radBRX, radBRY, radBLX, radBLY)
         } else {
-            pDrawRect(clipX, clipY, clipW, clipH)
+            // The padding edge's curvature is the border box's less the
+            // border on each side, and the content edge's is that less
+            // the padding as well (§5.2). Keeping the border box's
+            // curve here cuts more away than the box does and leaves
+            // the page showing through between the border and the
+            // background: on an 80x80 box with a 20px border and a
+            // 40px radius it put the background's edge at 48 on row 22
+            // where Chromium puts it at 31.
+            int dl = bl
+            int dt = bt
+            int dr = br
+            int db = bb
+            if colourClip == BGCLIP_CONTENT {
+                dl = bl + pl
+                dt = bt + pt
+                dr = br + pr
+                db = bb + pb
+            }
+            if insetShapeRadii(s, w, h, dl, dt, dr, db) {
+                pFillRoundedEllipses(clipX, clipY, clipW, clipH,
+                                     inRadTLX, inRadTLY, inRadTRX, inRadTRY,
+                                     inRadBRX, inRadBRY, inRadBLX, inRadBLY)
+            } else {
+                pDrawRect(clipX, clipY, clipW, clipH)
+            }
         }
         fillAlpha(1.0)
     }

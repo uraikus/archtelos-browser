@@ -5,6 +5,28 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A clipped background follows the inner curve
+
+`background-clip: padding-box` cuts the background to the padding box,
+whose corners are the border box's less the border on each side
+(Backgrounds and Borders 3 §5.2); the content box's are that less the
+padding again. This painter used the border box's own radii at the
+clipped rectangle, which cuts a bigger bite out of a smaller box -- so
+an 80x80 box with a 20px border and `border-radius: 40px` had a band of
+**the page showing through** between its border and its background. The
+background's edge sat at 48 on row 22 where Chromium puts it at 31.
+
+Every boundary now agrees with Chromium to the pixel on that fixture,
+and the suite also asks the invariant that needs no number: reducing a
+radius by a border of zero is the identity, so a box with no border
+must paint the same whichever box its background is clipped to.
+
+It reuses the inner curve the inset shadow above needed, which is the
+only reason this is a few lines rather than its own piece of work. A
+background *image* clipped that way is still cut to a rectangle rather
+than to the curve -- the same missing path as the rounded corners
+inside an `overflow: hidden` subtree.
+
 ### An `inset` shadow follows the inner curve
 
 An inset shadow is the padding box minus the hole its offset and spread
