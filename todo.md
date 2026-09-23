@@ -1910,13 +1910,13 @@ Selectors 4 §6.6.5 writes the structural pseudo-class as
 `:nth-child( <An+B> [of <complex-selector-list>]? )`. The `of` clause
 filters *which siblings are counted* before An+B is applied to the
 position, so `p:nth-child(2 of .lead)` is the second `.lead` among its
-siblings rather than a `.lead` that happens to be second. This engine
-reads the An+B and refuses the clause, which drops the rule.
+siblings rather than a `.lead` that happens to be second. The engine
+read the An+B and refused the clause, which dropped the rule.
 
 Fifteen forms were put to Chromium against
 `tests/fixtures/selectors.html`:
 
-| selector | Chromium | this engine |
+| selector | Chromium | this engine, before |
 |---|---|---|
 | `p:nth-child(2 of .lead)` | `p3` | nothing |
 | `:nth-child(1 of p)` | `p1 p5 p6 p8` | nothing |
@@ -1957,7 +1957,7 @@ so the unit suite asserts it. The snapshot itself is not fetchable from
 this network (CLAUDE.md §2), so the general rule is what is being
 applied here rather than a clause read directly.
 
-The measurement alone; the rows, the test and the fix follow.
+All twelve gradeable forms are instrument rows now and all twelve pass.
 
 ### Where an inset shadow's curve comes from, measured
 
@@ -2509,8 +2509,8 @@ properties the instrument can grade change what this engine renders
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
-`tests/conformance/selectors.f` how many of 94 selectors match the same
-elements as Chromium (84). Most entries in the work above should move
+`tests/conformance/selectors.f` how many of 103 selectors match the same
+elements as Chromium (96). Most entries in the work above should move
 the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed

@@ -3247,3 +3247,35 @@ steps did not.
 Both binaries render `generated.html` byte-identically, `cmp`-checked
 before any timing, and the machine was idle at a one-minute load under
 0.25 for every reading above.
+
+## What `:nth-child()`'s `of` clause costs, and two rounds that disagreed
+
+2026-09-23. A compound with an `of` clause keeps it in a list of its
+own, and the matcher is guarded by that list's length and lives in its
+own function; a plain `:nth-child(2n+1)` still goes through `pseudos`.
+Paired, 20 iterations, 800px, `generated.html`, which has no `of` clause
+on it at all.
+
+| median | round 1 forward | round 1 reversed | round 2 forward | round 2 reversed |
+|---|---|---|---|---|
+| `cascade` | -1 | +2 | +0 | +1 |
+| `layout` | **+2** | -0 | **-2** | +2 |
+
+Round one's layout reading is the shape this file warns about: +2
+forward against a reversed nothing, 16 of 20 pairs agreeing with the
+median, on a diff with **no line in `src/layout/` at all**. Round two
+gives -2 forward and +2 reversed -- the same magnitude with the sign the
+other way round, which no property of the code could produce. **The two
+forward readings disagree with each other**, so neither is a
+measurement of this diff, and the question does not go to the code.
+
+`cascade`, the phase the diff does touch, reads non-positive forward in
+both rounds and positive reversed in both, which is the order effect
+this machine shows on whichever binary runs second.
+
+That is the cheaper check the file recommends before building a
+placement control, and here it was enough: a reading that does not
+survive being taken twice never needed a third binary. The candidate is
+4,864 bytes larger than the parent, and both render `generated.html`
+and `features.html` byte-identically, `cmp`-checked before any timing,
+on a machine idle at a one-minute load under 0.25.

@@ -134,10 +134,21 @@ div:has(> p, + div)
 ul:has(> li + li)
 
 # --- Selectors 4: :nth-child()'s `of S` clause, which filters which
-# siblings are counted before An+B is applied to them
+# siblings are counted before An+B is applied to them. `S` is a whole
+# complex selector list, and only :nth-child() and :nth-last-child()
+# take one -- `:nth-of-type(1 of p)` is a syntax error in Chromium.
 p:nth-child(2 of .lead)
 :nth-child(1 of p)
 li:nth-child(even of :not(.x))
+:nth-child(2n of li)
+:nth-child(odd of li)
+:nth-child(-n+2 of li)
+:nth-last-child(1 of p)
+:nth-last-child(2 of li)
+:nth-child(1 of .lead, .tail)
+:nth-child(2 of div > p)
+li:nth-child(1 of li:not(:first-child))
+p:nth-child(1 of :is(.lead, .tail))
 
 # --- Selectors 4: combinations the list did not otherwise reach
 *|p

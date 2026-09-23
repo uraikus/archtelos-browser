@@ -59,6 +59,24 @@ struct SubSelector {
     leads:arr[int]
 }
 
+// `:nth-child( <An+B> of <complex-selector-list> )` and its
+// `:nth-last-child()` twin (Selectors 4 §6.6.5). The `of` clause filters
+// *which siblings are counted* before An+B is applied to the position,
+// so `:nth-child(2 of .lead)` is the second `.lead` among its siblings
+// rather than a `.lead` that happens to be second.
+//
+// It is a list of its own rather than another entry in `pseudos`,
+// because `pseudos` holds text and this needs whole selectors. A
+// compound with no `of` clause has an empty one, and the matcher is
+// guarded by its length -- the plain `:nth-child(2n+1)` still goes
+// through `pseudos` and costs exactly what it did.
+struct NthOf {
+    fromEnd:bool
+    stepA:int
+    offB:int
+    of:arr[Selector]
+}
+
 struct Compound {
     tag:text                // '' = any
     // The namespace part, which is whatever stood before a `|`.
@@ -78,6 +96,8 @@ struct Compound {
     // all four because they differ only in how a match is read, which
     // is what `kind` says.
     subs:arr[SubSelector]
+    // The `:nth-child()`s that carry an `of` clause; see NthOf.
+    nths:arr[NthOf]
     combinator:int          // relation to the compound on its LEFT
     unsupported:bool
 }
@@ -672,6 +692,22 @@ Decl func parseOneDeclaration(piece:ascii) {
 int anbA = 0
 int anbB = 0
 
+// The index of the `of` keyword in a `:nth-child()` argument, or -1.
+// It has to be a token of its own: `1of p` is one identifier and a
+// syntax error, and `.info` holds an `of` that is part of a class name.
+// The argument arrives lowercased.
+int func nthOfKeywordAt(a:ascii) {
+    int n = a.length
+    for int i = 0, i + 1 < n, i++ {
+        if a.charCodeAt(i) != 111 { continue }            // o
+        if a.charCodeAt(i + 1) != 102 { continue }        // f
+        if i == 0 || !isSpaceCode(a.charCodeAt(i - 1)) { continue }
+        if i + 2 >= n || !isSpaceCode(a.charCodeAt(i + 2)) { continue }
+        return i
+    }
+    return 0 - 1
+}
+
 bool func parseAnPlusB(argIn:ascii) {
     ascii a = asciiTrim(argIn)
     if a == null || a.length == 0 { return false }
@@ -1001,10 +1037,51 @@ Compound func parseCompound() {
                     selPos = savedPos
                 } else if name == 'nth-child' || name == 'nth-last-child'
                     || name == 'nth-of-type' || name == 'nth-last-of-type' {
-                    if parseAnPlusB(asciiLower(arg)) {
-                        comp.pseudos.push(`${name}:${anbA}:${anbB}`)
-                    } else {
+                    // §6.6.5's `of <complex-selector-list>`, which only
+                    // `:nth-child()` and `:nth-last-child()` take --
+                    // `:nth-of-type(1 of p)` is a syntax error, asked of
+                    // Chromium. The keyword needs whitespace on both
+                    // sides, because `1of` is one token; it is matched
+                    // without regard to case, which is CSS's general
+                    // rule and where Chromium disagrees (todo.md).
+                    ascii lowered = asciiLower(arg)
+                    int ofAt = nthOfKeywordAt(lowered)
+                    if ofAt < 0 {
+                        if parseAnPlusB(lowered) {
+                            comp.pseudos.push(`${name}:${anbA}:${anbB}`)
+                        } else {
+                            comp.unsupported = true
+                        }
+                    } else if name != 'nth-child' && name != 'nth-last-child' {
                         comp.unsupported = true
+                    } else {
+                        ascii head = asciiTrim(lowered.slice(0, ofAt))
+                        ascii tail = asciiTrim(arg.slice(ofAt + 2, arg.length))
+                        if !parseAnPlusB(head) || tail.length == 0 {
+                            comp.unsupported = true
+                        } else {
+                            NthOf nth
+                            nth.fromEnd = name == 'nth-last-child'
+                            nth.stepA = anbA
+                            nth.offB = anbB
+                            int savedNthPos = selPos
+                            ascii savedNthSrc = dup(selSrc)
+                            arr[ascii] ofAlts = splitOnCommas(tail)
+                            for int k = 0, k < ofAlts.length, k++ {
+                                ascii one = asciiTrim(ofAlts[k])
+                                if one.length == 0 { comp.unsupported = true  continue }
+                                Selector ofSel = parseSelector(one)
+                                if ofSel.unsupported || ofSel.parts.length == 0 {
+                                    comp.unsupported = true
+                                    continue
+                                }
+                                nth.of.push(ofSel)
+                            }
+                            selSrc = savedNthSrc
+                            selPos = savedNthPos
+                            if nth.of.length == 0 { comp.unsupported = true }
+                            comp.nths.push(nth)
+                        }
                     }
                 } else if name == 'lang' {
                     ascii a = asciiLower(asciiTrim(arg))
@@ -1243,7 +1320,9 @@ int func specAdd(a:int, b:int) {
 
 int func compoundSpecificity(c:Compound) {
     int ids = c.id != '' ? 1 : 0
-    int classes = c.classes.length + c.attrs.length + c.pseudos.length
+    // An `:nth-child()` with an `of` clause is in `nths` rather than
+    // `pseudos`, and still weighs a pseudo-class of its own.
+    int classes = c.classes.length + c.attrs.length + c.pseudos.length + c.nths.length
     // A pseudo-element counts as a type, not a pseudo-class
     // (Selectors 3 §9).
     int types = (c.tag != '' ? 1 : 0) + (c.pseudoElement != '' ? 1 : 0)
@@ -1255,6 +1334,17 @@ int func compoundSpecificity(c:Compound) {
         int best = 0
         for int k = 0, k < c.subs[i].alternatives.length, k++ {
             int inner = computeSpecificity(c.subs[i].alternatives[k])
+            if inner > best { best = inner }
+        }
+        s = specAdd(s, best)
+    }
+    // And `:nth-child(An+B of S)` adds S's, the same way: measured in
+    // Chromium, where `:nth-child(1 of #s1)` beats `.lead.lead` written
+    // either side of it.
+    for int i = 0, i < c.nths.length, i++ {
+        int best = 0
+        for int k = 0, k < c.nths[i].of.length, k++ {
+            int inner = computeSpecificity(c.nths[i].of[k])
             if inner > best { best = inner }
         }
         s = specAdd(s, best)
@@ -2331,6 +2421,15 @@ text func dumpSelector(sel:Selector) {
             out = a.op == ATTR_EXISTS ? `${out}[${a.name}]` : `${out}[${a.name}${a.op}${a.value}]`
         }
         for int j = 0, j < c.pseudos.length, j++ { out = `${out}:${c.pseudos[j]}` }
+        for int j = 0, j < c.nths.length, j++ {
+            NthOf nth = c.nths[j]
+            text ofText = ''
+            for int k = 0, k < nth.of.length, k++ {
+                ofText = ofText + (k > 0 ? ',' : '') + dumpSelector(nth.of[k])
+            }
+            text nthName = nth.fromEnd ? 'nth-last-child' : 'nth-child'
+            out = `${out}:${nthName}:${nth.stepA}:${nth.offB} of ${ofText}`
+        }
         if c.pseudoElement != '' { out = `${out}::${c.pseudoElement}` }
         for int j = 0, j < c.subs.length, j++ {
             SubSelector sub = c.subs[j]

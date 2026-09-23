@@ -458,4 +458,75 @@ checkEqInt(escById(rel, 'r3').style.color, attrGrey,
 checkEqInt(escById(rel, 'r4').style.color, attrGrey,
            'and an element neither relation reaches is left alone')
 
+// ---- `:nth-child()`'s `of S` clause -----------------------------------
+// Which elements each form matches is graded against Chromium by
+// tests/conformance/selectors.f, which holds twelve rows of it. What
+// the instrument cannot ask is below: two forms Chromium refuses, and
+// one where this engine and Chromium disagree.
+int func nthOfColor(sel:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>i{color:#cccccc}'
+        + sel + '{color:#ff0000}</style></head><body><div>'
+        + '<i id="n1" class="k">a</i><i id="n2">b</i><i id="n3" class="k">c</i>'
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'n3')
+    return e == null ? 0 : e.style.color
+}
+// n3 is the second `.k` among its siblings and the third child, so a
+// working `of` clause colours it and a working An+B alone does not.
+checkEqInt(nthOfColor('i:nth-child(2 of .k)'), attrRed,
+           'the `of` clause counts only the siblings that match it')
+checkEqInt(nthOfColor('i:nth-child(2)'), attrGrey,
+           'and without it the same An+B names a different element')
+// `of` is matched without regard to case, which is CSS's general rule.
+// Chromium refuses `OF` and `Of`; the difference is recorded in
+// todo.md rather than copied, and this is what asserts the choice.
+checkEqInt(nthOfColor('i:nth-child(2 OF .k)'), attrRed,
+           'the keyword is matched without regard to case')
+checkEqInt(nthOfColor('i:nth-child(2 Of .k)'), attrRed,
+           'in either mixed spelling')
+// The two forms Chromium refuses, and this engine refuses with it. Each
+// drops its whole rule, so the grey stands.
+checkEqInt(nthOfColor('i:nth-of-type(1 of i)'), attrGrey,
+           'only :nth-child() and :nth-last-child() take an `of` clause')
+checkEqInt(nthOfColor('i:nth-last-of-type(1 of i)'), attrGrey,
+           'and neither of-type twin does')
+checkEqInt(nthOfColor('i:nth-child(2of .k)'), attrGrey,
+           'the keyword needs whitespace, because `2of` is one token')
+checkEqInt(nthOfColor('i:nth-child(2 of )'), attrGrey,
+           'and an empty clause is a syntax error')
+// A class named `of` is not the keyword, which is what makes the scan
+// look for whitespace on both sides rather than for the two letters.
+cascadeReset()
+Node ofcls = parseHtmlText('<html><head><style>i{color:#cccccc}'
+    + 'i:nth-child(2 of .of){color:#ff0000}'
+    + '</style></head><body><div>'
+    + '<i id="c1" class="of">a</i><i id="c2">b</i><i id="c3" class="of">c</i>'
+    + '</div></body></html>')
+cascadeAddDocumentStyles(ofcls)
+computeStyles(ofcls)
+checkEqInt(escById(ofcls, 'c3').style.color, attrRed,
+           'a class named `of` inside the clause is not a second keyword')
+
+// The specificity S contributes, measured in Chromium: `:nth-child(1 of
+// #a)` beats `.k.k` written either side of it, so the pseudo-class's own
+// weight is added to S's most specific alternative rather than standing
+// alone.
+cascadeReset()
+Node nsp = parseHtmlText('<html><head><style>'
+    + '#g1 .k.k{color:#0000ff}#g1 :nth-child(1 of #a1){color:#ff0000}'
+    + '#g2 :nth-child(1 of #a2){color:#ff0000}#g2 .k.k{color:#0000ff}'
+    + '</style></head><body>'
+    + '<div id="g1"><i id="a1" class="k">x</i></div>'
+    + '<div id="g2"><i id="a2" class="k">x</i></div>'
+    + '</body></html>')
+cascadeAddDocumentStyles(nsp)
+computeStyles(nsp)
+checkEqInt(escById(nsp, 'a1').style.color, attrRed,
+           'the `of` clause carries its own specificity')
+checkEqInt(escById(nsp, 'a2').style.color, attrRed,
+           'and carries it whichever order the rules are written in')
+
 finish('cascade rules')

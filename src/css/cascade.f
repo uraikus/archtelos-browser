@@ -812,6 +812,38 @@ bool func hasMatchingDescendant(nid:int, sub:SubSelector) {
     return false
 }
 
+// Whether the element matches any alternative of an `of` clause.
+bool func nthOfMatches(nid:int, of:arr[Selector]) {
+    for int k = 0, k < of.length, k++ {
+        if matchSelector(nid, of[k]) { return true }
+    }
+    return false
+}
+
+// `:nth-child(An+B of S)` (Selectors 4 §6.6.5). The element's position
+// is counted among the siblings that match S, and the element must be
+// one of them: `:nth-child(2 of .lead)` is the second `.lead` rather
+// than a `.lead` that happens to be second.
+//
+// Its own function, called only when a compound carries one, because a
+// call written inside `matchCompound` costs the pages that never reach
+// it (CLAUDE.md, "A feature must not cost anything to the pages that do
+// not use it").
+bool func matchNthOf(nid:int, c:Compound) {
+    for int i = 0, i < c.nths.length, i++ {
+        NthOf nth = c.nths[i]
+        if !nthOfMatches(nid, nth.of) { return false }
+        int pos = 1
+        int sib = nth.fromEnd ? nextElementSiblingOf(nid) : prevElementSiblingOf(nid)
+        while sib > 0 {
+            if nthOfMatches(sib, nth.of) { pos++ }
+            sib = nth.fromEnd ? nextElementSiblingOf(sib) : prevElementSiblingOf(sib)
+        }
+        if !nthMatches(pos, nth.stepA, nth.offB) { return false }
+    }
+    return true
+}
+
 bool func matchSubSelectors(nid:int, c:Compound) {
     for int i = 0, i < c.subs.length, i++ {
         SubSelector sub = c.subs[i]
@@ -862,6 +894,7 @@ bool func matchCompound(nid:int, c:Compound) {
     // a page with no `:is()`, `:not()` or `:has()` on it paid two
     // milliseconds of cascade for a loop it ran zero times.
     if c.subs.length > 0 && !matchSubSelectors(nid, c) { return false }
+    if c.nths.length > 0 && !matchNthOf(nid, c) { return false }
     return true
 }
 

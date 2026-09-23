@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `:nth-child()`'s `of S` clause
+
+Selectors 4 §6.6.5 writes the structural pseudo-class as
+`:nth-child( <An+B> [of <complex-selector-list>]? )`. The clause filters
+*which siblings are counted* before An+B is applied, so
+`p:nth-child(2 of .lead)` is the second `.lead` among its siblings
+rather than a `.lead` that happens to be second. The An+B was read and
+the clause refused, which dropped the rule.
+
+`S` is a whole complex selector list: `:nth-child(1 of .lead, .tail)`,
+`:nth-child(2 of div > p)` and `:nth-child(1 of :is(.lead, .tail))` all
+work, and the complex one counts only the matching siblings of each
+parent. Only `:nth-child()` and `:nth-last-child()` take a clause --
+`:nth-of-type(1 of p)` is a syntax error here as in Chromium -- and the
+keyword needs whitespace on both sides, because `1of` is one token and
+a class may be named `of`.
+
+**`S`'s specificity counts**, added to the pseudo-class's own:
+`:nth-child(1 of #a)` beats `.k.k` written either side of it, which is
+what Chromium answers and what the suite now asserts.
+
+**The keyword is matched without regard to case.** Chromium refuses
+`:nth-child(2 OF .lead)` and `:nth-child(2 Of .lead)`; CSS is ASCII
+case-insensitive as a general rule and nothing in the grammar marks this
+keyword as an exception, so all three spellings work here. That cannot
+be an instrument row, since the runner needs Chromium to match
+something, so the unit suite carries it and todo.md records the
+disagreement.
+
+A compound with an `of` clause keeps it in a list of its own rather than
+in `pseudos`, which holds text and could not hold selectors, and the
+matcher is guarded by that list's length and lives in its own function.
+A plain `:nth-child(2n+1)` still goes through `pseudos` and costs what
+it did; the paired benchmark reads nothing either way.
+
+Twelve more instrument rows, 84/94 to 96/103.
+
 ### A complex selector inside `:is()`, `:where()`, `:not()` and `:has()`
 
 Selectors 4 §3.1 gives all four a `<complex-selector-list>`. This engine
