@@ -5,6 +5,43 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An escape in a selector's identifier is decoded
+
+CSS Syntax 3 §4.3.7 decodes an escape as it consumes an identifier. The
+backslash was accepted as an ordinary name character and kept, so
+`.a\.b` scanned as a class `a\` followed by a class `b` and could never
+match `class="a.b"`. `#x\#y`, `.\41 bc` and `.e\2d f` were all the
+same, and a site that escapes a dot in a class name -- which is what a
+name holding one requires -- got none of its rules.
+
+Both forms work now: a backslash before a non-hex character stands for
+that character, and one before up to six hex digits stands for the code
+point they name, with a single following whitespace consumed as the
+escape's terminator rather than left as a descendant combinator. Zero,
+a surrogate and anything past the last code point become U+FFFD. An
+identifier with no backslash in it is handed straight back.
+
+**Where a code point above ASCII goes took a measurement rather than a
+guess.** The first draft sent it to the three-part form
+`src/html/decode.f` rewrites the document's bytes into; asking the DOM
+what it actually stores showed an attribute holding the real character,
+because the tokenizer expands those escapes as it reads. So the decoded
+identifier is `text` and carries the character itself, which is the only
+spelling a selector and an attribute can meet in.
+
+The check for that case then failed against a fix that was already
+right: Festina's string literals take no `\uXXXX`, so the fixture's
+`class="caf\u00e9"` was six ordinary characters. The test file carries
+a literal U+00E9 now.
+
+The first version asked each identifier again whether it held a
+backslash, after the scan had already looked at every byte of it, and a
+stylesheet of 6,000 selectors paid a millisecond for the second pass.
+The scan sets a flag instead. A placement control could not settle that
+one -- the compiler removes code nothing calls, so the control came out
+four kilobytes below the candidate -- and the code answered instead;
+benchmarks.md has both readings.
+
 ### A `/*` inside a string is not a comment
 
 Comments are consumed by the tokenizer (CSS Syntax 3 §4.3), so a `/*`

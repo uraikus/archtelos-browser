@@ -714,15 +714,87 @@ Compound func newCompound() {
 int selPos = 0
 ascii selSrc = ''
 
+// The index just past the escape that begins at `at`, which must be a
+// backslash (CSS Syntax 3 §4.3.7). A backslash before hex digits takes
+// up to six of them and then one whitespace character, which is the
+// escape's terminator rather than part of what follows; before anything
+// else it takes that one character.
+int func cssEscapeEnd(s:ascii, at:int) {
+    int n = s.length
+    if at + 1 >= n { return at + 1 }
+    if !isHexCode(s.charCodeAt(at + 1)) { return at + 2 }
+    int i = at + 1
+    int last = minInt(at + 6, n - 1)
+    while i <= last && isHexCode(s.charCodeAt(i)) { i++ }
+    if i < n && isSpaceCode(s.charCodeAt(i)) { i++ }
+    return i
+}
+
+// An identifier with its escapes decoded. The answer is `text` rather
+// than `ascii` because a code point above 127 is a real character here:
+// the tokenizer expands the document's own escapes, so an element's
+// class attribute holds `café` and not the form `src/html/decode.f`
+// rewrites the bytes into. A selector has to spell it the same way or
+// the two can never meet -- which was measured before this was written,
+// by asking what the DOM actually stores.
+//
+// An identifier with no backslash in it is handed straight back, so an
+// ordinary page pays one search per name.
+text func cssDecodeIdent(a:ascii) {
+    if a == null { return null }
+    if asciiIndexOf(a, '\\', 0) < 0 { return a.toText() }
+    text out = ''
+    int n = a.length
+    int i = 0
+    while i < n {
+        int c = a.charCodeAt(i)
+        if c != CH_BACKSLASH { out = out + c.toChar()  i++  continue }
+        if i + 1 >= n { break }
+        int end = cssEscapeEnd(a, i)
+        if !isHexCode(a.charCodeAt(i + 1)) {
+            out = out + a.charCodeAt(i + 1).toChar()
+            i = end
+            continue
+        }
+        int cp = 0
+        int j = i + 1
+        while j < end && isHexCode(a.charCodeAt(j)) { cp = cp * 16 + hexValue(a.charCodeAt(j))  j++ }
+        // §4.3.7 replaces zero, a surrogate and anything past the last
+        // code point with U+FFFD. 55296..57343 are the surrogates and
+        // 1114111 is the last code point; Festina takes no hex literal,
+        // so they are written out.
+        if cp == 0 || (cp >= 55296 && cp <= 57343) || cp > 1114111 { cp = 65533 }
+        out = out + cp.toChar()
+        i = end
+    }
+    return out
+}
+
+// Whether the identifier `scanIdent` just walked held an escape. The
+// scan has already looked at every byte of it, so asking again would be
+// a second pass over every name on the page: one stylesheet of 6,000
+// selectors paid a millisecond for it. Read it immediately after the
+// call that set it -- `identAt` below is the only way in.
+bool scanIdentEscaped = false
+
 int func scanIdent(from:int) {
     int i = from
     int n = selSrc.length
+    scanIdentEscaped = false
     while i < n {
         int c = selSrc.charCodeAt(i)
-        if isNameCode(c) || c == CH_BACKSLASH { i++ }
-        else { break }
+        if c == CH_BACKSLASH { scanIdentEscaped = true  i = cssEscapeEnd(selSrc, i)  continue }
+        if isNameCode(c) { i++  continue }
+        break
     }
     return i
+}
+
+// The identifier between two indices the scan just produced, decoded
+// only where the scan saw a backslash.
+text func identAt(from:int, to:int) {
+    if !scanIdentEscaped { return selSrc.slice(from, to).toText() }
+    return cssDecodeIdent(selSrc.slice(from, to))
 }
 
 // Parses one compound selector starting at selPos (which must not be
@@ -734,7 +806,9 @@ void func readTypeAfterNamespace(comp:Compound) {
     if selSrc.charCodeAt(selPos) == CH_STAR { selPos++  return }
     int end = scanIdent(selPos)
     if end > selPos {
-        comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
+        text tagIdent = identAt(selPos, end)
+        ascii tagAscii = tagIdent.toAscii()
+        comp.tag = tagAscii == null ? tagIdent : asciiLower(tagAscii).toText()
         selPos = end
     }
 }
@@ -779,12 +853,12 @@ Compound func parseCompound() {
             any = true
         } else if c == CH_HASH {
             int end = scanIdent(selPos + 1)
-            comp.id = selSrc.slice(selPos + 1, end).toText()
+            comp.id = identAt(selPos + 1, end)
             selPos = end
             any = true
         } else if c == CH_DOT {
             int end = scanIdent(selPos + 1)
-            comp.classes.push(selSrc.slice(selPos + 1, end).toText())
+            comp.classes.push(identAt(selPos + 1, end))
             selPos = end
             any = true
         } else if c == CH_LBRACKET {
@@ -902,7 +976,9 @@ Compound func parseCompound() {
                 any = true
                 continue
             }
-            comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
+            text tagIdent = identAt(selPos, end)
+        ascii tagAscii = tagIdent.toAscii()
+        comp.tag = tagAscii == null ? tagIdent : asciiLower(tagAscii).toText()
             selPos = end
             any = true
         } else {

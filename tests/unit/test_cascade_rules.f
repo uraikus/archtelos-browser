@@ -164,4 +164,74 @@ check(nthMatches(3, 0, 3) && !nthMatches(4, 0, 3), '0n+3 is only the third')
 check(nthMatches(1, -1, 3) && nthMatches(3, -1, 3) && !nthMatches(4, -1, 3), '-n+3 is the first three')
 check(nthMatches(3, 1, 3) && nthMatches(9, 1, 3) && !nthMatches(2, 1, 3), 'n+3 is the third onwards')
 
+// ---- CSS Syntax 3 §4.3.7: an escape in an identifier is decoded --------
+// A backslash before a non-hex character stands for that character, and
+// a backslash before up to six hex digits stands for the code point
+// they name, with one following space consumed as the escape's
+// terminator rather than left as a descendant combinator.
+//
+// Each of these is asserted as the colour the element ends up with:
+// grey is the rule that matches everything, so a selector that failed
+// to match leaves grey behind and one that matched wrongly would take
+// a colour from the wrong rule. todo.md has Chromium's reading.
+Node esc = parseHtmlText('<html><head><style>'
+    + 'div{color:#cccccc}'
+    + '.a\\.b{color:#ff0000}'
+    + '#x\\#y{color:#0000ff}'
+    + '.\\41 bc{color:#ff00ff}'
+    + '.e\\2d f{color:#00ffff}'
+    + '</style></head><body>'
+    + '<div id="one" class="a.b">x</div>'
+    + '<div id="x#y">x</div>'
+    + '<div id="three" class="Abc">x</div>'
+    + '<div id="four" class="e-f">x</div>'
+    + '<div id="five" class="ab">x</div>'
+    + '</body></html>')
+cascadeReset()
+cascadeAddDocumentStyles(esc)
+computeStyles(esc)
+
+// The suite has no id lookup of its own, and `findElement` takes a tag.
+Node func escById(n:Node, want:text) {
+    if n.id != 0 && getAttr(n, 'id') == want { return n }
+    for int i = 0, i < n.children.length, i++ {
+        Node f = escById(n.children[i], want)
+        if f != null { return f }
+    }
+    return null
+}
+checkEqInt(escById(esc, 'one').style.color, packColor(255, 0, 0, 255),
+           'a backslash before a dot is that dot in the class name')
+checkEqInt(escById(esc, 'x#y').style.color, packColor(0, 0, 255, 255),
+           'and before a hash, in an id')
+checkEqInt(escById(esc, 'three').style.color, packColor(255, 0, 255, 255),
+           'a hex escape is the code point it names')
+checkEqInt(escById(esc, 'four').style.color, packColor(0, 255, 255, 255),
+           'and the space after its digits terminates it, not a combinator')
+// The one that must NOT match: `\41 bc` is `Abc`, so a document class
+// of `ab` is a different name. Without this the check above would pass
+// for a parser that threw the escape away and matched on `bc`.
+checkEqInt(escById(esc, 'five').style.color, packColor(204, 204, 204, 255),
+           'and an element the decoded name does not name is left alone')
+
+// A code point outside ASCII. The document's own escapes are expanded
+// by the tokenizer, so this element's class attribute holds the real
+// character rather than the form `src/html/decode.f` rewrites bytes
+// into -- which is what the decoded selector has to spell too, and was
+// measured by asking what the DOM actually stores. Chromium matches
+// `.caf\e9` here, measured.
+//
+// The character below is a literal U+00E9: Festina's string literals
+// take no `\uXXXX`, and the first draft of this check wrote one, so the
+// document held six ordinary characters and the check failed against a
+// fix that was already right.
+Node escU = parseHtmlText('<html><head><style>'
+    + 'div{color:#cccccc}.caf\\e9{color:#ff0000}'
+    + '</style></head><body><div id="u" class="café">x</div></body></html>')
+cascadeReset()
+cascadeAddDocumentStyles(escU)
+computeStyles(escU)
+checkEqInt(escById(escU, 'u').style.color, packColor(255, 0, 0, 255),
+           'a hex escape above ASCII is the character the document carries')
+
 finish('cascade rules')

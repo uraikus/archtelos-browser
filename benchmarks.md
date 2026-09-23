@@ -3101,3 +3101,44 @@ quiet: 15% of 26.0 is 22.1 to 29.9, and today's host produced 20.0 and
 48.6 with nothing visibly running. Either the band is too tight for
 this host or the host is not one to benchmark on, and widening it to
 make bad runs pass is the one answer this file has already ruled out.
+
+
+## What decoding a selector's escapes costs
+
+2026-09-23. A selector's identifiers are decoded as CSS Syntax 3 §4.3.7
+says. `scanIdent` walks every name on the page either way, so the cost
+is what is added to that walk. Paired, 15 iterations, 800px, on the
+970 KB stylesheet of 6,000 rules built for the comment scan above --
+its `stylesheets` phase is about 31 ms, which is where a cost would
+land.
+
+**The first version paid a millisecond, and the code said why rather
+than a control.** It asked each identifier again, with an
+`asciiIndexOf` for a backslash, after the scan had already looked at
+every byte of it -- 6,000 second passes over short strings:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, asking twice | +0 | **+1** | +0 | +0 | +0 |
+| reversed | +0 | +0 | +0 | +0 | +0 |
+
+Plus one forward against nothing reversed is the shape this file calls
+an order effect *plus* a millisecond. A placement control was built --
+the parent with the two new functions appended under other names and
+called from nowhere -- and **could not serve**: it came out 72 bytes
+above the parent and four kilobytes below the candidate, because the
+compiler removed code nothing calls. So the question went to the code,
+where one extra scan per identifier is exactly the sort of thing that
+costs a millisecond over six thousand of them.
+
+The scan sets a flag instead, and the decode runs only where it saw a
+backslash:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, asking once | +0 | +0 | +0 | +0 | +0 |
+| reversed | +0 | **+1** | +0 | +0 | +0 |
+
+Nothing left: each direction says the binary running second is the
+slower one, which is the order and not the diff. The page renders
+byte-identically between the binaries, `cmp`-checked before any timing.

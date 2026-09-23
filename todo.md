@@ -1685,11 +1685,13 @@ rest of the sheet -- Chromium loses that rule too, measured, and the
 suite asserts the loss so that a later "fix" cannot quietly introduce
 a divergence.
 
-What is still open in CSS Syntax 3 is the rest of that row: escapes are
-accepted in identifiers and never decoded, so `.a\.b` can never match,
-and `<!--`/`-->` are not recognised.
+What is still open in CSS Syntax 3 is `<!--` and `-->`, which are not
+recognised, and the shape of the parser itself: there is no tokenizer in
+the standard's sense, so every rule of §4.3 that the index scan does not
+happen to agree with is a divergence waiting to be found the way the
+comment and the escape ones were.
 
-### What an undecoded escape costs a selector, measured
+### Where a selector's escapes come from, measured
 
 CSS Syntax 3 §4.3.7 decodes an escape as it consumes an identifier: a
 backslash before a non-hex character stands for that character, and a
@@ -1701,12 +1703,19 @@ never the identifier the document has, and the rule can never match.
 Four selectors, each against the element it names, on a page whose
 `div` is grey until one matches:
 
-| selector | element | Chromium | this engine |
+| selector | element | Chromium | this engine, before |
 |---|---|---|---|
 | `.a\.b` | `class="a.b"` | matches | no match |
 | `#x\#y` | `id="x#y"` | matches | no match |
 | `.\41 bc` | `class="Abc"` | matches | no match |
 | `.e\2d f` | `class="e-f"` | matches | no match |
+| `.caf\e9` | `class="café"` | matches | no match |
+
+The last row is where the decoded character has to live. The document's
+own escapes are expanded by the tokenizer, so that attribute holds a
+real U+00E9 and not the three-part form `src/html/decode.f` rewrites
+bytes into -- which the first draft of the fix assumed, and which
+asking the DOM settled.
 
 The last two are the hex form, where the space after the digits is the
 escape's terminator rather than a descendant combinator -- which is the
