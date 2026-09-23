@@ -10,8 +10,10 @@ Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 8 of them. That list, not a sense of what feels
-modern, sets the order below.
+implements no part of 2 of them, and those two are the two it cannot:
+Compositing and Blending 1 needs an operator the runtime never changes,
+and Easing 1 needs a clock and a repaint loop rather than a property.
+That list, not a sense of what feels modern, sets the order below.
 
 ### The cascade
 
