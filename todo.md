@@ -1763,6 +1763,22 @@ So the check is that the two agree, and it catches the renumbering
 rather than only the placement: the sibling is auto-placed, so it moves
 only if line 1 really did move.
 
+**The forward direction of the same sentence is wrong here too**, and
+for the same reason: `span <custom-ident>` drops the name at the
+parser, so every named span is a span of one. On the same grid,
+`grid-column: 1 / span zz` should count forward from line 1 for a line
+named `zz`, find none, and take the first implicit line after the
+explicit grid -- line 4, a span of three.
+
+| | Chromium | this engine |
+|---|---|---|
+| `grid-column: 1 / span zz` | item 400 wide, sibling 100 at x=0 | item 100 wide, sibling 100 at x=100 |
+| `grid-column: span zz / 3` | item 400 wide, sibling 200 at x=0 | item 100 at x=100, sibling 100 at x=0 |
+
+Its numbered equivalent is `grid-column: 1 / 4`, on the template as
+written: the implicit track it creates comes *after* the explicit grid,
+which the engine already does for a bare name.
+
 ### Counter Styles 3's `range` and `fallback`, measured
 
 `@counter-style` here parses `system`, `symbols`, `suffix`, `prefix`,

@@ -907,6 +907,40 @@ sameAs('grid-column:zz;grid-row:2', 'grid-column:4;grid-row:2', TWOCOLS,
        '<div style="grid-column:5;grid-row:1">o</div>',
        'implicit tracks already made do not move an unknown name')
 
+// The search runs **backwards** when the name is on a span and the
+// other edge is a definite line: `span zz / 3` counts back from line 3
+// for a line named `zz`, finds none in the explicit grid, and takes
+// the implicit lines *before* it. That creates a column ahead of line
+// 1 and renumbers everything after it.
+//
+// The column it creates is one the template could have written, so the
+// check is an agreement and not a pixel. The sibling is what makes it
+// about the renumbering rather than only about the item: it is
+// auto-placed, so it moves only if line 1 really moved. todo.md has
+// Chromium's reading of both.
+Box backNamed = namedGrid(TWOCOLS,
+    '<div id="i" style="grid-column:span zz / 3">t</div>'
+    + '<div id="j">u</div>')
+Box backWritten = layoutHtml(head
+    + '<div style="display:grid;width:400px;grid-template-rows:50px 50px;'
+    + 'grid-template-columns:auto 100px 100px">'
+    + '<div id="i" style="grid-column:1 / 4">t</div>'
+    + '<div id="j">u</div></div></body>', 800)
+Box backI = findById(backNamed, 'i')
+Box backWI = findById(backWritten, 'i')
+Box backJ = findById(backNamed, 'j')
+Box backWJ = findById(backWritten, 'j')
+// The written-out grid has to be worth agreeing with: its first column
+// takes what the two 100px ones leave, so the item spans the container
+// and the sibling is twice a declared track. A template that made
+// three equal columns would grade nothing.
+checkEqInt(backWI.w, 400, 'the written-out grid spans its container')
+checkEqInt(backWJ.w, 200, 'and its first column takes what is left over')
+checkEqInt(backI.x, backWI.x, 'a backwards search makes a column ahead of line 1')
+checkEqInt(backI.w, backWI.w, 'and the item spans it')
+checkEqInt(backJ.x, backWJ.x, 'the line it added renumbers the rest')
+checkEqInt(backJ.w, backWJ.w, 'so an auto-placed sibling lands in that column')
+
 // ---- Grid 2 §3: what a subgrid owes its parent -------------------------
 // A subgrid is not a spanning item. Its children are placed on the
 // parent's tracks and each contributes to the one it sits in, so the
