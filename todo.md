@@ -1959,6 +1959,77 @@ applied here rather than a clause read directly.
 
 All twelve gradeable forms are instrument rows now and all twelve pass.
 
+### What the form-state and direction pseudo-classes are, measured
+
+Seven of the instrument's rows fail and all seven are from one family:
+`:read-write`, `:read-only`, `:optional`, `:default`, `:valid` and
+`:dir()`, none of which the engine has. Sixteen more could not be rows
+at all, because the fixture held nothing for them to match.
+
+The fixture holds it now -- a `required` input, one with a
+`placeholder`, an unchecked radio, a number in and out of its range, a
+`readonly` input and textarea, a submit button, and a `dir="rtl"`
+division -- and the answers below are Chromium's, against that document.
+The existing 103 rows were regenerated against it and the engine still
+passes the same 96, so nothing the fixture gained moved a row that was
+already there.
+
+| selector | Chromium |
+|---|---|
+| `input:read-write` | `i1 i5 i6 i8 i9` |
+| `input:read-only` | `i2 i3 i4 i7 i10` |
+| `p:read-only` | every `p` |
+| `textarea:read-write` | `t1` |
+| `textarea:read-only` | `t2` |
+| `input:optional` | every input but `i5` |
+| `input:required` | `i5` |
+| `input:placeholder-shown` | `i6` |
+| `input:default` | `i3` |
+| `option:default` | `o1` |
+| `button:default` | `b2` |
+| `input:indeterminate` | `i7` |
+| `input:valid` | `i1 i3 i4 i6 i7 i8` |
+| `input:invalid` | `i5 i9` |
+| `input:in-range` | `i8` |
+| `input:out-of-range` | `i9` |
+| `select:valid` | `sel1` |
+| `form:invalid` | `f1` |
+| `p:dir(ltr)` | every `p` but `p10` |
+| `p:dir(rtl)` | `p10` |
+| `div:dir(rtl)` | `d6` |
+| `:dir(rtl)` | `d6 p10` |
+
+What the answers settle, none of which follows from the names:
+
+- **`:read-write` is about the control, not the attribute.** A checkbox
+  and a radio are `:read-only` although nothing is readonly about them,
+  because `readonly` does not apply to those types at all; a disabled
+  text input is `:read-only` too. Every element that is not an editable
+  control is `:read-only`, which is why every `p` is one.
+- **`:optional` does not exclude a disabled control.** `i2` is disabled
+  and still optional, because the question is whether `required` could
+  apply and does not.
+- **`disabled` and `readonly` bar a control from constraint
+  validation**, so `i2` and `i10` are neither `:valid` nor `:invalid` --
+  which is the pair of rows that makes the two instruments of this
+  family able to fail, since a naive implementation makes everything
+  one or the other.
+- **`:default` is three different things**: a checked checkbox, a
+  selected option, and a form's **first** submit button. `b1` is
+  `type="button"` and is not one.
+- **`:indeterminate` needs no script here**: a radio in a group where
+  nothing is checked is indeterminate, which is a state the document
+  itself expresses.
+- **`form:valid` matches nothing** where `form:invalid` matches `f1`,
+  because a form with one invalid control is invalid.
+
+`:focus-within` and `:user-valid` still match nothing, and a document
+with no focus cannot give them anything to match; they stay out of the
+instrument.
+
+The measurement and the fixture; the rows, the tests and the code
+follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
