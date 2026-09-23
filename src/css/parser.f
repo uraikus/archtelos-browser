@@ -1083,6 +1083,16 @@ Compound func parseCompound() {
                             comp.nths.push(nth)
                         }
                     }
+                } else if name == 'dir' {
+                    // `:dir(ltr)` and `:dir(rtl)` (Selectors 4 §14.2).
+                    // `auto` is a real value of the `dir` attribute but
+                    // not of this selector, so only the two are taken.
+                    ascii d = asciiLower(asciiTrim(arg))
+                    if d != null && (d == 'ltr' || d == 'rtl') {
+                        comp.pseudos.push(`dir:${d.toText()}`)
+                    } else {
+                        comp.unsupported = true
+                    }
                 } else if name == 'lang' {
                     ascii a = asciiLower(asciiTrim(arg))
                     if a != null && a.length > 0 {
@@ -1098,7 +1108,15 @@ Compound func parseCompound() {
                     || name == 'root' || name == 'link' || name == 'any-link'
                     || name == 'first-of-type' || name == 'last-of-type' || name == 'only-of-type'
                     || name == 'empty' || name == 'enabled' || name == 'disabled'
-                    || name == 'checked' || name == 'target' {
+                    || name == 'checked' || name == 'target'
+                    // HTML's form-state pseudo-classes (Selectors 4
+                    // §11), every one of which is a question about the
+                    // document's own attributes.
+                    || name == 'read-write' || name == 'read-only'
+                    || name == 'required' || name == 'optional'
+                    || name == 'placeholder-shown' || name == 'default'
+                    || name == 'indeterminate' || name == 'valid' || name == 'invalid'
+                    || name == 'in-range' || name == 'out-of-range' {
                     comp.pseudos.push(name.toText())
                 } else {
                     // :hover, :focus, :visited ... never match here

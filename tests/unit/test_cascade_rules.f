@@ -529,4 +529,54 @@ checkEqInt(escById(nsp, 'a1').style.color, attrRed,
 checkEqInt(escById(nsp, 'a2').style.color, attrRed,
            'and carries it whichever order the rules are written in')
 
+// ---- the form-state pseudo-classes the instrument cannot grade -------
+// Which elements each one matches is graded against Chromium by
+// tests/conformance/selectors.f, which holds twenty-one rows of this
+// family. Two things the fixture cannot ask are below.
+
+// 1. `contenteditable` makes any element `:read-write`, and `false` on a
+// nearer ancestor takes it back. The instrument's fixture is HTML's own
+// controls, so this branch has no row there.
+cascadeReset()
+Node ce = parseHtmlText('<html><head><style>'
+    + 'div{color:#cccccc}div:read-write{color:#ff0000}'
+    + '</style></head><body>'
+    + '<div id="e1" contenteditable>a</div>'
+    + '<div id="e2" contenteditable="true"><div id="e3">b</div></div>'
+    + '<div id="e4" contenteditable><div id="e5" contenteditable="false">c</div></div>'
+    + '<div id="e6">d</div>'
+    + '</body></html>')
+cascadeAddDocumentStyles(ce)
+computeStyles(ce)
+checkEqInt(escById(ce, 'e1').style.color, attrRed,
+           'a bare contenteditable makes an element read-write')
+checkEqInt(escById(ce, 'e3').style.color, attrRed,
+           'and a descendant of one is read-write too')
+checkEqInt(escById(ce, 'e5').style.color, attrGrey,
+           'contenteditable="false" takes it back')
+checkEqInt(escById(ce, 'e6').style.color, attrGrey,
+           'and an ordinary div is read-only')
+
+// 2. `:dir()` takes only `ltr` and `rtl`. `auto` is a real value of the
+// `dir` attribute and not of this selector, so the rule is dropped
+// rather than matching everything.
+cascadeReset()
+Node dirsel = parseHtmlText('<html><head><style>'
+    + 'p{color:#cccccc}p:dir(auto){color:#ff0000}'
+    + '</style></head><body><p id="q" dir="auto">x</p></body></html>')
+cascadeAddDocumentStyles(dirsel)
+computeStyles(dirsel)
+checkEqInt(escById(dirsel, 'q').style.color, attrGrey,
+           ':dir(auto) is not a selector, so its rule is dropped')
+// An element under `dir="auto"` falls back to the default rather than
+// asking the text, which todo.md records as the part not read.
+cascadeReset()
+Node dirauto = parseHtmlText('<html><head><style>'
+    + 'p{color:#cccccc}p:dir(ltr){color:#ff0000}'
+    + '</style></head><body><div dir="auto"><p id="q">x</p></div></body></html>')
+cascadeAddDocumentStyles(dirauto)
+computeStyles(dirauto)
+checkEqInt(escById(dirauto, 'q').style.color, attrRed,
+           'and `dir="auto"` is passed over rather than read')
+
 finish('cascade rules')

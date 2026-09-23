@@ -90,18 +90,41 @@ div:has(.lead)
 li:not(:first-child, :last-child)
 [data-kind="ALPHA" i]
 
-# --- Selectors 4: the link and form-state pseudo-classes
+# --- Selectors 4: the link and form-state pseudo-classes. `:read-write`
+# is about the control rather than the attribute -- a checkbox is
+# `:read-only` because `readonly` does not apply to that type -- and
+# `disabled` and `readonly` bar a control from constraint validation, so
+# `i2` and `i10` are in neither `:valid` nor `:invalid`. That pair is
+# what makes these rows able to fail: an implementation that puts every
+# control in one or the other passes neither.
 :any-link
 a:any-link
 input:read-write
+input:read-only
 p:read-only
+textarea:read-write
+textarea:read-only
 input:optional
+input:required
+input:placeholder-shown
 input:default
 option:default
+button:default
+input:indeterminate
 input:valid
+input:invalid
+input:in-range
+input:out-of-range
+select:valid
+form:invalid
+input:enabled:required
 
-# --- Selectors 4: :dir()
+# --- Selectors 4: :dir(), which reads the element's directionality from
+# the nearest ancestor that declares one
 p:dir(ltr)
+p:dir(rtl)
+div:dir(rtl)
+:dir(rtl)
 
 # --- Selectors 4: a complex selector inside :is(), :where(), :not()
 # and :has(). Each takes a <complex-selector-list> in §3.1, not a

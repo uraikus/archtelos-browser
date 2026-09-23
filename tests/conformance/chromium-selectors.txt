@@ -62,12 +62,28 @@ li:not(:first-child, :last-child)	l2 l3 l4 l5
 :any-link	a1
 a:any-link	a1
 input:read-write	i1 i5 i6 i8 i9
+input:read-only	i2 i3 i4 i7 i10
 p:read-only	p1 p2 p3 p4 p5 p6 p7 p10 p8 p9
+textarea:read-write	t1
+textarea:read-only	t2
 input:optional	i1 i2 i3 i4 i6 i7 i8 i9 i10
+input:required	i5
+input:placeholder-shown	i6
 input:default	i3
 option:default	o1
+button:default	b2
+input:indeterminate	i7
 input:valid	i1 i3 i4 i6 i7 i8
+input:invalid	i5 i9
+input:in-range	i8
+input:out-of-range	i9
+select:valid	sel1
+form:invalid	f1
+input:enabled:required	i5
 p:dir(ltr)	p1 p2 p3 p4 p5 p6 p7 p8 p9
+p:dir(rtl)	p10
+div:dir(rtl)	d6
+:dir(rtl)	d6 p10
 :is(div > p)	p1 p2 p3 p4 p5 p6 p7 p10
 :where(div > p)	p1 p2 p3 p4 p5 p6 p7 p10
 p:not(div > p)	p8 p9

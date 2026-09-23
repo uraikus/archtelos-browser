@@ -586,6 +586,278 @@ bool func attrMatches(nid:int, a:AttrSel) {
     return false
 }
 
+
+// ---- HTML's form-state pseudo-classes (Selectors 4 §11) ---------------
+//
+// Every one of these is a question about the document's own attributes:
+// no focus, no script and no user input is involved, so all of them are
+// answerable here. What each one means was measured in Chromium against
+// tests/fixtures/selectors.html rather than derived from its name, and
+// todo.md records the answers -- several of them are not what the name
+// suggests.
+
+text func inputTypeOf(nid:int) {
+    text t = attrOf(nid, 'type')
+    if t == null || t == '' { return 'text' }
+    ascii a = t.toAscii()
+    if a == null { return 'text' }
+    return asciiLower(a).toText()
+}
+
+// The input types `readonly` applies to (HTML §4.10.5.3.6). A checkbox
+// is not one, which is why a checkbox is `:read-only` although nothing
+// about it is readonly.
+bool func inputTakesReadonly(t:text) {
+    return t == 'text' || t == 'search' || t == 'url' || t == 'tel'
+        || t == 'email' || t == 'password' || t == 'date' || t == 'month'
+        || t == 'week' || t == 'time' || t == 'datetime-local' || t == 'number'
+}
+
+// `contenteditable` makes any element editable, and `false` on a nearer
+// ancestor takes it back. The instrument's fixture holds no such
+// element -- HTML's own controls are what it can grade -- so the unit
+// suite is what asserts this branch.
+bool func isContentEditable(nid:int) {
+    int cur = nid
+    while cur > 0 {
+        if nodeRegistry[cur].kind != NODE_ELEMENT { return false }
+        // `hasAttrOf` rather than a null test on the value: a
+        // valueless `contenteditable` is present with an empty value,
+        // and an empty `text` does not distinguish itself from an
+        // absent one here.
+        if hasAttrOf(cur, 'contenteditable') {
+            text v = attrOf(cur, 'contenteditable')
+            ascii a = v == null ? null : v.toAscii()
+            text low = a == null ? '' : asciiLower(a).toText()
+            if low == 'false' { return false }
+            return true
+        }
+        cur = nodeRegistry[cur].parentId
+    }
+    return false
+}
+
+bool func isEditableControl(nid:int) {
+    text tag = nodeRegistry[nid].tag
+    if tag == 'textarea' || tag == 'input' {
+        if hasAttrOf(nid, 'disabled') { return false }
+        if hasAttrOf(nid, 'readonly') { return false }
+        if tag == 'textarea' { return true }
+        return inputTakesReadonly(inputTypeOf(nid))
+    }
+    return isContentEditable(nid)
+}
+
+// The controls `required` can be put on.
+bool func isRequirableTag(tag:text) {
+    return tag == 'input' || tag == 'select' || tag == 'textarea'
+}
+
+// An element's own value, as the document states it: an attribute for an
+// input, the text content for a textarea.
+text func controlValueOf(nid:int) {
+    if nodeRegistry[nid].tag == 'textarea' {
+        text out = ''
+        arr[Node] kids = nodeRegistry[nid].children
+        for int i = 0, i < kids.length, i++ {
+            if kids[i].kind == NODE_TEXT && kids[i].data != null { out = out + kids[i].data }
+        }
+        return out
+    }
+    text v = attrOf(nid, 'value')
+    return v == null ? '' : v
+}
+
+// The form this control belongs to, or 0. The `form` attribute is not
+// read: nothing in the fixture uses it and nothing here could grade it.
+int func owningFormOf(nid:int) {
+    int cur = nodeRegistry[nid].parentId
+    while cur > 0 {
+        if nodeRegistry[cur].tag == 'form' { return cur }
+        cur = nodeRegistry[cur].parentId
+    }
+    return 0
+}
+
+bool func isSubmitButton(nid:int) {
+    text tag = nodeRegistry[nid].tag
+    if tag == 'button' {
+        text t = attrOf(nid, 'type')
+        if t == null || t == '' { return true }
+        ascii a = t.toAscii()
+        return a != null && asciiLower(a).toText() == 'submit'
+    }
+    if tag != 'input' { return false }
+    text t = inputTypeOf(nid)
+    return t == 'submit' || t == 'image'
+}
+
+// The first submit button of `form` in document order, or 0.
+int func firstSubmitIn(nid:int, form:int) {
+    arr[Node] kids = nodeRegistry[nid].children
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        if isSubmitButton(kid) && owningFormOf(kid) == form { return kid }
+        int deep = firstSubmitIn(kid, form)
+        if deep > 0 { return deep }
+    }
+    return 0
+}
+
+// Whether any radio of this one's group is checked. The group is the
+// controls with the same `name` inside the same form, or in the same
+// document when there is none.
+bool func radioGroupChecked(nid:int, root:int, name:text, form:int) {
+    arr[Node] kids = nodeRegistry[root].children
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        if nodeRegistry[kid].tag == 'input' && inputTypeOf(kid) == 'radio'
+            && attrOf(kid, 'name') == name && owningFormOf(kid) == form
+            && hasAttrOf(kid, 'checked') { return true }
+        if radioGroupChecked(nid, kid, name, form) { return true }
+    }
+    return false
+}
+
+int func documentRootOf(nid:int) {
+    int cur = nid
+    while nodeRegistry[cur].parentId > 0 { cur = nodeRegistry[cur].parentId }
+    return cur
+}
+
+// Whether the element takes part in constraint validation at all.
+// `disabled` and `readonly` bar it, and so do the button-like types --
+// which is what keeps `:valid` and `:invalid` from partitioning every
+// control between them, and what makes those two rows able to fail.
+bool func isValidationCandidate(nid:int) {
+    text tag = nodeRegistry[nid].tag
+    if !isRequirableTag(tag) { return false }
+    if hasAttrOf(nid, 'disabled') { return false }
+    if hasAttrOf(nid, 'readonly') { return false }
+    if tag != 'input' { return true }
+    text t = inputTypeOf(nid)
+    return t != 'hidden' && t != 'reset' && t != 'button' && t != 'submit' && t != 'image'
+}
+
+// The range a number-like input declares, if it declares one.
+bool func inputTakesRange(t:text) {
+    return t == 'number' || t == 'range' || t == 'date' || t == 'month'
+        || t == 'week' || t == 'time' || t == 'datetime-local'
+}
+
+const int RANGE_NONE = 0
+const int RANGE_IN = 1
+const int RANGE_OUT = 2
+
+int func inputRangeState(nid:int) {
+    if nodeRegistry[nid].tag != 'input' { return RANGE_NONE }
+    if !inputTakesRange(inputTypeOf(nid)) { return RANGE_NONE }
+    text lo = attrOf(nid, 'min')
+    text hi = attrOf(nid, 'max')
+    if (lo == null || lo == '') && (hi == null || hi == '') { return RANGE_NONE }
+    text v = controlValueOf(nid)
+    if v == '' { return RANGE_NONE }
+    float value = parseFloatAscii(v.toAscii())
+    if lo != null && lo != '' && value < parseFloatAscii(lo.toAscii()) { return RANGE_OUT }
+    if hi != null && hi != '' && value > parseFloatAscii(hi.toAscii()) { return RANGE_OUT }
+    return RANGE_IN
+}
+
+// Whether a control satisfies its constraints. Only the two the fixture
+// can grade are read -- a missing required value and a value outside a
+// declared range. The rest of HTML's list (a type mismatch, a pattern, a
+// step) waits in todo.md for a fixture that can tell whether it works.
+bool func controlIsValid(nid:int) {
+    if hasAttrOf(nid, 'required') && controlValueOf(nid) == '' { return false }
+    if inputRangeState(nid) == RANGE_OUT { return false }
+    return true
+}
+
+// Whether any validation candidate inside this form or fieldset fails.
+bool func hasInvalidControl(nid:int, form:int) {
+    arr[Node] kids = nodeRegistry[nid].children
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        if isValidationCandidate(kid) && owningFormOf(kid) == form && !controlIsValid(kid) { return true }
+        if hasInvalidControl(kid, form) { return true }
+    }
+    return false
+}
+
+// The element's directionality: the nearest ancestor-or-self declaring
+// `dir`, defaulting to ltr. `dir="auto"` asks for the first strong
+// character of the element's text, which todo.md records as not read.
+text func directionalityOf(nid:int) {
+    int cur = nid
+    while cur > 0 {
+        if nodeRegistry[cur].kind != NODE_ELEMENT { break }
+        if hasAttrOf(cur, 'dir') {
+            text v = attrOf(cur, 'dir')
+            ascii a = v == null ? null : v.toAscii()
+            text low = a == null ? '' : asciiLower(a).toText()
+            if low == 'rtl' { return 'rtl' }
+            if low == 'ltr' { return 'ltr' }
+        }
+        cur = nodeRegistry[cur].parentId
+    }
+    return 'ltr'
+}
+
+// The family, answered in one place. Called from `pseudoMatches` after
+// every pseudo-class the engine already had, so nothing that worked
+// before pays a comparison for these.
+bool func formStateMatches(nid:int, name:text, a:ascii) {
+    text tag = nodeRegistry[nid].tag
+    if name == 'read-write' { return isEditableControl(nid) }
+    if name == 'read-only' { return !isEditableControl(nid) }
+    if name == 'required' { return isRequirableTag(tag) && hasAttrOf(nid, 'required') }
+    if name == 'optional' { return isRequirableTag(tag) && !hasAttrOf(nid, 'required') }
+    if name == 'placeholder-shown' {
+        if tag != 'input' && tag != 'textarea' { return false }
+        if tag == 'input' && !inputTakesReadonly(inputTypeOf(nid)) { return false }
+        text ph = attrOf(nid, 'placeholder')
+        return ph != null && ph != '' && controlValueOf(nid) == ''
+    }
+    if name == 'default' {
+        if tag == 'option' { return hasAttrOf(nid, 'selected') }
+        if tag == 'input' {
+            text t = inputTypeOf(nid)
+            if t == 'checkbox' || t == 'radio' { return hasAttrOf(nid, 'checked') }
+        }
+        if !isSubmitButton(nid) { return false }
+        int form = owningFormOf(nid)
+        if form == 0 { return false }
+        return firstSubmitIn(form, form) == nid
+    }
+    if name == 'indeterminate' {
+        if tag != 'input' || inputTypeOf(nid) != 'radio' { return false }
+        text nm = attrOf(nid, 'name')
+        if nm == null { nm = '' }
+        int form = owningFormOf(nid)
+        return !radioGroupChecked(nid, documentRootOf(nid), nm, form)
+    }
+    if name == 'valid' || name == 'invalid' {
+        bool ok = true
+        if tag == 'form' {
+            ok = !hasInvalidControl(nid, nid)
+        } else if isValidationCandidate(nid) {
+            ok = controlIsValid(nid)
+        } else {
+            return false
+        }
+        return name == 'valid' ? ok : !ok
+    }
+    if name == 'in-range' { return inputRangeState(nid) == RANGE_IN }
+    if name == 'out-of-range' { return inputRangeState(nid) == RANGE_OUT }
+    if asciiStartsWith(a, 'dir:', 0) {
+        return directionalityOf(nid) == a.slice(4, a.length).toText()
+    }
+    return false
+}
+
 bool func pseudoMatches(nid:int, name:text) {
     if name == 'first-child' { return prevElementSiblingOf(nid) == 0 }
     if name == 'last-child' { return nextElementSiblingOf(nid) == 0 }
@@ -671,7 +943,7 @@ bool func pseudoMatches(nid:int, name:text) {
         int pos = nthIndexOf(nid, fromEnd, ofType)
         return nthMatches(pos, stepA, offB)
     }
-    return false
+    return formStateMatches(nid, name, a)
 }
 
 // Whether `disabled` means anything on this element (HTML's own list of

@@ -3279,3 +3279,22 @@ survive being taken twice never needed a third binary. The candidate is
 4,864 bytes larger than the parent, and both render `generated.html`
 and `features.html` byte-identically, `cmp`-checked before any timing,
 on a machine idle at a one-minute load under 0.25.
+
+## What twelve form-state pseudo-classes cost
+
+2026-09-23. The whole family answers in one function reached after every
+pseudo-class the engine already had, so a selector that worked before
+tries no new comparison. Paired, 20 iterations, 800px, `generated.html`,
+whose stylesheet names none of them.
+
+| median | forward | reversed |
+|---|---|---|
+| `cascade` | +0 | -1 |
+| `layout` | -1 | +0 |
+| `paint` | -0 | +0 |
+| `parse`, `stylesheets` | +0 | +0 |
+
+Every phase reads zero or negative in both directions, which is no
+difference in either. The binary grew 9,016 bytes and both render
+`generated.html` and `features.html` byte-identically, `cmp`-checked
+before any timing, on a machine idle at a one-minute load of 0.16.

@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### HTML's form-state and direction pseudo-classes
+
+Selectors 4 §11 and §14.2: `:read-write`, `:read-only`, `:required`,
+`:optional`, `:placeholder-shown`, `:default`, `:indeterminate`,
+`:valid`, `:invalid`, `:in-range`, `:out-of-range` and `:dir()`. Every
+one of them is a question about the document's own attributes -- no
+focus, no script and no user input -- so all of them are answerable
+here, and none of them was answered.
+
+What each one means was measured in Chromium against the fixture rather
+than derived from its name, and several are not what the name suggests:
+
+- **`:read-write` follows the control, not the attribute.** A checkbox
+  and a radio are `:read-only` although nothing about them is readonly,
+  because `readonly` does not apply to those types at all; a disabled
+  text input is `:read-only` too. Every element that is not an editable
+  control is `:read-only`, which is why every `p` is one.
+  `contenteditable` makes any element `:read-write`, and
+  `contenteditable="false"` on a nearer ancestor takes it back.
+- **`:optional` does not exclude a disabled control**: the question is
+  whether `required` could apply and does not.
+- **`disabled` and `readonly` bar a control from constraint
+  validation**, so such a control is in neither `:valid` nor
+  `:invalid`. That pair is what makes these rows able to fail: an
+  implementation that partitions every control between the two passes
+  neither, and disabling the `readonly` bar was tried and does fail
+  `input:valid`.
+- **`:default` is three things**: a checked checkbox, a selected option,
+  and a form's *first* submit button.
+- **`:indeterminate` needs no script**: a radio in a group where nothing
+  is checked is indeterminate, which the document itself expresses.
+
+The fixture grew what the family needs -- a `required` input, one with a
+`placeholder`, an unchecked radio, a number in and out of its range, a
+`readonly` input and textarea, a submit button and a `dir="rtl"`
+division -- and the 103 rows already there were regenerated against the
+larger document and still pass unchanged.
+
+**The instrument passes all 119 of its rows**, 21 of them from this
+family, having been 61/61 over 61 rows before this run of work began.
+
+What is deliberately not read, and recorded in todo.md: `dir="auto"`,
+which asks for the first strong character of the element's own text and
+falls back to `ltr` instead; and the rest of HTML's validity list -- a
+type mismatch, a `pattern`, a `step` -- beside the missing value and the
+range that are. `:focus-within`, `:user-valid` and `:user-invalid` need
+a focus and a user this browser does not have.
+
+The whole family answers in one function, reached after every
+pseudo-class the engine already had, so nothing that worked before pays
+a comparison for these.
+
 ### `:nth-child()`'s `of S` clause
 
 Selectors 4 §6.6.5 writes the structural pseudo-class as
