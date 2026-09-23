@@ -2027,11 +2027,10 @@ What the answers settle, none of which follows from the names:
 with no focus cannot give them anything to match; they stay out of the
 instrument.
 
-All of it is implemented and every row of it passes. What is **not**
-read, and waits here for a fixture that could grade it: the rest of
-HTML's validity list -- a type mismatch on `email` or `url`, a
-`pattern`, a `step` -- beside the missing value and the range that are
-read. `:focus-within`,
+All of it is implemented and every row of it passes. Four of HTML's validity conditions are read -- a missing required value,
+a value outside a declared range, a type mismatch and a step mismatch --
+and the two that are not are the two markup cannot express, which the
+section below measures. `:focus-within`,
 `:user-valid` and `:user-invalid` need a focus and a user this browser
 does not have.
 
@@ -2192,7 +2191,12 @@ recorded here rather than implemented:
   this project links what Festina links, so it would have to be written
   by hand. It is the one item on the list with real work behind it.
 
-The measurement alone; the rows and the code follow.
+All four conditions markup can express are implemented and three more
+instrument rows grade them; disabling the step check and the url check
+was tried and both rows fail. `minlength`, `maxlength` and `pattern`
+remain open, and the last of those is the one with real work behind it:
+a JavaScript regular expression engine written by hand, because Festina
+has none and this project links what Festina links.
 
 ### Where an inset shadow's curve comes from, measured
 
@@ -2744,8 +2748,8 @@ properties the instrument can grade change what this engine renders
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
-`tests/conformance/selectors.f` how many of 126 selectors match the same
-elements as Chromium (126). Most entries in the work above should move
+`tests/conformance/selectors.f` how many of 129 selectors match the same
+elements as Chromium (129). Most entries in the work above should move
 the first number, and the runner names every property that still does
 nothing. Some cannot: CSS Color 4's colour spaces are a value syntax,
 and the instrument asks only whether `color` changes the computed

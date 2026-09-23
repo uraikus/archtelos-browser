@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The rest of HTML's validity list that markup can express
+
+`:valid` and `:invalid` read a missing required value and a value
+outside a declared range. Four of HTML's conditions come out of markup,
+and the other two now do:
+
+- **A type mismatch** on `email` and `url`. HTML's e-mail production is
+  a fixed grammar, so it is a scan rather than a judgement: a bare label
+  after the `@` is allowed (`a@b` is valid) and an empty local part, an
+  empty domain, a second `@` and an inner space are not. `multiple`
+  makes the value a comma-separated list and judges each part. A URL
+  needs a scheme and a `:`, and a host where `//` follows, so `foo:bar`
+  is valid and `//example.com` and `http://` are not.
+- **A step mismatch**, whose base is the surprise: the `min` attribute
+  when there is one and **the `value` content attribute** otherwise. So
+  `step=5 value=7` measures 7 from 7 and is a whole zero steps; a step
+  mismatch can only come out of markup when `min` is there too. `step=0`
+  is not a step and is ignored, and a `range` sanitises its value before
+  anything asks.
+
+**What a control's value is for this purpose** was the other half. A
+checkbox and a radio have one only when checked; a select's is its
+selected option's, which is that option's own text when it declares no
+`value` -- so `<select required><option>x</option></select>` is
+satisfied by the option HTML selected for it, and the same markup with
+`multiple` is not, because such a select selects nothing of its own.
+
+Three more instrument rows, 126/126 to 129/129. Disabling the step check
+and the URL check was tried and both rows fail.
+
+Two conditions stay out, and todo.md says why. `minlength` and
+`maxlength` apply only once a user has edited the value -- HTML's dirty
+value flag -- so `<input minlength=5 value="abc">` is valid in Chromium
+and nothing done to a document makes it otherwise. `pattern` needs a
+JavaScript regular expression engine, and an unparseable pattern is
+ignored, so even declining it correctly needs a parser for the syntax;
+Festina has none and this project links what Festina links, so it would
+have to be written by hand.
+
 ### `dir="auto"`, and the option that was selected without saying so
 
 `:dir()` read the nearest ancestor declaring a direction and passed

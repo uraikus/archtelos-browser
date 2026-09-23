@@ -765,13 +765,185 @@ int func inputRangeState(nid:int) {
     return RANGE_IN
 }
 
-// Whether a control satisfies its constraints. Only the two the fixture
-// can grade are read -- a missing required value and a value outside a
-// declared range. The rest of HTML's list (a type mismatch, a pattern, a
-// step) waits in todo.md for a fixture that can tell whether it works.
+// HTML's `valid e-mail address` production, which is a fixed grammar
+// rather than an opinion: one or more of a named set before an `@`,
+// then a dot-separated sequence of labels that each begin and end with
+// a letter or digit. A bare label after the `@` is allowed -- `a@b` is
+// valid, measured -- and a missing local part, a missing domain, a
+// second `@` and an inner space are not.
+bool func isEmailAtomCode(c:int) {
+    if (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) { return true }
+    // . ! # $ % & ' * + / = ? ^ _ ` { | } ~ -
+    return c == 46 || c == 33 || c == 35 || c == 36 || c == 37 || c == 38
+        || c == 39 || c == 42 || c == 43 || c == 47 || c == 61 || c == 63
+        || c == 94 || c == 95 || c == 96 || c == 123 || c == 124 || c == 125
+        || c == 126 || c == 45
+}
+
+bool func isValidEmail(a:ascii) {
+    if a == null { return false }
+    int n = a.length
+    int at = 0 - 1
+    for int i = 0, i < n, i++ {
+        if a.charCodeAt(i) != 64 { continue }              // @
+        if at >= 0 { return false }                        // a second one
+        at = i
+    }
+    if at <= 0 || at == n - 1 { return false }
+    for int i = 0, i < at, i++ {
+        if !isEmailAtomCode(a.charCodeAt(i)) { return false }
+    }
+    // the domain: labels of alphanumerics and hyphens, each beginning
+    // and ending with an alphanumeric, separated by dots
+    int i = at + 1
+    while i < n {
+        int start = i
+        while i < n && a.charCodeAt(i) != 46 { i++ }
+        if i == start { return false }
+        if !isAlnumCode(a.charCodeAt(start)) { return false }
+        if !isAlnumCode(a.charCodeAt(i - 1)) { return false }
+        for int j = start, j < i, j++ {
+            int c = a.charCodeAt(j)
+            if !isAlnumCode(c) && c != 45 { return false }
+        }
+        if i < n { i++  if i == n { return false } }
+    }
+    return true
+}
+
+// A valid absolute URL, as far as markup can tell: a scheme, then `:`,
+// and where a `//` follows it a non-empty host. `foo:bar` is valid and
+// `//example.com` and `http://` are not, measured.
+bool func isValidUrl(a:ascii) {
+    if a == null || a.length == 0 { return false }
+    int n = a.length
+    int c0 = a.charCodeAt(0)
+    if !((c0 >= 65 && c0 <= 90) || (c0 >= 97 && c0 <= 122)) { return false }
+    int i = 1
+    while i < n {
+        int c = a.charCodeAt(i)
+        if c == 58 { break }                               // :
+        if !isAlnumCode(c) && c != 43 && c != 45 && c != 46 { return false }
+        i++
+    }
+    if i >= n { return false }                             // no colon
+    int rest = i + 1
+    if rest + 1 < n && a.charCodeAt(rest) == 47 && a.charCodeAt(rest + 1) == 47 {
+        int h = rest + 2
+        int hostEnd = h
+        while hostEnd < n && a.charCodeAt(hostEnd) != 47 && a.charCodeAt(hostEnd) != 63
+            && a.charCodeAt(hostEnd) != 35 { hostEnd++ }
+        return hostEnd > h
+    }
+    return true
+}
+
+// §4.10.5.3.6's step base: the `min` attribute if there is one, and
+// otherwise the `value` *content* attribute. So `step=5 value=7`
+// measures 7 from 7 and is a whole zero steps -- a step mismatch can
+// only come out of markup when `min` is there too, which is measured
+// rather than derived.
+bool func stepMismatches(nid:int) {
+    if nodeRegistry[nid].tag != 'input' { return false }
+    text t = inputTypeOf(nid)
+    if !inputTakesRange(t) { return false }
+    // A `range` sanitises its value to the nearest step before anything
+    // can ask, so it never mismatches.
+    if t == 'range' { return false }
+    text st = attrOf(nid, 'step')
+    if st == null || st == '' { return false }
+    ascii sa = st.toAscii()
+    if sa != null && asciiLower(sa).toText() == 'any' { return false }
+    float step = parseFloatAscii(sa)
+    if step <= 0.0 { return false }
+    text v = controlValueOf(nid)
+    if v == '' { return false }
+    text lo = attrOf(nid, 'min')
+    float base = lo != null && lo != '' ? parseFloatAscii(lo.toAscii()) : parseFloatAscii(v.toAscii())
+    float off = parseFloatAscii(v.toAscii()) - base
+    float steps = off / step
+    float nearest = Math.round(steps).toFloat()
+    float slack = step / 100000.0
+    float diff = nearest * step - off
+    if diff < 0.0 { diff = 0.0 - diff }
+    return diff > slack
+}
+
+// The value a control is judged to have. A checkbox or a radio has one
+// only when it is checked; a select's is its selected option's, which
+// is that option's own text when it declares no `value`; everything
+// else is the attribute or the text content.
+text func validationValueOf(nid:int) {
+    text tag = nodeRegistry[nid].tag
+    if tag == 'input' {
+        text t = inputTypeOf(nid)
+        if t == 'checkbox' || t == 'radio' {
+            return hasAttrOf(nid, 'checked') ? 'on' : ''
+        }
+        return controlValueOf(nid)
+    }
+    if tag == 'select' { return selectedValueOf(nid) }
+    return controlValueOf(nid)
+}
+
+// The value of the option a select has selected, or '' when it has
+// selected none. A `multiple` select selects nothing of its own, which
+// is why the same markup satisfies `required` without it and fails with
+// it.
+text func selectedValueOf(nid:int) {
+    arr[Node] kids = nodeRegistry[nid].children
+    for int i = 0, i < kids.length, i++ {
+        int kid = kids[i].id
+        if nodeRegistry[kid].kind != NODE_ELEMENT { continue }
+        if nodeRegistry[kid].tag == 'optgroup' {
+            text deep = selectedValueOf(kid)
+            if deep != '' { return deep }
+            continue
+        }
+        if nodeRegistry[kid].tag != 'option' { continue }
+        if !optionIsSelected(kid) { continue }
+        if hasAttrOf(kid, 'value') {
+            text v = attrOf(kid, 'value')
+            return v == null ? '' : v
+        }
+        // With no `value`, an option's value is its own text.
+        text out = ''
+        arr[Node] tk = nodeRegistry[kid].children
+        for int j = 0, j < tk.length, j++ {
+            if tk[j].kind == NODE_TEXT && tk[j].data != null { out = out + tk[j].data }
+        }
+        return asciiTrim(out.toAscii()).toText()
+    }
+    return ''
+}
+
+// Whether a control satisfies its constraints. Four of HTML's
+// conditions come out of markup and are read: a missing required value,
+// a value outside a declared range, a type mismatch on `email` or
+// `url`, and a step mismatch. `minlength` and `maxlength` apply only
+// once a user has edited the value and `pattern` needs a regular
+// expression engine; todo.md records both.
 bool func controlIsValid(nid:int) {
-    if hasAttrOf(nid, 'required') && controlValueOf(nid) == '' { return false }
+    text v = validationValueOf(nid)
+    if hasAttrOf(nid, 'required') && v == '' { return false }
     if inputRangeState(nid) == RANGE_OUT { return false }
+    if stepMismatches(nid) { return false }
+    if v != '' && nodeRegistry[nid].tag == 'input' {
+        text t = inputTypeOf(nid)
+        // `multiple` makes the value a comma-separated list, and each
+        // part is judged on its own.
+        if t == 'email' {
+            if hasAttrOf(nid, 'multiple') {
+                arr[ascii] parts = asciiSplitChar(v.toAscii(), CH_COMMA)
+                for int i = 0, i < parts.length, i++ {
+                    if !isValidEmail(asciiTrim(parts[i])) { return false }
+                }
+                return true
+            }
+            return isValidEmail(v.toAscii())
+        }
+        if t == 'url' { return isValidUrl(v.toAscii()) }
+    }
     return true
 }
 

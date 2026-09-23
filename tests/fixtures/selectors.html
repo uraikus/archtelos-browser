@@ -49,6 +49,22 @@
       <input id="i10" type="text" readonly value="fixed">
       <textarea id="t2" readonly>fixed</textarea>
       <button id="b2" type="submit">send</button>
+      <!-- HTML's validity conditions that markup alone can express: a
+           type mismatch, a step mismatch, and what `required` means on
+           a control whose value is not an attribute. -->
+      <input id="i13" type="email" value="not-an-email">
+      <input id="i14" type="email" value="a@b">
+      <input id="i15" type="url" value="//example.com">
+      <input id="i16" type="url" value="foo:bar">
+      <input id="i17" type="number" min="1" step="5" value="7">
+      <input id="i18" type="number" min="1" step="5" value="6">
+      <input id="i19" type="number" step="5" value="7">
+      <input id="i20" type="checkbox" required>
+      <input id="i21" type="checkbox" required checked>
+      <select id="sel2" required><option id="o3" value="">none</option></select>
+      <select id="sel3" required><option id="o4">x</option></select>
+      <select id="sel4" required multiple><option id="o5">x</option></select>
+      <textarea id="t3" required></textarea>
     </form>
   </div>
   <div id="d6" dir="rtl"><p id="p10">right to left</p></div>

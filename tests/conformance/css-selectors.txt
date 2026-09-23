@@ -113,6 +113,14 @@ button:default
 input:indeterminate
 input:valid
 input:invalid
+# The validity conditions markup can express. The step base is `min`
+# when there is one and the `value` attribute otherwise, so `step=5
+# value=7` is a whole zero steps and valid; only `min=1 step=5 value=7`
+# can fail. todo.md holds the measurement, and the two conditions that
+# markup cannot express.
+select:invalid
+textarea:invalid
+input:required:invalid
 input:in-range
 input:out-of-range
 select:valid

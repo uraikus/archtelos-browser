@@ -3315,3 +3315,33 @@ Nothing reads positive in either direction on any phase. The binary grew
 8,472 bytes and both render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.19.
+
+## What four validity conditions cost, and a second round that undid the first
+
+2026-09-23. `controlIsValid` grew a type-mismatch scan and a step
+check, and `validationValueOf` grew a walk of a select's options. None
+of it runs on `generated.html`, which holds no form control at all --
+`isValidationCandidate` answers no on the tag and returns. Paired, 20
+iterations, 800px.
+
+| median | round 1 forward | round 1 reversed | round 2 forward | round 2 reversed |
+|---|---|---|---|---|
+| `cascade` | **+2** | -1 | **-1** | +0 |
+| `layout` | **+3** | +0 | **-1** | -1 |
+
+Round one has the shape this file calls real for cascade -- +2 forward
+against -1 reversed -- and a +3 of *layout* beside it on a diff with no
+line in `src/layout/`. Round two gives -1 and -1 forward. **The two
+forward readings disagree**, so round one was not measuring this diff,
+and the rule this file already carries applies: two rounds each way
+before the question goes to the code.
+
+That is the second time in one day the same thing has happened, the
+first being `:nth-child()`'s `of` clause. Both were diffs that add a
+function the benchmark page never calls, and both read two to three
+milliseconds on the first round and nothing on the second. A single
+round on this host is not a measurement.
+
+The binary grew 4,328 bytes and both pages render byte-identically,
+`cmp`-checked before any timing, on a machine idle at a one-minute load
+of 0.17.
