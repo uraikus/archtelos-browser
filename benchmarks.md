@@ -3142,3 +3142,32 @@ backslash:
 Nothing left: each direction says the binary running second is the
 slower one, which is the order and not the diff. The page renders
 byte-identically between the binaries, `cmp`-checked before any timing.
+
+
+## What skipping `<!--` costs, and a mirror image that was noise
+
+2026-09-23. The rule loop tests two characters more per segment, at the
+top level only, before it does anything else with them. Paired, 15
+iterations, 800px, on the 970 KB stylesheet of 6,000 rules; its
+`stylesheets` phase is about 31 ms.
+
+| `stylesheets` | forward | reversed |
+|---|---|---|
+| round 1 | **+1** | **-1** |
+| round 2 | +0 | +0 |
+
+**Round one is the shape this file calls strongest for a real cost** --
+a reading and its mirror image that flip sign, so both directions say
+the candidate is the slower one. Round two says nothing at all, and the
+code cannot account for a millisecond either: the diff adds two integer
+comparisons per segment, about twelve thousand of them on this sheet,
+and the `asciiStartsWith` behind each runs only where the character
+already matched. No rule on the page begins with `<` or `-`.
+
+So the mirror-image shape is not by itself evidence. It appeared here
+from noise, on a diff too small to cost what it appeared to, and a
+second round is what showed it. Two rounds each way is the cheaper
+check than a placement control, and worth doing before building one.
+
+The three benchmark pages render byte-identically between the binaries,
+`cmp`-checked before any timing.

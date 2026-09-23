@@ -1976,7 +1976,16 @@ void func nestFlushDecls(sheet:Stylesheet, src:ascii, from:int, to:int,
 // holds that rule's selectors. The two productions differ in one thing:
 // inside a rule body a run of declarations belongs to the rule, and at
 // the top of a stylesheet there is nothing for one to belong to.
-void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentSpecs:arr[int]) {
+// The two tokens §5.4.1 ignores, built once rather than per rule.
+ascii cssCdo = '<!--'.toAscii()
+ascii cssCdc = '-->'.toAscii()
+
+// `topLevel` is CSS Syntax 3 §5.4.1's flag of the same name: a CDO
+// (`<!--`) and a CDC (`-->`) are ignored where a stylesheet's own rules
+// are read and nowhere else, so an at-rule's body and a nested rule's
+// body are parsed with it unset.
+void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentSpecs:arr[int],
+                         topLevel:bool) {
     int n = src.length
     int i = 0
     // Where the run of declarations being gathered began. Each run ends
@@ -1990,6 +1999,15 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
             i++
             continue
         }
+        // They are the wrapper an old page put round its `<style>` so
+        // that a browser which did not know the tag would not print the
+        // contents. Tested only here, where a rule or a declaration
+        // begins: a `-->` that follows name characters is not a CDC at
+        // all -- the identifier takes both hyphens and the `>` left
+        // over is a child combinator, which is what Chromium's
+        // `selectorText` for `a-->b` says, and a test asserts.
+        if topLevel && c == CH_LT && asciiStartsWith(src, cssCdo, i) { i = i + 4  continue }
+        if topLevel && c == CH_MINUS && asciiStartsWith(src, cssCdc, i) { i = i + 3  continue }
         if c == CH_AT {
             nestFlushDecls(sheet, src, declStart, i, parents, parentSpecs)
             int nameEnd = scanIdentAt(src, i + 1)
@@ -2028,13 +2046,13 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 if evaluateMediaQuery(query) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 }
             } else if atName == 'supports' {
                 if evaluateSupportsCondition(asciiTrim(src.slice(nameEnd, brace))) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 }
             } else if atName == 'counter-style' {
                 // The name is the prelude, and the body is an ordinary
@@ -2066,7 +2084,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 // are gated on the innermost query that did fit, which
                 // is written down rather than silently dropped.
                 if q != CQ_NONE { cssCurrentContainerQuery = q }
-                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 cssCurrentContainerQuery = outerQuery
             } else if atName == 'layer' {
                 int close = blockEnd - 1
@@ -2085,7 +2103,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 }
                 cssCurrentLayer = declareLayer(full)
                 cssCurrentLayerName = full
-                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 cssCurrentLayer = outerLayer
                 cssCurrentLayerName = outerName
             }
@@ -2169,7 +2187,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
             if r.decls.length > 0 { sheet.rules.push(r) }
             continue
         }
-        parseRulesInto(sheet, body, selTexts, selSpecs)
+        parseRulesInto(sheet, body, selTexts, selSpecs, false)
     }
     nestFlushDecls(sheet, src, declStart, n, parents, parentSpecs)
 }
@@ -2185,7 +2203,7 @@ Stylesheet func parseStylesheet(src:ascii) {
     if src == null { return sheet }
     arr[text] noParents = []
     arr[int] noSpecs = []
-    parseRulesInto(sheet, stripCssComments(src), noParents, noSpecs)
+    parseRulesInto(sheet, stripCssComments(src), noParents, noSpecs, true)
     return sheet
 }
 

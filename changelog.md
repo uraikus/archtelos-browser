@@ -5,6 +5,32 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `<!--` and `-->` are ignored where a rule is read
+
+CSS Syntax 3 §5.4.1 ignores a CDO and a CDC at the top level of a
+stylesheet: they are the wrapper pages once put round a `<style>`
+element so a browser that did not know the tag would not print its
+contents. Unrecognised, each was swept into the selector beside it and
+took that rule with it -- a sheet written in the old style lost its
+first rule, and a stray `-->` lost the rule after it.
+
+They are skipped now, and only where §5.4.1 says: the flag is a
+parameter, so an at-rule's body and a nested rule's body are parsed
+without it.
+
+**A `-->` that follows name characters is not a CDC**, because the
+identifier takes both hyphens and the `>` left over is a child
+combinator. Chromium's `selectorText` for `a-->b` is `a-- > b`, asked
+of it directly rather than inferred from a render, and the suite pins
+that: testing for the token only where a rule or a declaration begins
+is what keeps it true, and a check would have caught a skip that cut
+such a selector in half.
+
+Inside a declaration block the two engines already agreed --
+`#a{--> background:#0000ff}` leaves the earlier `background` standing
+in both, because the declaration's name is not one either knows -- so
+nothing there changed.
+
 ### An escape in a selector's identifier is decoded
 
 CSS Syntax 3 §4.3.7 decodes an escape as it consumes an identifier. The

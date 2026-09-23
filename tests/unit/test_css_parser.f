@@ -108,4 +108,31 @@ Stylesheet sq6 = parseStylesheet('p { a: 1; /* gone */ b: 2 } /* r */ q { color:
 checkEq(dumpStylesheet(sq6), 'p{1} { a: 1; b: 2; }\nq{1} { color: red; }\n',
         'and a comment that is one is still stripped')
 
+// ---- CSS Syntax 3 §5.4.1: `<!--` and `-->` at the top level ------------
+// A CDO and a CDC are ignored where a rule is read. They are the
+// wrapper pages once put round a `<style>` element so a browser that
+// did not know the tag would not print its contents, and a sheet still
+// written that way has to parse as though they were not there.
+//
+// The rule BESIDE each one is what these assert on: unrecognised, the
+// token is swept into the selector next to it and that rule is lost.
+Stylesheet cdo1 = parseStylesheet('<!-- p { a: 1 } q { b: 2 } -->')
+checkEq(dumpStylesheet(cdo1), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'a sheet wrapped in an HTML comment parses as though it were not')
+Stylesheet cdo2 = parseStylesheet('p { a: 1 }\n--> q { b: 2 }')
+checkEq(dumpStylesheet(cdo2), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'and a stray CDC between two rules takes neither')
+Stylesheet cdo3 = parseStylesheet('p { a: 1 } <!-- q { b: 2 }')
+checkEq(dumpStylesheet(cdo3), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'nor a stray CDO')
+// A `-->` that follows name characters is not a CDC at all: the ident
+// takes the two hyphens, because both are name code points, and the
+// `>` that is left is a child combinator. Chromium's `selectorText`
+// for `a-->b` is `a-- > b`, asked of it directly rather than inferred
+// from a render -- and this is the check that stops a CDC skip from
+// cutting such a selector in half.
+Stylesheet cdo4 = parseStylesheet('a-->b { c: 3 }')
+checkEq(dumpStylesheet(cdo4), 'a-- > b{2} { c: 3; }\n',
+        'a `-->` after name characters is a hyphen pair and a combinator')
+
 finish('css parser')

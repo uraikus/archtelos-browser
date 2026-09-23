@@ -1685,11 +1685,12 @@ rest of the sheet -- Chromium loses that rule too, measured, and the
 suite asserts the loss so that a later "fix" cannot quietly introduce
 a divergence.
 
-What is still open in CSS Syntax 3 is `<!--` and `-->`, which are not
-recognised, and the shape of the parser itself: there is no tokenizer in
-the standard's sense, so every rule of §4.3 that the index scan does not
-happen to agree with is a divergence waiting to be found the way the
-comment and the escape ones were.
+What is still open in CSS Syntax 3 is the shape of the parser itself:
+there is no tokenizer in the standard's sense, so every rule of §4.3
+that the index scan does not happen to agree with is a divergence
+waiting to be found the way the comment, the escape and the CDO ones
+were. Three in a row came out of reading one row of css-2026.md and
+asking Chromium; the row is worth reading again.
 
 ### Where a selector's escapes come from, measured
 
@@ -1725,7 +1726,7 @@ An escaped space is not on the list because HTML cannot express the
 element it would need: `class="c d"` is two classes, not one class
 named `c d`, and Chromium leaves `.c\ d` unmatched there too.
 
-### What `<!--` in a stylesheet costs, measured
+### Where a stylesheet's `<!--` goes, measured
 
 CSS Syntax 3 §5.4.1 ignores a CDO (`<!--`) and a CDC (`-->`) at the top
 level of a stylesheet: they are the wrapper pages once put round a
@@ -1749,10 +1750,16 @@ rules:
 --> #b{width:100px;height:20px;background:#0000ff}
 ```
 
-| | Chromium | this engine |
+| | Chromium | this engine, before |
 |---|---|---|
 | wrapped in `<!--`/`-->` | both rules apply | `#a` lost; the `-->` takes nothing, because a trailing one ends the sheet |
 | a `-->` before the second rule | both rules apply | `#b` lost |
+
+A `-->` that follows name characters is **not** a CDC: the identifier
+takes both hyphens and the `>` left over is a child combinator.
+Chromium's `selectorText` for `a-->b` is `a-- > b`, asked of it
+directly. Testing for the token only where a rule or a declaration
+begins is what keeps that true.
 
 **Inside a declaration block the two already agree**: `#a{--> background:#0000ff}`
 leaves the earlier `background` standing in both, because the
