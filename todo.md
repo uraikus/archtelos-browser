@@ -1747,8 +1747,21 @@ finds are the implicit ones *before* the explicit grid. On a grid of
 two 100px columns in a 400px container, Chromium puts the item at
 **x=0 with the columns 200, 100, 100** -- it has created a column ahead
 of line 1 and stretched it. The forward direction is done; this one
-renumbers every line and moves every item already placed, so it is
-left.
+renumbers every line and moves every item already placed.
+
+**The test needs no number, because the column it creates is one the
+template could have written.** These two render identically in
+Chromium, item and auto-placed sibling alike -- 400px of item on the
+first row, 200px of sibling on the second:
+
+| | template | item |
+|---|---|---|
+| the name | `100px 100px` | `grid-column: span zz / 3` |
+| written out | `auto 100px 100px` | `grid-column: 1 / 4` |
+
+So the check is that the two agree, and it catches the renumbering
+rather than only the placement: the sibling is auto-placed, so it moves
+only if line 1 really did move.
 
 ### Counter Styles 3's `range` and `fallback`, measured
 
