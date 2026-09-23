@@ -2036,6 +2036,78 @@ missing value and the range that are read. `:focus-within`,
 `:user-valid` and `:user-invalid` need a focus and a user this browser
 does not have.
 
+### What `dir="auto"` resolves to, measured
+
+HTML §3.2.6.4 gives `dir="auto"` its own algorithm: the element's
+direction is that of the **first strong character** of its text, and
+`ltr` when it has none. `:dir()` reads the nearest ancestor that
+declares a direction and passes `auto` over, so an element under one
+falls back to `ltr` whatever its text says.
+
+Twenty-five cases were put to Chromium, in three documents written in
+UTF-8 with real Hebrew and Arabic in them. Writing `\u05e9` in the
+source would not do: the document has to carry the character, because
+what is being asked is what the DOM stores and how it classifies.
+
+| case | Chromium |
+|---|---|
+| `<div dir=auto>hello there</div>` | ltr |
+| `<div dir=auto>שלום</div>` | **rtl** |
+| `<div dir=auto>123 שלום</div>` | **rtl** |
+| `<div dir=auto>"שלום" said</div>` | **rtl** |
+| `<div dir=auto>abc שלום</div>` | ltr |
+| `<div dir=auto>   السلام</div>` | **rtl** |
+| `<div dir=auto></div>` | ltr |
+| `<div dir=rtl><div dir=auto>plain english</div></div>` | ltr |
+
+So a digit, a quotation mark and whitespace are not strong, an Arabic
+letter is, and `auto` does not inherit -- the inner division computes
+from its own text although its parent is `rtl`.
+
+**Which descendants count is the part the name does not say.** A text
+node anywhere below counts, however deep, but these are skipped:
+
+| case | Chromium | |
+|---|---|---|
+| `<div dir=auto><span dir=ltr>שלום</span> שלום</div>` | rtl | a valid `dir` below is skipped |
+| `<div dir=auto><span dir="">שלום</span> abc</div>` | **rtl** | an *invalid* one is not |
+| `<div dir=auto><bdi>שלום</bdi> abc</div>` | ltr | `bdi` is skipped |
+| `<div dir=auto><span dir=auto>שלום</span> abc</div>` | ltr | and so is another `auto` |
+| `<div dir=auto><script>"שלום"</script> abc</div>` | ltr | `script` |
+| `<div dir=auto><style>/* שלום */</style> abc</div>` | ltr | and `style` |
+| `<div dir=auto><textarea>שלום</textarea> abc</div>` | ltr | a textarea's contents |
+| `<div dir=auto><input value=שלום> text</div>` | ltr | an input's value |
+| `<div dir=auto><img alt=שלום> abc</div>` | ltr | and an `alt` |
+| `<div dir=auto><!-- שלום --> abc</div>` | ltr | a comment is not text |
+| `<div dir=auto><span><b>שלום</b></span> abc</div>` | **rtl** | a plain descendant counts |
+| `<div dir=auto><select><option>abc</option></select> שלום</div>` | **ltr** | a `select` is **not** skipped |
+
+That last row is the one no reading of the name would give: a textarea's
+own text and an input's value are skipped, and an option's text is not.
+
+**An element with `dir="auto"` that holds its own value uses it**:
+`<input dir=auto value=שלום>` is rtl and `<input dir=auto value=abc>`
+is ltr, and `<textarea dir=auto>שלום</textarea>` is rtl.
+
+**`bdi` is `auto` with no attribute at all.** `<bdi>שלום</bdi>` is rtl,
+`<bdi>abc</bdi>` is ltr, and a `bdi` holding `abc` inside a
+`dir="rtl"` division is ltr -- which is the whole point of the element.
+
+**The attribute's value is matched without regard to case**
+(`dir="AUTO"` is auto), and an unrecognised one is not a declaration at
+all: `dir="bogus"` falls through to the parent rather than defaulting.
+
+One case is worth recording because it is where a literal reading of the
+standard and Chromium part: `<div dir=auto>` holding
+`U+2066 שלום U+2069 abc` is **rtl** in Chromium. The text between an
+isolate initiator and its matching PDI is meant to be passed over, which
+would leave ` abc` and give ltr. Scanning for the first strong character
+with no isolate handling at all is what agrees with the browser here, so
+that is what this engine does, and the divergence is this note rather
+than a row.
+
+The measurement alone; the fixture, the rows and the code follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
