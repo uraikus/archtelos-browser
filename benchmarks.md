@@ -3471,3 +3471,44 @@ does not have them in any of the three rounds.
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.24 for every reading above.
+
+## What expanding eight shorthands cost, and a control that carried the whole millisecond
+
+2026-09-24. Eight shorthands moved out of the style readers and into
+`applyDecl`, behind one per-document flag. `generated.html` says
+`border-radius` on every card, so the flag is true there and the
+expansions do real work rather than only being skipped. Paired, 20
+iterations, 800px.
+
+| pairing | `cascade` median | `layout` median | slower in, layout |
+|---|---|---|---|
+| candidate against parent, round one | +0 | **+1** | 12 of 20 |
+| the same, round two | +1 | **+1** | 11 of 20 |
+| reversed (parent second) | +0 | **-1** | 6 of 20 |
+| **control** against parent | -1 | **+1** | 12 of 20 |
+| candidate against **control** | +1 | +1 | 11 of 20 |
+
+Two forward rounds agreeing at +1 of layout against a mirror image of
+-1 is the shape this file calls strongest for a real cost, and the diff
+has no line in `src/layout/`. The control is where it goes: the parent
+recompiled with the change's global, its helper and all eight
+expansions appended as one function under renamed identifiers and
+**called from nowhere** reads the same +1 of layout, with the same
+twelve pairs of twenty. Dead code cannot run.
+
+The three binaries then refuse to add up -- parent to control +1 of
+layout, control to candidate +1, and parent to candidate +1 rather than
+the +2 those two imply -- which is the test this file already uses for
+a quantity that belongs to no diff.
+
+**This control is not as tight as the rule asks for.** It comes out
+3,175,912 bytes against the candidate's 3,171,768, four kilobytes
+apart rather than a few dozen, because the change *removes* eight
+readers as well as adding eight expansions and a control can only add.
+A change that deletes code cannot have a control within a few bytes of
+it, so the size agreement that usually backs this argument is missing
+here and the additivity check is carrying it alone.
+
+All three binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.20 for every reading above.
