@@ -3536,3 +3536,46 @@ week.
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.19 for every reading above.
+
+## Two constants move 61% of the binary, and a diff the page cannot reach reads +1
+
+2026-09-24. `cm` and `mm` changed from the constants 37.8 and 3.78 to
+`96.0 / 2.54` and `96.0 / 25.4`. Neither `generated.html` nor
+`features.html` contains a centimetre or a millimetre, so **this diff
+cannot execute on either page**: whatever a paired run reads, it is not
+work.
+
+| pairing | `parse` | `cascade` | `layout` | slower in, layout |
+|---|---|---|---|---|
+| candidate against parent, round one | +0 | -0 | +0 | 10 of 20 |
+| the same, round two | **+1** | +0 | **+1** | 11 of 20 |
+| reversed (parent second) | +0 | +0 | +0 | 9 of 20 |
+
+Round two read a millisecond of parse and a millisecond of layout out
+of two float constants in a branch the page never enters. The rounds
+disagree, so the rule already in this file throws it out -- but it is
+the cleanest demonstration this file has of *why* that rule exists,
+because here the "is it real work?" question has an answer known in
+advance and the answer is no.
+
+**And the mechanism is measurable.** The Festina compiler is
+deterministic: the same source compiled twice gives byte-identical
+output, and adding a comment to a source file changes **zero** bytes of
+the binary. Changing those two float constants changes **1,948,895 of
+3,172,024 bytes -- 61% of the binary -- at exactly the same total
+size.** Nothing moved in or out; six bytes of the sixty-one per cent
+are the constants and the rest is the compiler laying the same program
+out differently.
+
+That is the thing benchmarks.md has been calling "the compiler moving
+code" since `print-color-adjust`, stated as a number rather than an
+inference. A control binary within a few bytes of the candidate is not
+within a few bytes of it *in layout*, and two binaries of identical
+size can share almost none of their addresses. It is why a millisecond
+that survives two rounds and its own mirror image still has to be put
+to a control, and why a control that reads the same millisecond settles
+the question rather than deepening it.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.22 for every reading above.
