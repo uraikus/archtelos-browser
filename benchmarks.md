@@ -3579,3 +3579,37 @@ the question rather than deepening it.
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.22 for every reading above.
+
+## What blockification cost, on the one page it does not change
+
+2026-09-24. Blockification (Display 3 sec. 2.7) adds four integer tests
+to every element's computed style and one flag test to every child of
+every block. Paired, 20 iterations, 800px.
+
+**Measured on `generated.html` alone, because the fix changes
+`features.html`.** That page has a `display: grid` whose first item is
+an `<img>`; blockified, the image is a block-level grid item and gets
+painted, where before it stayed inline and did not appear at all. Seven
+64-pixel bands of the render change, one per section. A paired reading
+needs the two binaries laying out the same document, and they no longer
+do -- which is this file's own rule about a feature that fixes the
+layout, and the reason the render suite and `--verify` keep the page
+the fix touches while the benchmark uses the page it does not.
+
+| pairing | `cascade` median | `layout` median | slower in, layout |
+|---|---|---|---|
+| candidate against parent, round one | +0 | **+2** | 13 of 20 |
+| the same, round two | +1 | +0 | 9 of 20 |
+| reversed (parent second) | **+2** | -1 | 7 of 20 |
+
+The two forward rounds disagree on layout, so that reading is thrown
+out unexamined. The cascade reading is worse than disagreeing: it is
++1 forward and +2 reversed, both positive, which is the definition this
+file gives of an order effect -- whichever binary runs second pays --
+rather than a difference between the two binaries. No control was
+built, because nothing here survived the checks that come before one.
+
+The two binaries render `generated.html` byte-identically,
+`cmp`-checked before any timing, on a machine idle at a one-minute load
+of 0.19 for every reading above. They do **not** render
+`features.html` identically, which is the point above.
