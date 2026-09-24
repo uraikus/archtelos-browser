@@ -3512,3 +3512,27 @@ here and the additivity check is carrying it alone.
 All three binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.20 for every reading above.
+
+## What two more shorthands cost, and a third pair of rounds that disagreed
+
+2026-09-24. `column-rule` and `contain-intrinsic-size` expanded in
+`applyDecl`, behind the flag the eight before them share, with two more
+prefixes added to the parser's test for it. The binaries come out 256
+bytes apart, 3,172,024 against 3,171,768. Paired, 20 iterations, 800px.
+
+| pairing | `cascade` median | `layout` median | slower in, cascade |
+|---|---|---|---|
+| candidate against parent, round one | +1 | +0 | 11 of 20 |
+| the same, round two | +0 | -0 | 10 of 20 |
+| reversed (parent second) | +0 | -1 | 8 of 20 |
+
+Round one's +1 of cascade came with eleven pairs of twenty and round
+two put ten there, which is a coin landing twice. The two forward
+rounds disagree, so nothing here earns a question to the code and no
+control was built -- the third time in this file that a first-round
+reading has failed to survive being run again, and the second time this
+week.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.19 for every reading above.
