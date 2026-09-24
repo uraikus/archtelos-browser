@@ -1753,13 +1753,22 @@ void func resizeAxes(v:int) {
 }
 
 int func resolveLen(l:Len, base:int, dflt:int) {
-    // An intrinsic keyword answers `dflt` here for the reason given
-    // beside LEN_INTRINSIC: this function has the containing block and
-    // not the box, and the keyword is about the box's own content.
-    if l == null || l.kind == LEN_AUTO || l.kind == LEN_INTRINSIC { return dflt }
+    if l == null || l.kind == LEN_AUTO { return dflt }
+    // LEN_PX returns here rather than falling through the chain, so that
+    // the intrinsic keyword's test below costs nothing to the common
+    // case. Put beside `auto` instead, it read a millisecond of layout
+    // across two forward rounds against a mirror image that flipped
+    // sign -- this function is called for every length of every box,
+    // which is the shape CLAUDE.md names: a test added to a hot
+    // function costs the pages that never reach it.
+    if l.kind == LEN_PX { return roundPx(l.v) }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
     if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
     if anyMinMax && l.kind == LEN_MINMAX { return roundPx(resolveMinMax(l, base.toFloat())) }
+    // An intrinsic keyword answers `dflt` for the reason given beside
+    // LEN_INTRINSIC: this function has the containing block and not the
+    // box, and the keyword is about the box's own content.
+    if l.kind == LEN_INTRINSIC { return dflt }
     return roundPx(l.v)
 }
 

@@ -3613,3 +3613,49 @@ The two binaries render `generated.html` byte-identically,
 `cmp`-checked before any timing, on a machine idle at a one-minute load
 of 0.19 for every reading above. They do **not** render
 `features.html` identically, which is the point above.
+
+## What a test in `resolveLen` cost, and where it went instead
+
+2026-09-24. The intrinsic sizing keywords need `resolveLen` to answer
+`dflt` for the new `LEN_INTRINSIC` kind, and the obvious place for that
+test is the line that already answers `dflt` for `auto`:
+
+```
+if l == null || l.kind == LEN_AUTO || l.kind == LEN_INTRINSIC { return dflt }
+```
+
+`resolveLen` is called for every length of every box. Paired against
+the parent, 20 iterations, 800px, `generated.html`:
+
+| pairing | `cascade` median | `layout` median | slower in, layout |
+|---|---|---|---|
+| beside `auto`, forward one | +0 | **+2** | 11 of 20 |
+| the same, forward two | +1 | **+1** | 12 of 20 |
+| the same, reversed | +0 | **-2** | 5 of 20 |
+| **off the hot path**, forward one | +1 | +0 | 10 of 20 |
+| the same, forward two | +0 | +0 | 10 of 20 |
+| the same, reversed | +2 | +1 | 12 of 20 |
+
+Two forward rounds agreeing at +1 and +2 against a mirror image of -2
+is the shape this file calls strongest, and here the question had
+somewhere to go: one comparison, in a function every box calls for
+every length it has. No control was needed, because the fix is its own
+control -- the same feature with the test moved reads +0 twice
+forward, with the pairs split ten and ten.
+
+Moved means `LEN_PX` now returns from a line of its own, before the
+chain, so the intrinsic test sits after the four kinds that are
+common and costs nothing to any of them. The cascade column is +1 and
++0 forward against +2 reversed, positive in both directions, which is
+this file's definition of an order effect rather than a difference.
+
+This is the third time the rule about a test or a call added to a hot
+function has been paid for: `matchSelector` inside `matchCompound`'s
+loop, the array literal in the shorthand guard, and now one integer
+comparison in `resolveLen`. The first two were found by a benchmark
+after the fact; this one was predicted from the rule and then
+confirmed, which is the first time that has happened in this file.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.20 for every reading above.
