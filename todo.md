@@ -2279,6 +2279,50 @@ layer nesting in `tests/unit/test_layers.f`, and eleven pairs of the
 shorthand keyword in `tests/unit/test_cascade_rules.f`, each with the
 third document that makes it able to fail.
 
+### What widening the style digest asked, measured
+
+Nine of the twenty shorthands in the rollback audit could not be graded
+at all, because `describeStyle` -- the digest the audit compares two
+documents by -- carried none of `column-count`, `flex-grow`, `row-gap`,
+`overflow-x`, `text-decoration-line`, the grid placement edges,
+`align-items`, `scroll-margin-top` or `top`. The document that reverts
+and the document that does not computed the same string, so the check
+had nothing to tell apart and said `VACUOUS` rather than passing.
+
+Widening the digest made **seven** of the nine gradeable, and all seven
+roll back correctly. The two that stayed vacuous were not the digest's
+fault at all, and each is a bug of its own.
+
+**1. `text-decoration` and `text-decoration-line` never compete.** They
+are separate keys in the declaration map and the reader applies the
+shorthand first and the longhand second, so the longhand wins whatever
+the source order is.
+
+| | Chromium | this engine |
+|---|---|---|
+| `text-decoration-line:underline;text-decoration:overline` | **overline** | underline |
+| `text-decoration:overline;text-decoration-line:underline` | underline | underline |
+
+The first row is the one that matters: the later declaration wins in
+Chromium and cannot here, because the two never occupy the same key for
+the cascade to sort. The shorthand has to expand into its longhands the
+way `margin` does, and for the same reason.
+
+**2. `place-items`, `place-content` and `place-self` are not read at
+all.** Each is a two-value shorthand whose first value is the block-axis
+property and whose second is the inline one, and one value sets both:
+
+| | Chromium |
+|---|---|
+| `place-items: end center` | `align-items: end`, `justify-items: center` |
+| `place-content: start end` | `align-content: start`, `justify-content: end` |
+| `place-self: center` | `align-self: center`, `justify-self: center` |
+
+All six longhands exist here and are read; only the three shorthands
+that set them are missing, so the whole of it is a name and a split.
+
+The measurement alone; the tests and the fixes follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green

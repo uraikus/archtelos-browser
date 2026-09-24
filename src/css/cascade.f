@@ -8401,8 +8401,17 @@ void func computeStyles(doc:Node) {
     if archtelosTiming { log(cascadeProfile()) }
 }
 
+// A readable dump of a computed style, and the digest the shorthand
+// audit in tests/unit/test_cascade_rules.f compares two documents by.
+// Which fields it carries is therefore not a matter of taste: a
+// shorthand whose longhand is missing from here cannot be graded at
+// all, because the document that reverts and the document that does
+// not compute the same string. Nine of the twenty shorthands in that
+// audit could not be asked until the second line below existed
+// (todo.md, "What a sweep of the CSS Cascade row found").
 text func describeStyle(s:Style) {
-    return `display=${s.display} color=${s.color} bg=${s.background} font=${s.fontKey} lh=${s.lineHeight} align=${s.textAlign} deco=${s.textDecoration} ws=${s.whiteSpaceCollapse}/${s.textWrapMode} list=${s.listStyle} m=${resolveLen(s.marginTop, 0, -1)}/${resolveLen(s.marginRight, 0, -1)}/${resolveLen(s.marginBottom, 0, -1)}/${resolveLen(s.marginLeft, 0, -1)} p=${resolveLen(s.paddingTop, 0, -1)}/${resolveLen(s.paddingRight, 0, -1)}/${resolveLen(s.paddingBottom, 0, -1)}/${resolveLen(s.paddingLeft, 0, -1)} b=${s.borderTop}/${s.borderRight}/${s.borderBottom}/${s.borderLeft} w=${s.width.kind}:${s.width.v} h=${s.height.kind}:${s.height.v}`
+    text base = `display=${s.display} color=${s.color} bg=${s.background} font=${s.fontKey} lh=${s.lineHeight} align=${s.textAlign} deco=${s.textDecoration} ws=${s.whiteSpaceCollapse}/${s.textWrapMode} list=${s.listStyle} m=${resolveLen(s.marginTop, 0, -1)}/${resolveLen(s.marginRight, 0, -1)}/${resolveLen(s.marginBottom, 0, -1)}/${resolveLen(s.marginLeft, 0, -1)} p=${resolveLen(s.paddingTop, 0, -1)}/${resolveLen(s.paddingRight, 0, -1)}/${resolveLen(s.paddingBottom, 0, -1)}/${resolveLen(s.paddingLeft, 0, -1)} b=${s.borderTop}/${s.borderRight}/${s.borderBottom}/${s.borderLeft} w=${s.width.kind}:${s.width.v} h=${s.height.kind}:${s.height.v}`
+    return `${base} cols=${s.columnCount} gap=${s.rowGap}/${s.columnGap} of=${s.overflowX}/${s.overflowY} flex=${s.flexGrow}/${s.flexShrink} ai=${s.alignItems} jc=${s.justifyContent} ins=${resolveLen(s.top, 0, -1)}/${resolveLen(s.left, 0, -1)} sm=${resolveLen(s.scrollMarginTop, 0, -1)} gr=${s.gridRowStart.kind}:${s.gridRowStart.n} gc=${s.gridColStart.kind}:${s.gridColStart.n}`
 }
 
 
