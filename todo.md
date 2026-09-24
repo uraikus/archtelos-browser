@@ -3078,6 +3078,76 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `position: sticky`, measured
+
+CSS Positioned Layout 3 §3.5. The cascade parses the keyword and then
+throws it away -- `else if t == 'sticky' { s.position = POS_RELATIVE }`
+-- and `POS_STICKY` exists only as a constant in `src/css/style.f`.
+The note under "Layout" below says the reason is that nothing in layout
+knows the scroll offset. Layout does not, and cannot: the offset changes
+on every wheel event and the document is laid out once. **The painter does
+know.** `paintPage` already sets `paintScrollY` and `paintViewHeight`,
+for `background-attachment: fixed` to undo, and the render suites
+already drive a scroll by calling `paintPage(p, 0, scrollY, 300)`.
+So this is a paint-time shift, which is also where a real engine puts
+it, and there is already a harness that can scroll.
+
+Fifty documents to Chromium 141, each a 100px viewport over a scrolled
+document, reading `getBoundingClientRect().top` and `scrollY` back
+together so the answer is in document coordinates.
+
+Fixture A -- a 200px containing block at y=50, its 20px sticky box at
+the top of it, `top: 10px`:
+
+| scroll | document top of the box |
+|---|---|
+| 0 | 50, its natural place |
+| 30 | 50 |
+| 60 | **70** = scroll + 10 |
+| 300 | **230**, and no further |
+| 500 | 230 |
+
+Fixture B -- the same 200px block at y=400 with the box at its *bottom*,
+so a `bottom` inset has something to do, `bottom: 10px`:
+
+| scroll | document top |
+|---|---|
+| 0 | **400**, pulled up 180 from its natural 580 |
+| 200 | 400 |
+| 400 | **470** = scroll + 100 - 10 - 20 |
+| 490 | 560 |
+| 600 | 580, its natural place again |
+
+Fixture C -- the same as A with 30px of padding and a 30px border on the
+containing block. The box stops at document top 290, so the clamp is
+against the containing block's **content** box (110..310), not its
+padding box (80..340) and not its border box (50..370).
+
+The rule the fifty rows agree on, in order:
+
+1. `dy = 0`.
+2. If `top` is not `auto` and the box's top is above `scrollY + top`,
+   raise `dy` to close the gap. This term is never negative.
+3. If `bottom` is not `auto` and the box's bottom, already shifted by
+   `dy`, is below `scrollY + viewport - bottom`, set `dy` so it sits
+   exactly there. This term may be negative.
+4. Clamp `dy` into `[cbTop - boxTop, cbBottom - boxBottom]`, the two
+   distances the box can travel before leaving its containing block.
+
+`position: sticky` with no inset never moves -- all ten rows of it sat
+at 50 -- which falls out of the rule rather than needing a case.
+`position: relative` is unaffected, and `getComputedStyle` answers
+`sticky`, not `relative`, so the keyword is not a synonym.
+
+What this does not reach. A sticky box inside an `overflow: scroll`
+container sticks to *that* container's scrollport, not the document's;
+and `left`/`right` need a horizontal scroll offset, which the painter
+does not have -- there is a `paintScrollY` and no `paintScrollX`,
+because the document itself does not scroll across. Both stay
+unimplemented, and are written down under "Layout" rather than claimed.
+
+The measurement alone; the tests and the implementation follow.
+
 ### A scroll offset outlives the document it belongs to
 
 Found by asking the same question of `resize`'s dragged sizes, which
