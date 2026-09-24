@@ -150,6 +150,7 @@ border-left-width	10px; border-style: solid
 border-right-color	#123456
 border-right-style	solid
 border-right-width	10px; border-style: solid
+border-radius	4px 8px
 border-start-end-radius	10px
 border-start-start-radius	10px
 border-top-color	#123456
@@ -220,8 +221,10 @@ fill	none
 fill-opacity	50%
 fill-rule	evenodd
 filter	blur(2px)
+flex	2 3 40px
 flex-basis	10px
 flex-direction	column
+flex-flow	column wrap
 flex-grow	2
 flex-shrink	0
 flex-wrap	wrap
@@ -251,6 +254,7 @@ font-variant-position	sub
 font-variation-settings	'wght' 700
 font-weight	bold
 forced-color-adjust	none
+gap	7px
 grid-auto-columns	100px
 grid-auto-flow	column
 grid-auto-rows	100px
@@ -330,6 +334,7 @@ offset-rotate	reverse; offset-path: ray(90deg)
 opacity	0.5
 order	2
 orphans	700
+outline	2px solid #123456
 outline-color	#123456
 outline-offset	3px
 outline-style	solid; outline-width: 10px
@@ -342,6 +347,7 @@ overflow-wrap	break-word
 overflow-x	hidden
 overflow-y	hidden
 overlay	initial	only the user agent can set it; no author declaration changes it
+overscroll-behavior	contain
 overscroll-behavior-block	none
 overscroll-behavior-inline	none
 overscroll-behavior-x	contain
@@ -431,6 +437,7 @@ text-align	right
 text-align-last	center
 text-anchor	end
 text-autospace	normal
+text-box	trim-both cap alphabetic
 text-box-edge	cap alphabetic; text-box-trim: trim-both
 text-box-trim	trim-both
 text-combine-upright	all

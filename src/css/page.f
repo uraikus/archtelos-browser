@@ -36,6 +36,15 @@ bool anyPageBreak = false
 // applyDecl never run.
 bool anyPlaceShorthand = false
 
+// Whether this document has ever said one of the eight shorthands
+// applyDecl expands at the end of its chain -- `border-radius`,
+// `outline`, `flex`, `flex-flow`, `gap`, `font-variant`, `text-box` and
+// `overscroll-behavior`. One boolean instead of eight name comparisons
+// on every one of the 11,614 matched declarations of the benchmark
+// page, and the user-agent stylesheet says none of the eight, so the
+// flag is false wherever the page does not use them.
+bool anyLateShorthand = false
+
 struct PageBox {
     width:int
     height:int

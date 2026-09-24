@@ -799,4 +799,118 @@ placeIs('align-items:start;justify-items:center;place-items:end nonsense',
         BOXALIGN_START, BOXALIGN_CENTRE,
         'an unknown second value drops the whole shorthand')
 
+// ---- every shorthand competes with its longhands -----------------------
+// `text-decoration` was not the only one. An audit of the whole engine
+// for the same shape -- a shorthand read from the declaration map in
+// computeStyleValues rather than expanded into its longhands in
+// applyDecl -- turned up eight more. Each is asked in both orders,
+// because whichever fixed order a reader picks, one of the two is
+// wrong: reading the shorthand first makes the longhand always win,
+// and reading it last makes the shorthand always win. Every expectation
+// is Chromium 141's, read with getComputedStyle off the same block.
+Style func shOf(css:text, body:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css + '</style></head><body>'
+        + body + '</body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    return escById(d, 'q').style
+}
+text plainDiv = '<div id="q">x</div>'
+text flexKid = '<div id="p" style="display:flex"><div id="q">x</div></div>'
+text scrollBox = '<div id="q" style="overflow:scroll;width:50px;height:50px">x</div>'
+
+// border-radius against one corner.
+checkEqInt(resolveLen(shOf('#q{border-top-left-radius:9px;border-radius:2px}', plainDiv).radiusTopLeftX, 100, -1),
+           2, 'a later `border-radius` beats an earlier corner longhand')
+checkEqInt(resolveLen(shOf('#q{border-radius:2px;border-top-left-radius:9px}', plainDiv).radiusTopLeftX, 100, -1),
+           9, 'and the other order gives the other answer')
+checkEqInt(resolveLen(shOf('#q{border-top-left-radius:9px;border-radius:2px}', plainDiv).radiusBottomRightX, 100, -1),
+           2, 'while the shorthand still sets every corner')
+
+// outline against its three longhands.
+checkEqInt(shOf('#q{outline-color:#ff0000;outline:2px solid #0000ff}', plainDiv).outlineColor,
+           packColor(0, 0, 255, 255), 'a later `outline` beats an earlier `outline-color`')
+checkEqInt(shOf('#q{outline:2px solid #0000ff;outline-color:#ff0000}', plainDiv).outlineColor,
+           packColor(255, 0, 0, 255), 'and the other order gives the other answer')
+checkEqInt(shOf('#q{outline-width:9px;outline:solid #0000ff}', plainDiv).outlineWidth,
+           3, 'the shorthand resets a width it does not name to medium')
+checkEqInt(shOf('#q{outline-style:dotted;outline:2px #0000ff}', plainDiv).outlineStyle,
+           BORDER_NONE, 'and a style it does not name to none')
+
+// flex against its three longhands.
+checkEqInt(Math.round(shOf('#q{flex-grow:7;flex:2 3 40px}', flexKid).flexGrow),
+           2, 'a later `flex` beats an earlier `flex-grow`')
+checkEqInt(Math.round(shOf('#q{flex:2 3 40px;flex-grow:7}', flexKid).flexGrow),
+           7, 'and the other order gives the other answer')
+checkEqInt(resolveLen(shOf('#q{flex-basis:40px;flex:2}', flexKid).flexBasis, 100, -1),
+           0, '`flex: 2` zeroes a basis the shorthand does not name')
+checkEqInt(Math.round(shOf('#q{flex-shrink:7;flex:2}', flexKid).flexShrink),
+           1, 'and resets the shrink to one')
+
+// flex-flow against flex-direction and flex-wrap.
+checkEqInt(shOf('#q{display:flex;flex-direction:column;flex-flow:row wrap}', plainDiv).flexDirection,
+           FLEX_ROW, 'a later `flex-flow` beats an earlier `flex-direction`')
+checkEqInt(shOf('#q{display:flex;flex-flow:row wrap;flex-direction:column}', plainDiv).flexDirection,
+           FLEX_COLUMN, 'and the other order gives the other answer')
+checkEqInt(shOf('#q{display:flex;flex-wrap:wrap;flex-flow:column}', plainDiv).flexWrap,
+           FLEXWRAP_NOWRAP, 'and it resets the wrap it does not name')
+
+// gap against row-gap and column-gap.
+checkEqInt(shOf('#q{display:grid;row-gap:9px;gap:2px}', plainDiv).rowGap,
+           2, 'a later `gap` beats an earlier `row-gap`')
+checkEqInt(shOf('#q{display:grid;gap:2px;row-gap:9px}', plainDiv).rowGap,
+           9, 'and the other order gives the other answer')
+checkEqInt(shOf('#q{display:grid;gap:2px}', plainDiv).columnGap,
+           2, 'and one value sets both axes')
+
+// font-variant against font-variant-caps.
+checkEqInt(fontCapsOf(shOf('#q{font-variant-caps:small-caps;font-variant:normal}', plainDiv)),
+           CAPS_NORMAL, 'a later `font-variant` beats an earlier `font-variant-caps`')
+checkEqInt(fontCapsOf(shOf('#q{font-variant:normal;font-variant-caps:small-caps}', plainDiv)),
+           CAPS_SMALL, 'and the other order gives the other answer')
+checkEqInt(fontCapsOf(shOf('#q{font-variant:small-caps}', plainDiv)),
+           CAPS_SMALL, 'while the shorthand still sets the caps')
+
+// text-box against text-box-trim and text-box-edge.
+checkEqInt(Math.floorDiv(textBoxPacked(shOf('#q{text-box-trim:trim-start;text-box:trim-both cap alphabetic}', plainDiv)), 16),
+           TBTRIM_BOTH, 'a later `text-box` beats an earlier `text-box-trim`')
+checkEqInt(Math.floorDiv(textBoxPacked(shOf('#q{text-box:trim-both cap alphabetic;text-box-trim:trim-start}', plainDiv)), 16),
+           TBTRIM_START, 'and the other order gives the other answer')
+checkEqInt(textBoxPacked(shOf('#q{text-box-edge:cap alphabetic;text-box:trim-both}', plainDiv)) % 16,
+           TBOVER_TEXT * 4 + TBUNDER_TEXT, 'and it resets the edge it does not name')
+// An edge with no trim keyword means `trim-both`, which is the one
+// place the shorthand is not simply two values side by side.
+checkEqInt(Math.floorDiv(textBoxPacked(shOf('#q{text-box:cap alphabetic}', plainDiv)), 16),
+           TBTRIM_BOTH, 'an edge alone in the shorthand still trims both')
+
+// overscroll-behavior against its two axes.
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior-x:none;overscroll-behavior:contain}', scrollBox)),
+           OSB_CONTAIN, 'a later `overscroll-behavior` beats an earlier axis longhand')
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior:contain;overscroll-behavior-x:none}', scrollBox)),
+           OSB_NONE, 'and the other order gives the other answer')
+checkEqInt(overscrollY(shOf('#q{overscroll-behavior:contain}', scrollBox)),
+           OSB_CONTAIN, 'one value sets both axes')
+checkEqInt(overscrollY(shOf('#q{overscroll-behavior:contain none}', scrollBox)),
+           OSB_NONE, 'and two set them separately')
+
+// The logical spellings are the same two properties under other names,
+// so they have to occupy the same keys or whichever the reader asks
+// for last always wins. In a horizontal writing mode the inline axis
+// is the horizontal one, which is what Chromium answers.
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior-inline:none}', scrollBox)),
+           OSB_NONE, '`overscroll-behavior-inline` is the horizontal axis')
+checkEqInt(overscrollY(shOf('#q{overscroll-behavior-inline:none}', scrollBox)),
+           OSB_AUTO, 'and leaves the vertical one alone')
+checkEqInt(overscrollY(shOf('#q{overscroll-behavior-block:none}', scrollBox)),
+           OSB_NONE, '`overscroll-behavior-block` is the vertical axis')
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior-x:contain;overscroll-behavior-inline:none}', scrollBox)),
+           OSB_NONE, 'a later logical spelling beats an earlier physical one')
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior-inline:none;overscroll-behavior-x:contain}', scrollBox)),
+           OSB_CONTAIN, 'and the other order gives the other answer')
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior:contain;overscroll-behavior-inline:none}', scrollBox)),
+           OSB_NONE, 'and the shorthand takes its place in the same order')
+checkEqInt(overscrollX(shOf('#q{overscroll-behavior-inline:none;overscroll-behavior:contain}', scrollBox)),
+           OSB_CONTAIN, 'either way round')
+
 finish('cascade rules')

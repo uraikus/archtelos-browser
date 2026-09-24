@@ -2392,6 +2392,76 @@ of `white-space: nowrap` and `text-wrap: wrap` -- and every
 shorthands gained a row in the property instrument, which reads them as
 moving the two fields that mean them.
 
+### Every shorthand read from the map, audited
+
+`text-decoration`, `white-space` and `text-wrap` were each found the
+same way and each fixed on its own. CLAUDE.md's rule about auditing the
+whole instrument rather than the row in front of you applies to the
+engine as well, so the question was put to all of it: which shorthands
+are read from the declaration map in `computeStyleValues` rather than
+expanded into their longhands in `applyDecl`?
+
+Eight, and every one of them got the cascade wrong. Twenty-seven
+documents to Chromium 141, both orders of each pair:
+
+| | Chromium | this engine |
+|---|---|---|
+| `border-top-left-radius:9px; border-radius:2px` | **2px** | 9px |
+| `outline-color:red; outline:2px solid blue` | **blue** | red |
+| `outline-width:9px; outline:solid blue` | **3px** | 9px |
+| `outline-style:dotted; outline:2px blue` | **none** | dotted |
+| `flex-grow:7; flex:2 3 40px` | **2** | 7 |
+| `flex-basis:40px; flex:2` | **0** | 40px |
+| `flex-shrink:7; flex:2` | **1** | 7 |
+| `flex-flow:row wrap; flex-direction:column` | **column** | row |
+| `flex-wrap:wrap; flex-flow:column` | **nowrap** | wrap |
+| `row-gap:9px; gap:2px` | **2px** | 9px |
+| `font-variant-caps:small-caps; font-variant:normal` | **normal** | small-caps |
+| `text-box-trim:trim-start; text-box:trim-both cap alphabetic` | **trim-both** | trim-start |
+| `text-box-edge:cap alphabetic; text-box:trim-both` | **auto** | cap alphabetic |
+| `overscroll-behavior-x:none; overscroll-behavior:contain` | **contain** | none |
+
+Which direction each got wrong depended only on where its reader
+happened to sit. `flex-flow` is read *after* its longhands and so always
+won; the other seven are read before theirs and so always lost. Two of
+them carried a comment asserting that the fixed order was the cascade's
+doing -- `flex-flow`'s said "a longhand after it still wins because the
+cascade has already ordered them", and `text-box`'s said the shorthand
+is read first "so a longhand beside it wins, which is what the cascade
+already does for every other pair". Neither is true of a map with two
+keys in it: the reader's order decides, and the cascade never sees the
+question.
+
+The same audit turned up `overscroll-behavior-inline` and
+`overscroll-behavior-block`, which are the axis longhands under other
+names and were read before the physical pair rather than renamed onto
+it -- the same fault between two spellings of one property rather than
+between a shorthand and its longhand.
+
+All of it is fixed, all eight expanded in `applyDecl` behind one shared
+per-document flag, and the logical pair renamed in the same place.
+Twenty-two checks in `tests/unit/test_cascade_rules.f`. Seven of the
+eight had **no row at all** in the property instrument, which is why
+none of this had been caught: `border-radius`, `flex`, `flex-flow`,
+`gap`, `outline`, `overscroll-behavior` and `text-box` were ungraded.
+They have rows now.
+
+### `font-variant`'s row grades the half this engine does not have
+
+The row is `font-variant: none`, which is the `none` of
+`font-variant-ligatures`. This engine has only the caps half of that
+shorthand, and `none` computes to the initial value here, so the row
+can never register however complete the caps support is -- while
+`properties-audit` passes it, because it asks *Chromium* whether a row
+can move and Chromium's ligatures do move.
+
+It is left as it is. The row honestly reports that `font-variant` as a
+whole is not implemented, and changing its value to `small-caps` to
+gain a point would be grading the half that works and calling the
+property done. What it exposes is a limit of a one-bit-per-property
+instrument: it cannot say "partly", and the audit cannot see the
+difference because it only ever asks the other engine.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green

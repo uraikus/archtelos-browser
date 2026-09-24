@@ -5,6 +5,62 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Every shorthand the engine reads is expanded, not read beside its longhands
+
+`text-decoration`, `white-space` and `text-wrap` were each found the
+same way and each fixed on its own, which is three times the same
+lesson without once asking how many more there were. Put to the whole
+engine -- which shorthands are read from the declaration map in
+`computeStyleValues` rather than expanded into their longhands in
+`applyDecl`? -- the answer was eight more, and **every one of them got
+the cascade wrong**.
+
+`border-radius`, `outline`, `flex`, `flex-flow`, `gap`, `font-variant`,
+`text-box` and `overscroll-behavior`. Which direction each got wrong
+depended only on where its reader happened to sit: `flex-flow` is read
+after its longhands and so always won, the other seven are read before
+theirs and so always lost. `outline-color: red; outline: 2px solid
+blue` was red where Chromium gives blue; `flex-flow: row wrap;
+flex-direction: column` was row where Chromium gives column.
+
+Two of them carried a comment asserting the fixed order was the
+cascade's doing. `flex-flow`'s said "a longhand after it still wins
+because the cascade has already ordered them" and `text-box`'s said the
+shorthand is read first "so a longhand beside it wins, which is what
+the cascade already does for every other pair". Neither is true of a
+map holding two keys: the reader's order decides and the cascade never
+sees the question. Both comments are gone with the code they described.
+
+The same audit turned up `overscroll-behavior-inline` and
+`overscroll-behavior-block`, the axis longhands under other names, read
+before the physical pair rather than renamed onto it -- the same fault
+between two spellings of one property. They are renamed in `applyDecl`
+now, beside the logical borders and margins.
+
+All eight expansions sit behind one shared per-document flag, because
+the user-agent stylesheet says none of the eight; a page that uses none
+pays one boolean instead of eight name comparisons on each of its
+matched declarations.
+
+**Seven of the eight had no row in the property instrument at all**,
+which is why none of this had been caught by a count that exists to
+catch exactly this. `border-radius`, `flex`, `flex-flow`, `gap`,
+`outline`, `overscroll-behavior` and `text-box` are graded now, each
+moving the fields that mean it, and the count goes from 276 of 410 to
+**283 of 417**. Twenty-two checks in
+`tests/unit/test_cascade_rules.f`, every expectation Chromium 141's,
+each asked in both orders because whichever fixed order a reader picks,
+one of the two is wrong.
+
+`font-variant`'s row is left as it is. Its value is `none`, which is
+the `none` of `font-variant-ligatures`; this engine has only the caps
+half, so the row can never register here however complete that half is,
+while `properties-audit` passes it because it asks Chromium whether a
+row can move and Chromium's ligatures do. Changing the value to
+`small-caps` would grade the half that works and call the property
+done. What it exposes is a limit of one bit per property, recorded in
+todo.md rather than papered over.
+
 ### `white-space` and `text-wrap` are shorthands, and `text-wrap` sets the mode
 
 The sweep method applied to css-2026.md's CSS Text 3 row, which was the

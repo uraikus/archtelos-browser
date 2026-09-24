@@ -241,6 +241,7 @@ void func cascadeReset() {
     resetPageRules()
     anyPageBreak = false
     anyPlaceShorthand = false
+    anyLateShorthand = false
     anySmallCaps = false
     map[int] emptyFontCaps = {}
     fontCapsOfSerial = emptyFontCaps
@@ -4727,6 +4728,261 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         setProp(props, inlineAxis, secondVal)
         return
     }
+    // ---- the eight shorthands read from the map, now expanded --------
+    //
+    // An audit of the whole engine for the shape `text-decoration` had
+    // -- a shorthand read from the declaration map in
+    // computeStyleValues rather than expanded into its longhands here
+    // -- turned up eight more. Every one of them got the cascade wrong
+    // in exactly one direction, and which direction depended on where
+    // the reader happened to sit: `flex-flow` is read after its
+    // longhands and so always won, the other seven are read before
+    // theirs and so always lost. Two of them carried a comment saying
+    // the fixed order was the cascade's doing, which it was not.
+    //
+    // All eight are behind one flag, because the user-agent stylesheet
+    // says none of them.
+    if anyLateShorthand {
+        // The two logical spellings are the same properties under other
+        // names: in the horizontal writing mode this engine assumes,
+        // the inline axis is the horizontal one. Renamed rather than
+        // read separately, so that a logical declaration and its
+        // physical twin occupy one key and the cascade decides between
+        // them -- Chromium answers
+        // `overscroll-behavior-x: contain; overscroll-behavior-inline: none`
+        // with `none` and the reverse with `contain`, and reading one
+        // family after the other can only get one of those right.
+        if name == 'overscroll-behavior-inline' { name = 'overscroll-behavior-x' }
+        else if name == 'overscroll-behavior-block' { name = 'overscroll-behavior-y' }
+        // `border-radius` is the four corners across, optionally a
+        // slash and the four down, each list filled by CSS's 1-to-4
+        // rule. Each corner longhand takes `<x> <y>`, which is what
+        // the corner reader already parses.
+        if name == 'border-radius' {
+            if declIsCssWide(value) {
+                props['border-top-left-radius'] = dup(value)
+                props['border-top-right-radius'] = dup(value)
+                props['border-bottom-right-radius'] = dup(value)
+                props['border-bottom-left-radius'] = dup(value)
+                return
+            }
+            arr[ascii] brt = cssTokens(value)
+            arr[text] across = []
+            arr[text] down = []
+            bool pastSlash = false
+            for int i = 0, i < brt.length, i++ {
+                if brt[i] == '/' { pastSlash = true  continue }
+                if pastSlash { down.push(brt[i].toText()) }
+                else { across.push(brt[i].toText()) }
+            }
+            if across.length == 0 || across.length > 4 || down.length > 4 { return }
+            if down.length == 0 { down = across }
+            arr[text] corners = ['border-top-left-radius', 'border-top-right-radius',
+                                 'border-bottom-right-radius', 'border-bottom-left-radius']
+            for int i = 0, i < 4, i++ {
+                props[corners[i]] = radiusSlotText(across, i) + ' ' + radiusSlotText(down, i)
+            }
+            return
+        }
+        // `outline` is a width, a style and a colour in any order, and
+        // the ones it does not name go back to their initial values --
+        // which is what the deletes are: `outline-width: 9px;
+        // outline: solid blue` is the medium width in Chromium.
+        if name == 'outline' {
+            if declIsCssWide(value) {
+                props['outline-width'] = dup(value)
+                props['outline-style'] = dup(value)
+                props['outline-color'] = dup(value)
+                return
+            }
+            if props['outline-width'] != null { delete props['outline-width'] }
+            if props['outline-style'] != null { delete props['outline-style'] }
+            if props['outline-color'] != null { delete props['outline-color'] }
+            arr[ascii] olt = cssTokens(value)
+            for int i = 0, i < olt.length, i++ {
+                ascii olk = asciiLower(olt[i])
+                if isLineStyleKeyword(olk) { setProp(props, 'outline-style', olk)  continue }
+                if olk == 'thin' || olk == 'medium' || olk == 'thick' {
+                    setProp(props, 'outline-width', olk)
+                    continue
+                }
+                Len oll = parseLength(olk, 16)
+                if oll.kind == LEN_PX { setProp(props, 'outline-width', olt[i])  continue }
+                setProp(props, 'outline-color', olt[i])
+            }
+            return
+        }
+        // `flex` is `<grow> [<shrink>] [<basis>]` plus the three
+        // keywords, and a bare number zeroes the basis -- which is what
+        // makes `flex: 1` share the whole line rather than the slack.
+        if name == 'flex' {
+            if declIsCssWide(value) {
+                props['flex-grow'] = dup(value)
+                props['flex-shrink'] = dup(value)
+                props['flex-basis'] = dup(value)
+                return
+            }
+            ascii fxk = asciiLower(asciiTrim(value))
+            if fxk == 'none' {
+                props['flex-grow'] = '0'
+                props['flex-shrink'] = '0'
+                props['flex-basis'] = 'auto'
+                return
+            }
+            if fxk == 'auto' {
+                props['flex-grow'] = '1'
+                props['flex-shrink'] = '1'
+                props['flex-basis'] = 'auto'
+                return
+            }
+            if fxk == 'initial' {
+                props['flex-grow'] = '0'
+                props['flex-shrink'] = '1'
+                props['flex-basis'] = 'auto'
+                return
+            }
+            arr[ascii] fxt = cssTokens(value)
+            if fxt.length == 0 || fxt.length > 3 { return }
+            text fxGrow = ''
+            text fxShrink = ''
+            text fxBasis = ''
+            for int i = 0, i < fxt.length, i++ {
+                ascii fxp = asciiLower(fxt[i])
+                parseNumberAt(fxp, 0)
+                if numOk && numEnd == fxp.length {
+                    if fxGrow.length == 0 { fxGrow = fxp.toText()  continue }
+                    if fxShrink.length == 0 { fxShrink = fxp.toText()  continue }
+                    return
+                }
+                Len fxl = parseLength(fxp, 16)
+                if fxl.kind == LEN_INVALID { return }
+                if fxBasis.length > 0 { return }
+                fxBasis = fxp.toText()
+            }
+            props['flex-grow'] = fxGrow.length > 0 ? fxGrow : '0'
+            props['flex-shrink'] = fxShrink.length > 0 ? fxShrink : '1'
+            props['flex-basis'] = fxBasis.length > 0 ? fxBasis : '0px'
+            return
+        }
+        // `flex-flow` is a direction and a wrap in either order.
+        if name == 'flex-flow' {
+            if declIsCssWide(value) {
+                props['flex-direction'] = dup(value)
+                props['flex-wrap'] = dup(value)
+                return
+            }
+            arr[ascii] fft = cssTokens(value)
+            if fft.length == 0 || fft.length > 2 { return }
+            text ffDir = ''
+            text ffWrap = ''
+            for int i = 0, i < fft.length, i++ {
+                ascii ffk = asciiLower(fft[i])
+                if ffk == 'row' || ffk == 'row-reverse' || ffk == 'column'
+                    || ffk == 'column-reverse' {
+                    if ffDir.length > 0 { return }
+                    ffDir = ffk.toText()
+                    continue
+                }
+                if ffk == 'wrap' || ffk == 'nowrap' || ffk == 'wrap-reverse' {
+                    if ffWrap.length > 0 { return }
+                    ffWrap = ffk.toText()
+                    continue
+                }
+                return
+            }
+            props['flex-direction'] = ffDir.length > 0 ? ffDir : 'row'
+            props['flex-wrap'] = ffWrap.length > 0 ? ffWrap : 'nowrap'
+            return
+        }
+        // `gap` is the row gap then the column gap, and one value sets
+        // both.
+        if name == 'gap' {
+            if declIsCssWide(value) {
+                props['row-gap'] = dup(value)
+                props['column-gap'] = dup(value)
+                return
+            }
+            arr[ascii] gpt = cssTokens(value)
+            if gpt.length == 0 || gpt.length > 2 { return }
+            ascii gpRow = dup(gpt[0])
+            ascii gpCol = dup(gpt.length > 1 ? gpt[1] : gpt[0])
+            setProp(props, 'row-gap', gpRow)
+            setProp(props, 'column-gap', gpCol)
+            return
+        }
+        // `font-variant`'s one-keyword form is the only part of that
+        // shorthand this engine has, so it reaches `font-variant-caps`
+        // and every other value resets the caps -- which is what
+        // Chromium does for `font-variant: common-ligatures`, and
+        // differs from it only for a value that is invalid outright.
+        if name == 'font-variant' {
+            if declIsCssWide(value) {
+                props['font-variant-caps'] = dup(value)
+                return
+            }
+            ascii fvk = asciiLower(asciiTrim(value))
+            if fvk == 'small-caps' || fvk == 'all-small-caps' {
+                setProp(props, 'font-variant-caps', fvk)
+            } else {
+                props['font-variant-caps'] = 'normal'
+            }
+            return
+        }
+        // `text-box` is a trim and an edge (CSS Inline 3 sec. 4). An
+        // edge written with no trim keyword means `trim-both`, which
+        // is the one place the shorthand is not two values side by
+        // side, and `normal` is both halves at their initial value.
+        if name == 'text-box' {
+            if declIsCssWide(value) {
+                props['text-box-trim'] = dup(value)
+                props['text-box-edge'] = dup(value)
+                return
+            }
+            arr[ascii] tbt = cssTokens(value)
+            if tbt.length == 0 || tbt.length > 3 { return }
+            text tbTrimV = ''
+            text tbEdgeV = ''
+            for int i = 0, i < tbt.length, i++ {
+                ascii tbk = asciiLower(tbt[i])
+                if tbk == 'normal' {
+                    if tbt.length != 1 { return }
+                    if props['text-box-trim'] != null { delete props['text-box-trim'] }
+                    if props['text-box-edge'] != null { delete props['text-box-edge'] }
+                    props['text-box-trim'] = 'none'
+                    return
+                }
+                if textBoxTrimKeyword(tbk) >= 0 {
+                    if tbTrimV.length > 0 { return }
+                    tbTrimV = tbk.toText()
+                    continue
+                }
+                tbEdgeV = tbEdgeV.length > 0 ? tbEdgeV + ' ' + tbk.toText() : tbk.toText()
+            }
+            if props['text-box-trim'] != null { delete props['text-box-trim'] }
+            if props['text-box-edge'] != null { delete props['text-box-edge'] }
+            props['text-box-trim'] = tbTrimV.length > 0 ? tbTrimV : 'trim-both'
+            if tbEdgeV.length > 0 { props['text-box-edge'] = tbEdgeV }
+            return
+        }
+        // `overscroll-behavior` is the inline axis then the block one,
+        // and one value sets both.
+        if name == 'overscroll-behavior' {
+            if declIsCssWide(value) {
+                props['overscroll-behavior-x'] = dup(value)
+                props['overscroll-behavior-y'] = dup(value)
+                return
+            }
+            arr[ascii] obt = cssTokens(value)
+            if obt.length == 0 || obt.length > 2 { return }
+            ascii obX = dup(obt[0])
+            ascii obY = dup(obt.length > 1 ? obt[1] : obt[0])
+            if overscrollKeyword(asciiLower(obX)) < 0 { return }
+            if overscrollKeyword(asciiLower(obY)) < 0 { return }
+            setProp(props, 'overscroll-behavior-x', obX)
+            setProp(props, 'overscroll-behavior-y', obY)
+            return
+        }
+    }
     // CSS2's three page-break properties are the three fragmentation
     // properties under their older names (Fragmentation 3 §4.4), so a
     // declaration under an old name is applied under the new one rather
@@ -5364,6 +5620,19 @@ bool func cornerRadiusProp(props:map[text], name:text, fontSize:int) {
 // The shorthand's slots: one value is every corner, two are the two
 // diagonals, three leave the fourth to mirror the second, four are
 // clockwise from the top left.
+// CSS's 1-to-4 rule over the tokens of a `border-radius`, as text, so
+// that applyDecl can write the corner longhands without parsing a
+// length it would only serialize back. The same rule radiusSlot
+// applies to parsed lengths, one step earlier.
+text func radiusSlotText(list:arr[text], at:int) {
+    if list.length == 0 { return '0' }
+    if at == 0 { return list[0] }
+    if at == 1 { return list.length > 1 ? list[1] : list[0] }
+    if at == 2 { return list.length > 2 ? list[2] : list[0] }
+    if list.length > 3 { return list[3] }
+    return list.length > 1 ? list[1] : list[0]
+}
+
 Len func radiusSlot(list:arr[Len], at:int) {
     if list.length == 0 { return lenPx(0.0) }
     if at == 0 { return list[0] }
@@ -6292,8 +6561,9 @@ void func applyPrintColorAdjust(s:Style, parent:Style, isRoot:bool, props:map[te
 // value, which is the only part of that shorthand this engine has.
 void func applyFontCaps(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? CAPS_NORMAL : fontCapsOf(parent)
+    // `font-variant` reaches here as `font-variant-caps`, which
+    // applyDecl expanded it into.
     ascii decl = styleProp(props, 'font-variant-caps')
-    if decl == null { decl = styleProp(props, 'font-variant') }
     if decl != null {
         ascii k = asciiLower(asciiTrim(decl))
         if k == 'small-caps' { v = CAPS_SMALL }
@@ -7298,30 +7568,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.radiusBottomRightY = zeroRadius
     s.radiusBottomLeftX = zeroRadius
     s.radiusBottomLeftY = zeroRadius
-    ascii br = styleProp(props, 'border-radius')
-    if br != null {
-        arr[Len] across = []
-        arr[Len] down = []
-        bool afterSlash = false
-        arr[ascii] t = cssTokens(br)
-        for int i = 0, i < t.length, i++ {
-            if t[i] == '/' { afterSlash = true  continue }
-            Len l = parseRadiusLen(t[i], s.fontSize)
-            if l.kind != LEN_PX && l.kind != LEN_PERCENT { continue }
-            if afterSlash { down.push(l) } else { across.push(l) }
-        }
-        if across.length > 0 {
-            if down.length == 0 { down = across }
-            s.radiusTopLeftX = radiusSlot(across, 0)
-            s.radiusTopRightX = radiusSlot(across, 1)
-            s.radiusBottomRightX = radiusSlot(across, 2)
-            s.radiusBottomLeftX = radiusSlot(across, 3)
-            s.radiusTopLeftY = radiusSlot(down, 0)
-            s.radiusTopRightY = radiusSlot(down, 1)
-            s.radiusBottomRightY = radiusSlot(down, 2)
-            s.radiusBottomLeftY = radiusSlot(down, 3)
-        }
-    }
+    // `border-radius` reaches here as its four corner longhands,
+    // which applyDecl expanded it into.
     if cornerRadiusProp(props, 'border-top-left-radius', s.fontSize) {
         s.radiusTopLeftX = cornerRadiusX
         s.radiusTopLeftY = cornerRadiusY
@@ -7599,23 +7847,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if t == 'column' { s.flexDirection = FLEX_COLUMN }
         else if t == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
     }
-    // flex-flow is flex-direction and flex-wrap in either order, and a
-    // longhand after it still wins because the cascade has already
-    // ordered them -- this only reads whichever landed last.
-    ascii ff = styleProp(props, 'flex-flow')
-    if ff != null {
-        ascii ffLow = asciiLower(ff)
-        arr[ascii] parts = asciiSplitSpace(ffLow)
-        for int i = 0, i < parts.length, i++ {
-            if parts[i] == 'row-reverse' { s.flexDirection = FLEX_ROW_REVERSE }
-            else if parts[i] == 'column' { s.flexDirection = FLEX_COLUMN }
-            else if parts[i] == 'column-reverse' { s.flexDirection = FLEX_COLUMN_REVERSE }
-            else if parts[i] == 'row' { s.flexDirection = FLEX_ROW }
-            else if parts[i] == 'wrap' { s.flexWrap = FLEXWRAP_WRAP }
-            else if parts[i] == 'wrap-reverse' { s.flexWrap = FLEXWRAP_WRAP_REVERSE }
-            else if parts[i] == 'nowrap' { s.flexWrap = FLEXWRAP_NOWRAP }
-        }
-    }
+    // `flex-flow` reaches here as `flex-direction` and `flex-wrap`.
     ascii fwrap = styleProp(props, 'flex-wrap')
     if fwrap != null {
         ascii t = asciiLower(asciiTrim(fwrap))
@@ -7790,38 +8022,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.flexGrow = 0.0
     s.flexShrink = 1.0
     s.flexBasis = lenAuto()
-    ascii fx = styleProp(props, 'flex')
-    if fx != null {
-        ascii t = asciiLower(asciiTrim(fx))
-        if t == 'none' {
-            s.flexGrow = 0.0
-            s.flexShrink = 0.0
-        } else if t == 'auto' {
-            s.flexGrow = 1.0
-            s.flexShrink = 1.0
-        } else if t == 'initial' {
-            // `flex: initial` is `0 1 auto`, which is what the three
-            // fields were just set to.
-        } else {
-            // `flex: <grow> [<shrink>] [<basis>]`; a bare number is the
-            // grow factor and makes the basis zero, which is what makes
-            // `flex: 1` share the whole line rather than the slack.
-            arr[ascii] parts = cssTokens(fx)
-            int numsSeen = 0
-            s.flexBasis = lenPx(0.0)
-            for int i = 0, i < parts.length, i++ {
-                ascii pt = asciiLower(parts[i])
-                parseNumberAt(pt, 0)
-                bool bare = numOk && numEnd == pt.length
-                if bare && numsSeen == 0 { s.flexGrow = numValue  numsSeen = 1 }
-                else if bare && numsSeen == 1 { s.flexShrink = numValue  numsSeen = 2 }
-                else {
-                    Len l = parseLength(pt, s.fontSize)
-                    if l.kind != LEN_INVALID { s.flexBasis = l }
-                }
-            }
-        }
-    }
+    // `flex` reaches here as its three longhands.
     ascii fg = styleProp(props, 'flex-grow')
     if fg != null { parseNumberAt(asciiTrim(fg), 0)  if numOk { s.flexGrow = numValue } }
     ascii fs2 = styleProp(props, 'flex-shrink')
@@ -7833,18 +8034,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     }
     s.rowGap = 0
     s.columnGap = 0
-    ascii gp = styleProp(props, 'gap')
-    if gp != null {
-        arr[ascii] parts = cssTokens(gp)
-        if parts.length > 0 {
-            Len a = parseLength(parts[0], s.fontSize)
-            if a.kind == LEN_PX { s.rowGap = roundPx(a.v)  s.columnGap = s.rowGap }
-        }
-        if parts.length > 1 {
-            Len b2 = parseLength(parts[1], s.fontSize)
-            if b2.kind == LEN_PX { s.columnGap = roundPx(b2.v) }
-        }
-    }
+    // `gap` reaches here as `row-gap` and `column-gap`.
     s.rowGap = pxProp(props, 'row-gap', s.fontSize, s.rowGap)
     s.columnGap = pxProp(props, 'column-gap', s.fontSize, s.columnGap)
     s.order = 0
@@ -7875,23 +8065,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     ascii ow = styleProp(props, 'outline-width')
     ascii ost = styleProp(props, 'outline-style')
     ascii oc = styleProp(props, 'outline-color')
-    ascii osh = styleProp(props, 'outline')
-    if osh != null {
-        // `outline` is width, style and colour in any order.
-        arr[ascii] parts = cssTokens(osh)
-        for int i = 0, i < parts.length, i++ {
-            ascii t = asciiLower(parts[i])
-            if isLineStyleKeyword(t) { s.outlineStyle = lineStyleKeyword(t) }
-            else {
-                int c = parseCssColor(t, s.color)
-                if c != COLOR_UNSET { s.outlineColor = c }
-                else {
-                    Len l = parseLength(t, s.fontSize)
-                    if l.kind == LEN_PX { declaredWidth = maxInt(roundPx(l.v), 0) }
-                }
-            }
-        }
-    }
+    // `outline` reaches here as its three longhands.
     if ost != null { s.outlineStyle = lineStyleKeyword(asciiLower(asciiTrim(ost))) }
     if ow != null {
         ascii t = asciiLower(asciiTrim(ow))
@@ -8208,22 +8382,6 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     int tbTrim = TBTRIM_NONE
     int tbEdge = TBOVER_TEXT * 4 + TBUNDER_TEXT
     bool tbSaid = false
-    ascii tbShort = styleProp(props, 'text-box')
-    if tbShort != null {
-        ascii tbsLow = asciiLower(asciiTrim(tbShort))
-        arr[ascii] w = asciiSplitSpace(tbsLow)
-        if w.length > 0 {
-            int t = textBoxTrimKeyword(w[0])
-            if t >= 0 {
-                tbTrim = t
-                tbSaid = true
-                if w.length > 1 {
-                    int e = textBoxEdgePair(w, 1)
-                    if e >= 0 { tbEdge = e }
-                }
-            }
-        }
-    }
     ascii tbTrimV = styleProp(props, 'text-box-trim')
     if tbTrimV != null {
         int t = textBoxTrimKeyword(asciiLower(asciiTrim(tbTrimV)))
@@ -8257,30 +8415,9 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     int osbX = OSB_AUTO
     int osbY = OSB_AUTO
     bool osbSaid = false
-    ascii osb = styleProp(props, 'overscroll-behavior')
-    if osb != null {
-        ascii osbLow = asciiLower(asciiTrim(osb))
-        arr[ascii] osbW = asciiSplitSpace(osbLow)
-        if osbW.length > 0 {
-            int first = overscrollKeyword(osbW[0])
-            if first >= 0 {
-                osbX = first
-                osbY = osbW.length > 1 ? overscrollKeyword(osbW[1]) : first
-                if osbY < 0 { osbY = first }
-                osbSaid = true
-            }
-        }
-    }
-    ascii osbI = styleProp(props, 'overscroll-behavior-inline')
-    if osbI != null {
-        int v = overscrollKeyword(asciiLower(asciiTrim(osbI)))
-        if v >= 0 { osbX = v  osbSaid = true }
-    }
-    ascii osbB = styleProp(props, 'overscroll-behavior-block')
-    if osbB != null {
-        int v = overscrollKeyword(asciiLower(asciiTrim(osbB)))
-        if v >= 0 { osbY = v  osbSaid = true }
-    }
+    // The shorthand and the two logical spellings reach here as
+    // `overscroll-behavior-x` and `-y`, which applyDecl turned them
+    // into.
     ascii osbXv = styleProp(props, 'overscroll-behavior-x')
     if osbXv != null {
         int v = overscrollKeyword(asciiLower(asciiTrim(osbXv)))

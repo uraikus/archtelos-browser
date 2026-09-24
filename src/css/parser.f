@@ -751,6 +751,17 @@ Decl func parseOneDeclaration(piece:ascii) {
     // clears it with everything else the document put here.
     if asciiStartsWith(name, 'page-break', 0) { anyPageBreak = true }
     if asciiStartsWith(name, 'place-', 0) { anyPlaceShorthand = true }
+    // Prefixes rather than the eight exact names: a longhand that
+    // matches one only sets a flag the page was going to pay for
+    // anyway, and this runs once per parsed declaration rather than
+    // once per matched one.
+    if asciiStartsWith(name, 'flex', 0) || asciiStartsWith(name, 'outline', 0)
+        || asciiStartsWith(name, 'gap', 0) || asciiStartsWith(name, 'text-box', 0)
+        || asciiStartsWith(name, 'overscroll', 0)
+        || asciiStartsWith(name, 'font-variant', 0)
+        || asciiStartsWith(name, 'border-radius', 0) {
+        anyLateShorthand = true
+    }
     d.value = value
     d.important = important
     d.serial = declSerialNext
@@ -1548,6 +1559,8 @@ arr[text] supportedProperties = [
     'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
     'place-items', 'place-content', 'place-self',
     'white-space', 'text-wrap',
+    'border-radius', 'outline', 'flex', 'flex-flow', 'gap', 'text-box',
+    'overscroll-behavior',
     'border-image', 'border-image-source', 'border-image-slice',
     'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',
