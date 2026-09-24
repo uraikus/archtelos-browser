@@ -230,4 +230,52 @@ check(getPixelColor(50, 50) == clipRed, 'a box with no clip paints whole')
 check(getPixelColor(99, 99) == clipRed, 'to its last pixel')
 check(getPixelColor(101, 50) != clipRed, 'and no further')
 
+// ---- polygon()'s fill rule (CSS Masking 1 §4.2) -----------------------
+//
+// A five-pointed star, its points joined in {5/2} order so the pentagon
+// in the middle is enclosed twice and the five arms once. That is the
+// only figure where the two fill rules disagree, and they disagree
+// about exactly one region: `nonzero` -- CSS's initial value -- keeps
+// the middle, `evenodd` cuts it out. An arm is enclosed once and is
+// kept by both, which is the control: a `polygon()` that had failed to
+// parse would lose that pixel too, and every check below would pass on
+// a box that painted nothing at all.
+//
+// Chromium 141 on this geometry, read with tests/chromium.py pixels:
+// the centre is red under `polygon(...)` and under
+// `polygon(nonzero, ...)`, white under `polygon(evenodd, ...)`, and the
+// arm is red under all three.
+text STAR = '80px 10px, 121.1px 136.6px, 13.4px 58.4px, 146.6px 58.4px, 38.9px 136.6px'
+
+bool func starFilled(rule:text, x:int, y:int) {
+    Page p = pageFromHtml(clipHead
+        + `<div style="width:160px;height:160px;background:red;clip-path:polygon(${rule}${STAR})"></div></body>`,
+        'tests/fixtures/page.html', 200)
+    clearCanvas()
+    paintPage(p, 0, 0, 200)
+    return getPixelColor(x, y) == clipRed
+}
+
+// The instrument first: the two rules have to disagree somewhere, or
+// every check below passes whichever one the engine draws.
+check(starFilled('', 80, 80) != starFilled('evenodd, ', 80, 80),
+    'the two fill rules disagree about the middle of a star')
+// And the star has to be there at all.
+check(starFilled('', 80, 25), 'an arm of the star is painted')
+check(!starFilled('', 5, 5), 'and the box outside it is not')
+
+// The default is nonzero, so the middle is kept.
+check(starFilled('', 80, 80), 'polygon() keeps the middle of a star by default')
+check(starFilled('nonzero, ', 80, 80), 'and nonzero says the same thing')
+// Two ways of asking for the same region must land on the same pixel,
+// rather than each matching a colour written down here.
+check(starFilled('', 80, 80) == starFilled('nonzero, ', 80, 80),
+    'the default and nonzero agree in the middle')
+check(starFilled('', 80, 25) == starFilled('nonzero, ', 80, 25),
+    'and on an arm')
+
+// evenodd cuts the middle out and leaves the arms.
+check(!starFilled('evenodd, ', 80, 80), 'evenodd cuts the middle of a star out')
+check(starFilled('evenodd, ', 80, 25), 'and keeps an arm')
+
 finish('clip')

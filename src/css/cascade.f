@@ -3441,14 +3441,24 @@ Len func clipPositionLen(t:ascii, fontSize:int, vertical:bool) {
 }
 
 // polygon( <fill-rule>? , [<length-percentage> <length-percentage>]# ).
-// The fill rule is read and dropped: `nonzero` and `evenodd` describe
-// the same region unless the polygon crosses itself.
+// The fill rule is kept. It says nothing about a polygon that does not
+// cross itself, and everything about one that does: `nonzero`, the
+// initial value, keeps the middle of a star where `evenodd` cuts it
+// out (todo.md, measured against Chromium).
 void func readPolygonShape(sh:ClipShape, args:ascii, fontSize:int) {
     arr[ascii] pairs = splitTopLevelCommas(args)
     arr[Len] xs = []
     arr[Len] ys = []
+    bool evenOdd = false
     for int i = 0, i < pairs.length, i++ {
         arr[ascii] two = cssTokens(pairs[i])
+        // The rule, when it is there, is the whole of the first
+        // argument -- a single token where a vertex is a pair.
+        if i == 0 && two.length == 1 {
+            ascii rule = asciiLower(asciiTrim(two[0]))
+            if rule == 'evenodd' { evenOdd = true }
+            continue
+        }
         if two.length < 2 { continue }
         Len x = parseLength(two[0], fontSize)
         Len y = parseLength(two[1], fontSize)
@@ -3460,6 +3470,7 @@ void func readPolygonShape(sh:ClipShape, args:ascii, fontSize:int) {
     sh.kind = CLIPSHAPE_POLYGON
     sh.pointsX = xs
     sh.pointsY = ys
+    sh.fillEvenOdd = evenOdd
 }
 
 // The CSS2 `clip`, which said the same thing about an absolutely

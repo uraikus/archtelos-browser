@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `polygon()`'s fill rule
+
+CSS Masking 1 §4.2. `readPolygonShape`'s own comment said the rule was
+"read and dropped: `nonzero` and `evenodd` describe the same region
+unless the polygon crosses itself". The second half is true; the first
+half was a bug, because a polygon that crosses itself is exactly what a
+star is, and `shapeSpanAt` filled between sorted crossing pairs -- which
+is even-odd, where CSS's initial value is `nonzero`. So every
+self-intersecting `polygon()` was drawn with the wrong rule, and the two
+keywords drew the same thing.
+
+A five-pointed star of outer radius 80, its points joined in {5/2} order
+so the middle pentagon is enclosed twice. Chromium 141 fills that middle
+under `polygon(...)` and `polygon(nonzero, ...)` and leaves it empty
+under `polygon(evenodd, ...)`; this engine left it empty under all
+three. A point out on an arm is enclosed once and is filled by both
+rules, which is the control: a `polygon()` that had failed to parse
+would lose that pixel too, and every check would otherwise pass on a box
+that painted nothing.
+
+The crossing list now carries the direction each edge was travelling in.
+Even-odd still fills between the pairs; `nonzero` fills wherever the
+running sum of the directions crossed so far is not zero, joining
+neighbouring inside spans so a star is one span a row rather than three.
+Both rules push their spans through one `shapePushSpan`, so a pixel on
+the boundary is rounded the same way whichever rule asked -- which is
+what makes "the two rules agree on an arm" a real check rather than two
+roundings that happen to match.
+
+Nine checks in `tests/render/clip.f`. Three of them are the instrument
+rather than the feature: the two rules must disagree somewhere, the star
+must be painted at all, and the box outside it must not be. Three assert
+the default and `nonzero` land on the same pixel rather than each
+matching a colour written down here. Three failed before the fix and
+none after.
+
+css-2026.md's Masking row did not mention the fill rule at all, which is
+why nothing noticed: it listed `polygon()` among the shapes that work.
+
 ### `position: sticky`
 
 CSS Positioned Layout 3 §3.5. The cascade parsed the keyword and threw

@@ -714,6 +714,10 @@ struct ClipShape {
     // Festina has no tuples.
     pointsX:arr[Len]
     pointsY:arr[Len]
+    // polygon()'s <fill-rule>. False is `nonzero`, which is the initial
+    // value; it only means anything for a polygon that crosses itself,
+    // which is what a star is.
+    fillEvenOdd:bool
 }
 
 // box-sizing

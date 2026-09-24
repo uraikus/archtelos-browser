@@ -28,6 +28,7 @@ struct ShapeGeom {
     radiusY:float
     pointsX:arr[float]
     pointsY:arr[float]
+    fillEvenOdd:bool
     // shape-margin, which grows the shape on every side. For a
     // rectangle, a circle and an ellipse it is folded into the geometry
     // above; a polygon carries it here, because the true outset of a
@@ -104,6 +105,7 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
         }
         g.pointsX = xs
         g.pointsY = ys
+        g.fillEvenOdd = sh.fillEvenOdd
         g.margin = margin
         float lox = xs[0]
         float hix = xs[0]
@@ -156,10 +158,15 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
     }
     if g.kind != CLIPSHAPE_POLYGON { return }
     float row = cy
-    // Where the row crosses each edge, sorted, and filled between the
-    // pairs. For a polygon that does not cross itself this is what both
-    // fill rules say.
+    // Where the row crosses each edge, sorted, with the direction the
+    // edge was travelling in beside it. The crossings alone answer
+    // `evenodd` -- fill between the pairs -- and the directions answer
+    // `nonzero`, which is the initial value: fill wherever the running
+    // sum of the directions crossed so far is not zero. The two agree
+    // on every polygon that does not cross itself, and a star is the
+    // figure that separates them (todo.md).
     arr[float] hits = []
+    arr[int] dirs = []
     int n = g.pointsX.length
     for int i = 0, i < n, i++ {
         int j = i + 1 < n ? i + 1 : 0
@@ -171,25 +178,47 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
         if row < lo || row >= hi { continue }
         float t = (row - ay) / (by - ay)
         hits.push(g.pointsX[i] + t * (g.pointsX[j] - g.pointsX[i]))
+        dirs.push(by > ay ? 1 : -1)
     }
     if hits.length < 2 { return }
     for int i = 1, i < hits.length, i++ {
         float v = hits[i]
+        int d = dirs[i]
         int k = i - 1
         while k >= 0 && hits[k] > v {
             hits[k + 1] = hits[k]
+            dirs[k + 1] = dirs[k]
             k--
         }
         hits[k + 1] = v
+        dirs[k + 1] = d
     }
-    for int i = 0, i + 1 < hits.length, i = i + 2 {
-        int lo = Math.ceil(hits[i] - 0.5)
-        int hi = Math.floor(hits[i + 1] - 0.5) + 1
-        if hi > lo {
-            shapeSpanStart.push(lo)
-            shapeSpanEnd.push(hi)
+    if g.fillEvenOdd {
+        for int i = 0, i + 1 < hits.length, i = i + 2 {
+            shapePushSpan(hits[i], hits[i + 1])
+        }
+        return
+    }
+    // Nonzero. The span from one crossing to the next is inside when
+    // the winding number there is not zero, and neighbouring inside
+    // spans are joined rather than pushed separately, so a star comes
+    // out as one span a row rather than three.
+    int wind = 0
+    float spanFrom = 0.0
+    bool open = false
+    for int i = 0, i + 1 < hits.length, i++ {
+        wind = wind + dirs[i]
+        if wind != 0 {
+            if !open {
+                spanFrom = hits[i]
+                open = true
+            }
+        } else if open {
+            shapePushSpan(spanFrom, hits[i])
+            open = false
         }
     }
+    if open { shapePushSpan(spanFrom, hits[hits.length - 1]) }
 }
 
 // ---- the exclusion edge of a float ----------------------------------
@@ -199,6 +228,18 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
 // than a run of pixel centres: a line box from y to y+h is excluded by
 // the shape's extreme anywhere in [y, y+h], endpoints included, which
 // is what Chromium's own line starts show.
+
+// One span of a row, rounded to the pixel centres it covers. Both fill
+// rules push through here, so a pixel on the boundary is decided the
+// same way whichever rule asked.
+void func shapePushSpan(fromX:float, toX:float) {
+    int lo = Math.ceil(fromX - 0.5)
+    int hi = Math.floor(toX - 0.5) + 1
+    if hi > lo {
+        shapeSpanStart.push(lo)
+        shapeSpanEnd.push(hi)
+    }
+}
 
 // The furthest left and right the polygon reaches at one row.
 bool polyRowHit = false

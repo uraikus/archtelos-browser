@@ -482,8 +482,11 @@ box itself as well as its contents, which is what separates it from
 `overflow`. The same offscreen image does the work, but a shape is not a
 rectangle, so it is blitted back one scanline at a time with the span
 the shape covers at that row; a pixel belongs to the shape when its
-centre does. CSS2's `clip` reaches the same rectangle from the other
-side, on an absolutely positioned box.
+centre does. `polygon()` takes a fill rule, which says nothing about a
+polygon that does not cross itself and everything about one that does:
+`nonzero`, the initial value, keeps the middle of a five-pointed star,
+where `evenodd` cuts it out. CSS2's `clip` reaches the same rectangle
+from the other side, on an absolutely positioned box.
 
 **`shape-outside`** does the opposite: instead of cutting a box to a
 shape it lets text follow one. A float's exclusion edge follows the
