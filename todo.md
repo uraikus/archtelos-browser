@@ -3078,6 +3078,57 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `polygon()`'s fill rule, measured
+
+CSS Masking 1 §4.2. `clip-path: polygon()` takes an optional
+`<fill-rule>` before its points, and the engine's own comment says what
+it does with it:
+
+    // The fill rule is read and dropped: `nonzero` and `evenodd`
+    // describe the same region unless the polygon crosses itself.
+
+The second sentence is true and the first is a bug, because a polygon
+that crosses itself is exactly what a star is, and `shapeSpanAt` fills
+between **sorted crossing pairs** -- which is even-odd. CSS's initial
+value is `nonzero`. So this engine draws every self-intersecting
+`polygon()` with the wrong rule, and draws the two keywords the same.
+
+A five-pointed star of outer radius 80 in a 200px box, its five points
+joined in {5/2} order so the middle pentagon is enclosed twice. The
+centre of the star is the pixel the two rules disagree about; a point
+out on an arm is enclosed once and is the control, because a shape that
+had simply failed to parse would lose that one too.
+
+| | centre (100, 100) | arm (100, 40) |
+|---|---|---|
+| Chromium, `polygon(...)` | **filled** | filled |
+| Chromium, `polygon(nonzero, ...)` | **filled** | filled |
+| Chromium, `polygon(evenodd, ...)` | **empty** | filled |
+| this engine, all three | **empty** | filled |
+
+Chromium read with `tests/chromium.py pixels`, this engine with
+`getPixelColor` on the same geometry.
+
+Two things are wrong and one test cannot tell them apart, so the fix
+needs both asserted: the default must become `nonzero`, and the keyword
+must be kept rather than dropped so that `evenodd` can still ask for
+what the engine does today. The second is what makes the first
+falsifiable -- an engine that simply inverted the rule would pass a
+check on the default alone.
+
+The work is `shapeSpanAt`'s polygon branch. Even-odd is "fill between
+sorted pairs"; nonzero is the same crossing list carrying the sign of
+each edge's direction, filled where the running sum is not zero. The
+crossings are already computed; what is missing is the sign beside each
+one and a `fillRule` field on `ClipShape` for `readPolygonShape` to
+stop throwing away.
+
+css-2026.md's Masking row does not mention the fill rule at all, which
+is why nothing noticed: the row lists `polygon()` among the shapes that
+work.
+
+The measurement alone; the tests and the implementation follow.
+
 ### `position: sticky`, measured
 
 CSS Positioned Layout 3 §3.5. The cascade parses the keyword and then
