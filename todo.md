@@ -3078,6 +3078,51 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### Which SVG shapes a `url()` motion path resolves, measured
+
+`offset-path: url()` takes the `d` of a `<path>` (above). Chromium
+resolves five other SVG geometry elements as well, and three of them are
+shapes this engine's motion code already travels. A 10px box at
+`offset-distance: 50%`, absolutely positioned at the origin:
+
+| `offset-path` | painted at | the CSS spelling beside it | painted at |
+|---|---|---|---|
+| `url()` → `<circle cx=50 cy=50 r=40>` | (5, 45) | `circle(40px at 50px 50px)` | **(5, 45)** |
+| `url()` → `<ellipse cx=50 cy=50 rx=40 ry=20>` | (5, 45) | `ellipse(40px 20px at 50px 50px)` | **(5, 45)** |
+| `url()` → `<polygon points="0,0 100,0 100,50">` | (95, 26) | `polygon(0px 0px, 100px 0px, 100px 50px)` | **(95, 26)** |
+| `url()` → `<rect x=0 y=0 width=100 height=50>` | (95, 45) | -- | -- |
+| `url()` → `<line x1=0 y1=0 x2=100 y2=0>` | (45, -5) | -- | -- |
+| `url()` → `<polyline points="0,0 100,0">` | (45, -5) | -- | -- |
+
+The first three agree exactly with the CSS function of the same
+geometry, which is the test to write: `url()` naming a `<circle>` must
+land where `circle()` lands, and neither number need be written down.
+The engine already builds a `ClipShape` for all three and travels it as
+`MPATH_SHAPE`, so this is the same shape of work as the `<path>` case --
+read the attributes, build the shape the cascade already knows.
+
+Three cases are **not** that, and are recorded rather than promised:
+
+- `<rect>` is a closed rectangle traversed round its perimeter: 50% of
+  a 100x50 rect is 150 along a perimeter of 300, which is the far
+  bottom corner, and (95, 45) is exactly that. **This engine cannot
+  reuse `inset()` for it**, because css-2026.md records that `inset()`
+  is not a path here -- Chromium puts a start point on one and then
+  never moves along it. So Chromium travels a `<rect>` and refuses to
+  travel the CSS rectangle that describes the same shape. That
+  asymmetry is measured, not inferred, and it means `<rect>` needs a
+  rectangle path of its own rather than a reuse.
+- `<line>` and `<polyline>` are **open**: 50% of the segment (0,0) to
+  (100,0) is (50, 0), and (45, -5) is that. A `polygon()` closes itself,
+  so the same two points as a polygon would have a perimeter of 200 and
+  put 50% at the far end instead. They need an open-polyline flag on the
+  shape, which nothing here has.
+
+So the chunk worth doing is the three that already have a CSS twin, and
+the three that do not are a second, larger piece.
+
+The measurement alone; the tests and the implementation follow.
+
 ### `content-visibility: auto`, measured -- a decline that holds
 
 The fourth stated reason tested this session, and the first of them to
