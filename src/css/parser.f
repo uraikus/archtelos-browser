@@ -759,7 +759,9 @@ Decl func parseOneDeclaration(piece:ascii) {
         || asciiStartsWith(name, 'gap', 0) || asciiStartsWith(name, 'text-box', 0)
         || asciiStartsWith(name, 'overscroll', 0)
         || asciiStartsWith(name, 'font-variant', 0)
-        || asciiStartsWith(name, 'border-radius', 0) {
+        || asciiStartsWith(name, 'border-radius', 0)
+        || asciiStartsWith(name, 'column-rule', 0)
+        || asciiStartsWith(name, 'contain-intrinsic', 0) {
         anyLateShorthand = true
     }
     d.value = value

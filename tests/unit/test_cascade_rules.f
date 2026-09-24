@@ -913,4 +913,48 @@ checkEqInt(overscrollX(shOf('#q{overscroll-behavior:contain;overscroll-behavior-
 checkEqInt(overscrollX(shOf('#q{overscroll-behavior-inline:none;overscroll-behavior:contain}', scrollBox)),
            OSB_CONTAIN, 'either way round')
 
+// ---- two the hand-written list missed --------------------------------
+// The audit above was run from a list of shorthand names written out by
+// hand, and a list written by hand is the thing this file keeps
+// catching. Asking the source instead -- which property names are read
+// with a `...Prop(props, ...)` helper, and which of those is a prefix
+// of another -- turned up two more the list had not thought of.
+text ruleBox = '<div id="q" style="column-count:2">x</div>'
+text sizeBox = '<div id="q" style="contain:size layout">x</div>'
+
+// `column-rule` is width, style and colour, like `border` and
+// `outline`, and was read before all three.
+checkEqInt(shOf('#q{column-rule-color:#ff0000;column-rule:2px solid #0000ff}', ruleBox).columnRuleColor,
+           packColor(0, 0, 255, 255), 'a later `column-rule` beats an earlier `column-rule-color`')
+checkEqInt(shOf('#q{column-rule:2px solid #0000ff;column-rule-color:#ff0000}', ruleBox).columnRuleColor,
+           packColor(255, 0, 0, 255), 'and the other order gives the other answer')
+checkEqInt(shOf('#q{column-rule-width:9px;column-rule:solid #0000ff}', ruleBox).columnRuleWidth,
+           3, 'the shorthand resets a width it does not name to medium')
+checkEqInt(shOf('#q{column-rule-style:dotted;column-rule:2px #0000ff}', ruleBox).columnRuleStyle,
+           BORDER_NONE, 'and a style it does not name to none')
+checkEqInt(shOf('#q{column-rule:2px solid #0000ff}', ruleBox).columnRuleWidth,
+           2, 'while the shorthand still carries its own width')
+
+// `contain-intrinsic-size` is the two axes, and the two logical
+// spellings are those axes under other names -- three fixed orders in
+// one block of four lines.
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-width:9px;contain-intrinsic-size:2px}', sizeBox).intrinsicWidth, 100, -1),
+           2, 'a later `contain-intrinsic-size` beats an earlier axis longhand')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-size:2px;contain-intrinsic-width:9px}', sizeBox).intrinsicWidth, 100, -1),
+           9, 'and the other order gives the other answer')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-size:2px}', sizeBox).intrinsicHeight, 100, -1),
+           2, 'one value sets both axes')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-size:2px 5px}', sizeBox).intrinsicHeight, 100, -1),
+           5, 'and two set them separately')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-size:auto 3px}', sizeBox).intrinsicWidth, 100, -1),
+           3, 'the remembered-size form uses the length after `auto`')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-inline-size:7px}', sizeBox).intrinsicWidth, 100, -1),
+           7, '`contain-intrinsic-inline-size` is the horizontal axis')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-block-size:7px}', sizeBox).intrinsicHeight, 100, -1),
+           7, 'and `-block-size` the vertical one')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-width:9px;contain-intrinsic-inline-size:2px}', sizeBox).intrinsicWidth, 100, -1),
+           2, 'a later logical spelling beats an earlier physical one')
+checkEqInt(resolveLen(shOf('#q{contain-intrinsic-inline-size:2px;contain-intrinsic-width:9px}', sizeBox).intrinsicWidth, 100, -1),
+           9, 'and the other order gives the other answer')
+
 finish('cascade rules')

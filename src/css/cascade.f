@@ -4754,6 +4754,68 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         // family after the other can only get one of those right.
         if name == 'overscroll-behavior-inline' { name = 'overscroll-behavior-x' }
         else if name == 'overscroll-behavior-block' { name = 'overscroll-behavior-y' }
+        // The same for the two `contain-intrinsic` spellings, which the
+        // readers took in a fixed order too.
+        if name == 'contain-intrinsic-inline-size' { name = 'contain-intrinsic-width' }
+        else if name == 'contain-intrinsic-block-size' { name = 'contain-intrinsic-height' }
+        // `column-rule` is a width, a style and a colour in any order,
+        // exactly as `outline` and `border` are, and was read before
+        // all three of its longhands. The hand-written list this audit
+        // started from did not have it: it was found by asking the
+        // source which property names are read with a helper and which
+        // of those is a prefix of another.
+        if name == 'column-rule' {
+            if declIsCssWide(value) {
+                props['column-rule-width'] = dup(value)
+                props['column-rule-style'] = dup(value)
+                props['column-rule-color'] = dup(value)
+                return
+            }
+            if props['column-rule-width'] != null { delete props['column-rule-width'] }
+            if props['column-rule-style'] != null { delete props['column-rule-style'] }
+            if props['column-rule-color'] != null { delete props['column-rule-color'] }
+            arr[ascii] crt = cssTokens(value)
+            for int i = 0, i < crt.length, i++ {
+                ascii crk = asciiLower(crt[i])
+                if isLineStyleKeyword(crk) { setProp(props, 'column-rule-style', crk)  continue }
+                if crk == 'thin' || crk == 'medium' || crk == 'thick' {
+                    setProp(props, 'column-rule-width', crk)
+                    continue
+                }
+                Len crl = parseLength(crk, 16)
+                if crl.kind == LEN_PX { setProp(props, 'column-rule-width', crt[i])  continue }
+                setProp(props, 'column-rule-color', crt[i])
+            }
+            return
+        }
+        // `contain-intrinsic-size` is the two axes, one value setting
+        // both. A leading `auto` is the remembered-size form, whose
+        // remembered size this engine never has, so the lengths after
+        // it are what the longhands get; `none` is both axes back at
+        // their initial value, which is what the deletes are.
+        if name == 'contain-intrinsic-size' {
+            if declIsCssWide(value) {
+                props['contain-intrinsic-width'] = dup(value)
+                props['contain-intrinsic-height'] = dup(value)
+                return
+            }
+            arr[ascii] cit = intrinsicSizeLengths(value)
+            if cit.length == 0 {
+                if props['contain-intrinsic-width'] != null {
+                    delete props['contain-intrinsic-width']
+                }
+                if props['contain-intrinsic-height'] != null {
+                    delete props['contain-intrinsic-height']
+                }
+                return
+            }
+            if cit.length > 2 { return }
+            ascii ciW = dup(cit[0])
+            ascii ciH = dup(cit.length > 1 ? cit[1] : cit[0])
+            setProp(props, 'contain-intrinsic-width', ciW)
+            setProp(props, 'contain-intrinsic-height', ciH)
+            return
+        }
         // `border-radius` is the four corners across, optionally a
         // slash and the four down, each list filled by CSS's 1-to-4
         // rule. Each corner longhand takes `<x> <y>`, which is what
@@ -7886,22 +7948,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.columnRuleStyle = BORDER_NONE
     s.columnRuleColor = s.color
     int ruleDeclaredWidth = -1
-    ascii crsh = styleProp(props, 'column-rule')
-    if crsh != null {
-        arr[ascii] parts = cssTokens(crsh)
-        for int i = 0, i < parts.length, i++ {
-            ascii t = asciiLower(parts[i])
-            if isLineStyleKeyword(t) { s.columnRuleStyle = lineStyleKeyword(t) }
-            else {
-                int c = parseCssColor(t, s.color)
-                if c != COLOR_UNSET { s.columnRuleColor = c }
-                else {
-                    Len l = parseLength(t, s.fontSize)
-                    if l.kind == LEN_PX { ruleDeclaredWidth = maxInt(roundPx(l.v), 0) }
-                }
-            }
-        }
-    }
+    // `column-rule` reaches here as its three longhands.
     // CSS Shapes 1. The same basic shapes, resolved against the float's
     // margin box unless the declaration names another, and grown by
     // `shape-margin`. It does nothing on a box that does not float,
@@ -8257,21 +8304,10 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // contain-intrinsic-size and the four axis spellings. `auto <len>`
     // is the remembered-size form, whose remembered size this engine
     // never has, so the length after it is what is used.
-    ascii ciSize = styleProp(props, 'contain-intrinsic-size')
-    if ciSize != null {
-        arr[ascii] cst = intrinsicSizeLengths(ciSize)
-        if cst.length > 0 {
-            Len a = parseLength(cst[0], s.fontSize)
-            if a.kind == LEN_PX {
-                s.intrinsicWidth = a
-                s.intrinsicHeight = cst.length > 1 ? parseLength(cst[1], s.fontSize) : a
-            }
-        }
-    }
+    // The shorthand and the two logical spellings reach here as
+    // `contain-intrinsic-width` and `-height`.
     s.intrinsicWidth = intrinsicSizeProp(props, 'contain-intrinsic-width', s.fontSize, s.intrinsicWidth)
-    s.intrinsicWidth = intrinsicSizeProp(props, 'contain-intrinsic-inline-size', s.fontSize, s.intrinsicWidth)
     s.intrinsicHeight = intrinsicSizeProp(props, 'contain-intrinsic-height', s.fontSize, s.intrinsicHeight)
-    s.intrinsicHeight = intrinsicSizeProp(props, 'contain-intrinsic-block-size', s.fontSize, s.intrinsicHeight)
     s.outlineOffset = 0
     ascii ooff = styleProp(props, 'outline-offset')
     if ooff != null {

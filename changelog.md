@@ -52,6 +52,20 @@ moving the fields that mean it, and the count goes from 276 of 410 to
 each asked in both orders because whichever fixed order a reader picks,
 one of the two is wrong.
 
+**And the audit's own list was wrong.** It was written out by hand, and
+asking the source instead -- which property names are read with a
+`...Prop(props, ...)` helper, and which of those is a prefix of another
+-- turned up two more. `column-rule` is a width, a style and a colour
+in any order, the same shape as `border` and `outline` which were
+already expanded, read before all three of its longhands and with no
+instrument row either. `contain-intrinsic-size` is the two axes read
+before its longhands, and `contain-intrinsic-inline-size` and
+`-block-size` are those axes under other names read after the physical
+pair: three fixed orders in one block of four lines. Both expanded, the
+logical pair renamed, fourteen more checks, `column-rule` graded, and
+the count at **284 of 418**. A list of things to check written from
+memory has holes in the same places the memory does.
+
 `font-variant`'s row is left as it is. Its value is `none`, which is
 the `none` of `font-variant-ligatures`; this engine has only the caps
 half, so the row can never register here however complete that half is,

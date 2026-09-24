@@ -181,6 +181,7 @@ color-scheme	dark
 column-count	2
 column-fill	auto
 column-gap	10px
+column-rule	2px solid #123456
 column-rule-color	#123456
 column-rule-style	solid
 column-rule-width	10px; column-rule-style: solid

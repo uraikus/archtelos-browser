@@ -2446,6 +2446,40 @@ none of this had been caught: `border-radius`, `flex`, `flex-flow`,
 `gap`, `outline`, `overscroll-behavior` and `text-box` were ungraded.
 They have rows now.
 
+### And two the hand-written list missed
+
+The audit above was run from a list of shorthand names written out by
+hand, which is the thing this file keeps catching in other guises. The
+list was wrong. Asking the source instead -- which property names are
+read with a `...Prop(props, ...)` helper, and which of those is a
+prefix of another -- turned up two more, and each carried the same
+fault:
+
+| | Chromium | this engine |
+|---|---|---|
+| `column-rule-color:red; column-rule:2px solid blue` | **blue** | red |
+| `column-rule-width:9px; column-rule:solid blue` | **3px** | 9px |
+| `contain-intrinsic-width:9px; contain-intrinsic-size:2px` | **2px** | 9px |
+| `contain-intrinsic-inline-size:2px; contain-intrinsic-width:9px` | **9px** | 2px |
+
+`column-rule` is a width, a style and a colour in any order -- the same
+shape as `border` and `outline`, both of which were already expanded --
+and it was read before all three of its longhands. It had no row in the
+property instrument either, which is three shorthands of that one shape
+and only two of them measured.
+
+`contain-intrinsic-size` is the two axes with one value setting both,
+read before its longhands, and `contain-intrinsic-inline-size` and
+`-block-size` are those axes under other names, read *after* the
+physical pair. Three fixed orders in one block of four lines.
+
+Both are expanded now and the logical pair renamed, fourteen more
+checks, and `column-rule` has a row. The lesson is the one the file
+already has about instruments and is worth stating about audits too: a
+list of things to check, written from memory, will have holes in the
+same places the memory does. The second pass took the list from the
+code.
+
 ### `font-variant`'s row grades the half this engine does not have
 
 The row is `font-variant: none`, which is the `none` of
