@@ -3383,3 +3383,64 @@ said so.
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load under 0.25 for every reading above.
+
+## What two shorthand expansions cost, and a control that read the whole of it
+
+2026-09-24. `text-decoration` expanding into its four longhands, and
+`place-items`, `place-content` and `place-self` expanding into theirs,
+both inside `applyDecl` -- which runs once per matched declaration,
+11,614 of them on `generated.html`. The `place-` comparisons are behind
+a per-document flag; the one `text-decoration` comparison is not,
+because the user-agent stylesheet says `text-decoration` on four
+selectors and a flag would be true on every page. Paired, 20
+iterations, 800px, `generated.html`, whose cascade is about 35 ms and
+whose layout is about 62.
+
+| pairing | `cascade` median | `layout` median | slower in, layout |
+|---|---|---|---|
+| candidate against parent, round one | +0 | -0 | 9 of 20 |
+| the same, round two | +1 | **+2** | 12 of 20 |
+| the same, round three | +1 | **+2** | 16 of 20 |
+| reversed (parent second) | +0 | -1 | 8 of 20 |
+| **control** against parent | +0 | -1 | 7 of 20 |
+| candidate against **control** | **+0** | **-2** | 6 of 20 |
+
+Round one disagreed with rounds two and three, which is the rule about
+first rounds working as advertised in the other direction: here the
+*first* round was the one that matched the answer. Two forward rounds
+then agreed at +1 of cascade and +2 of layout, with 12 and 16 of 20
+pairs on one side, which is the shape this file calls real -- and the
+diff has no line in `src/layout/` at all, so there was nowhere to take
+the question.
+
+The control settles it. It is the parent recompiled with the change's
+global and both expansions appended as one function under renamed
+identifiers, **called from nowhere**: 3,167,288 bytes against the
+candidate's 3,167,248, forty apart. Dead code cannot run, and the
+candidate against it reads +0 of cascade with the pairs split ten and
+ten, and -2 of layout. The three binaries do not add up -- parent to
+control is -1 of layout, control to candidate -2, and parent to
+candidate +2 -- which is what says the quantity belongs to none of
+them. The extra comparison costs nothing this page can measure.
+
+All three binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.18 for every reading above.
+
+### The control is reading low on this host, and the table was not refreshed
+
+2026-09-24. `tests/bench.sh` disqualified itself twice in a row on an
+idle machine, both times for the same reason and in the same direction:
+Chromium rendered `generated.html` in 21.7 ms and then 20.2 ms against
+the 26.0 this file records, 16.5% and 22.3% out of a band of 15%. The
+control exists to catch a contended run, which reads *high* -- 93 ms on
+the day it was written. A reading this far below the band says the host
+is not the host the 26.0 was measured on.
+
+Chromium is the same build the property audit names, 141.0.7390.37, so
+this is not a new reference browser and `CONTROL_MS` is not raised for
+it. Nothing from either run is copied into the table above, which
+therefore still says what the last qualifying run said. The paired
+reading in the section before this one is unaffected: it times two
+binaries of this browser against each other in the same minutes, so a
+host that is uniformly quicker moves both terms.
