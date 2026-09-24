@@ -2501,7 +2501,24 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // without the property pays one boolean and no lookup.
     int arHeight = -1
     if autoWidth && s.hasAspectRatio { arHeight = definiteContentHeight(b) }
-    if autoWidth {
+    // CSS Box Sizing 3's intrinsic keywords. `fit-content` is the
+    // shrink-to-fit below under its modern name, so the two share the
+    // arithmetic; `min-content` and `max-content` are the two ends of
+    // it, taken unclamped. The keyword is asked for here rather than in
+    // resolveLen because the answer is the box's own content, which
+    // only the box has.
+    if !autoWidth && s.width.kind == LEN_INTRINSIC && b.forcedWidthPx < 0 {
+        computeIntrinsic(b)
+        int iExtras = horizontalExtras(b, 0)
+        int iPref = b.maxContent - iExtras
+        int iMin = b.minContent - iExtras
+        int iKind = roundPx(s.width.v)
+        if iKind == INTRINSIC_MIN { width = iMin }
+        else if iKind == INTRINSIC_MAX { width = iPref }
+        else { width = minInt(maxInt(iMin, cw - b.ml - b.mr - edges), iPref) }
+        if width < 0 { width = 0 }
+        if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
+    } else if autoWidth {
         if arHeight >= 0 {
             width = aspectWidthFromHeight(b, arHeight)
         } else if widthIsShrinkToFit(b) {

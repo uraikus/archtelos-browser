@@ -5445,6 +5445,16 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if tok == null { return l }
     ascii t = asciiLower(asciiTrim(tok))
     if t == 'auto' || t == 'none' || t == 'initial' || t == 'unset' { return lenAuto() }
+    // CSS Box Sizing 3's intrinsic keywords. Kept as a kind of their
+    // own rather than resolved here, because the answer is the box's
+    // content and this function is given a font size.
+    if t == 'min-content' || t == 'max-content' || t == 'fit-content' {
+        Len li
+        li.kind = LEN_INTRINSIC
+        li.v = t == 'min-content' ? INTRINSIC_MIN.toFloat()
+             : (t == 'max-content' ? INTRINSIC_MAX.toFloat() : INTRINSIC_FIT.toFloat())
+        return li
+    }
     if t.length > 5 && asciiLower(t.slice(0, 5)) == 'calc(' && t.charCodeAt(t.length - 1) == CH_RPAREN {
         return evaluateCalc(t.slice(5, t.length - 1), fontSize)
     }

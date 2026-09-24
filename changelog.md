@@ -5,6 +5,48 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The intrinsic sizing keywords, and an expectation the engine was right about
+
+CSS Box Sizing 3's `min-content`, `max-content` and `fit-content` as
+values of `width`. css-2026.md recorded them as missing and they were:
+`parseLength` did not know the three keywords at all, so
+`width: min-content` was an invalid declaration and dropped. The grid
+track sizer knew all three, but that is a separate parser for a
+separate grammar.
+
+They are a `Len` kind of their own now, `LEN_INTRINSIC`, carrying which
+keyword in its value. `resolveLen` answers `dflt` for it, exactly as it
+does for `auto`, because that function is given a containing block and
+the answer is a property of the box's own content; layout asks the box.
+The arithmetic was already here -- `computeIntrinsic` fills a box's
+`minContent` and `maxContent` for shrink-to-fit and table columns, and
+**shrink-to-fit is `fit-content` under an older name** -- so the width
+code shares it rather than growing a second copy.
+
+Seven checks in `tests/unit/test_layout.f`, each against another way of
+asking for the same number rather than against a remembered one: a
+float of the same content is the yardstick for `max-content` and
+`fit-content` while the content fits, and a float holding only the
+longest word is the yardstick for `min-content`. Two more assert the
+three are not the same number, which is what stops those agreements
+passing on an engine that ignores the keywords and leaves every box at
+its container's width.
+
+**One expectation was written from intuition and the engine was
+right.** The last check said `fit-content` against a container narrower
+than the content is clamped to the container, 60px. The engine
+answered 70 and Chromium answered 67.4 -- its own `min-content` --
+because `fit-content` is
+`min(max-content, max(min-content, available))` and is clamped only
+from above. Which is the rule this repository keeps learning in other
+forms: the number in a test has to come from a measurement, and an
+expectation that disagrees with the engine is a question rather than a
+verdict.
+
+The height axis is deliberately not claimed. All three keywords give
+the same answer as `auto` on a one-line box in Chromium, so a fixture
+that can tell them apart is needed before there is anything to test.
+
 ### Blockification, and the anonymous block it turned out to depend on
 
 CSS Display 3 sec. 2.7: a float, an absolute or fixed position, being a

@@ -405,4 +405,74 @@ arr[Box] sideAll = []
 collectBoxesForTag(sideRoot, 'div', sideAll)
 checkEqInt(sideAll[0].x, 0 - 30, 'a negative margin-left still moves the box out')
 
+// ---- the intrinsic sizing keywords (CSS Box Sizing 3) ------------------
+// `min-content`, `max-content` and `fit-content` as values of `width`.
+// css-2026.md recorded them as missing and they were: `parseLength` did
+// not know the keywords, so the declaration was invalid and dropped.
+//
+// Each is checked against another way of asking for the same number
+// rather than against a remembered one. Shrink-to-fit IS fit-content
+// under an older name, so a float of the same content is the yardstick
+// for both `fit-content` and -- while the content fits -- `max-content`;
+// and a float holding only the longest word is the yardstick for
+// `min-content`. Chromium 141 agrees with all four, measured on the
+// same fixture.
+text sizeHead = '<body style="margin:0;font:16px/20px monospace">'
+
+Box func sizeBox(css:text, content:text, wide:int) {
+    Box r = layoutHtml(sizeHead + '<div style="width:' + `${wide}` + 'px">'
+        + '<div id="s" style="' + css + '">' + content + '</div>'
+        + '</div></body>', 800)
+    return findBoxById(r, 's')
+}
+
+Box func findBoxById(b:Box, want:text) {
+    if b.kind != BOX_TEXT && b.kind != BOX_ANON && b.node != null
+        && attrOf(b.node.id, 'id') == want { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box f = findBoxById(b.children[i], want)
+        if f != null { return f }
+    }
+    return null
+}
+
+// Content that fits: `max-content` and `fit-content` are the same, and
+// both are what a float of the same content shrinks to.
+int floatABWidth = sizeBox('float:left', 'a b', 400).w
+checkEqInt(sizeBox('width:max-content', 'a b', 400).w, floatABWidth,
+    '`max-content` is what the same content shrink-to-fits to')
+checkEqInt(sizeBox('width:fit-content', 'a b', 400).w, floatABWidth,
+    'and `fit-content` agrees while the content fits')
+// `min-content` is the longest word, which is what a float holding only
+// that word shrinks to.
+checkEqInt(sizeBox('width:min-content', 'a b', 400).w,
+    sizeBox('float:left', 'a', 400).w,
+    '`min-content` is the widest word on its own')
+// The three are not all the same number, which is what stops the
+// agreements above passing on an engine that ignores the keywords and
+// leaves every box at its container's width.
+check(sizeBox('width:min-content', 'a b', 400).w
+        < sizeBox('width:max-content', 'a b', 400).w,
+    '`min-content` is narrower than `max-content` for content with a space in it')
+check(sizeBox('width:max-content', 'a b', 400).w < 400,
+    'and both are narrower than the container, which `auto` would have given')
+
+// Content that does NOT fit is where `fit-content` and `max-content`
+// separate. `fit-content` is
+// `min(max-content, max(min-content, available))`, so against a
+// container narrower than the longest word it comes out at
+// `min-content` and overflows -- it is clamped to what is available
+// only from above. This expectation was written as "clamped to 60,
+// the container" from intuition, the engine disagreed, and Chromium
+// sided with the engine: 67.4px, its own min-content, where the
+// container is 60.
+int narrowMax = sizeBox('width:max-content', 'alpha bravo charlie delta', 60).w
+int narrowFit = sizeBox('width:fit-content', 'alpha bravo charlie delta', 60).w
+int narrowMin = sizeBox('width:min-content', 'alpha bravo charlie delta', 60).w
+check(narrowMax > 60, '`max-content` overflows a container too narrow for it')
+checkEqInt(narrowFit, narrowMin,
+    '`fit-content` falls back to `min-content` against a container narrower than it')
+check(narrowFit > 60, 'and so it overflows too, rather than being clamped to the container')
+check(narrowFit < narrowMax, 'while staying narrower than `max-content`')
+
 finish('layout')

@@ -776,6 +776,18 @@ const int LEN_CALC = 3
 // `resolveLen` is called.
 const int LEN_MINMAX = 4
 
+// CSS Box Sizing 3's three intrinsic keywords as a value of `width` or
+// `height`. The kind carries which one in `v`: 0 `min-content`,
+// 1 `max-content`, 2 `fit-content`. They cannot be resolved by
+// `resolveLen`, which is given a containing block and nothing else --
+// the answer is a property of the box's own content -- so every site
+// that only has the base gets `dflt` back, exactly as it does for
+// `auto`, and layout asks the box instead.
+const int LEN_INTRINSIC = 5
+const int INTRINSIC_MIN = 0
+const int INTRINSIC_MAX = 1
+const int INTRINSIC_FIT = 2
+
 // `baseline-source` (CSS Inline 3 §5.1): which of an atomic inline's
 // baselines the line it sits on aligns to. `auto` is not one answer --
 // an inline-block's is its LAST line and an inline-flex's its FIRST --
@@ -1741,7 +1753,10 @@ void func resizeAxes(v:int) {
 }
 
 int func resolveLen(l:Len, base:int, dflt:int) {
-    if l == null || l.kind == LEN_AUTO { return dflt }
+    // An intrinsic keyword answers `dflt` here for the reason given
+    // beside LEN_INTRINSIC: this function has the containing block and
+    // not the box, and the keyword is about the box's own content.
+    if l == null || l.kind == LEN_AUTO || l.kind == LEN_INTRINSIC { return dflt }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
     if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
     if anyMinMax && l.kind == LEN_MINMAX { return roundPx(resolveMinMax(l, base.toFloat())) }
