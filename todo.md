@@ -3078,6 +3078,51 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `content-visibility: auto`, measured -- a decline that holds
+
+The fourth stated reason tested this session, and the first of them to
+survive. css-2026.md says `auto` "is `visible`, since it needs to know
+what is on screen". Two things had to be checked: what `auto` actually
+does, and whether this engine could do it.
+
+Chromium 141, four boxes each holding a 500px paragraph, two of them
+three thousand pixels down the page and so off screen:
+
+| | height |
+|---|---|
+| `content-visibility: visible`, on screen | 500 |
+| `content-visibility: hidden` | 0 |
+| `content-visibility: auto`, off screen, no intrinsic size | **0** |
+| `content-visibility: auto`, off screen, `contain-intrinsic-size: auto 123px` | **123** |
+
+So an off-screen `auto` element is **exactly `hidden`**: its contents are
+skipped and its size comes from `contain-intrinsic-size` or collapses to
+nothing. The document is 3,623 tall, which is the filler plus 500 plus
+0 plus 0 plus 123 -- the skipped boxes really do give up their content's
+height.
+
+The engine already implements `hidden`, so the behaviour is not the
+difficulty. **The difficulty is that this changes layout, and layout
+here runs once.** `browser.f`'s `scrollBy` ends in `repaint()`, not in a
+new layout pass, so an element skipped because it was below the viewport
+at first layout would still be skipped after scrolling to it. The page
+would be permanently empty below the fold. A partial implementation is
+not merely incomplete here; it is worse than none.
+
+And the trade is the wrong way round. `content-visibility: auto` exists
+to avoid laying out what nobody is looking at, again and again, as a
+page scrolls. This engine lays out **once**. There is no repeated cost
+for it to save, so implementing it would spend correctness to buy a
+performance win the architecture has already taken by another route.
+
+The row's wording is improved to say that rather than only "it needs to
+know what is on screen", which is true and undersells it: paint does
+know, and knowing is not the problem.
+
+What would change the answer is relayout on scroll, which is a different
+and much larger piece of work than this feature, and is not worth doing
+for this feature alone.
+
 ### The thirteen rows that inflated the count, and who put them there
 
 The property instrument's own header says what belongs in it:
