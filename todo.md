@@ -3078,6 +3078,62 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `scroll-snap-stop`, measured -- and a third reason that does not hold
+
+css-2026.md says there is no `scroll-snap-stop`, "which needs a notion
+of one scroll gesture rather than one scroll position". For a browser
+with fling and momentum that is a real difficulty: a gesture there spans
+many frames. **This engine has no momentum.** One wheel event is the
+whole scroll, and `snapPosition` is already called as
+
+    int now = snapPosition(b, clampInt(was + dy, 0, boxScrollRange(b)), true)
+
+-- with `was` and the requested destination both in the caller's hand at
+`src/layout/layout.f:2171` and `:2059`. The gesture is there; it is just
+not passed in. That makes this the third recorded reason in a row to
+fall over on inspection, after `inset()`'s `round` radius and
+`polygon()`'s fill rule.
+
+A 100px scroll container over five 100px children, each
+`scroll-snap-align: start`, the second carrying the rule under test.
+Chromium 141, `scrollBy({behavior:'instant'})` and the resulting
+`scrollTop`:
+
+| gesture | `#stop{scroll-snap-stop:always}` | control, no rule |
+|---|---|---|
+| by 300 from 0 | **100** | 300 |
+| by 400 from 0 | **100** | 400 |
+| by 100 from 0 | 100 | 100 |
+| by 300 from 100 | 400 | 400 |
+| by -300 from 400 | 100 | 100 |
+
+The rule the five rows agree on: **a scroll stops at the first snap
+position with `scroll-snap-stop: always` strictly between where it
+started and where it asked to go.** Starting already on that position
+does not stop the next gesture (row four), and a gesture that lands on
+it anyway is unchanged (row three). The last row discriminates nothing
+-- 400 - 300 is itself a snap position -- and is there for consistency
+rather than as evidence.
+
+The control is what makes the first two rows mean something: the same
+document without the declaration goes to 300 and 400. Without it, an
+engine that snapped everything to 100 would score the same.
+
+One thing the probe settled that is worth writing down: Chromium does
+**not** apply this to an absolute scroll. `scrollTop = 300` and
+`scrollTo({top: 300})` both land at 300 with the rule in force. It acts
+on a relative scroll, which is what a wheel is, and which is the only
+kind this engine's `scrollBy` performs.
+
+The work is one parameter and one comparison: `snapPosition` takes the
+position the gesture started from, and where it currently keeps the
+nearest candidate to `want`, it first asks whether any candidate marked
+`always` lies strictly between `from` and `want` -- returning the
+nearest such one to `from` when it does. The property itself is one
+keyword on `Style`, which the cascade does not read at all today.
+
+The measurement alone; the tests and the implementation follow.
+
 ### `inset()`'s `round` radius, measured -- and a reason that was wrong
 
 css-2026.md said the radius is "parsed and dropped, since a rounded
