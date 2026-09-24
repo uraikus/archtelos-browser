@@ -2446,6 +2446,47 @@ none of this had been caught: `border-radius`, `flex`, `flex-flow`,
 `gap`, `outline`, `overscroll-behavior` and `text-box` were ungraded.
 They have rows now.
 
+### What the intrinsic sizing keywords do, measured
+
+CSS Box Sizing 3's `min-content`, `max-content` and `fit-content` as
+values of `width` and `height`. css-2026.md records them as missing and
+they are: `parseLength` does not know the three keywords at all, so
+`width: min-content` is an invalid declaration and dropped. The grid
+track sizer knows all three, but that is a separate parser for a
+separate grammar.
+
+A 400px container, 16px monospace, holding `alpha bravocharlie` --
+eighteen characters, of which the longest unbreakable run is twelve.
+Chromium 141, `getComputedStyle`:
+
+| | Chromium |
+|---|---|
+| `width: auto` | 400px, the container |
+| `width: min-content` | **115.59px** -- the twelve-character word |
+| `width: max-content` | **173.39px** -- all eighteen characters |
+| `width: fit-content` | 173.39px, the same, because it fits |
+| `max-width: min-content` | 115.59px |
+| `min-width: max-content` | 400px, since `auto` is already wider |
+
+With `a b` instead, the three separate: `min-content` is 9.64 (one
+character), `max-content` and `fit-content` are both 28.9 (three). That
+is the fixture worth testing on, because `fit-content` and
+`max-content` agree on both of these and only differ once the content
+is wider than the container.
+
+`height: min-content`, `max-content` and `fit-content` all come out
+20px on a one-line box, which is what `auto` gives too, so the height
+axis needs a fixture that can tell them apart before it is worth
+claiming.
+
+The machinery is already here: `computeIntrinsic` fills a box's
+`minContent` and `maxContent` for shrink-to-fit and table columns, and
+shrink-to-fit is `fit-content` under another name. What is missing is a
+`Len` kind for the keywords and the places that resolve a used width
+asking for it.
+
+The measurement alone; the tests and the implementation follow.
+
 ### The units nothing was checking, derived from the source
 
 The same question put to CLAUDE.md's other standing complaint -- that a
