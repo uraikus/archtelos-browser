@@ -5,6 +5,36 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Thirteen shorthand rows come out of the property instrument
+
+The instrument's header says shorthands and legacy aliases do not belong
+in a per-longhand instrument. Thirteen shorthands were in it anyway --
+`place-content`, `place-items`, `place-self`, `white-space`,
+`text-wrap`, `border-radius`, `flex`, `flex-flow`, `gap`, `outline`,
+`overscroll-behavior`, `text-box` and `column-rule` -- added earlier on
+this branch to give the shorthand-expansion work an instrument. That was
+a real need and this was the wrong instrument for it.
+
+All thirteen registered, so they added thirteen to the numerator and
+thirteen to the denominator. Against an engine passing about two rows in
+three, thirteen certainties on both sides lifted the ratio from **67.2%
+to 68.2%** -- and every one was a shorthand that had just been
+implemented, which is choosing the sample after seeing the answer.
+
+The count is **272 of 405**, where it reported 285 of 418.
+`PROPERTIES_MIN` goes back to 272. No coverage is lost: a shorthand's
+effect is its longhands', all of which are graded already, so the
+thirteen counted the same implementations twice; and the bug they were
+added to catch is instrumented in the ninety-three checks
+`tests/unit/test_cascade_rules.f` gained for it.
+
+It was found by asking whether the denominator was too *small* --
+whether the ratio was flatter than the truth. Chromium's computed style
+enumerates 406 names and every one is already in the file, so the answer
+was no. The audit that followed, of every property `supportedProperties`
+claims and the instrument does not grade, found 41; reading why they
+were absent found the policy; the policy found the thirteen.
+
 ### `offset-path: url()`
 
 CSS Motion Path 1 §2.1. css-2026.md recorded "no `url()` path", which

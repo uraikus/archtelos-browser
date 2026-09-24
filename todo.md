@@ -3078,6 +3078,57 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### The thirteen rows that inflated the count, and who put them there
+
+The property instrument's own header says what belongs in it:
+
+> The list is not Chromium's indexed enumeration of a computed style.
+> ... Eighty-one of those are shorthands and six are legacy aliases,
+> **neither of which belongs in a per-longhand instrument**.
+
+Thirteen shorthands were in it anyway -- `place-content`, `place-items`,
+`place-self`, `white-space`, `text-wrap`, `border-radius`, `flex`,
+`flex-flow`, `gap`, `outline`, `overscroll-behavior`, `text-box` and
+`column-rule` -- added during the shorthand-expansion work earlier on
+this branch, by the same hand that is now removing them. They were added
+to give that work an instrument, which was a real need; they were the
+wrong instrument for it.
+
+What they did to the number, measured by running the file both ways:
+
+| | count | of |
+|---|---|---|
+| with the thirteen | 285 | 418 |
+| without them | **272** | **405** |
+
+**All thirteen registered.** They added thirteen to the numerator and
+thirteen to the denominator, and because the engine passes at about two
+in three, adding thirteen certainties to both lifted the ratio from
+67.2% to 68.2% -- a full point, bought by choosing which rows to add.
+Every one of them was a shorthand that had just been implemented, which
+is the definition of choosing the sample after seeing the answer.
+
+The rows are removed and `PROPERTIES_MIN` goes back to 272. Nothing is
+lost by it: a shorthand's effect *is* its longhands', every one of which
+is already graded, so the thirteen were counting the same
+implementations twice. And the bug they were added to catch -- a
+shorthand resolved against its longhand by which reader ran first rather
+than by source order -- is instrumented where it belongs, in the
+ninety-three checks `tests/unit/test_cascade_rules.f` gained for exactly
+that.
+
+How it was found is worth keeping, because nothing in the suite could
+have found it. The question asked was whether the *denominator* was too
+small -- whether properties Chromium implements were missing from the
+file, which would make the ratio flatter than the truth. Enumerating
+Chromium's computed style and diffing gave the answer no: 406 names, all
+of them present. The audit that followed -- every property
+`supportedProperties` claims and the instrument does not grade -- turned
+up 41, and reading why they were absent turned up the policy, and the
+policy turned up the thirteen. **The finding came from checking a number
+in the direction that would have flattered the project, and finding it
+flattered already.**
+
 ### `offset-path: url()`, measured -- and a fourth reason to check
 
 css-2026.md lists the `url()` form of `offset-path` among CSS Motion
@@ -3551,7 +3602,7 @@ the check that can tell them apart is a suite, and for `position` it is
 **Three measurements exist**, each with a floor in `tests/run.sh`:
 `tests/conformance/properties.f` reports how many of the 405 CSS
 properties the instrument can grade change what this engine renders
-(269; Chromium answers for 406, and one of them -- `overlay` -- only the
+(272; Chromium answers for 406, and one of them -- `overlay` -- only the
 user agent can set),
 `tests/conformance/elements.f` how many of the 122 HTML elements get
 the default `display` Chromium gives them (122 of 122), and
