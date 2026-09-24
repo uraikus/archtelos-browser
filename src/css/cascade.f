@@ -8054,6 +8054,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.snapX = snapAxisXOut
     s.snapY = snapAxisYOut
     s.snapStrict = snapStrictOut
+    ascii snapStopV = styleProp(props, 'scroll-snap-stop')
+    s.snapStopAlways = snapStopV != null && asciiLower(asciiTrim(snapStopV)) == 'always'
     snapAlignProp(styleProp(props, 'scroll-snap-align'))
     s.snapAlignBlock = snapAlignBlockOut
     s.snapAlignInline = snapAlignInlineOut

@@ -5,6 +5,51 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `scroll-snap-stop`
+
+CSS Scroll Snap 1 §5. css-2026.md said the property "needs a notion of
+one scroll gesture rather than one scroll position". For a browser with
+fling and momentum that is a real difficulty -- a gesture there spans
+many frames. **This engine has no momentum.** One wheel event is the
+whole scroll, and `snapPosition` was already being called with the old
+position and the requested one both in the caller's hand. The gesture
+was there; it was not passed in. That is the third recorded reason in a
+row to fall over on inspection, after `inset()`'s `round` radius and
+`polygon()`'s fill rule.
+
+The rule, from Chromium 141 on five 100px children in a 100px snapport:
+a scroll stops at the first snap position carrying
+`scroll-snap-stop: always` **strictly** between where the gesture began
+and where it asked to go. Strictly, because a gesture starting on that
+position is not held by it. A gesture that lands on it anyway is
+unchanged, and one that never reaches it is unchanged.
+
+The part that had to be measured rather than reasoned: **it acts under
+`mandatory` only.** A `proximity` container ignores the declaration
+completely -- not merely where proximity declines to snap, but also
+where it does snap and the position lies in the path. A gesture of 310
+from 0 rests at 300 with the rule and without it, passing an `always`
+child at 100. The specification's words do not say that, and reading
+them would have produced the opposite.
+
+Twelve checks in `tests/unit/test_snap.f`, written against the control
+rather than against Chromium's columns: what is asserted is that a
+stopped gesture comes to rest exactly where a gesture that only asked to
+go that far comes to rest, which is what "stops at that position" means.
+Three of the twelve are the instrument -- without the rule a longer
+gesture must travel further, and `mandatory` must differ where
+`proximity` does not, or the proximity checks would pass on an engine
+that had never read the property at all. Three failed before the fix.
+
+The property instrument moved 284 to 285. It would not have: the row
+existed and carried a real value, but `styleDigest` compares a list of
+fields by name and `snapStopAlways` was not on it -- the same trap
+`object-fit` and `object-position` fell into, checked here end to end
+before the number was believed. `--fields` names `scroll-snap-stop ->
+snapStopAlways`, so the field that moved is the one that means the
+property. `scroll-snap-stop` also joins `supportedProperties`, so
+`@supports` agrees with the instrument.
+
 ### `inset()`'s `round` radius
 
 CSS Masking 1 §4.1. `readInsetShape` broke out of its loop at the

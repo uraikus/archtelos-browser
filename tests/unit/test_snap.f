@@ -189,4 +189,111 @@ checkEqInt(snapTall(120), 115, 'the same going down')
 checkEqInt(snapTall(199), 200, 'and across the boundary')
 checkEqInt(snapTall(400), 315, 'with the maximum still the maximum')
 
+// ---- scroll-snap-stop (CSS Scroll Snap 1 §5) ---------------------------
+//
+// A scroll stops at the first snap position carrying
+// `scroll-snap-stop: always` strictly between where the gesture started
+// and where it asked to go. This engine has one wheel event per scroll
+// and no momentum, so a gesture is exactly the `dy` handed to
+// `boxScrollBy`.
+//
+// Five 100px children in a 100px snapport, the second carrying the
+// rule. Chromium 141 on the same geometry: by 300 from 0 lands at 100
+// and by 400 from 0 lands at 100, where the same document without the
+// declaration goes to 300 and 400 (todo.md).
+//
+// The checks are written against the control rather than against those
+// numbers: what is asserted is that a stopped gesture comes to rest
+// exactly where a gesture that only asked to go that far comes to rest,
+// which is what "stops at that position" means and needs no column
+// written down here.
+
+// Where a scroll of `want` from `from` comes to rest, with the rule on
+// the second of five children or not.
+int func snapStopTo(stop:bool, from:int, want:int) {
+    cascadeReset()
+    cssViewportWidth = 600
+    text kids = ''
+    for int i = 0, i < 5, i++ {
+        text extra = stop && i == 1 ? 'scroll-snap-stop:always;' : ''
+        kids = kids + `<div style="height:100px;scroll-snap-align:start;${extra}">x</div>`
+    }
+    Node doc = parseHtmlText('<html><body style="margin:0"><div id="s" style="width:200px;'
+        + 'height:100px;overflow-y:scroll;overflow-x:hidden;scroll-snap-type:y mandatory">'
+        + kids + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    Box root = layoutDocument(doc, 600)
+    Box sc = snapBoxById(root, 's')
+    boxScrollBy(sc, 0 - 10000)
+    if from != 0 { boxScrollBy(sc, from) }
+    boxScrollBy(sc, want)
+    return boxScrollTop(sc)
+}
+
+// The instrument first. Without the rule a long gesture has to travel
+// further than a short one, or every check below passes on an engine
+// that snapped everything to the same place.
+check(snapStopTo(false, 0, 300) > snapStopTo(false, 0, 100),
+    'without the rule a longer gesture goes further')
+check(snapStopTo(false, 0, 400) > snapStopTo(false, 0, 300),
+    'and further again')
+// And the rule has to change something.
+check(snapStopTo(true, 0, 300) < snapStopTo(false, 0, 300),
+    'scroll-snap-stop: always stops a gesture short')
+
+// It stops exactly where a gesture that only asked to go that far stops.
+checkEqInt(snapStopTo(true, 0, 300), snapStopTo(false, 0, 100),
+    'a stopped gesture rests on the always position')
+checkEqInt(snapStopTo(true, 0, 400), snapStopTo(false, 0, 100),
+    'however far past it asked to go')
+
+// A gesture that lands on it anyway is unchanged.
+checkEqInt(snapStopTo(true, 0, 100), snapStopTo(false, 0, 100),
+    'a gesture that lands on it is unchanged')
+
+// Starting already on that position does not stop the next gesture.
+checkEqInt(snapStopTo(true, 100, 300), snapStopTo(false, 100, 300),
+    'starting on it does not stop the next gesture')
+
+// Nor does one that never reaches it.
+checkEqInt(snapStopTo(true, 0, 40), snapStopTo(false, 0, 40),
+    'a gesture short of it is unchanged')
+
+// And `proximity` ignores the rule completely. Measured rather than
+// reasoned from the specification's words, which do not say so: under
+// `proximity` Chromium gives the same answer with the declaration and
+// without it, even for a gesture that does snap and does pass the
+// position -- by 310 from 0 rests at 300 either way, with the `always`
+// child at 100 (todo.md).
+int func snapStopProx(stop:bool, want:int) {
+    cascadeReset()
+    cssViewportWidth = 600
+    text kids = ''
+    for int i = 0, i < 5, i++ {
+        text extra = stop && i == 1 ? 'scroll-snap-stop:always;' : ''
+        kids = kids + `<div style="height:100px;scroll-snap-align:start;${extra}">x</div>`
+    }
+    Node doc = parseHtmlText('<html><body style="margin:0"><div id="s" style="width:200px;'
+        + 'height:100px;overflow-y:scroll;overflow-x:hidden;scroll-snap-type:y proximity">'
+        + kids + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    Box root = layoutDocument(doc, 600)
+    Box sc = snapBoxById(root, 's')
+    boxScrollBy(sc, 0 - 10000)
+    boxScrollBy(sc, want)
+    return boxScrollTop(sc)
+}
+
+checkEqInt(snapStopProx(true, 310), snapStopProx(false, 310),
+    'proximity ignores scroll-snap-stop on a gesture that snaps')
+checkEqInt(snapStopProx(true, 300), snapStopProx(false, 300),
+    'and on one that lands on a snap position')
+// The instrument for that pair: mandatory must differ where proximity
+// does not, or the two checks above would pass on an engine that had
+// simply never read the property.
+check(snapStopTo(true, 0, 300) != snapStopTo(false, 0, 300),
+    'while mandatory does act on the same gesture')
+
 finish('scroll snap')

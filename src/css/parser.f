@@ -1571,7 +1571,7 @@ arr[text] supportedProperties = [
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
     'page', 'page-break-before', 'page-break-after', 'page-break-inside',
     'scrollbar-width', 'scrollbar-color', 'scrollbar-gutter',
-    'scroll-snap-type', 'scroll-snap-align', 'scroll-padding', 'scroll-margin',
+    'scroll-snap-type', 'scroll-snap-align', 'scroll-snap-stop', 'scroll-padding', 'scroll-margin',
     'scroll-padding-top', 'scroll-padding-right', 'scroll-padding-bottom', 'scroll-padding-left',
     'scroll-margin-top', 'scroll-margin-right', 'scroll-margin-bottom', 'scroll-margin-left',
     'scroll-padding-block-start', 'scroll-padding-block-end',

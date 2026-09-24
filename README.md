@@ -244,7 +244,10 @@ content does not change width the moment there is. A container that
 declares `scroll-snap-type` comes to rest on one of the positions its
 children's `scroll-snap-align` asks for rather than wherever the scroll
 left it, with `scroll-padding` and `scroll-margin` moving those
-positions and `proximity` snapping only what is already near. **The wheel over such a box
+positions and `proximity` snapping only what is already near.
+`scroll-snap-stop: always` holds a scroll at the first such position it
+would pass, a gesture here being one wheel event; it acts under
+`mandatory` only, which is what Chromium does. **The wheel over such a box
 scrolls it down**, and the page only once it has reached its end; a
 wheel tilted sideways scrolls it across, where the window system says
 one was tilted — X11 does, and Windows does not (FINDINGS.md, finding

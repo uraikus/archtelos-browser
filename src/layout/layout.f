@@ -2056,7 +2056,7 @@ int func boxScrollLeft(b:Box) {
 bool func boxScrollLeftBy(b:Box, dx:int) {
     if !b.scrollsX || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollLeft(b)
-    int now = snapPosition(b, clampInt(was + dx, 0, boxScrollLeftRange(b)), false)
+    int now = snapPosition(b, was, clampInt(was + dx, 0, boxScrollLeftRange(b)), false)
     if now == was { return false }
     boxScrollLefts[b.node.id.toText()] = now
     return true
@@ -2098,6 +2098,27 @@ void func snapConsider(want:int, pos:int) {
     if dNew < dOld || dNew == dOld && pos < snapBest { snapBest = pos }
 }
 
+// The nearest snap position to where the gesture STARTED that carries
+// `scroll-snap-stop: always` and lies strictly between there and where
+// the gesture asked to go. A gesture already resting on such a position
+// is not held by it, which is what "strictly" buys.
+int snapStopBest = 0
+bool snapStopFound = false
+
+void func snapStopConsider(from:int, want:int, pos:int) {
+    if want > from {
+        if pos <= from || pos >= want { return }
+    } else if want < from {
+        if pos >= from || pos <= want { return }
+    } else {
+        return
+    }
+    if !snapStopFound || absInt(pos - from) < absInt(snapStopBest - from) {
+        snapStopBest = pos
+        snapStopFound = true
+    }
+}
+
 int func snapAlignedPosition(align:int, areaStart:int, areaEnd:int,
                              portStart:int, portEnd:int) {
     if align == SNAPALIGN_START { return areaStart - portStart }
@@ -2109,7 +2130,7 @@ int func snapAlignedPosition(align:int, areaStart:int, areaEnd:int,
 
 // Where a scroll of this container should come to rest on one axis.
 // `want` is the position the scroll asked for, already clamped.
-int func snapPosition(b:Box, want:int, vertical:bool) {
+int func snapPosition(b:Box, from:int, want:int, vertical:bool) {
     Style s = b.style
     if s.snapStrict == SNAP_NONE { return want }
     if vertical ? !s.snapY : !s.snapX { return want }
@@ -2129,6 +2150,8 @@ int func snapPosition(b:Box, want:int, vertical:bool) {
 
     snapFound = false
     snapBest = 0
+    snapStopFound = false
+    snapStopBest = 0
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
@@ -2152,7 +2175,9 @@ int func snapPosition(b:Box, want:int, vertical:bool) {
             snapConsider(want, want < lo ? lo : hi)
             continue
         }
-        snapConsider(want, clampInt(pos, 0, range))
+        int at = clampInt(pos, 0, range)
+        snapConsider(want, at)
+        if c.style.snapStopAlways { snapStopConsider(from, want, at) }
     }
     if !snapFound { return want }
     // `proximity` snaps only what is near, and near is a third of the
@@ -2162,13 +2187,18 @@ int func snapPosition(b:Box, want:int, vertical:bool) {
         && absInt(snapBest - want) > Math.floorDiv(portEnd - portStart, 3) {
         return want
     }
+    // `scroll-snap-stop: always` holds a gesture at the first such
+    // position it would pass. It acts under `mandatory` only: measured
+    // against Chromium, a `proximity` container ignores it completely,
+    // even where a snap does happen and the position is in the path.
+    if s.snapStrict == SNAP_MANDATORY && snapStopFound { return snapStopBest }
     return snapBest
 }
 
 bool func boxScrollBy(b:Box, dy:int) {
     if !b.scrollsY || b.node == null || b.node.id == 0 { return false }
     int was = boxScrollTop(b)
-    int now = snapPosition(b, clampInt(was + dy, 0, boxScrollRange(b)), true)
+    int now = snapPosition(b, was, clampInt(was + dy, 0, boxScrollRange(b)), true)
     if now == was { return false }
     boxScrollTops[b.node.id.toText()] = now
     return true

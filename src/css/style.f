@@ -1294,6 +1294,11 @@ struct Style {
     snapStrict:int
     snapAlignBlock:int
     snapAlignInline:int
+    // scroll-snap-stop: always. Measured against Chromium, it acts only
+    // where the container is `mandatory` -- under `proximity` it
+    // changes nothing at all, even where a snap does happen and the
+    // position lies in the gesture's path (todo.md).
+    snapStopAlways:bool
     scrollPaddingTop:Len
     scrollPaddingRight:Len
     scrollPaddingBottom:Len
