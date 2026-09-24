@@ -643,4 +643,160 @@ computeStyles(shUa)
 check(escById(shUa, 'q').style.fontBold,
       '`font: revert` reaches the user-agent sheet, where `font-weight: revert` did')
 
+// ---- a shorthand and its longhand must compete -------------------------
+// `text-decoration` and `text-decoration-line` were separate keys in the
+// declaration map, and the reader applied the shorthand first and the
+// longhand second -- so the longhand won whatever the source order was
+// and the cascade never got to decide. Both orders are Chromium's,
+// asked of it directly.
+int func decoOf(css:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css
+        + '</style></head><body><p id="q">x</p></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    return e == null ? 0 - 1 : e.style.textDecoration
+}
+checkEqInt(decoOf('#q{text-decoration-line:underline;text-decoration:overline}'),
+           DECO_OVERLINE, 'a later `text-decoration` beats an earlier `text-decoration-line`')
+checkEqInt(decoOf('#q{text-decoration:overline;text-decoration-line:underline}'),
+           DECO_UNDERLINE, 'and the other order gives the other answer')
+// The pair is what makes it a test rather than one remembered number:
+// an engine that always prefers one of the two passes one check and
+// fails the other, whichever one it prefers.
+checkEqInt(decoOf('#q{text-decoration-line:underline}'), DECO_UNDERLINE,
+           'the longhand alone still works')
+checkEqInt(decoOf('#q{text-decoration:overline}'), DECO_OVERLINE,
+           'and the shorthand alone')
+checkEqInt(decoOf('#q{text-decoration-line:underline;text-decoration:none}'),
+           DECO_NONE, '`text-decoration: none` after a line clears it')
+checkEqInt(decoOf('#q{text-decoration-line:underline;text-decoration:initial}'),
+           DECO_NONE, 'and so does a CSS-wide keyword through the shorthand')
+checkEqInt(decoOf('#q{text-decoration:red}'), DECO_NONE,
+           'a shorthand that names only a colour leaves the line at its initial value')
+
+// The shorthand resets the longhands it does not name to their initial
+// values, which is the half of "one key per longhand" that a reader
+// applying the shorthand first would get wrong in the other direction.
+// Every expectation is Chromium 141's, read with getComputedStyle.
+Style func decoStyleOf(css:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css
+        + '</style></head><body><p id="q">x</p></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    return escById(d, 'q').style
+}
+Style tdReset = decoStyleOf('#q{text-decoration-color:red;text-decoration-style:dotted;'
+    + 'text-decoration-thickness:5px;text-decoration:underline}')
+check(tdReset.decorationColor == COLOR_UNSET,
+      'the shorthand resets a colour it does not name')
+checkEqInt(tdReset.decorationStyle, DECOSTYLE_SOLID,
+           'and a style it does not name')
+checkEqInt(tdReset.decorationThickness, 0,
+           'and a thickness it does not name')
+// And the other way: a longhand after the shorthand replaces only
+// itself, so the shorthand's colour is still there.
+Style tdKeep = decoStyleOf('#q{text-decoration:underline red;text-decoration-line:overline}')
+checkEqInt(tdKeep.decorationColor, packColor(255, 0, 0, 255),
+           'a later longhand leaves the shorthand\'s other values alone')
+checkEqInt(tdKeep.textDecoration, DECO_OVERLINE,
+           'while replacing the one it names')
+checkEqInt(decoStyleOf('#q{text-decoration:underline 5px}').decorationThickness, 5,
+           'the shorthand carries a thickness')
+// The shorthand carries more than the line, and expanding it must not
+// lose the rest.
+cascadeReset()
+Node tdFull = parseHtmlText('<html><head><style>'
+    + '#q{text-decoration:underline dotted #ff0000}'
+    + '</style></head><body><p id="q">x</p></body></html>')
+cascadeAddDocumentStyles(tdFull)
+computeStyles(tdFull)
+checkEqInt(escById(tdFull, 'q').style.textDecoration, DECO_UNDERLINE,
+           'the shorthand still carries its line')
+checkEqInt(escById(tdFull, 'q').style.decorationColor, packColor(255, 0, 0, 255),
+           'and its colour')
+check(escById(tdFull, 'q').style.decorationStyle == decorationStyleKeyword('dotted'.toAscii()),
+      'and its style')
+
+// ---- place-items, place-content and place-self -------------------------
+// Each is a two-value shorthand whose first value is the block-axis
+// property and whose second is the inline one, and one value sets both
+// (CSS Box Alignment 3). All six longhands were read here and none of
+// the three shorthands that set them.
+void func placeIs(css:text, wantAlign:int, wantJustify:int, label:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>#q{display:grid;' + css
+        + '}</style></head><body><div id="q">x</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    if e == null { checksFailed++  log(`FAIL: ${label}: no element`)  return }
+    checkEqInt(e.style.alignItems, wantAlign, label + ' (block axis)')
+    checkEqInt(e.style.justifyItems, wantJustify, label + ' (inline axis)')
+}
+placeIs('align-items:end;justify-items:center', BOXALIGN_END, BOXALIGN_CENTRE,
+        'the two longhands, as the yardstick the shorthand must match')
+placeIs('place-items:end center', BOXALIGN_END, BOXALIGN_CENTRE,
+        '`place-items` is the block axis then the inline one')
+placeIs('place-items:end', BOXALIGN_END, BOXALIGN_END,
+        'and one value sets both')
+
+void func placeContentIs(css:text, wantAlign:int, wantJustify:int, label:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>#q{display:grid;' + css
+        + '}</style></head><body><div id="q">x</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    if e == null { checksFailed++  log(`FAIL: ${label}: no element`)  return }
+    checkEqInt(e.style.alignContent, wantAlign, label + ' (block axis)')
+    checkEqInt(e.style.justifyContent, wantJustify, label + ' (inline axis)')
+}
+placeContentIs('align-content:start;justify-content:end', BOXALIGN_START, BOXALIGN_END,
+               'the two longhands, as the yardstick')
+placeContentIs('place-content:start end', BOXALIGN_START, BOXALIGN_END,
+               '`place-content` is the block axis then the inline one')
+
+void func placeSelfIs(css:text, wantAlign:int, wantJustify:int, label:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>#p{display:grid}#q{' + css
+        + '}</style></head><body><div id="p"><div id="q">x</div></div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    if e == null { checksFailed++  log(`FAIL: ${label}: no element`)  return }
+    checkEqInt(e.style.alignSelf, wantAlign, label + ' (block axis)')
+    checkEqInt(e.style.justifySelf, wantJustify, label + ' (inline axis)')
+}
+placeSelfIs('align-self:center;justify-self:end', BOXALIGN_CENTRE, BOXALIGN_END,
+            'the two longhands, as the yardstick')
+placeSelfIs('place-self:center end', BOXALIGN_CENTRE, BOXALIGN_END,
+            '`place-self` is the block axis then the inline one')
+placeSelfIs('place-self:center', BOXALIGN_CENTRE, BOXALIGN_CENTRE,
+            'and one value sets both')
+placeContentIs('place-content:center', BOXALIGN_CENTRE, BOXALIGN_CENTRE,
+               '`place-content` takes one value too')
+placeContentIs('place-content:space-between space-around',
+               BOXALIGN_SPACE_BETWEEN, BOXALIGN_SPACE_AROUND,
+               'and the distribution keywords go through it')
+placeIs('place-items:baseline stretch', BOXALIGN_BASELINE, BOXALIGN_STRETCH,
+        'as do baseline and stretch')
+
+// A shorthand and a longhand of the same property must compete on
+// source order, which is the whole reason these are expanded rather
+// than read beside their longhands.
+placeIs('align-items:start;place-items:end center', BOXALIGN_END, BOXALIGN_CENTRE,
+        'a later `place-items` beats an earlier `align-items`')
+placeIs('place-items:end center;align-items:start', BOXALIGN_START, BOXALIGN_CENTRE,
+        'and an earlier one loses to a later `align-items`')
+
+// An invalid value drops the whole declaration rather than the half of
+// it that failed: Chromium answers `start` here, which is what the
+// `align-items` before it said.
+placeIs('align-items:start;justify-items:center;place-items:end nonsense',
+        BOXALIGN_START, BOXALIGN_CENTRE,
+        'an unknown second value drops the whole shorthand')
+
 finish('cascade rules')

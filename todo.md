@@ -2318,10 +2318,16 @@ property and whose second is the inline one, and one value sets both:
 | `place-content: start end` | `align-content: start`, `justify-content: end` |
 | `place-self: center` | `align-self: center`, `justify-self: center` |
 
-All six longhands exist here and are read; only the three shorthands
-that set them are missing, so the whole of it is a name and a split.
-
-The measurement alone; the tests and the fixes follow.
+Both are fixed. `text-decoration` expands into `text-decoration-line`,
+`-style`, `-color` and `-thickness` in `applyDecl`, resetting the ones
+it does not name -- Chromium answers `text-decoration-color: red;
+text-decoration: underline` with the text's own colour, so the reset is
+half the behaviour. The three `place-*` shorthands expand the same way,
+behind a per-document flag, and drop the whole declaration when either
+value is a keyword neither axis knows, which is what Chromium does with
+`place-items: end nonsense`. Twenty-six checks in
+`tests/unit/test_cascade_rules.f` carry them, and the property
+instrument gained a row for each of the three.
 
 ### Where an inset shadow's curve comes from, measured
 

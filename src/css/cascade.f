@@ -240,6 +240,7 @@ void func cascadeReset() {
     // would otherwise register every one of them twice.
     resetPageRules()
     anyPageBreak = false
+    anyPlaceShorthand = false
     anySmallCaps = false
     map[int] emptyFontCaps = {}
     fontCapsOfSerial = emptyFontCaps
@@ -4566,6 +4567,97 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         setProp(props, inline ? `${base}-right` : `${base}-bottom`, b)
         return
     }
+    // `text-decoration` is the shorthand for the line, the style, the
+    // colour and the thickness (Text Decoration 4 sec. 2.5), and it is
+    // expanded into those four keys rather than kept as a fifth. Two
+    // keys meant the reader applied the shorthand first and the
+    // longhand afterwards, so the longhand won whatever the stylesheet
+    // said: `text-decoration-line: underline; text-decoration:
+    // overline` gave underline where Chromium gives overline, and the
+    // other order gave underline too. One key, and the cascade decides.
+    //
+    // An omitted longhand takes its initial value, which is what the
+    // deletes are for: Chromium answers `text-decoration-color: red;
+    // text-decoration: underline` with the text's own colour, not red.
+    // Deleting is how a declaration map says "initial" -- a weaker
+    // declaration of the same longhand is what the shorthand resets.
+    if name == 'text-decoration' {
+        if declIsCssWide(value) {
+            props['text-decoration-line'] = dup(value)
+            props['text-decoration-style'] = dup(value)
+            props['text-decoration-color'] = dup(value)
+            props['text-decoration-thickness'] = dup(value)
+            return
+        }
+        if props['text-decoration-line'] != null { delete props['text-decoration-line'] }
+        if props['text-decoration-style'] != null { delete props['text-decoration-style'] }
+        if props['text-decoration-color'] != null { delete props['text-decoration-color'] }
+        if props['text-decoration-thickness'] != null { delete props['text-decoration-thickness'] }
+        arr[ascii] dt = cssTokens(value)
+        text lineToks = ''
+        for int i = 0, i < dt.length, i++ {
+            ascii t = asciiLower(dt[i])
+            if t == 'none' || t == 'underline' || t == 'line-through'
+                || t == 'overline' || t == 'blink' {
+                lineToks = lineToks + (lineToks.length > 0 ? ' ' : '') + t.toText()
+                continue
+            }
+            if decorationStyleKeyword(t) >= 0 {
+                setProp(props, 'text-decoration-style', t)
+                continue
+            }
+            // A thickness is `auto`, `from-font` or a length, and a
+            // length is told from a colour by its first character
+            // rather than by parsing it: `parseLength` answers `auto`
+            // for everything it cannot read, so asking it would make
+            // every colour keyword a thickness.
+            int c0 = t.length > 0 ? t.charCodeAt(0) : 0
+            if t == 'auto' || t == 'from-font' || isDigitCode(c0)
+                || c0 == CH_DOT || c0 == CH_PLUS || c0 == CH_MINUS {
+                setProp(props, 'text-decoration-thickness', t)
+                continue
+            }
+            setProp(props, 'text-decoration-color', dt[i])
+        }
+        if lineToks.length > 0 { setProp(props, 'text-decoration-line', lineToks.toAscii()) }
+        return
+    }
+    // `place-items`, `place-content` and `place-self` are Box Alignment
+    // 3's two-value shorthands (sec. 6): the first value is the block
+    // axis and the second the inline one, and one value sets both.
+    // Expanded here for the reason above -- one key per longhand, so
+    // the cascade decides between a shorthand and a longhand written
+    // either side of it -- and dropped whole when either value is a
+    // keyword this engine does not know, because Chromium leaves
+    // `align-items` alone for `place-items: end nonsense` where a
+    // reader that took the first token and stopped would not.
+    if anyPlaceShorthand && (name == 'place-items' || name == 'place-content'
+                             || name == 'place-self') {
+        text blockAxis = name == 'place-items' ? 'align-items'
+            : (name == 'place-content' ? 'align-content' : 'align-self')
+        text inlineAxis = name == 'place-items' ? 'justify-items'
+            : (name == 'place-content' ? 'justify-content' : 'justify-self')
+        if declIsCssWide(value) {
+            props[blockAxis] = dup(value)
+            props[inlineAxis] = dup(value)
+            return
+        }
+        arr[ascii] pt = cssTokens(value)
+        if pt.length == 0 || pt.length > 2 { return }
+        // `dup` rather than a plain binding: an `ascii` local bound to
+        // an array element aliases it, and the array is released at
+        // the end of the call before the locals are, so releasing them
+        // writes into freed memory (FINDINGS.md, "ascii aliases are
+        // not retained"). Valgrind found this one; the ordinary run
+        // printed the right answers.
+        ascii firstVal = dup(pt[0])
+        ascii secondVal = dup(pt.length > 1 ? pt[1] : pt[0])
+        if parseAlignValue(firstVal, 0 - 1) < 0 { return }
+        if parseAlignValue(secondVal, 0 - 1) < 0 { return }
+        setProp(props, blockAxis, firstVal)
+        setProp(props, inlineAxis, secondVal)
+        return
+    }
     // CSS2's three page-break properties are the three fragmentation
     // properties under their older names (Fragmentation 3 §4.4), so a
     // declaration under an old name is applied under the new one rather
@@ -6579,32 +6671,14 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.inheritedDecoThickness = parent.inheritedDecoThickness
         s.inheritedDecoOffset = parent.inheritedDecoOffset
     }
-    // `text-decoration` is the shorthand for the line, the colour and
-    // the style, so all three are read from it before the longhands
-    // override any of them.
+    // `text-decoration` reaches here as its four longhands, which
+    // applyDecl expanded it into, so there is nothing to read under the
+    // shorthand's own name.
     s.textDecoration = DECO_NONE
     s.decorationColor = COLOR_UNSET
     s.decorationStyle = DECOSTYLE_SOLID
     s.decorationThickness = 0
     s.underlineOffset = 0
-    ascii td = styleProp(props, 'text-decoration')
-    if td != null {
-        arr[ascii] tdt = cssTokens(td)
-        int deco = 0
-        for int i = 0, i < tdt.length, i++ {
-            ascii t = asciiLower(tdt[i])
-            if t == 'none' { continue }
-            if t == 'underline' { deco = deco + DECO_UNDERLINE  continue }
-            if t == 'line-through' { deco = deco + DECO_LINE_THROUGH  continue }
-            if t == 'overline' { deco = deco + DECO_OVERLINE  continue }
-            if t == 'blink' { continue }
-            int st = decorationStyleKeyword(t)
-            if st >= 0 { s.decorationStyle = st  continue }
-            int c = parseCssColor(t, s.color)
-            if c != COLOR_UNSET { s.decorationColor = c }
-        }
-        s.textDecoration = deco
-    }
     ascii tdl = styleProp(props, 'text-decoration-line')
     if tdl != null {
         arr[ascii] lt = cssTokens(tdl)

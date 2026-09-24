@@ -750,6 +750,7 @@ Decl func parseOneDeclaration(piece:ascii) {
     // says one pays a single boolean instead. See cascadeReset, which
     // clears it with everything else the document put here.
     if asciiStartsWith(name, 'page-break', 0) { anyPageBreak = true }
+    if asciiStartsWith(name, 'place-', 0) { anyPlaceShorthand = true }
     d.value = value
     d.important = important
     d.serial = declSerialNext
@@ -1545,6 +1546,7 @@ arr[text] supportedProperties = [
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',
     'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
+    'place-items', 'place-content', 'place-self',
     'border-image', 'border-image-source', 'border-image-slice',
     'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',

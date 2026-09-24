@@ -358,6 +358,9 @@ page	chapter
 paint-order	stroke
 perspective	10px
 perspective-origin	left
+place-content	space-between center
+place-items	end center
+place-self	center end
 pointer-events	visible
 position	relative
 position-anchor	--a

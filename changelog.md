@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A shorthand and its longhand compete, for text decoration and for alignment
+
+Two bugs the widened style digest left behind, both of the same shape:
+a shorthand that does not occupy the keys its longhands do.
+
+**`text-decoration` now expands into its four longhands.** It had been a
+fifth key of its own, and the reader applied the shorthand first and the
+longhands after it, so a longhand won whatever the stylesheet said:
+`text-decoration-line: underline; text-decoration: overline` gave
+underline where Chromium gives overline. `applyDecl` now writes
+`text-decoration-line`, `-style`, `-color` and `-thickness`, and deletes
+the ones the shorthand does not name -- Chromium answers
+`text-decoration-color: red; text-decoration: underline` with the text's
+own colour, so the reset is half the behaviour rather than a detail. A
+length in the shorthand is a thickness, told from a colour by its first
+character, because `parseLength` answers `auto` for everything it cannot
+read and would have made every colour keyword a thickness.
+
+**`place-items`, `place-content` and `place-self` are implemented.** All
+six longhands were already read and none of the three shorthands that
+set them. Each is expanded the same way: the first value is the block
+axis and the second the inline one, and one value sets both. A value
+neither axis knows drops the whole declaration -- Chromium leaves
+`align-items` alone for `place-items: end nonsense`, where a reader that
+took the first token and stopped would not. The three comparisons sit
+behind a per-document flag set while a stylesheet is read, so a page
+that never says `place-` pays a boolean; the user-agent sheet says none
+of them, which is what makes the flag worth having.
+
+The `place-*` expansion shipped a use-after-free that the ordinary run
+could not see: binding an `ascii` local to an element of the token
+array aliases it, and the array is released before the locals are, so
+the release wrote into freed memory. Every check passed and valgrind
+found it -- the second time finding 2 has been paid for here. The
+tokens are `dup`ed now.
+
+Twenty-six checks in `tests/unit/test_cascade_rules.f` carry the two,
+each pairing the shorthand against the two longhands that must agree
+with it rather than against a remembered number. The property
+instrument gained a row for each of the three, and the count moved from
+271 of 405 to **274 of 408**; `--fields` says each moved the two fields
+that mean it. `css-2026.md`'s selector row had been left at 61 of 61
+after the instrument reached 129; it now says what the instrument says.
+
 ### A sub-layer is inside its parent, and a shorthand carries a keyword
 
 Two bugs from one sweep: thirty claims in css-2026.md's CSS Cascade 4

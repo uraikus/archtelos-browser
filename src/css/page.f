@@ -29,6 +29,13 @@ bool cssMediaPrint = false
 // (FINDINGS.md, "one global namespace, and globals are not hoisted").
 bool anyPageBreak = false
 
+// Whether this document has ever said `place-items`, `place-content`
+// or `place-self`. The same bargain as anyPageBreak above, and the
+// user-agent stylesheet says none of the three, so the flag is false
+// on a page that does not use them and the three name comparisons in
+// applyDecl never run.
+bool anyPlaceShorthand = false
+
 struct PageBox {
     width:int
     height:int
