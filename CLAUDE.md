@@ -175,6 +175,23 @@ engine column is read from the code. The rule is not to read the code
 harder; it is that **every such claim needs a check in `tests/unit/`,
 because the thing that would otherwise notice does not exist**.
 
+**A sentence about what this engine does is a measurement, and writing
+one from memory gets it wrong.** The rule below is about audit lists,
+and the same failure arrives in prose. Five times in one stretch: a
+todo.md paragraph said six at-rules had no instrument, naming two this
+engine does not implement, when all seven it recognises already had
+suites; css-2026.md said `fit-content` was clamped to its container,
+where it is clamped only from above; css-2026.md said the intrinsic
+keywords do nothing on `height`, written without looking for a fixture
+that could tell them apart, and a grid item can; and twice a function
+was added that already existed under another name, caught by the
+compiler rather than by looking. **Before writing that this engine does
+or does not do something, run it and see** -- a scratch `.f` that
+prints the answer takes a minute, and `tests/chromium.py` or an
+`<iframe srcdoc>` probe gives the other engine's. A sentence in a
+document is as much an instrument as a row in a table, and an
+unmeasured one is the kind that cannot fail.
+
 **A list of things to audit, written from memory, has holes where the
 memory does.** The rule above says to audit the whole instrument. Doing
 that needs a list of what the whole is, and the obvious way to get one

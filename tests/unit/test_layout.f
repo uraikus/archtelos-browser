@@ -475,4 +475,30 @@ checkEqInt(narrowFit, narrowMin,
 check(narrowFit > 60, 'and so it overflows too, rather than being clamped to the container')
 check(narrowFit < narrowMax, 'while staying narrower than `max-content`')
 
+// The same keywords on `height`, which css-2026.md was written up as
+// not supporting -- a sentence put there without measuring, and wrong.
+// A grid item is the fixture that can tell them apart from `auto`: a
+// stretched item fills its row, and any of the three intrinsic
+// keywords stops the stretch and leaves it at its content height.
+// Chromium 141 answers 200 and 60; so does this engine, because the
+// keyword makes the height non-auto and the stretch only applies to an
+// auto one. Before the keywords parsed at all the declaration was
+// dropped and every one of these was 200, which is what stops the
+// checks below passing on the engine that had no feature.
+Box func gridItemH(css:text) {
+    Box r = layoutHtml(sizeHead
+        + '<div style="display:grid;height:200px;width:80px">'
+        + '<div id="s" style="' + css + '">alpha bravo charlie</div>'
+        + '</div></body>', 800)
+    return findBoxById(r, 's')
+}
+int stretched = gridItemH('').h
+checkEqInt(stretched, 200, 'a grid item with an auto height fills its row')
+checkEqInt(gridItemH('height:min-content').h, 60,
+    '`height: min-content` leaves it at its content height instead')
+checkEqInt(gridItemH('height:max-content').h, 60, 'and `max-content`')
+checkEqInt(gridItemH('height:fit-content').h, 60, 'and `fit-content`')
+check(gridItemH('height:min-content').h < stretched,
+    'all three stop the stretch, which is the whole of what they do here')
+
 finish('layout')
