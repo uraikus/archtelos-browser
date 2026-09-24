@@ -4622,6 +4622,75 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         if lineToks.length > 0 { setProp(props, 'text-decoration-line', lineToks.toAscii()) }
         return
     }
+    // `white-space` is the shorthand for `white-space-collapse` and
+    // `text-wrap-mode` (CSS Text 4 sec. 3), expanded here for the same
+    // reason `text-decoration` is: read beside its longhands with the
+    // shorthand first, the longhand won whatever the stylesheet said,
+    // and `white-space-collapse: preserve; white-space: normal` gave
+    // preserve where Chromium gives collapse.
+    //
+    // The comparison is written plain rather than behind a flag because
+    // the user-agent sheet says `white-space` on `pre`, `textarea` and
+    // `nobr`, so the flag would be true on every page it was asked of.
+    if name == 'white-space' {
+        if declIsCssWide(value) {
+            props['white-space-collapse'] = dup(value)
+            props['text-wrap-mode'] = dup(value)
+            return
+        }
+        ascii wsk = asciiLower(asciiTrim(value))
+        text wsCollapse = ''
+        text wsMode = ''
+        if wsk == 'normal' { wsCollapse = 'collapse'  wsMode = 'wrap' }
+        else if wsk == 'pre' { wsCollapse = 'preserve'  wsMode = 'nowrap' }
+        else if wsk == 'nowrap' { wsCollapse = 'collapse'  wsMode = 'nowrap' }
+        else if wsk == 'pre-wrap' { wsCollapse = 'preserve'  wsMode = 'wrap' }
+        else if wsk == 'pre-line' { wsCollapse = 'preserve-breaks'  wsMode = 'wrap' }
+        else if wsk == 'break-spaces' { wsCollapse = 'break-spaces'  wsMode = 'wrap' }
+        // An unknown keyword drops the whole declaration, so a longhand
+        // written before it still stands.
+        if wsCollapse.length == 0 { return }
+        props['white-space-collapse'] = wsCollapse
+        props['text-wrap-mode'] = wsMode
+        return
+    }
+    // `text-wrap` is the shorthand for `text-wrap-mode` and
+    // `text-wrap-style` (CSS Text 4 sec. 6.1). Its style half was read
+    // out of the shorthand by applyTextWrapStyle and **its mode half
+    // had no reader at all**, so `text-wrap: nowrap` did nothing
+    // whatever. Both halves are written here, the one the shorthand
+    // does not name at its initial value, so that the two shorthands
+    // that share `text-wrap-mode` are decided by source order: written
+    // either way round, `white-space: nowrap; text-wrap: wrap` and its
+    // reverse give different answers in Chromium and could not here.
+    if name == 'text-wrap' {
+        if declIsCssWide(value) {
+            props['text-wrap-mode'] = dup(value)
+            props['text-wrap-style'] = dup(value)
+            return
+        }
+        arr[ascii] twt = cssTokens(value)
+        if twt.length == 0 || twt.length > 2 { return }
+        text twMode = ''
+        text twStyle = ''
+        for int i = 0, i < twt.length, i++ {
+            ascii twk = asciiLower(twt[i])
+            if twk == 'wrap' || twk == 'nowrap' {
+                if twMode.length > 0 { return }
+                twMode = twk.toText()
+                continue
+            }
+            if twk == 'auto' || twk == 'balance' || twk == 'pretty' || twk == 'stable' {
+                if twStyle.length > 0 { return }
+                twStyle = twk.toText()
+                continue
+            }
+            return
+        }
+        props['text-wrap-mode'] = twMode.length > 0 ? twMode : 'wrap'
+        props['text-wrap-style'] = twStyle.length > 0 ? twStyle : 'auto'
+        return
+    }
     // `place-items`, `place-content` and `place-self` are Box Alignment
     // 3's two-value shorthands (sec. 6): the first value is the block
     // axis and the second the inline one, and one value sets both.
@@ -6239,19 +6308,9 @@ void func applyFontCaps(s:Style, parent:Style, isRoot:bool, props:map[text]) {
 
 void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
-    ascii tw = styleProp(props, 'text-wrap')
-    if tw != null {
-        arr[ascii] words = asciiSplitSpace(asciiLower(asciiTrim(tw)))
-        for int i = 0, i < words.length, i++ {
-            // Indexed rather than bound: an element of a split aliases
-            // the buffer it was cut from (FINDINGS.md, "ascii aliases
-            // are not retained").
-            if words[i] == 'auto' { v = TWS_AUTO }
-            else if words[i] == 'balance' { v = TWS_BALANCE }
-            else if words[i] == 'pretty' { v = TWS_PRETTY }
-            else if words[i] == 'stable' { v = TWS_STABLE }
-        }
-    }
+    // `text-wrap` reaches here as its two longhands, which applyDecl
+    // expanded it into, so there is nothing to read under the
+    // shorthand's own name.
     ascii tws = styleProp(props, 'text-wrap-style')
     if tws != null { v = textWrapStyleKeyword(asciiLower(asciiTrim(tws))) }
     if v != TWS_AUTO {
@@ -6770,19 +6829,12 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // part of it.
     s.whiteSpaceCollapse = isRoot ? WSC_COLLAPSE : parent.whiteSpaceCollapse
     s.textWrapMode = isRoot ? WRAP_WRAP : parent.textWrapMode
-    ascii ws = styleProp(props, 'white-space')
-    if ws != null {
-        ascii t = asciiLower(ws)
-        if t == 'normal' { s.whiteSpaceCollapse = WSC_COLLAPSE  s.textWrapMode = WRAP_WRAP }
-        else if t == 'pre' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_NOWRAP }
-        else if t == 'nowrap' { s.whiteSpaceCollapse = WSC_COLLAPSE  s.textWrapMode = WRAP_NOWRAP }
-        else if t == 'pre-wrap' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_WRAP }
-        else if t == 'pre-line' { s.whiteSpaceCollapse = WSC_PRESERVE_BREAKS  s.textWrapMode = WRAP_WRAP }
-        // break-spaces differs from pre-wrap only in where a line may
-        // break inside a run of preserved spaces, which this engine
-        // does not do either way
-        else if t == 'break-spaces' { s.whiteSpaceCollapse = WSC_PRESERVE  s.textWrapMode = WRAP_WRAP }
-    }
+    // `white-space` reaches here as its two longhands, which applyDecl
+    // expanded it into. `break-spaces` arrives as a
+    // `white-space-collapse` of its own name and is folded onto
+    // `preserve` below, because it differs from `pre-wrap` only in
+    // where a line may break inside a run of preserved spaces, which
+    // this engine does not do either way.
     ascii wsc = styleProp(props, 'white-space-collapse')
     if wsc != null {
         ascii t = asciiLower(wsc)

@@ -2381,7 +2381,16 @@ longhand before them standing, which this engine gets right by falling
 through rather than by validating, and which expanding the shorthands
 will have to keep.
 
-The measurement alone; the tests and the fixes follow.
+All three faults are fixed, and both shorthands are expanded in
+`applyDecl` the way `text-decoration` is: one key per longhand, the
+half the shorthand does not name written at its initial value, and an
+unknown keyword dropping the whole declaration. Twenty-five checks in
+`tests/unit/test_text.f` carry them, including the pair that cannot be
+got right by reading the shorthands in a fixed order -- the two orders
+of `white-space: nowrap` and `text-wrap: wrap` -- and every
+`white-space` keyword against the pair of longhands it stands for. Both
+shorthands gained a row in the property instrument, which reads them as
+moving the two fields that mean them.
 
 ### Where an inset shadow's curve comes from, measured
 

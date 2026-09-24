@@ -1547,6 +1547,7 @@ arr[text] supportedProperties = [
     'justify-content', 'align-items', 'align-self', 'align-content',
     'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
     'place-items', 'place-content', 'place-self',
+    'white-space', 'text-wrap',
     'border-image', 'border-image-source', 'border-image-slice',
     'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',

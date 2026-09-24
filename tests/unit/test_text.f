@@ -258,4 +258,86 @@ checkEqInt(runWidth('font-variant:small-caps', 'abc'),
            runWidth('font-variant-caps:small-caps', 'abc'),
            'the font-variant shorthand sets the same thing')
 
+// ---- a shorthand and its longhand must compete -------------------------
+// `white-space` is a shorthand for `white-space-collapse` and
+// `text-wrap-mode`, and `text-wrap` is a shorthand for
+// `text-wrap-mode` and `text-wrap-style`. Both were read beside their
+// longhands rather than expanded into them, with the shorthand read
+// first, so a longhand won whatever the source order was and the
+// cascade never decided. Each check below is one declaration block, so
+// the order within it is the whole question, and each is paired with
+// the other order: an engine that always prefers one of the two passes
+// half of them whichever it prefers. Every expectation is Chromium
+// 141's, read with getComputedStyle off the same block.
+checkEqInt(styleOf('white-space-collapse:preserve;white-space:normal').whiteSpaceCollapse,
+           WSC_COLLAPSE, 'a later `white-space` beats an earlier `white-space-collapse`')
+checkEqInt(styleOf('white-space:normal;white-space-collapse:preserve').whiteSpaceCollapse,
+           WSC_PRESERVE, 'and the other order gives the other answer')
+checkEqInt(styleOf('text-wrap-mode:nowrap;white-space:normal').textWrapMode,
+           WRAP_WRAP, 'a later `white-space` beats an earlier `text-wrap-mode`')
+checkEqInt(styleOf('white-space:pre;text-wrap-mode:wrap').textWrapMode,
+           WRAP_WRAP, 'and a later `text-wrap-mode` beats the shorthand')
+checkEqInt(styleOf('white-space:pre;text-wrap-mode:wrap').whiteSpaceCollapse,
+           WSC_PRESERVE, 'while leaving the half it does not name alone')
+
+// `text-wrap` sets the mode as well as the style. The mode half was not
+// implemented at all: the style keyword was read out of the shorthand
+// and nothing read the mode keyword, so `text-wrap: nowrap` did
+// nothing whatever.
+checkEqInt(styleOf('text-wrap:nowrap').textWrapMode, WRAP_NOWRAP,
+           '`text-wrap: nowrap` stops the line wrapping')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:nowrap')), TWS_AUTO,
+           'and leaves the style half at its initial value')
+checkEqInt(styleOf('text-wrap:balance').textWrapMode, WRAP_WRAP,
+           '`text-wrap: balance` leaves the mode half at its initial value')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:balance')), TWS_BALANCE,
+           'and sets the style half')
+checkEqInt(styleOf('text-wrap:wrap balance').textWrapMode, WRAP_WRAP,
+           'both halves named, the mode')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:wrap balance')), TWS_BALANCE,
+           'and the style')
+
+// A shorthand sets every longhand it has, including the ones it does
+// not name, which is the half a reader applying it first gets wrong in
+// the other direction.
+checkEqInt(textWrapStyleOf(styleOf('text-wrap-style:balance;text-wrap:wrap')),
+           TWS_AUTO, '`text-wrap` resets the style half it does not name')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:balance;text-wrap-style:stable')),
+           TWS_STABLE, 'and a later longhand still replaces it')
+checkEqInt(styleOf('text-wrap-mode:nowrap;text-wrap:balance').textWrapMode,
+           WRAP_WRAP, 'and it resets the mode half it does not name')
+
+// The two shorthands share `text-wrap-mode`, so one written after the
+// other decides it. This is the pair that cannot be got right by
+// reading the shorthands in a fixed order.
+checkEqInt(styleOf('white-space:nowrap;text-wrap:wrap').textWrapMode,
+           WRAP_WRAP, '`text-wrap` after `white-space` decides the mode')
+checkEqInt(styleOf('text-wrap:wrap;white-space:nowrap').textWrapMode,
+           WRAP_NOWRAP, 'and `white-space` after `text-wrap` decides it the other way')
+checkEqInt(styleOf('white-space:pre;text-wrap:wrap').whiteSpaceCollapse,
+           WSC_PRESERVE, 'while `text-wrap` leaves the collapsing alone')
+
+// An invalid value drops the whole declaration rather than the half of
+// it that parsed, so what came before still stands.
+checkEqInt(styleOf('white-space-collapse:preserve;white-space:nonsense').whiteSpaceCollapse,
+           WSC_PRESERVE, 'an unknown `white-space` drops the whole declaration')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap-style:balance;text-wrap:wrap nonsense')),
+           TWS_BALANCE, 'and an unknown half drops the whole `text-wrap`')
+
+// Every `white-space` keyword against the pair of longhands it stands
+// for, so the expansion is checked against the thing it must agree with
+// rather than against a remembered enum.
+checkSameWhiteSpace('white-space:normal', 'white-space-collapse:collapse;text-wrap-mode:wrap',
+                    '`normal` is collapse and wrap')
+checkSameWhiteSpace('white-space:pre', 'white-space-collapse:preserve;text-wrap-mode:nowrap',
+                    '`pre` is preserve and nowrap')
+checkSameWhiteSpace('white-space:nowrap', 'white-space-collapse:collapse;text-wrap-mode:nowrap',
+                    '`nowrap` is collapse and nowrap')
+checkSameWhiteSpace('white-space:pre-wrap', 'white-space-collapse:preserve;text-wrap-mode:wrap',
+                    '`pre-wrap` is preserve and wrap')
+checkSameWhiteSpace('white-space:pre-line', 'white-space-collapse:preserve-breaks;text-wrap-mode:wrap',
+                    '`pre-line` is preserve-breaks and wrap')
+checkSameWhiteSpace('white-space:break-spaces', 'white-space-collapse:break-spaces;text-wrap-mode:wrap',
+                    '`break-spaces` is break-spaces and wrap')
+
 finish('text')

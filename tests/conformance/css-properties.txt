@@ -453,6 +453,7 @@ text-spacing-trim	space-all
 text-transform	uppercase
 text-underline-offset	4px
 text-underline-position	under
+text-wrap	nowrap balance
 text-wrap-mode	nowrap
 text-wrap-style	balance
 timeline-scope	--t
@@ -479,6 +480,7 @@ view-transition-class	hidden
 view-transition-group	hidden
 view-transition-name	hero
 visibility	hidden
+white-space	pre
 white-space-collapse	preserve
 widows	700
 width	123px

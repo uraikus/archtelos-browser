@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `white-space` and `text-wrap` are shorthands, and `text-wrap` sets the mode
+
+The sweep method applied to css-2026.md's CSS Text 3 row, which was the
+last row with many sentences and no instrument behind it: thirty-five
+documents to Chromium 141, one claim each. Twenty-seven agreed, two
+differ for reasons that are not bugs, and six are three faults.
+
+**Both shorthands are expanded into their longhands.** `white-space` is
+a shorthand for `white-space-collapse` and `text-wrap-mode`; `text-wrap`
+is a shorthand for `text-wrap-mode` and `text-wrap-style`. Both were
+read beside their longhands with the shorthand read first, so the
+longhand won whatever the stylesheet said and
+`white-space-collapse: preserve; white-space: normal` gave preserve
+where Chromium gives collapse. They now occupy the same keys their
+longhands do, and the cascade decides.
+
+**`text-wrap`'s mode half had no reader at all.** The style keyword was
+taken out of the shorthand and nothing took the mode keyword, so
+`text-wrap: nowrap` did nothing whatever. That is also what made the
+two shorthands' shared longhand unreachable: `white-space` always won
+`text-wrap-mode` because `text-wrap` never wrote it, whichever order
+they were written in.
+
+**A shorthand resets the longhand it does not name.**
+`text-wrap-style: balance; text-wrap: wrap` is `auto` in Chromium and
+was `balance` here, and `text-wrap-mode: nowrap; text-wrap: balance` is
+`wrap` there and was `nowrap` here.
+
+Two rows differ and neither is a bug.
+`white-space-collapse: preserve-spaces` computes to `collapse` in
+Chromium, which has not shipped the value; this engine honours it, and
+CSS Text 4 defines it. And `break-spaces` keeps its own computed value
+in Chromium where this engine folds it onto `preserve`, which is the
+approximation the css-2026.md row already names: neither engine breaks
+inside a run of preserved spaces, so the two render alike.
+
+Twenty-five checks in `tests/unit/test_text.f`, each pairing the
+shorthand against the longhands it must agree with. `white-space` and
+`text-wrap` gained a row in the property instrument, which had graded
+neither, and the count moved from 274 of 408 to **276 of 410**.
+
 ### A shorthand and its longhand compete, for text decoration and for alignment
 
 Two bugs the widened style digest left behind, both of the same shape:
