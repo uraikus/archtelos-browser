@@ -3874,3 +3874,51 @@ in a loop that already resolves four lengths per child.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## What `offset-path: url()` cost, and the fourth shape of one effect
+
+`features.html` contains no `offset-path`, so nothing the change adds
+runs on it; the binary grows 4,168 bytes. Twenty-five alternating
+samples at 800px, idle at 0.20 to 0.51:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| forward, round 1 | **-1** | **-2** | 0 |
+| forward, round 2 | **-2** | **-2** | +1 |
+| reversed | **+1** | **+1** | 0 |
+
+Paint's forward rounds disagree, so nothing there earns a question.
+Cascade and layout both agree across two forward rounds and both flip
+sign in the mirror, leaving the candidate about a millisecond and a half
+faster in each -- on a page that reaches no line of the diff.
+
+That settles itself without a control, exactly as the `inset()` section
+above did: a change cannot make a page faster by adding code the page
+never runs. No further apparatus is spent on it.
+
+This is the fourth shape the same effect has taken in this file, and
+they are worth listing together, because the collection is now the
+evidence rather than any one of them:
+
+| | how it showed |
+|---|---|
+| `print-color-adjust` | a quantity that did not add up across three binaries |
+| `polygon()`'s fill rule | four binaries, the struct-padding control flat |
+| `inset()`'s `round` radius | a reading that came out **negative** |
+| `scroll-snap-stop` | a triangle that did not close |
+| `offset-path: url()` | negative again, in two phases at once |
+
+The rule they have converged on is short enough to keep: **before taking
+a reading to the code, check whether the phase that moved runs any of
+the diff at all.** Four of the five above fail that test immediately,
+and the fifth had no line in the phase either.
+
+**Not measured**: what a page that uses `offset-path: url()` pays. The
+reference is resolved once per element that declares one, at cascade
+time, by a walk of the document for a matching `<path>` -- linear in the
+document for each such declaration. No benchmark page carries one, and a
+page built to measure it against itself would say nothing the shape of
+the walk does not.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
