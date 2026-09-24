@@ -175,6 +175,24 @@ engine column is read from the code. The rule is not to read the code
 harder; it is that **every such claim needs a check in `tests/unit/`,
 because the thing that would otherwise notice does not exist**.
 
+**A list of things to audit, written from memory, has holes where the
+memory does.** The rule above says to audit the whole instrument. Doing
+that needs a list of what the whole is, and the obvious way to get one
+-- write down every shorthand you can think of -- was tried here and
+came up two short. Thirteen shorthands were being resolved by which
+reader ran first rather than by source order; eleven were found from a
+hand-written list, and `column-rule` and `contain-intrinsic-size` were
+not on it. `column-rule` is the same three-part shape as `border` and
+`outline`, both of which were on the list and both already fixed, which
+is exactly the hole a memory leaves: the third instance of a pattern
+you have already thought about twice. Asking the source instead --
+which property names does `computeStyleValues` read with a
+`...Prop(props, ...)` helper, and which of those is a prefix of another
+-- found both in one command. **Derive the list from the code, then
+audit it**; the derivation is usually one `grep` and a loop, and it is
+the difference between auditing the whole of something and auditing the
+part you remembered.
+
 **Audit the whole instrument, not one row at a time.** Checking the row
 in front of you leaves every other row unexamined, and they rot
 silently: 218 of the 373 rows in `css-properties.txt` declared
