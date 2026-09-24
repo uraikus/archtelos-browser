@@ -5,6 +5,46 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Blockification, and the anonymous block it turned out to depend on
+
+CSS Display 3 sec. 2.7: a float, an absolute or fixed position, being a
+flex or grid item, and being the root element each replace an
+inline-level `display` with the block-level value it corresponds to.
+css-2026.md recorded this as missing and it was -- the box tree
+converted a flex item's *box kind* and nothing anywhere touched the
+computed value, so `display: inline; float: left` stayed `inline` where
+Chromium reports `block`.
+
+It is not "set everything to `block`": `inline-flex` becomes `flex`,
+`inline-grid` becomes `grid`, `inline-table` becomes `table`, and
+`none` and `contents` are left alone because neither names a box to
+convert. Fourteen checks in `tests/unit/test_display.f`, each against
+Chromium 141's computed value, including the three that must *not*
+change -- `none`, `contents`, and `position: relative` -- so the test
+cannot pass by blockifying indiscriminately.
+
+**And it broke a float, which is the half worth recording.** A floated
+`<span>` used to keep `display: inline`, so `wrapInlineRuns` counted it
+as inline content and left the paragraph alone. Blockified, it became
+block-level, and a paragraph with a float in it started generating the
+anonymous blocks of CSS2 sec. 9.2.1.1 -- which took the paragraph's
+lines away entirely. The float suite caught it on the first full run.
+
+The fix is the standard's own wording: anonymous blocks are generated
+around inline content when an **in-flow** block-level sibling is
+present, and a float is not in flow. A float is exempt from that
+counting now. An absolutely positioned box is *not*, though it is also
+out of flow, because this engine finds its static position by leaving
+it where it was written and Chromium puts that position on the line
+after inline content -- which the position suite pins, and which an
+intermediate version of this change broke before the suite said so.
+
+Two functions were written during this change that already existed
+under other names, and both were caught by the compiler rather than by
+looking: the second, `boxIsFloated`, already did exactly the job and
+already excluded a positioned box from being treated as a float. The
+same failure as the audit list two commits ago, one level down.
+
 ### The at-rules this parser steps over, and a check that could not fail
 
 The same derive-from-the-source treatment, applied to at-rules. The

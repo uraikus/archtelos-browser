@@ -6109,6 +6109,17 @@ int func parseAlignValue(v:ascii, dflt:int) {
     return dflt
 }
 
+// The block-level `display` an inline-level one blockifies to
+// (Display 3 sec. 2.7). Anything already block-level, and the two
+// values that name no box, come back unchanged.
+int func blockifiedDisplay(d:int) {
+    if d == DISPLAY_INLINE || d == DISPLAY_INLINE_BLOCK { return DISPLAY_BLOCK }
+    if d == DISPLAY_INLINE_FLEX { return DISPLAY_FLEX }
+    if d == DISPLAY_INLINE_GRID { return DISPLAY_GRID }
+    if d == DISPLAY_INLINE_TABLE { return DISPLAY_TABLE }
+    return d
+}
+
 // Whether a value is one this property has. An invalid declaration is
 // dropped rather than applied (CSS Syntax 3 sec. 8.2), and for `display`
 // that is the difference between a `<div>` keeping the block the
@@ -8405,6 +8416,28 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii t = asciiLower(fl)
         if t == 'left' { s.floatSide = FLOAT_LEFT }
         else if t == 'right' { s.floatSide = FLOAT_RIGHT }
+    }
+    // Blockification (Display 3 sec. 2.7). A float, an absolute or
+    // fixed position, being a flex or grid item, and being the root
+    // element each replace an inline-level `display` with the
+    // block-level value it corresponds to -- not with `block`
+    // flatly: an `inline-flex` becomes a `flex` and an `inline-table` a
+    // `table`. `none` and `contents` are left alone, because neither
+    // names a box to convert.
+    //
+    // This sits here because it needs `float` and `position`, which are
+    // read a few lines above and below, and the parent's display, which
+    // is to hand. The condition is four integer tests on fields already
+    // loaded, and it is written as one `if` rather than four so that an
+    // ordinary static box in normal flow -- which is nearly every box
+    // on nearly every page -- pays those four and nothing else.
+    if s.floatSide != FLOAT_NONE || s.position == POS_ABSOLUTE
+        || s.position == POS_FIXED || isRoot
+        || (!isRoot && (parent.display == DISPLAY_FLEX
+                        || parent.display == DISPLAY_INLINE_FLEX
+                        || parent.display == DISPLAY_GRID
+                        || parent.display == DISPLAY_INLINE_GRID)) {
+        s.display = blockifiedDisplay(s.display)
     }
     // The two axes, and the standard's rule that a `visible` beside
     // anything else is really `auto`: a box cannot clip one axis and

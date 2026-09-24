@@ -1278,6 +1278,9 @@ void func wrapInlineRuns(b:Box) {
     bool hasInline = false
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
+        // Out of flow: neither the block-level sibling that forces the
+        // wrapping nor the inline content that needs it.
+        if boxIsFloated(c) { continue }
         if isInlineLevelBox(c) {
             if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) && wsDropsBlank(c.style, c.content) { continue }
             hasInline = true
@@ -1302,7 +1305,10 @@ void func wrapInlineRuns(b:Box) {
     Box run = null
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
-        if isInlineLevelBox(c) {
+        // An out-of-flow box stays in the run it was written in, where
+        // the float code and the absolute placement both expect to find
+        // it; it is only the *counting* above that must ignore it.
+        if isInlineLevelBox(c) || boxIsFloated(c) {
             if c.kind == BOX_TEXT && textIsCollapsibleBlank(c.content) && run == null { continue }
             if run == null {
                 run = newBox(BOX_ANON, b.node, anonymousStyle(b.style))
@@ -6323,6 +6329,16 @@ void func placeDropCap(b:Box) {
     r.bottom = r.top + sinkH
 }
 
+// A float is out of flow, so CSS2 sec. 9.2.1.1 does not count it when it
+// decides whether a run of inline content needs an anonymous block
+// around it: the wrapping is generated for an **in-flow** block-level
+// sibling, and a float is neither that nor the content that needs it.
+// wrapInlineRuns asks this; so does the float layout itself.
+//
+// An absolutely positioned box is out of flow too and is deliberately
+// NOT exempted there. This engine finds its static position by leaving
+// it where it was written, and Chromium puts that position on the line
+// after inline content, which tests/unit/test_position.f pins.
 bool func boxIsFloated(b:Box) {
     if !docHasFloats { return false }
     if b == null { return false }
