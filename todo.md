@@ -2329,6 +2329,60 @@ value is a keyword neither axis knows, which is what Chromium does with
 `tests/unit/test_cascade_rules.f` carry them, and the property
 instrument gained a row for each of the three.
 
+### What CSS Text 3's two shorthands do, measured
+
+The sweep method applied to css-2026.md's CSS Text 3 row, which is the
+last row with many sentences and no instrument behind it. Thirty-five
+documents to Chromium 141, one claim each, read with getComputedStyle.
+
+`white-space` is a shorthand for `white-space-collapse` and
+`text-wrap-mode`; `text-wrap` is a shorthand for `text-wrap-mode` and
+`text-wrap-style`. Neither is expanded here -- both are read beside
+their longhands, the shorthand first and the longhand after -- which is
+the same shape as `text-decoration` before it, and it fails the same
+way. Six rows differ:
+
+| | Chromium | this engine |
+|---|---|---|
+| `white-space-collapse:preserve; white-space:normal` | **collapse** | preserve |
+| `text-wrap-mode:nowrap; white-space:normal` | **wrap** | nowrap |
+| `text-wrap:nowrap` | **nowrap** | wrap |
+| `text-wrap-style:balance; text-wrap:wrap` | **auto** | balance |
+| `text-wrap-mode:nowrap; text-wrap:balance` | **wrap** | nowrap |
+| `white-space:nowrap; text-wrap:wrap` | **wrap** | nowrap |
+
+Three separate faults. The first, second and sixth are the shorthand
+and the longhand never competing. The third is that **`text-wrap`'s
+mode half is not implemented at all**: `applyTextWrapStyle` reads the
+style keyword out of the shorthand and nothing reads the mode keyword,
+so `text-wrap: nowrap` does nothing whatever. The fourth and fifth are
+the reset -- a shorthand sets every longhand it has, including the ones
+it does not name, and neither of these does.
+
+The two shorthands share `text-wrap-mode`, which is what the sixth row
+turns on: written either way round, the later one decides in Chromium,
+and here `white-space` always wins because `text-wrap` never writes the
+field.
+
+**Two rows differ and neither is a bug.** `white-space-collapse:
+preserve-spaces` computes to `collapse` in Chromium, which is Chromium
+dropping a value it has not shipped; this engine honours it, and CSS
+Text 4 defines it. And `white-space-collapse: break-spaces` keeps its
+own computed value in Chromium where this engine folds it onto
+`preserve`, which is the approximation css-2026.md's row already names:
+neither engine breaks inside a run of preserved spaces, so the two
+render alike and only the computed value differs.
+
+**Twenty-seven rows already agree**, including every expansion of the
+five `white-space` keywords, both halves of `text-wrap: wrap balance`,
+and both invalid-value cases -- `white-space: nonsense` and
+`text-wrap: wrap nonsense` each drop the whole declaration and leave the
+longhand before them standing, which this engine gets right by falling
+through rather than by validating, and which expanding the shorthands
+will have to keep.
+
+The measurement alone; the tests and the fixes follow.
+
 ### Where an inset shadow's curve comes from, measured
 
 A 120x120 box with `border-radius: 40px`, a white background on a green
