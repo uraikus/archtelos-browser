@@ -3078,6 +3078,66 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `inset()`'s `round` radius, measured -- and a reason that was wrong
+
+css-2026.md said the radius is "parsed and dropped, since a rounded
+corner needs that path API". The first half is true and **the second
+half is not**, which is the rule about a sentence written from memory
+paid for again -- twice over, because the first draft of this section
+said README.md carried the claim as well, and it does not: its
+`clip-path` paragraph never mentions the radius. Checking cost one
+`grep`.
+
+The claim rests on the canvas having no path API, which it does not.
+But `clip-path` is not drawn through a path here: the subtree goes into
+an image and comes back **one scanline at a time**, each with the span
+the shape covers at that row. A rounded corner narrows that span, and
+the arithmetic for how far it narrows it is already in this repository:
+
+    float func cornerInset(rx:int, ry:int, dy:float)     src/paint/paint.f:548
+    float func cornerInsetShaped(rx:int, ry:int, dy:float, k:float)
+
+The box-shadow code asks them for exactly this -- how far in a rounded
+corner cuts at a given row -- and `corner-shape` extends them to a
+superellipse. So the feature is blocked on nothing; it was declined for
+a reason that does not apply to the way this engine clips.
+
+A 200px box, `clip-path` given a 10px inset, at 800px, Chromium 141 read
+with `tests/chromium.py pixels` against this engine read with
+`getPixelColor`:
+
+| | row 12 | row 100 |
+|---|---|---|
+| Chromium, `inset(10px)` | red from x=10 | red from x=10 |
+| Chromium, `inset(10px round 40px)` | **red from x=34** | red from x=10 |
+| this engine, either | red from x=10 | red from x=10 |
+
+Row 12 is two pixels inside the inset edge, where a 40px corner has
+cut 24 pixels off the left; row 100 is past the corner and is the
+control, because a shape that had stopped clipping altogether would
+move that one too. Chromium antialiases the four pixels either side of
+the arc and this engine does not, which is the difference the clip
+suite's `?` cells already exist for.
+
+The work is in three places. `readInsetShape` breaks out of its loop at
+the `round` keyword and never reads what follows, so the radii are not
+merely dropped later -- they are never parsed. `shapeSpanAt`'s
+`CLIPSHAPE_RECT` branch answers one span per row and would narrow it by
+the corner at the top and bottom of the box. And `cornerInset` lives in
+`src/paint/paint.f`, which `src/css/shapes.f` **cannot call** -- the
+painter imports layout, which imports the CSS, and the dependency runs
+one way -- so it moves down to where both can reach it rather than
+being written twice (CLAUDE.md, grep before adding a function).
+
+One thing to get right rather than discover: a radius is up to eight
+lengths, four corners by two axes. `ClipShape` is a **by-value field of
+`Style`**, and benchmarks.md records that growing `Style` by thirty-two
+bytes cost two milliseconds of layout, so eight `Len`s do not go on it.
+They go in a per-document list with one `int` index on the shape, which
+is what `corner-shape` does with its exponents.
+
+The measurement alone; the tests and the implementation follow.
+
 ### `polygon()`'s fill rule, measured
 
 CSS Masking 1 §4.2. `clip-path: polygon()` takes an optional
