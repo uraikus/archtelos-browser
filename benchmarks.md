@@ -3712,3 +3712,64 @@ All three binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing. `tests/bench.sh`
 qualified its own run at 8.5% against `CONTROL_MS`, inside the 15% it
 allows.
+
+## What `polygon()`'s fill rule cost, and a quantity that did not add up across four binaries
+
+The fill rule adds a `bool` to `ClipShape`, which is a **by-value field
+of `Style`** -- the struct the `corner-shape` section above found costs
+layout milliseconds when it grows, because `Style` is dereferenced once
+per box. It also adds one array push per crossing and one branch per
+row inside `shapeSpanAt`'s polygon branch. `features.html` contains no
+`polygon(` at all, so none of the second group runs on it, and the
+first group is the question this section is about.
+
+Paired against the revision before it, twenty-five alternating samples
+at 800px on a machine idle at a one-minute load of 0.20 to 0.24:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| forward, round 1 | 0 | **+4** | **+1** |
+| forward, round 2 | +1 | **+3** | **+2** |
+| reversed | -1 | **-1** | 0 |
+
+Two forward rounds agreeing is what earns a reading a question here, and
+these survive the mirror image as well: about two and a quarter
+milliseconds of layout and three quarters of paint. On a page with no
+`polygon()` on it, and from a diff whose only line outside
+`src/css/shapes.f` is in the CSS parser.
+
+The `corner-shape` precedent says to suspect the struct, so the parent
+was recompiled with **the same `bool` added to `ClipShape` and never
+read**, which comes out at 3,176,456 bytes -- the parent's size exactly,
+where the candidate is 3,176,496. Against that:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| padded parent, round 1 | -1 | **-2** | 0 |
+| padded parent, round 2 | +2 | **+1** | 0 |
+| candidate vs padded parent | +1 | **+2** | -1 |
+
+The two padded rounds disagree with each other, which by this file's own
+rule means nothing earns a question: **the field alone does not
+reproduce it.** So across four binaries the same phase reads -2, +1, +2,
++3 and +4 forward and -1 reversed, on a page that cannot reach a line of
+the new code. A quantity that does not add up across four binaries is
+not a property of any one diff, which is the conclusion the
+`print-color-adjust` section reached from three.
+
+What is left is the forty bytes. This is the clearest instance yet of
+the effect that section named, because here there are two controls
+rather than one and they point in opposite directions: the struct
+growth alone is free, and the code's mere presence moves a phase it
+never runs in.
+
+**What is not measured here** is the cost to a page that *does* use
+`polygon()`: one array push per crossing and one branch per row, on a
+path that runs only for `clip-path: polygon()` and `shape-outside:
+polygon()`. A page with enough polygons to lift that out of the noise
+is not one of the benchmark pages, and inventing one to measure against
+itself would not say anything the arithmetic does not. It is recorded
+rather than claimed to be free.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
