@@ -265,6 +265,7 @@ void func cascadeReset() {
     minmaxPct = []
     anyOffsetPath = false
     anySticky = false
+    insetRadiiList = []
     motionInfos = []
     anyClipMargin = false
     map[int] emptyClipMargin = {}
@@ -3364,8 +3365,9 @@ void func readInsetShape(sh:ClipShape, args:ascii, fontSize:int) {
     sh.kind = CLIPSHAPE_RECT
     arr[ascii] parts = cssTokens(args)
     arr[Len] sides = []
+    int roundAt = -1
     for int i = 0, i < parts.length, i++ {
-        if parts[i] == 'round' { break }
+        if parts[i] == 'round' { roundAt = i  break }
         Len l = parseLength(parts[i], fontSize)
         if l.kind == LEN_AUTO { continue }
         sides.push(l)
@@ -3375,6 +3377,39 @@ void func readInsetShape(sh:ClipShape, args:ascii, fontSize:int) {
     sh.insetRight = sides.length > 1 ? sides[1] : sides[0]
     sh.insetBottom = sides.length > 2 ? sides[2] : sides[0]
     sh.insetLeft = sides.length > 3 ? sides[3] : sh.insetRight
+    if roundAt >= 0 { readInsetRadii(sh, parts, roundAt + 1, fontSize) }
+}
+
+// The `round` half: `<length-percentage>{1,4} [ / <length-percentage>{1,4} ]?`
+// -- the same grammar as `border-radius`, and graded by the same
+// one-to-four rule, so `radiusSlot` answers both rather than this
+// growing a second copy of it.
+//
+// A radius of zero on every corner is a square corner, and leaves the
+// index at 0 so that `inset(10px round 0)` costs a rounded rectangle
+// nothing and takes the same branch as `inset(10px)`.
+void func readInsetRadii(sh:ClipShape, parts:arr[ascii], from:int, fontSize:int) {
+    arr[Len] across = []
+    arr[Len] down = []
+    bool afterSlash = false
+    bool any = false
+    for int i = from, i < parts.length, i++ {
+        if parts[i] == '/' { afterSlash = true  continue }
+        Len l = parseLength(parts[i], fontSize)
+        if l.kind == LEN_AUTO { continue }
+        if afterSlash { down.push(l) } else { across.push(l) }
+        if !(l.kind == LEN_PX && l.v == 0.0) { any = true }
+    }
+    if across.length == 0 || !any { return }
+    InsetRadii r
+    r.rx = []
+    r.ry = []
+    for int i = 0, i < 4, i++ {
+        r.rx.push(radiusSlot(across, i))
+        r.ry.push(radiusSlot(down.length > 0 ? down : across, i))
+    }
+    insetRadiiList.push(r)
+    sh.insetRoundIdx = insetRadiiList.length
 }
 
 // circle( <radius>? [at <position>]? ) and ellipse(), which differ only

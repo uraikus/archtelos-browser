@@ -5,6 +5,49 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `inset()`'s `round` radius
+
+CSS Masking 1 §4.1. `readInsetShape` broke out of its loop at the
+`round` keyword and never parsed what followed, so the radii were not
+dropped late -- they were never read. css-2026.md gave the reason as a
+rounded corner needing a path API the canvas does not have. That reason
+was wrong, and the commit before this one records it: `clip-path` is not
+drawn through a path here at all. The subtree goes into an image and
+comes back **one scanline at a time**, each carrying the span the shape
+covers at that row, and the arithmetic for how far a rounded corner
+narrows that span was already in the repository as `cornerInset`, which
+the box-shadow code asks for exactly this.
+
+So `cornerInset` and `radiusShrink` move out of the painter into
+`src/css/shapes.f`, where both callers can reach them -- the CSS cannot
+call the painter, and the painter imports layout, which imports the CSS.
+Neither is duplicated.
+
+The radii are parsed with `border-radius`'s own grammar and graded by
+`radiusSlot`, the one-to-four helper that property already uses, rather
+than a second copy of that rule. They are stored in a per-document list
+with one `int` index on `ClipShape`, because `ClipShape` is a by-value
+field of `Style` and benchmarks.md records that thirty-two bytes of
+growth there cost two milliseconds of layout. `inset(10px round 0)`
+leaves the index at zero, so an all-zero radius costs a page exactly
+what a square corner costs.
+
+`paintShaped` blitted every `CLIPSHAPE_RECT` whole and never reached its
+scanline loop, which is right for a square inset and wrong for a rounded
+one; it now asks whether the corners are square rather than whether the
+shape is a rectangle. A square `inset()` is still one blit.
+
+Ten checks in `tests/render/clip.f`, every one an agreement between two
+ways of reaching the same region rather than a column written down here,
+because this engine does not antialias and Chromium does:
+`inset(10px round 0)` must equal `inset(10px)`, and `inset(0 round 50%)`
+must equal `circle(50%)` and `ellipse(50% 50%)` -- half the box on both
+axes is an ellipse, which this engine reaches down a different branch
+entirely. Chromium agrees with both, checked before they were written
+down. Four failed before the fix and none after. On the independent
+fixture the measurement used, the engine puts the arc's first red column
+at 36 where Chromium's antialiased band runs 34 to 37.
+
 ### `polygon()`'s fill rule
 
 CSS Masking 1 §4.2. `readPolygonShape`'s own comment said the rule was

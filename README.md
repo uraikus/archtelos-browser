@@ -482,7 +482,9 @@ box itself as well as its contents, which is what separates it from
 `overflow`. The same offscreen image does the work, but a shape is not a
 rectangle, so it is blitted back one scanline at a time with the span
 the shape covers at that row; a pixel belongs to the shape when its
-centre does. `polygon()` takes a fill rule, which says nothing about a
+centre does. `inset()` takes a `round` radius in `border-radius`'s own
+grammar, and a rounded rectangle is cut scanline by scanline where a
+square one is a single blit. `polygon()` takes a fill rule, which says nothing about a
 polygon that does not cross itself and everything about one that does:
 `nonzero`, the initial value, keeps the middle of a five-pointed star,
 where `evenodd` cuts it out. CSS2's `clip` reaches the same rectangle

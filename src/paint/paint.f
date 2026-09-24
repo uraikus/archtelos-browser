@@ -120,10 +120,7 @@ int func radiusPx(l:Len, against:int) {
     return 0
 }
 
-float func radiusShrink(sum:int, side:int) {
-    if sum <= side || sum <= 0 { return 1.0 }
-    return side.toFloat() / sum.toFloat()
-}
+// `radiusShrink` is in src/css/shapes.f, beside `cornerInset`.
 
 // The `corner-shape` exponent each corner of the next path is drawn
 // with, and whether any of them is not `round`. Globals rather than
@@ -543,15 +540,8 @@ int SHADOW_SLICES = 8
 float shadowSpanLo = 0.0
 float shadowSpanHi = 0.0
 
-// How far a corner's ellipse holds the edge in, `dy` into its band:
-// nothing at the band's inner end, the whole radius past its outer one.
-float func cornerInset(rx:int, ry:int, dy:float) {
-    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
-    float fry = ry.toFloat()
-    if dy >= fry { return rx.toFloat() }
-    float t = dy / fry
-    return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
-}
+// `cornerInset` is in src/css/shapes.f, because `inset()`'s `round`
+// radius asks it the same question and the CSS cannot call the painter.
 
 // The same question of a corner drawn with any `corner-shape`: the
 // superellipse `|x/rx|^k + |y/ry|^k = 1` for a positive exponent, and
@@ -3439,8 +3429,11 @@ void func paintShaped(b:Box) {
     paintLayer = layer
     paintBoxInner(b)
     paintLayer = null
-    // A rectangle is one blit; a shape is one per scanline.
-    if g.kind == CLIPSHAPE_RECT {
+    // A rectangle is one blit; a shape is one per scanline. A rectangle
+    // that `inset()` gave a `round` radius is not a rectangle for this
+    // purpose -- its corners come off -- so it takes the scanline path,
+    // and every square one still takes the blit.
+    if g.kind == CLIPSHAPE_RECT && g.cornerRX.length == 0 {
         pDrawImage(layer, lx, ly)
         return
     }

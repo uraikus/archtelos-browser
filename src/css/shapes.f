@@ -29,11 +29,40 @@ struct ShapeGeom {
     pointsX:arr[float]
     pointsY:arr[float]
     fillEvenOdd:bool
+    // inset()'s `round` radii, in pixels, four corners clockwise from
+    // the top left. Empty on a rectangle with square corners, which is
+    // the test `shapeSpansAt` makes before it looks at a corner at all.
+    cornerRX:arr[int]
+    cornerRY:arr[int]
     // shape-margin, which grows the shape on every side. For a
     // rectangle, a circle and an ellipse it is folded into the geometry
     // above; a polygon carries it here, because the true outset of a
     // polygon is not a polygon.
     margin:int
+}
+
+// How far a corner's ellipse holds the edge in, `dy` into its band:
+// nothing at the band's inner end, the whole radius past its outer one.
+//
+// This lives here rather than in the painter because two callers ask it
+// the same question and the CSS cannot call the painter: the box-shadow
+// and border code asks it of a `border-radius`, and `shapeSpansAt` asks
+// it of `inset()`'s `round` radius, which is the same quarter ellipse
+// on a different rectangle.
+float func cornerInset(rx:int, ry:int, dy:float) {
+    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
+    float fry = ry.toFloat()
+    if dy >= fry { return rx.toFloat() }
+    float t = dy / fry
+    return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
+}
+
+// Backgrounds and Borders 3 §5.5: where two radii on one edge would
+// overlap, every radius is divided by the same factor, so the shape
+// keeps its proportions. Shared with the painter for the same reason.
+float func radiusShrink(sum:int, side:int) {
+    if sum <= side || sum <= 0 { return 1.0 }
+    return side.toFloat() / sum.toFloat()
 }
 
 float func shapeMin(a:float, b:float) {
@@ -63,6 +92,7 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
         g.y0 = ry + resolveLen(sh.insetTop, rh, 0) - margin
         g.x1 = rx + rw - resolveLen(sh.insetRight, rw, 0) + margin
         g.y1 = ry + rh - resolveLen(sh.insetBottom, rh, 0) + margin
+        if sh.insetRoundIdx > 0 { resolveInsetRadii(g, sh.insetRoundIdx) }
         return g
     }
     if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE {
@@ -137,13 +167,73 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
 arr[int] shapeSpanStart = []
 arr[int] shapeSpanEnd = []
 
+// `inset()`'s `round` radii against the rectangle the inset left, which
+// is the rectangle the standard measures them against -- so `50%` of a
+// 200px box that was not inset is 100, and the shape is a circle.
+//
+// Called only where `insetRoundIdx` says there are radii, so a plain
+// `inset()` pays one integer test rather than this.
+void func resolveInsetRadii(g:ShapeGeom, idx:int) {
+    InsetRadii r = insetRadiiOf(idx)
+    if r == null { return }
+    int w = g.x1 - g.x0
+    int h = g.y1 - g.y0
+    if w <= 0 || h <= 0 { return }
+    arr[int] xs = []
+    arr[int] ys = []
+    for int i = 0, i < 4, i++ {
+        xs.push(maxInt(resolveLen(r.rx[i], w, 0), 0))
+        ys.push(maxInt(resolveLen(r.ry[i], h, 0), 0))
+    }
+    // §5.5's single factor, so two radii on one edge cannot overlap.
+    float f = shapeMin(shapeMin(radiusShrink(xs[0] + xs[1], w),
+                                radiusShrink(xs[3] + xs[2], w)),
+                       shapeMin(radiusShrink(ys[0] + ys[3], h),
+                                radiusShrink(ys[1] + ys[2], h)))
+    if f < 1.0 {
+        for int i = 0, i < 4, i++ {
+            xs[i] = Math.round(xs[i].toFloat() * f)
+            ys[i] = Math.round(ys[i].toFloat() * f)
+        }
+    }
+    if xs[0] + xs[1] + xs[2] + xs[3] + ys[0] + ys[1] + ys[2] + ys[3] == 0 { return }
+    g.cornerRX = xs
+    g.cornerRY = ys
+}
+
+// One row of a rounded rectangle: the corners hold the left edge in and
+// the right edge back, and everywhere between them the row is the
+// rectangle's own. Both halves take the larger of the two corners that
+// reach the row, which is what lets a tall corner and a short one share
+// an edge.
+void func shapeRectRow(g:ShapeGeom, y:int) {
+    float vc = y.toFloat() + 0.5 - g.y0.toFloat()
+    float h = (g.y1 - g.y0).toFloat()
+    float lo = shapeMax(cornerInset(g.cornerRX[0], g.cornerRY[0], g.cornerRY[0].toFloat() - vc),
+                        cornerInset(g.cornerRX[3], g.cornerRY[3], vc - (h - g.cornerRY[3].toFloat())))
+    float hi = shapeMax(cornerInset(g.cornerRX[1], g.cornerRY[1], g.cornerRY[1].toFloat() - vc),
+                        cornerInset(g.cornerRX[2], g.cornerRY[2], vc - (h - g.cornerRY[2].toFloat())))
+    // A pixel belongs to the shape when its centre does, which is the
+    // same rule the circle and the polygon answer by.
+    int x0 = Math.ceil(g.x0.toFloat() + lo - 0.5)
+    int x1 = Math.ceil(g.x1.toFloat() - hi - 0.5)
+    if x1 > x0 {
+        shapeSpanStart.push(x0)
+        shapeSpanEnd.push(x1)
+    }
+}
+
 void func shapeSpansAt(g:ShapeGeom, y:int) {
     shapeSpanStart = []
     shapeSpanEnd = []
     if g.kind == CLIPSHAPE_RECT {
         if y < g.y0 || y >= g.y1 { return }
-        shapeSpanStart.push(g.x0)
-        shapeSpanEnd.push(g.x1)
+        if g.cornerRX.length == 0 {
+            shapeSpanStart.push(g.x0)
+            shapeSpanEnd.push(g.x1)
+            return
+        }
+        shapeRectRow(g, y)
         return
     }
     float cy = y.toFloat() + 0.5

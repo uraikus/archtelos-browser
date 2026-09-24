@@ -718,6 +718,28 @@ struct ClipShape {
     // value; it only means anything for a polygon that crosses itself,
     // which is what a star is.
     fillEvenOdd:bool
+    // inset()'s `round` radii, as a 1-based index into insetRadiiList;
+    // 0 where the corners are square. A radius is eight lengths, and
+    // this struct is a BY-VALUE field of `Style` -- benchmarks.md
+    // records that thirty-two bytes of growth there cost two
+    // milliseconds of layout -- so they live in the list and the shape
+    // carries one int, which is what `corner-shape` does with its
+    // exponents.
+    insetRoundIdx:int
+}
+
+// The radii an `inset()` was given: four corners clockwise from the top
+// left, x and y in parallel arrays because Festina has no tuples.
+struct InsetRadii {
+    rx:arr[Len]
+    ry:arr[Len]
+}
+
+arr[InsetRadii] insetRadiiList = []
+
+InsetRadii func insetRadiiOf(idx:int) {
+    if idx <= 0 || idx > insetRadiiList.length { return null }
+    return insetRadiiList[idx - 1]
 }
 
 // box-sizing
