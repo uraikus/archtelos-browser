@@ -3818,3 +3818,59 @@ arithmetic does not.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## What `scroll-snap-stop` cost, and a triangle that does not close
+
+The property adds one `bool` to `Style` -- the struct the `corner-shape`
+section found costs layout when it grows -- and one `if
+c.style.snapStopAlways` inside `snapPosition`'s loop over a container's
+children. That loop runs on a scroll gesture and nowhere else;
+`features.html` contains no `scroll-snap` at all, so it never runs here.
+The binary grows 112 bytes.
+
+Twenty-five alternating samples at 800px, idle at 0.19 to 0.56. Note
+that the baselines are lower than the sections above -- cascade 35
+against 41, layout 76 against 87 -- because the machine was quicker this
+hour, which is the whole reason a comparison is paired rather than read
+off two days' tables.
+
+| | cascade | layout | **paint** |
+|---|---|---|---|
+| forward, round 1 | 0 | +1 | **+1** |
+| forward, round 2 | 0 | -2 | **+1** |
+| reversed | -1 | +1 | **0** |
+
+Layout's forward rounds disagree, so nothing there earns a question.
+Paint does: +1 twice forward against 0 reversed is, in this file's own
+words, an order effect *plus* a millisecond -- about half of one after
+the two are separated. And `snapPosition` is never called during paint.
+
+Two controls, both by the `corner-shape` method:
+
+| | paint, round 1 | paint, round 2 |
+|---|---|---|
+| parent vs parent + the `bool`, never read | 0 | -1 |
+| that padded parent vs the candidate | 0 | -1 |
+
+Neither pair agrees with itself, so neither the struct growth nor the
+code earns a question. **The triangle does not close**: parent to
+candidate reads about +0.5 of paint, parent to padded reads nothing, and
+padded to candidate reads nothing. Nothing plus nothing is not a half.
+
+That is the `print-color-adjust` conclusion reached a third time this
+session, and by now it is less a finding than a property of the
+instrument: a sub-millisecond reading on a phase that executes no line
+of the change, not reproduced by either half of it, is where the
+compiler put a hundred bytes. The useful rule it leaves behind is the
+one already written down -- take the question to the code only when the
+code can answer it, and check first whether the phase that moved runs
+any of the diff at all.
+
+**Not measured**: what a page that uses `scroll-snap-type: mandatory`
+pays per gesture, which is one boolean test per snap child. A gesture is
+one wheel event and the benchmark renders a page rather than scrolling
+it, so there is no paired reading to be had; the cost is one comparison
+in a loop that already resolves four lengths per child.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
