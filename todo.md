@@ -3078,6 +3078,51 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### Two points the instrument would give away, and why they are not taken
+
+`clip-rule` and `mask-type` are in CSS Masking 1 and both have rows in
+`tests/conformance/css-properties.txt`, so both sit in the 418 that the
+property count is out of. Neither can ever affect what this engine
+draws, because **both apply to SVG only** -- `clip-rule` to the graphics
+elements inside an SVG `<clipPath>`, `mask-type` to an SVG `<mask>` --
+and there is no SVG rendering here at all: `grep svg src/layout
+src/paint` returns nothing.
+
+Checked rather than assumed, because the same assumption has been wrong
+three times this session. Chromium 141 on an HTML `<div>` with
+`clip-path: polygon(...)` over a five-pointed star:
+
+| | computed `clip-rule` | the star's centre |
+|---|---|---|
+| no declaration | `nonzero` | red |
+| `clip-rule: evenodd` | **`evenodd`** | **red** |
+
+The computed value changes and **the pixels do not**. The fill rule a
+basic shape uses comes from inside the function -- `polygon(evenodd,
+...)`, implemented above -- and `clip-rule` does not reach it. `mask-type`
+likewise computes to `luminance` whatever is declared, there being no
+`<mask>` element for it to describe.
+
+That first column is the problem. The property instrument asks whether a
+declaration changes the computed style, so **storing these two values
+and doing nothing else would move the count from 285 to 287** while not
+one pixel of any page changed. They are two free points sitting in the
+file, and they are not taken: the count is meant to say what this engine
+renders, and a point bought by parsing a keyword into a field nothing
+reads says the opposite.
+
+This is the `font-variant` limit from the other side. There, one bit per
+property means a property that *is* implemented cannot score. Here it
+means one that is not implemented *could*. The same answer serves both:
+the count is a floor on what works, not a score to be optimised, and the
+check that can tell the difference is a suite.
+
+The rows stay in the denominator. `clip-rule` and `mask-type` are real
+properties of the snapshot this project measures itself against, and
+Chromium implements both; removing them would raise the percentage by
+shrinking what is being counted, which is the same dishonesty wearing a
+different hat.
+
 ### `scroll-snap-stop`, measured -- and a third reason that does not hold
 
 css-2026.md says there is no `scroll-snap-stop`, "which needs a notion
