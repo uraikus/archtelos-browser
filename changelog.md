@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The at-rules this parser steps over, and a check that could not fail
+
+The same derive-from-the-source treatment, applied to at-rules. The
+parser recognises exactly seven -- `@media`, `@supports`, `@layer`,
+`@page`, `@counter-style`, `@container` and `@namespace` -- and every
+one of them already has a suite. The note in todo.md that said
+otherwise named six, two of which (`@font-face` and `@property`) this
+engine does not implement at all; it had been written from memory one
+section after the rule against exactly that, and is corrected.
+
+The gap is the other half of the dispatch. `@font-face`, `@keyframes`,
+`@import` and anything unrecognised are **stepped over**, and stepping
+over them is a brace-counting problem nothing was asking about:
+`@keyframes` holds blocks of its own, so a skip that stopped at the
+first `}` would leave the rest of its body behind as rules. Nine checks
+now ask it, each against Chromium's answer to the same stylesheet, and
+the engine gets all nine right.
+
+**The first version of those checks passed against a `skipBlock`
+deliberately broken to stop at the first `}`.** Two things made them
+vacuous: a leaked rule written *before* the real one loses to it on
+source order anyway, and a leaked keyframe selector like `100%` matches
+nothing whatever, so the page came out the same either way. The checks
+now put the leak last in the sheet and give it a selector that matches,
+and the broken parser fails two of them. The only reason this was
+caught is that the rule about disabling the code and watching the count
+move was carried out rather than assumed -- which is the rule's whole
+point, and it has now caught a check of mine as well as a fixture.
+
 ### Eight units nothing was checking, and three constants for one length
 
 The rule this file's previous entry earned -- derive the list from the

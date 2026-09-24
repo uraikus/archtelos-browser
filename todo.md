@@ -2459,15 +2459,37 @@ carried 37.8 and 3.78 where `q` carried 96/2.54/40 exactly, so three
 constants described one length and `1000cm` disagreed with the
 `40000q` it equals by definition. Both derive from the inch now.
 
-What is left of that complaint: the **at-rules** have no instrument of
-their own. `@media` is covered by 145 checks and `@supports` is
-cross-checked against the property instrument on every run, but
-`@page`, `@layer`, `@counter-style`, `@font-face`, `@container` and
-`@property` are each graded only by whatever unit suite happens to
-exercise them, and there is no list that says which of the six a claim
-in css-2026.md is resting on. A table of at-rules against a document
-that exercises each, of the shape `css-properties.txt` has, is the
-instrument that does not exist.
+### The at-rules, and a note in this file that was written from memory
+
+The paragraph that stood here said the at-rules had no instrument and
+named six of them, two of which -- `@font-face` and `@property` -- this
+engine does not implement at all. It was written from memory one
+section after the rule against doing that.
+
+Derived from the source instead, the parser recognises exactly seven:
+`@media`, `@supports`, `@layer`, `@page`, `@counter-style`,
+`@container` and `@namespace`. **Every one of them has a suite of its
+own** -- 145 media checks, 27 layers, 47 counter-style lines, 112 paged
+lines, 27 container queries, 13 namespace lines, and `@supports` is
+cross-checked against the property instrument on every run. There is no
+gap there.
+
+The gap was the other half of the dispatch. `@font-face`, `@keyframes`,
+`@import` and anything unrecognised are **stepped over**, and stepping
+over them is a brace-counting problem that nothing was asking about:
+`@keyframes` holds blocks of its own, so a skip that stopped at the
+first `}` would leave the rest of the body behind as rules. Nine checks
+in `tests/unit/test_css_parser.f` now ask it, each against Chromium's
+answer to the same stylesheet.
+
+Writing those checks took two attempts, and the second is the point.
+The first version passed against a `skipBlock` deliberately broken to
+stop at the first `}` -- because a leaked rule written *before* the
+real one loses to it on source order anyway, and a leaked keyframe
+selector like `100%` matches nothing whatever. A check that cannot fail
+is not a check, and the only reason this one was caught is that the
+rule about disabling the code and watching the count move was actually
+carried out rather than assumed.
 
 ### And two the hand-written list missed
 

@@ -1,4 +1,5 @@
-import ../../src/css/parser.f
+import ../../src/css/cascade.f
+import ../../src/html/parser.f
 import ../assert.f
 
 Stylesheet s1 = parseStylesheet('/* c */ p, div.note > b { color: red; margin : 1px 2px !important }\n#x a[href^="http"]:first-child { display:none }')
@@ -140,5 +141,67 @@ checkEq(dumpStylesheet(cdo3), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
 Stylesheet cdo4 = parseStylesheet('a-->b { c: 3 }')
 checkEq(dumpStylesheet(cdo4), 'a-- > b{2} { c: 3; }\n',
         'a `-->` after name characters is a hyphen pair and a combinator')
+
+// ---- the at-rules this parser skips -----------------------------------
+// Derived from the source rather than from memory (CLAUDE.md): the
+// parser recognises exactly seven at-rules -- `@media`, `@supports`,
+// `@layer`, `@page`, `@counter-style`, `@container` and `@namespace` --
+// and each of those has a suite of its own. What had nothing was the
+// other half of the dispatch: `@font-face`, `@keyframes`, `@import`
+// and anything unknown are stepped over, and stepping over them is a
+// brace-counting problem that nothing was asking about.
+//
+// `@keyframes` is the one with teeth, because its body holds blocks of
+// its own: a skip that stopped at the first `}` would leave
+// `100% { color: red }` behind as a rule and `color: red` would reach
+// the page. Every expected colour is Chromium 141's, asked of the same
+// stylesheet. Blue is the rule *after* the skipped one, so blue means
+// the parser stepped over exactly the right span -- not too little,
+// which would leak, and not too much, which would swallow what follows.
+int apRed = packColor(255, 0, 0, 255)
+int apBlue = packColor(0, 0, 255, 255)
+int apBlack = packColor(0, 0, 0, 255)
+
+void func atSkipIs(css:text, want:int, label:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css
+        + '</style></head><body><p id="t">x</p></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    int got = findElement(d, 'p').style.color
+    if got == want { checksPassed++ } else {
+        checksFailed++
+        log(`FAIL: ${label}: got rgb(${colorRed(got)}, ${colorGreen(got)}, ${colorBlue(got)})`)
+    }
+}
+
+// The rule that reveals a short skip has to be the *last* thing in the
+// sheet and has to match: a leaked rule followed by the real one loses
+// to it on source order, and a leaked keyframe selector like `100%`
+// matches nothing whatever. The first version of these checks had both
+// faults and passed against a `skipBlock` deliberately broken to stop
+// at the first `}`, which is how they came to be written this way.
+atSkipIs('@keyframes k { 0% { color: red } p { color: red } }', apBlack,
+         '`@keyframes` and its inner blocks are stepped over together')
+atSkipIs('@nonsense { x { y: 1 } p { color: red } }', apBlack,
+         'and so are an unknown at-rule and the blocks inside it')
+atSkipIs('@keyframes k { 0% { color: red } p { color: red } } p { color: blue }',
+         apBlue, 'while the rule after one is still reached')
+atSkipIs('@nonsense { content: "}" p { color: red } }', apBlack,
+         'a closing brace inside a string does not end the skip early')
+atSkipIs('@font-face { font-family: x; color: red } p { color: blue }',
+         apBlue, '`@font-face` is stepped over')
+atSkipIs('@import url(x.css); p { color: blue }', apBlue,
+         'and `@import`, which ends at its semicolon rather than a block')
+atSkipIs('@nonsense foo { color: red } p { color: blue }', apBlue,
+         'an at-rule this parser has never heard of is stepped over too')
+atSkipIs('@nonsense foo; p { color: blue }', apBlue,
+         'in its statement form as well')
+atSkipIs('@media all { @nonsense x { color: red } p { color: blue } }', apBlue,
+         'and inside a block at-rule that is not skipped')
+// An unclosed block swallows the rest of the sheet, in Chromium too:
+// there is no rule after it because the `{` never ended.
+atSkipIs('@nonsense foo { color: red', apBlack,
+         'an unclosed at-rule takes the rest of the stylesheet with it')
 
 finish('css parser')
