@@ -6785,14 +6785,20 @@ int func textBoxEdgePair(words:arr[ascii], from:int) {
 // there -- whether or not anything ever draws one, which is the whole
 // reason `offset-path: url()` needs no SVG rendering.
 //
-// Four of the seven geometry elements are travelled. `<rect>`, `<line>`
-// and `<polyline>` resolve in Chromium and are not taken: a rect wants a
-// rectangle path this engine does not travel -- `inset()` is not a path
-// here either -- and the other two are OPEN, where a `polygon()` closes
-// itself, so the same points would put half way along at the far end
-// (todo.md has both measurements).
+// All seven geometry elements are travelled, and none of them needed new
+// machinery. `motionPolygon` travels a CLIPSHAPE_POLYGON and
+// `motionPathData` travels a path string, and every shape is one or the
+// other: a `<rect>` is the polygon of its four corners, clockwise from
+// (x, y), which is where Chromium starts and the way it goes; a `<line>`
+// and a `<polyline>` are `M ... L ...`, which is open, where a polygon
+// closes itself and would double the distance.
+//
+// A `<rect>` carrying `rx` or `ry` is travelled as though its corners
+// were sharp. Chromium rounds them, so that one case is wrong here, and
+// it is written down rather than hidden (todo.md).
 bool func isSvgMotionShape(tag:text) {
-    return tag == 'path' || tag == 'circle' || tag == 'ellipse' || tag == 'polygon'
+    return tag == 'path' || tag == 'circle' || tag == 'ellipse'
+        || tag == 'polygon' || tag == 'rect' || tag == 'line' || tag == 'polyline'
 }
 
 Node func svgShapeById(n:Node, want:text) {
@@ -6860,12 +6866,36 @@ void func motionFromSvgShape(mi:MotionInfo, nid:int, want:text, fontSize:int) {
         if d != null { mi.pathData = d }
         return
     }
-    // The other three are shapes the cascade already builds and the
-    // motion code already travels, so they are handed over as one.
+    // A line and a polyline are open, so they become path data, which
+    // the motion code already travels. Everything else is a shape.
+    if e.tag == 'line' {
+        mi.pathData = `M ${svgAttrLen(e, 'x1', fontSize).v} ${svgAttrLen(e, 'y1', fontSize).v}`
+            + ` L ${svgAttrLen(e, 'x2', fontSize).v} ${svgAttrLen(e, 'y2', fontSize).v}`
+        return
+    }
+    if e.tag == 'polyline' {
+        arr[Len] pl = svgNumbers(attrOf(e.id, 'points'), fontSize)
+        if pl.length < 4 { return }
+        text d = `M ${pl[0].v} ${pl[1].v}`
+        for int i = 2, i + 1 < pl.length, i = i + 2 {
+            d = d + ` L ${pl[i].v} ${pl[i + 1].v}`
+        }
+        mi.pathData = d
+        return
+    }
     ClipShape sh
     sh.kind = CLIPSHAPE_NONE
     sh.geoBox = GEOBOX_BORDER
-    if e.tag == 'polygon' {
+    if e.tag == 'rect' {
+        Len rx = svgAttrLen(e, 'x', fontSize)
+        Len ry = svgAttrLen(e, 'y', fontSize)
+        Len rw = svgAttrLen(e, 'width', fontSize)
+        Len rh = svgAttrLen(e, 'height', fontSize)
+        if rw.v <= 0.0 || rh.v <= 0.0 { return }
+        sh.kind = CLIPSHAPE_POLYGON
+        sh.pointsX = [rx, lenPx(rx.v + rw.v), lenPx(rx.v + rw.v), rx]
+        sh.pointsY = [ry, ry, lenPx(ry.v + rh.v), lenPx(ry.v + rh.v)]
+    } else if e.tag == 'polygon' {
         arr[Len] nums = svgNumbers(attrOf(e.id, 'points'), fontSize)
         if nums.length < 6 { return }
         arr[Len] xs = []

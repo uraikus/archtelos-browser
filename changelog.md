@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `<rect>`, `<line>` and `<polyline>` as motion paths, and a wrong reason of my own
+
+The commit before last left these three out, on two reasons: that a
+`<rect>` wants a rectangle path this engine does not travel, and that a
+`<line>` and a `<polyline>` want an open-polyline flag it does not have.
+**Both were wrong.** `motionPolygon` travels a `CLIPSHAPE_POLYGON` and
+`motionPathData` travels a path string, and all three shapes are one or
+the other: a rect is the polygon of its four corners clockwise from
+(x, y), and the other two are `M ... L ...`, which is open. No new
+machinery, and the fix is in the same function that already read the
+other four.
+
+The reasoning that went wrong is worth naming. The reason named the
+capability the feature seemed to want rather than asking what the engine
+already had that would serve -- which is precisely the mistake this
+branch spent the day catching in css-2026.md, four times over, and it
+was written by the hand that had just finished correcting two of them.
+
+Eight more checks in `tests/render/motion.f`, each the SVG spelling
+against its CSS twin, and one that earns the open/closed distinction: a
+two-point `<polyline>` must **not** agree with a `polygon()` of the same
+two points, because a polygon closes itself and doubles the distance.
+All eight failed first, and the engine now answers Chromium's columns to
+the pixel for all six geometry elements.
+
+A `<rect>` carrying `rx` or `ry` is travelled with sharp corners, where
+Chromium rounds them. That one is wrong rather than absent, and is
+recorded.
+
 ### A `url()` motion path takes an SVG shape as well as a `<path>`
 
 Chromium resolves five geometry elements besides `<path>`, and three are
@@ -28,15 +57,9 @@ the same circle at 0%. All eight failed before the change, and on an
 independent fixture the engine now answers Chromium's own columns to the
 pixel -- (5, 45), (5, 45) and (95, 26).
 
-Three elements are **not** taken, and why is measured rather than
-assumed. A `<rect>` is travelled round its perimeter -- 50% of a 100x50
-rect is 150 of 300, the far bottom corner -- and this engine cannot
-reuse `inset()` for it, because Chromium puts a start point on a CSS
-`inset()` and then never moves along it. So Chromium travels a `<rect>`
-and refuses to travel the CSS rectangle describing the same shape.
-`<line>` and `<polyline>` are open, where a `polygon()` closes itself,
-so the same two points as a polygon would put half way along at the far
-end instead; they want an open-polyline flag nothing here has.
+`<rect>`, `<line>` and `<polyline>` follow in the commit after this
+one, which also records that the reason given here for leaving them out
+was wrong.
 
 ### Thirteen shorthand rows come out of the property instrument
 

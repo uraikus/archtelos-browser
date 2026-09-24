@@ -419,7 +419,10 @@ text mSvg = '<svg width="0" height="0">'
     + '<path id="nod"/>'
     + '<circle id="circ" cx="50" cy="60" r="40"/>'
     + '<ellipse id="ell" cx="50" cy="60" rx="40" ry="20"/>'
-    + '<polygon id="poly" points="0,60 100,60 100,110"/></svg>'
+    + '<polygon id="poly" points="0,60 100,60 100,110"/>'
+    + '<rect id="rect" x="0" y="60" width="100" height="50"/>'
+    + '<line id="line" x1="0" y1="60" x2="100" y2="60"/>'
+    + '<polyline id="pline" points="0,60 100,60"/></svg>'
 
 // The same page `shotMoving` builds, with an SVG the reference can find
 // and a plain div it can wrongly find.
@@ -530,5 +533,56 @@ keepRef()
 refAt(`offset-path:polygon(0px 60px, 100px 60px, 100px 110px);offset-distance:50%;offset-rotate:0deg`)
 checkEqInt(urlX, refX, 'url() naming a <polygon> is polygon(), across')
 checkEqInt(urlY, refY, 'and down')
+
+// ---- <rect>, <line> and <polyline> ------------------------------------
+//
+// These three were recorded as "not taken" when the shapes above landed,
+// on the grounds that a rect wants a rectangle path this engine does not
+// travel and the other two want an open-polyline flag it does not have.
+// Both reasons were wrong, and reading the motion code rather than the
+// note is what showed it: `motionPolygon` travels a CLIPSHAPE_POLYGON
+// and `motionPathData` travels a path string, and all three shapes are
+// expressible as one or the other.
+//
+//   <rect x y w h>      == polygon of its four corners, clockwise from
+//                          (x, y), which is where Chromium starts and
+//                          the direction it goes
+//   <line x1 y1 x2 y2>  == path('M x1 y1 L x2 y2')
+//   <polyline points>   == the same path through every point
+//
+// The last check is the one that earns the distinction: a two-point
+// polyline must NOT agree with a polygon of the same two points, because
+// a polygon closes itself and doubles the distance.
+
+refAt('offset-path:url(#rect);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:polygon(0px 60px, 100px 60px, 100px 110px, 0px 110px);offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'url() naming a <rect> is its four corners, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#rect);offset-distance:25%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:polygon(0px 60px, 100px 60px, 100px 110px, 0px 110px);offset-distance:25%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'and a quarter of the way round it, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#line);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'url() naming a <line> is that segment, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#pline);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'a two-point <polyline> is the same segment, across')
+checkEqInt(urlY, refY, 'and down')
+
+// Open is not closed. A polygon of the same two points has twice the
+// perimeter, so half way along it is the far end rather than the middle.
+refAt('offset-path:url(#pline);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:polygon(0px 60px, 100px 60px);offset-distance:50%;offset-rotate:0deg`)
+check(urlX != refX, 'an open polyline is not the closed polygon of the same points')
 
 finish('motion path')

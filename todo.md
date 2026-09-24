@@ -3101,25 +3101,39 @@ The engine already builds a `ClipShape` for all three and travels it as
 `MPATH_SHAPE`, so this is the same shape of work as the `<path>` case --
 read the attributes, build the shape the cascade already knows.
 
-Three cases are **not** that, and are recorded rather than promised:
+The other three were written up here as "not taken", on two reasons
+that were **both wrong**:
 
-- `<rect>` is a closed rectangle traversed round its perimeter: 50% of
-  a 100x50 rect is 150 along a perimeter of 300, which is the far
-  bottom corner, and (95, 45) is exactly that. **This engine cannot
-  reuse `inset()` for it**, because css-2026.md records that `inset()`
-  is not a path here -- Chromium puts a start point on one and then
-  never moves along it. So Chromium travels a `<rect>` and refuses to
-  travel the CSS rectangle that describes the same shape. That
-  asymmetry is measured, not inferred, and it means `<rect>` needs a
-  rectangle path of its own rather than a reuse.
-- `<line>` and `<polyline>` are **open**: 50% of the segment (0,0) to
-  (100,0) is (50, 0), and (45, -5) is that. A `polygon()` closes itself,
-  so the same two points as a polygon would have a perimeter of 200 and
-  put 50% at the far end instead. They need an open-polyline flag on the
-  shape, which nothing here has.
+> `<rect>` ... needs a rectangle path of its own rather than a reuse.
+> `<line>` and `<polyline>` ... need an open-polyline flag on the shape,
+> which nothing here has.
 
-So the chunk worth doing is the three that already have a CSS twin, and
-the three that do not are a second, larger piece.
+Neither is true, and what showed it was reading `src/css/motion.f`
+rather than re-reading the note. `motionPolygon` travels a
+`CLIPSHAPE_POLYGON` and `motionPathData` travels a path string, and all
+three shapes are one or the other:
+
+- a `<rect x y w h>` is the polygon of its four corners, clockwise from
+  (x, y) -- which is where Chromium starts and the way it goes, since
+  50% of a 100x50 rect is 150 of a perimeter of 300, the far bottom
+  corner, measured at (95, 45);
+- a `<line>` is `M x1 y1 L x2 y2`, and a `<polyline>` the same through
+  every point. Path data is open, which is exactly the property the
+  note said nothing here had.
+
+The reasoning that went wrong is worth naming, because this file has
+spent the day catching the same shape of error in css-2026.md. **The
+reason named the capability the feature seemed to want -- "a rectangle
+path", "an open-polyline flag" -- rather than asking what the engine
+already had that would serve.** That is the same mistake as
+`inset()`'s "needs a path API" and `scroll-snap-stop`'s "needs a notion
+of one gesture", and it was written by the hand that had just finished
+correcting both. Four wrong reasons in css-2026.md and now one here.
+
+What is genuinely not reached: a `<rect>` carrying `rx` or `ry` is
+travelled as though its corners were sharp, where Chromium rounds them.
+That one is wrong rather than absent, and is written down rather than
+hidden.
 
 The measurement alone; the tests and the implementation follow.
 
