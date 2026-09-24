@@ -5,6 +5,72 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A sub-layer is inside its parent, and a shorthand carries a keyword
+
+Two bugs from one sweep: thirty claims in css-2026.md's CSS Cascade 4
+and 5 rows put to Chromium one document each, of which twenty-six
+already agreed.
+
+**`a.b` is inside `a`, not beside it.** This engine gave every layer the
+next number as it was first named, so `a` and `a.b` sorted as siblings
+in declaration order. CSS Cascade 5 nests them: `a.b` takes `a`'s place
+in the outer order, and within `a` the sub-layers come first and `a`'s
+own rules last -- the implicit outer layer rule applied one level down.
+So `@layer a { @layer b { div { lime } } div { red } }` is red, and the
+engine gave every arrangement of that fact the other way round. The
+other half is the same thing seen from outside: `a.z` loses to a
+top-level `b` declared after `a`, where a flat reading gave `a.z` the
+place it was named at and let it win.
+
+A rule is still stamped with the layer's declaration index; a second
+pass turns that into the rank the weight is built from, by sorting the
+layers on their paths of declaration indices with the deeper of two
+prefixes first. It runs once before a cascade pass rather than as each
+layer is declared, because a layer's place depends on layers that may
+not have been named yet, and it returns on its first line for a page
+with no `@layer` on it.
+
+**A CSS-wide keyword on a shorthand sets every one of its longhands.**
+`font: revert` on a `<b>` gave 400 where `font-weight: revert` gave 700.
+Fixing `font` alone would have fixed one of five: an audit of twenty
+shorthands -- three documents each, so that the rollback must land on
+what the lower layer left and must *not* land on what the shorthand
+itself said -- found `font`, `background`, `border`, `border-top` and
+`list-style` all failing, and `margin`, `padding`, `border-width`,
+`margin-block` and `padding-inline` passing.
+
+The ones that passed did so for a reason rather than by care: a
+four-sides shorthand hands its value to each side unparsed, so the
+keyword arrives whether anyone meant it to or not. The five that failed
+parse their value into parts and read the keyword as a font family, a
+colour or a list marker, setting the rest to their defaults -- which is
+why `font: revert` came out as `normal`.
+
+**Nine of the twenty could not be graded and the audit says so** rather
+than passing them: `describeStyle` does not carry `column-count`,
+`flex-grow`, `row-gap`, `overflow-x`, `text-decoration-line`, the grid
+placement edges, `align-items`, `scroll-margin-top` or `top`, so two of
+the three documents compute the same digest and the check has nothing to
+tell apart. todo.md records that widening the digest is what would let
+them be asked.
+
+Seven checks of the nesting and eleven pairs of the keyword, each with
+the third document that makes it able to fail; disabling the keyword
+guard was tried and six fail.
+
+**The keyword guard cost four milliseconds before it cost nothing**, and
+the benchmark corrected the first guess at why. Passing each shorthand's
+longhand names as an array literal builds that array on every call, so
+every `font`, `background`, `border` and `list-style` declaration on a
+page paid an allocation for a keyword it did not use: +4 and +3 of
+cascade across two forward rounds, against -3 and -2 reversed. The
+obvious suspect was the layer-rank lookup added to the loop over matched
+declarations -- the shape the previous entry blames for two milliseconds
+-- and moving it out changed the reading not at all. Writing the names
+out, so nothing is allocated unless the keyword is there, took it to
+zero both ways. It is the first reading in benchmarks.md to survive its
+own second round.
+
 ### The rest of HTML's validity list that markup can express
 
 `:valid` and `:invalid` read a missing required value and a value

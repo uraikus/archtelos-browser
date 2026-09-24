@@ -255,14 +255,91 @@ int cssCurrentLayer = CASCADE_NO_LAYER
 text cssCurrentLayerName = ''
 int cssAnonymousLayers = 0
 
+// The place each declared layer takes in the cascade, which is not the
+// order it was declared in: CSS Cascade 5 nests `a.b` inside `a`, so
+// the sub-layer takes `a`'s place in the outer order, and within `a`
+// the sub-layers come first and `a`'s own rules last. A rule is stamped
+// with the layer's declaration index, and this turns that into the rank
+// the weight is built from.
+arr[int] cssLayerRank = []
+
 void func cssResetLayers() {
     arr[text] emptyNames = []
     map[int] emptyIndex = {}
+    arr[int] emptyRank = []
     cssLayerNames = emptyNames
     cssLayerIndex = emptyIndex
+    cssLayerRank = emptyRank
     cssCurrentLayer = CASCADE_NO_LAYER
     cssCurrentLayerName = ''
     cssAnonymousLayers = 0
+}
+
+// The declaration indices of a layer and every layer it is nested in,
+// outermost first. `declareLayer` declares every ancestor before the
+// layer itself, so each of them is known here.
+arr[int] func cssLayerPath(at:int) {
+    arr[int] path = []
+    ascii full = cssLayerNames[at].toAscii()
+    for int i = 0, i < full.length, i++ {
+        if full.charCodeAt(i) != CH_DOT { continue }
+        int anc = cssLayerIndex[full.slice(0, i).toText()]
+        if anc != null { path.push(anc) }
+    }
+    path.push(at)
+    return path
+}
+
+// Which of two layers comes first. The paths are compared term by term,
+// and where one is a prefix of the other the **deeper** one comes
+// first, because a layer's own rules come after everything nested in
+// it.
+int func cssComparePaths(a:arr[int], b:arr[int]) {
+    int m = a.length < b.length ? a.length : b.length
+    for int i = 0, i < m, i++ {
+        if a[i] != b[i] { return a[i] < b[i] ? 0 - 1 : 1 }
+    }
+    if a.length == b.length { return 0 }
+    return a.length > b.length ? 0 - 1 : 1
+}
+
+// Computes `cssLayerRank`. Called once before a cascade pass rather
+// than as layers are declared, because a layer's place depends on
+// layers that may not have been named yet. A page with no `@layer` on
+// it returns on the first line.
+void func cssComputeLayerRanks() {
+    int n = cssLayerNames.length
+    arr[int] ranks = []
+    if n == 0 { cssLayerRank = ranks  return }
+    arr[arr[int]] paths = []
+    arr[int] order = []
+    for int i = 0, i < n, i++ {
+        paths.push(cssLayerPath(i))
+        order.push(i)
+        ranks.push(0)
+    }
+    // n is at most CASCADE_MAX_LAYERS, so an insertion sort is the
+    // right shape: it runs once per document and never on a page with
+    // no layers.
+    for int i = 1, i < n, i++ {
+        int cur = order[i]
+        int j = i - 1
+        while j >= 0 && cssComparePaths(paths[order[j]], paths[cur]) > 0 {
+            order[j + 1] = order[j]
+            j--
+        }
+        order[j + 1] = cur
+    }
+    for int i = 0, i < n, i++ { ranks[order[i]] = i }
+    cssLayerRank = ranks
+}
+
+// The rank of a layer, or the layer itself where no ranks have been
+// computed -- which is what `CASCADE_NO_LAYER` and a direct call to
+// `matchWeight` both want.
+int func cssLayerRankOf(layer:int) {
+    if layer < 0 || layer >= cssLayerRank.length { return layer }
+    return cssLayerRank[layer]
 }
 
 // The index of a layer, declaring it -- and every layer it is nested in

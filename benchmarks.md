@@ -3345,3 +3345,41 @@ round on this host is not a measurement.
 The binary grew 4,328 bytes and both pages render byte-identically,
 `cmp`-checked before any timing, on a machine idle at a one-minute load
 of 0.17.
+
+## What an array literal in a shorthand cost, and a reading that was real
+
+2026-09-24. The first version of the CSS-wide keyword guard passed each
+shorthand's longhand names as an array literal:
+`shorthandWideKeyword(props, ['font-style', 'font-weight', ...], value)`.
+The literal is built on **every** call, so every `font`, `background`,
+`border` and `list-style` declaration on the page paid an allocation for
+a keyword it did not use. Paired, 20 iterations, 800px,
+`generated.html`, whose cascade is about 35 ms.
+
+| `cascade` median | forward | reversed | slower in, forward |
+|---|---|---|---|
+| the array literal | **+4** | -3 | 15 of 20 |
+| the same, second round | **+3** | -2 | 17 of 20 |
+| moving the rank lookup out of the loop as well | +4 | -2 | 17 of 20 |
+| the names written out, no array | **+0** | +0 | 9 of 20 |
+
+**This is the first reading this file has recorded that survives its own
+second round**, and it is the one the rule above was written for: two
+forward rounds agreeing at +4 and +3, against a mirror image of -3 and
+-2, with three quarters of the pairs on one side and a tenth on the
+other. The two readings before it in this file had the same shapes on
+their first round and were contradicted by their second.
+
+**The first guess about the cause was wrong, and the benchmark said so.**
+The change also added `cssLayerRankOf` to the loop over matched
+declarations, which is the shape the previous entry blames for two
+milliseconds, so that was moved out first -- and the reading did not
+move at all. Only writing the longhand names out, so that nothing is
+allocated unless the keyword is actually there, took it to nothing. The
+rank lookup stays out of the loop because reading a global once per rule
+is plainly cheaper than once per declaration, not because a measurement
+said so.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load under 0.25 for every reading above.

@@ -1708,10 +1708,20 @@ void func collectFromBucketRefs(n:Node, b:Bucket, matches:arr[Match]) {
         int specificity = b.refs[i].sel.specificity
         int origin = b.refs[i].origin
         int order = b.refs[i].rule.order
+        // A layer's rank, read once per rule rather than once per
+        // declaration, and not at all on a page with no `@layer` on it.
+        // The four milliseconds this change first cost were the array
+        // literals in the shorthand guards rather than this call --
+        // moving it out here changed nothing measurable, and it stays
+        // because reading a global once per rule is plainly cheaper
+        // than once per declaration, not because a benchmark said so.
+        int layerRank = cssLayerRank.length == 0 ? b.refs[i].layer
+                                                 : cssLayerRankOf(b.refs[i].layer)
         for int d = 0, d < decls, d++ {
             Match m
             m.decl = b.refs[i].rule.decls[d]
-            m.weight = matchWeight(b.refs[i].rule.decls[d].important, origin, b.refs[i].layer, specificity, order)
+            m.weight = matchWeight(b.refs[i].rule.decls[d].important, origin,
+                                   layerRank, specificity, order)
             matches.push(m)
         }
     }
@@ -2842,6 +2852,14 @@ void func applyFourSidesInset(props:map[text], value:ascii) {
 }
 
 void func applyBorderShorthand(props:map[text], sides:arr[text], value:ascii) {
+    if declIsCssWide(value) {
+        for int i = 0, i < sides.length, i++ {
+            props['border-' + sides[i] + '-width'] = dup(value)
+            props['border-' + sides[i] + '-style'] = dup(value)
+            props['border-' + sides[i] + '-color'] = dup(value)
+        }
+        return
+    }
     arr[ascii] t = cssTokens(value)
     ascii width = 'medium'
     ascii style = 'none'
@@ -2860,6 +2878,14 @@ void func applyBorderShorthand(props:map[text], sides:arr[text], value:ascii) {
 }
 
 void func applyFontShorthand(props:map[text], value:ascii) {
+    if declIsCssWide(value) {
+        props['font-style'] = dup(value)
+        props['font-weight'] = dup(value)
+        props['font-size'] = dup(value)
+        props['line-height'] = dup(value)
+        props['font-family'] = dup(value)
+        return
+    }
     arr[ascii] t = cssTokens(value)
     if t.length == 0 { return }
     ascii lower = asciiLower(value)
@@ -3954,6 +3980,17 @@ Gradient func parseGradient(v:ascii, currentColor:int, fontSize:int) {
 }
 
 void func applyBackgroundShorthand(props:map[text], value:ascii) {
+    if declIsCssWide(value) {
+        props['background-color'] = dup(value)
+        props['background-image'] = dup(value)
+        props['background-repeat'] = dup(value)
+        props['background-position'] = dup(value)
+        props['background-size'] = dup(value)
+        props['background-attachment'] = dup(value)
+        props['background-origin'] = dup(value)
+        props['background-clip'] = dup(value)
+        return
+    }
     arr[ascii] t = cssTokens(value)
     ascii found = 'transparent'
     ascii image = null
@@ -4173,6 +4210,27 @@ const int CSSWIDE_NONE = 0
 const int CSSWIDE_INHERIT = 1
 const int CSSWIDE_INITIAL = 2
 const int CSSWIDE_UNSET = 3
+
+// A CSS-wide keyword -- `inherit`, `initial`, `unset`, `revert` or
+// `revert-layer` -- on a shorthand sets **every one of its longhands**
+// to that keyword. The four-sides shorthands get this free, because
+// they pass their value through to each side unparsed; the ones that
+// parse a value into parts have to be told, and those that were not
+// read the keyword as a font family, a colour or a list marker and set
+// the rest to their defaults. `font: revert` is what found it: it gave
+// font-weight `normal` where the rollback should have reached the
+// user-agent sheet's `bold`, and a sweep of every shorthand found four
+// more (todo.md).
+//
+// The test comes before the longhand names are written out, and the
+// names are written out rather than passed as a list, because both an
+// array literal and a list parameter are an allocation on every
+// shorthand declaration on the page -- and a page that never says one
+// of these keywords would pay it on all of them.
+bool func declIsCssWide(value:ascii) {
+    return cssWideKeyword(value) != CSSWIDE_NONE || declIsRevert(value)
+}
+
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
@@ -4400,6 +4458,12 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         return
     }
     if name == 'list-style' {
+        if declIsCssWide(value) {
+            props['list-style-type'] = dup(value)
+            props['list-style-position'] = dup(value)
+            props['list-style-image'] = dup(value)
+            return
+        }
         arr[ascii] t = cssTokens(value)
         for int i = 0, i < t.length, i++ {
             ascii tok = asciiLower(t[i])
@@ -8327,6 +8391,11 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
 void func computeStyles(doc:Node) {
     Style none
     styleDepth = 0
+    // A layer's place depends on layers that may be named after it, so
+    // the ranks are computed once here rather than as each is declared.
+    // A page with no `@layer` on it returns on the function's first
+    // line.
+    cssComputeLayerRanks()
     resetCounters()
     computeStylesFrom(doc, none, true)
     if archtelosTiming { log(cascadeProfile()) }

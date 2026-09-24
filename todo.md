@@ -2232,21 +2232,38 @@ top-level layer after `b` and lets it win.
 `@layer a.x{...}@layer a.y{...}` agrees by coincidence: two sub-layers
 of one parent keep their declaration order either way.
 
-**2. `revert` does not reach the user-agent sheet through the `font`
-shorthand.**
+**2. A CSS-wide keyword on a shorthand did not reach the shorthand's
+longhands.** `font: revert` on a `<b>` gave 400 where
+`font-weight: revert` gave 700 -- the longhand reached the user-agent
+sheet's `b { font-weight: bold }` and the shorthand did not.
 
-| | Chromium | this engine |
-|---|---|---|
-| `b{font:italic 400 20px/2 serif}#t{font:revert}` | **700** | 400 |
-| `b{font-weight:400}#t{font-weight:revert}` | 700 | 700 |
+Asking that of the `font` shorthand alone would have fixed one of five.
+The audit that followed put the same question to twenty shorthands, as
+three documents each: one where a layer sets a longhand and a later
+layer sets the shorthand and then reverts it, one with only the lower
+layer's longhand, and one with no rollback at all. The first two must
+agree and the first and third must not, which is what keeps a shorthand
+that changes nothing from passing.
 
-The longhand reverts to the user-agent sheet's `b { font-weight: bold }`
-and the shorthand does not. It is the `font` shorthand specifically:
-`padding: revert` on a `<ul>`, whose user-agent `padding-left` is 40px,
-gives 40px both ways, and `font: unset` and `font: initial` on the same
-`<b>` both give 400 in both. `font: revert` does reach font-style --
-both leave it `normal` -- so the expansion happens and it is the
-rollback that lands in the wrong origin.
+| shorthand | before |
+|---|---|
+| `font`, `background`, `border`, `border-top`, `list-style` | **does not roll back** |
+| `border-width`, `margin`, `padding`, `margin-block`, `padding-inline` | rolls back |
+
+The ones that pass do so for a reason rather than by care: a four-sides
+shorthand hands its value to each side unparsed, so the keyword arrives
+at the longhand whether anyone meant it to or not. The five that fail
+parse their value into parts, and read the keyword as a font family, a
+colour or a list marker -- setting the rest to their defaults, which is
+why `font: revert` came out as `normal` rather than as a rollback.
+
+**Nine of the twenty could not be graded at all** and the audit says so
+rather than passing them: `describeStyle` does not carry `column-count`,
+`flex-grow`, `row-gap`, `overflow-x`, `text-decoration-line`, the grid
+placement edges, `align-items`, `scroll-margin-top` or `top`, so the
+second and third documents compute the same digest and the check has
+nothing to tell apart. Chromium rolls all nine back. Widening the digest
+is what would let them be asked.
 
 **Two more rows differ and neither is a cascade bug.** `all: inherit` on
 a non-inherited property gives the parent's width in Chromium and `auto`
@@ -2257,7 +2274,10 @@ rounds a length to the pixel where Chromium keeps the fraction, which is
 a different question from the cascade and is recorded here rather than
 chased.
 
-The measurement alone; the tests and the fixes follow.
+Both are fixed and the unit suite carries them: seven checks of the
+layer nesting in `tests/unit/test_layers.f`, and eleven pairs of the
+shorthand keyword in `tests/unit/test_cascade_rules.f`, each with the
+third document that makes it able to fail.
 
 ### Where an inset shadow's curve comes from, measured
 

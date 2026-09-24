@@ -579,4 +579,68 @@ computeStyles(dirauto)
 checkEqInt(escById(dirauto, 'q').style.color, attrRed,
            'and `dir="auto"` is passed over rather than read')
 
+// ---- a CSS-wide keyword on a shorthand ---------------------------------
+// Cascade 4 §3.1: `inherit`, `initial`, `unset`, `revert` and
+// `revert-layer` are valid values for every property, and on a shorthand
+// each one sets **every longhand** to that keyword. The four-sides
+// shorthands got this free, because they pass their value through to
+// each side unparsed; the ones that parse a value into parts read the
+// keyword as a font family, a colour or a list marker and set the rest
+// to their defaults.
+//
+// Each check is a pair, and a third document makes it able to fail: the
+// rollback must land on what the lower layer left, and must *not* land
+// on what the shorthand itself said. Without the third, a shorthand that
+// changed nothing at all would pass. See CLAUDE.md, "When two things
+// must agree, test them against each other".
+text func shStyle(css:text) {
+    cascadeReset()
+    setCssViewport(800, 600)
+    Node d = parseHtmlText('<html><head><style>' + css + '</style></head><body>'
+        + '<div id="q" style="display:grid;position:relative">x</div></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    Node e = escById(d, 'q')
+    return e == null ? 'NOELEM' : describeStyle(e.style)
+}
+
+void func shRollsBack(sh:text, longhand:text, low:text, high:text) {
+    // `border-style: solid` sits outside the layers because a border
+    // width with no style beside it computes to zero, which would make
+    // three of these checks compare two zeroes (CLAUDE.md's own trap).
+    text base = '#q{border-style:solid}'
+    text reverted = base + '@layer a,b;@layer a{#q{' + longhand + ':' + low
+        + '}}@layer b{#q{' + sh + ':' + high + ';' + sh + ':revert-layer}}'
+    text expected = base + '#q{' + longhand + ':' + low + '}'
+    text control = base + '@layer a,b;@layer a{#q{' + longhand + ':' + low
+        + '}}@layer b{#q{' + sh + ':' + high + '}}'
+    text a = shStyle(reverted)
+    text b = shStyle(expected)
+    text c = shStyle(control)
+    check(b != c, `${sh}: the check can tell the rollback from the shorthand`)
+    check(a == b, `${sh}: a CSS-wide keyword reaches every longhand`)
+}
+
+shRollsBack('font', 'font-weight', '700', 'italic 300 20px/2 serif')
+shRollsBack('background', 'background-color', '#008000', '#ff0000')
+shRollsBack('border', 'border-top-width', '9px', '2px solid #000000')
+shRollsBack('border-top', 'border-top-width', '9px', '2px solid #000000')
+shRollsBack('border-width', 'border-top-width', '9px', '2px')
+shRollsBack('list-style', 'list-style-type', 'square', 'disc inside')
+shRollsBack('margin', 'margin-top', '9px', '2px')
+shRollsBack('padding', 'padding-top', '9px', '2px')
+shRollsBack('margin-block', 'margin-top', '9px', '2px')
+shRollsBack('padding-inline', 'padding-left', '9px', '2px')
+
+// The one that started it, against the user-agent sheet rather than a
+// layer: Chromium reverts `font` on a `<b>` to the sheet's `bold`.
+cascadeReset()
+Node shUa = parseHtmlText('<html><head><style>'
+    + 'b{font:italic 400 20px/2 serif}#q{font:revert}'
+    + '</style></head><body><b id="q">x</b></body></html>')
+cascadeAddDocumentStyles(shUa)
+computeStyles(shUa)
+check(escById(shUa, 'q').style.fontBold,
+      '`font: revert` reaches the user-agent sheet, where `font-weight: revert` did')
+
 finish('cascade rules')
