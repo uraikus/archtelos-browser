@@ -3444,3 +3444,30 @@ therefore still says what the last qualifying run said. The paired
 reading in the section before this one is unaffected: it times two
 binaries of this browser against each other in the same minutes, so a
 host that is uniformly quicker moves both terms.
+
+## What expanding `white-space` and `text-wrap` cost, and two rounds that disagreed
+
+2026-09-24. Both shorthands moved out of the style readers and into
+`applyDecl`, which runs once per matched declaration -- 11,614 of them
+on `generated.html`. Two name comparisons added there and two
+`styleProp` lookups taken out of the readers, so the change is close to
+a wash by construction; the two binaries come out the same size to the
+byte, 3,167,248 each. Paired, 20 iterations, 800px.
+
+| pairing | `cascade` median | `layout` median | slower in, cascade |
+|---|---|---|---|
+| candidate against parent, round one | +1 | +1 | 11 of 20 |
+| the same, round two | -0 | +0 | 9 of 20 |
+| reversed (parent second) | -1 | +0 | 6 of 20 |
+
+**The two forward rounds disagree**, so under this file's own rule
+nothing here earns a question to the code, and no control was built.
+Round one's +1 came with eleven pairs of twenty on one side, which is a
+coin; round two put nine there. The reversed pairing's -1 of cascade
+with six of twenty is the same coin landing the other way. A reading
+that needs three quarters of the pairs to agree before it is believed
+does not have them in any of the three rounds.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing, on a machine idle at
+a one-minute load of 0.24 for every reading above.
