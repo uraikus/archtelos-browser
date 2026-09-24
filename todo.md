@@ -2446,6 +2446,29 @@ none of this had been caught: `border-radius`, `flex`, `flex-flow`,
 `gap`, `outline`, `overscroll-behavior` and `text-box` were ungraded.
 They have rows now.
 
+### The units nothing was checking, derived from the source
+
+The same question put to CLAUDE.md's other standing complaint -- that a
+claim about a function, a unit or an at-rule has no instrument behind
+it. Of the 35 units `parseLength` and its neighbours know, eight
+appeared in no suite anywhere: `cm`, `pc`, `grad`, `dpcm`, `dvh`,
+`lvh`, `vmin` and `vmax`.
+
+Seven were right and now have checks. One was not: `cm` and `mm`
+carried 37.8 and 3.78 where `q` carried 96/2.54/40 exactly, so three
+constants described one length and `1000cm` disagreed with the
+`40000q` it equals by definition. Both derive from the inch now.
+
+What is left of that complaint: the **at-rules** have no instrument of
+their own. `@media` is covered by 145 checks and `@supports` is
+cross-checked against the property instrument on every run, but
+`@page`, `@layer`, `@counter-style`, `@font-face`, `@container` and
+`@property` are each graded only by whatever unit suite happens to
+exercise them, and there is no list that says which of the six a claim
+in css-2026.md is resting on. A table of at-rules against a document
+that exercises each, of the shape `css-properties.txt` has, is the
+instrument that does not exist.
+
 ### And two the hand-written list missed
 
 The audit above was run from a list of shorthand names written out by

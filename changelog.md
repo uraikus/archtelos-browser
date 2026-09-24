@@ -5,6 +5,44 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Eight units nothing was checking, and three constants for one length
+
+The rule this file's previous entry earned -- derive the list from the
+code, then audit it -- applied to CLAUDE.md's other standing complaint,
+that a claim about a function, a unit or an at-rule has no instrument
+behind it. Of the 35 units the length parser knows, **eight appeared in
+no suite at all**: `cm`, `pc`, `grad`, `dpcm`, `dvh`, `lvh`, `vmin` and
+`vmax`. css-2026.md claimed all eight and nothing could have caught any
+of them going wrong.
+
+Seven were right. They have checks now, written as agreements rather
+than against remembered numbers, which is what makes them able to catch
+the case nobody thought of: `vmin` against whichever axis is shorter
+*and then the viewport turned the other way round*, so a constant could
+not pass; `dvh`, `lvh` and `svh` against `vh`, which is the claim that
+this viewport has nothing that slides away to tell them apart;
+`100grad` against `90deg` and `400grad` against `1turn`; `1dpcm`
+against `2.54dpi` and `37.795dpcm` against `1dppx`. The resolution
+checks were verified the way this file asks -- by disabling `dpcm` in
+the parser and watching all three fail -- because two of them had been
+written as a pair of falses, which would have passed whatever the
+engine did.
+
+**The eighth was wrong, and it was the agreement that showed it.**
+`cm` carried the constant 37.8 and `mm` carried 3.78, while `q` -- a
+quarter of a millimetre, added later -- carried 96/2.54/40 exactly. CSS
+defines all three off the same inch, so `1000cm` came out 37800 where
+`40000q`, which is the same length by definition, came out 37795;
+Chromium says 37795.3. Both now derive from the inch. The hazard is the
+one the comment four lines below them in the same function already
+names about `FONT_EX` and `FONT_CH`: two constants for one quantity is
+how a number goes stale in one place and not the other. Here there were
+three.
+
+`env()` was checked too and needs nothing: it appears in the source
+only in the list of functions `@supports` refuses to evaluate, which is
+the honest answer for a function this engine does not implement.
+
 ### Every shorthand the engine reads is expanded, not read beside its longhands
 
 `text-decoration`, `white-space` and `text-wrap` were each found the

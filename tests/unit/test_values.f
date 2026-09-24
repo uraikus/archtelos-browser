@@ -356,4 +356,77 @@ checkEqInt(resolveLen(lhN.width, 0, -1), lineHeightOf(lhN),
     '`lh` under `line-height: normal` is the line height a line gets')
 checkEqInt(resolveLen(lhN.width, 0, -1), 19, 'which is 19px at 16px, as Chromium measures it')
 
+// ---- the absolute units, which nothing was checking -------------------
+// Derived from the source rather than from memory (CLAUDE.md): of the
+// units the length parser knows, `cm`, `pc`, `grad`, `dpcm`, `dvh`,
+// `lvh`, `vmin` and `vmax` appeared in no suite at all, so css-2026.md
+// claimed eight units that nothing could have caught going wrong.
+//
+// `cm`, `mm` and `q` are one length written three ways -- CSS defines
+// all three off the inch -- so the test that earns its place asserts
+// they agree, at a size the pixel rounding cannot hide. It fails on
+// three constants that were meant to be one: `q` carried 96/2.54/40
+// exactly while `cm` carried 37.8 and `mm` 3.78, which is the hazard
+// the comment beside FONT_EX in this same function already names.
+int cmBig = resolveLen(parseLength('1000cm'.toAscii(), 16), 0, 0 - 1)
+checkEqInt(resolveLen(parseLength('10000mm'.toAscii(), 16), 0, 0 - 1), cmBig,
+    'a thousand centimetres is ten thousand millimetres')
+checkEqInt(resolveLen(parseLength('40000q'.toAscii(), 16), 0, 0 - 1), cmBig,
+    'and forty thousand quarter-millimetres')
+// And against the inch the standard defines them all off, which is
+// what stops the three agreeing on a wrong number.
+checkEqInt(cmBig, roundPx(1000.0 * 96.0 / 2.54),
+    'all three are the inch divided by 2.54, as Chromium computes them')
+checkEqInt(resolveLen(parseLength('1in'.toAscii(), 16), 0, 0 - 1), 96, 'an inch is 96px')
+checkEqInt(resolveLen(parseLength('1pc'.toAscii(), 16), 0, 0 - 1), 16, 'a pica is 16px')
+checkEqInt(resolveLen(parseLength('1pc'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('12pt'.toAscii(), 16), 0, 0 - 1),
+    'and a pica is twelve points')
+
+// The viewport family. `vmin` and `vmax` are the smaller and larger of
+// the two axes, which is asked of them rather than of a remembered
+// number by putting them against the axis each has to equal.
+cssViewportWidth = 300
+cssViewportHeight = 150
+checkEqInt(resolveLen(parseLength('50vmin'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1),
+    '`vmin` is the shorter axis when the viewport is wider than it is tall')
+checkEqInt(resolveLen(parseLength('50vmax'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vw'.toAscii(), 16), 0, 0 - 1),
+    'and `vmax` the longer one')
+cssViewportWidth = 150
+cssViewportHeight = 300
+checkEqInt(resolveLen(parseLength('50vmin'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vw'.toAscii(), 16), 0, 0 - 1),
+    'and they swap with the viewport, which a remembered number would not')
+checkEqInt(resolveLen(parseLength('50vmax'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1),
+    'both of them')
+// The small, large and dynamic viewport units are three names for this
+// viewport, because nothing here slides away to tell them apart. That
+// is a claim css-2026.md makes and nothing was checking.
+checkEqInt(resolveLen(parseLength('50dvh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), '`dvh` is `vh` here')
+checkEqInt(resolveLen(parseLength('50lvh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), 'and so is `lvh`')
+checkEqInt(resolveLen(parseLength('50svh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), 'and `svh`')
+cssViewportWidth = 800
+cssViewportHeight = 600
+
+// The four angle units, which are one angle written four ways, so they
+// are asked against each other rather than against four numbers. `grad`
+// was the one no suite had ever named.
+arr[bool] angOk = [false]
+checkEqInt(roundPx(parseAngleDegrees('100grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'a hundred gradians is ninety degrees')
+checkEqInt(roundPx(parseAngleDegrees('50grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('45deg'.toAscii(), angOk)), 'and fifty is forty-five')
+checkEqInt(roundPx(parseAngleDegrees('400grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('1turn'.toAscii(), angOk)), 'four hundred gradians is a full turn')
+checkEqInt(roundPx(parseAngleDegrees('0.25turn'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'a quarter turn is ninety degrees')
+checkEqInt(roundPx(parseAngleDegrees('1.5707963267948966rad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'and so is half of pi radians')
+
 finish('values')

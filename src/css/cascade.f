@@ -5472,8 +5472,15 @@ Len func parseLength(tok:ascii, fontSize:int) {
     if unit == 'pt' { return lenPx(v * 4.0 / 3.0) }
     if unit == 'pc' { return lenPx(v * 16.0) }
     if unit == 'in' { return lenPx(v * 96.0) }
-    if unit == 'cm' { return lenPx(v * 37.8) }
-    if unit == 'mm' { return lenPx(v * 3.78) }
+    // The inch divided by 2.54 and by 25.4, rather than a rounded 37.8
+    // and 3.78: CSS defines the centimetre, the millimetre and the `q`
+    // below off the same inch, so three constants for one quantity is
+    // three chances for one of them to be wrong -- which it was.
+    // `1000cm` came out 37800 against Chromium's 37795.3, and `40000q`,
+    // written with the exact constant, disagreed with the centimetre it
+    // is equal to by definition.
+    if unit == 'cm' { return lenPx(v * 96.0 / 2.54) }
+    if unit == 'mm' { return lenPx(v * 96.0 / 25.4) }
     // Each of these is a ratio of the font size measured for the face
     // this engine renders in, rather than an API answer: the runtime
     // exposes no x-height, no zero advance and no cap height. The
