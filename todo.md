@@ -3078,6 +3078,61 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `symbols()`: a gap this project's yardstick cannot measure
+
+css-2026.md lists "no `symbols()` function" among Counter Styles 3's
+gaps, which reads as work waiting to be done. It is -- the machinery is
+all here, since `csFormat` implements every one of the five systems an
+inline `symbols()` may name, and `counterStyleLabelAt` resolves a style
+by name in one place that an anonymous style could be handed to.
+
+**Chromium 141 does not implement it.** Measured rather than assumed:
+
+| | `CSS.supports` |
+|---|---|
+| `list-style-type: symbols(cyclic "A")` | false |
+| `list-style-type: symbols("A" "B")` | false |
+| `list-style-type: symbols(numeric "0" "1")` | false |
+| `list-style: symbols(cyclic "A")` | false |
+| `content: counter(c, symbols(cyclic "A"))` | false |
+| `list-style-type: decimal` | true |
+| `list-style-type: "A"` | true |
+
+Setting it through `element.style` leaves the property empty, and a list
+declaring it falls back to a bullet. The last two rows are the control:
+this is not a stale parser or a quoting mistake on our side, because the
+string form of `list-style-type`, which is newer than `symbols()`, does
+parse.
+
+That puts `symbols()` in a category nothing else in this file is in.
+CLAUDE.md says correctness here is **measured, not asserted** -- a
+number from someone else's suite rather than an opinion about the code.
+For this one there is no such number to be had from the yardstick this
+repository uses.
+
+What could still be checked without Chromium is an internal agreement:
+`symbols(cyclic "A" "B")` has to render exactly what a declared
+`@counter-style` of the same system and symbols renders, since the
+standard defines the function as the anonymous form of that rule. That
+is a real test and it would catch a wrong system or a wrong cycle.
+
+What it would **not** catch is the suffix. The standard gives a
+`symbols()` style a single space where a declared `@counter-style`
+defaults to `". "`, so the two disagree by exactly the thing the
+agreement cannot see, and the only evidence for which is right would be
+the specification's own words. This session has now watched three
+statements reasoned from specification text turn out wrong on
+measurement -- most recently `scroll-snap-stop` under `proximity`, where
+the text implies one answer and every browser gives the other. Writing
+the suffix from the text and calling it conformance would be asserting,
+which is the thing this project exists not to do.
+
+So it is recorded rather than done, and the reason is not the engine's.
+**A second reference browser would settle it** -- Firefox implements
+`symbols()` -- but that is a tool this repository does not have, and
+CLAUDE.md forbids adding one without the owner's explicit permission.
+That is the decision to put to them, not one to take here.
+
 ### Two points the instrument would give away, and why they are not taken
 
 `clip-rule` and `mask-type` are in CSS Masking 1 and both have rows in
