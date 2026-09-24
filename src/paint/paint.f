@@ -3658,8 +3658,92 @@ void func applyBoxOffset(b:Box) {
     }
 }
 
+// ---- position: sticky (CSS Positioned Layout 3 §3.5) ------------------
+//
+// A sticky box keeps the place the flow gave it and is drawn somewhere
+// else: it is shifted so that it stays inside the scrollport, and no
+// further than its own containing block. Nothing about that shift
+// survives a scroll, which is why it is the painter's and not layout's
+// -- layout runs once per document and this changes on every wheel
+// event.
+//
+// The shift is worked out from `paintScrollY` and `paintViewHeight`,
+// which `paintPage` sets for `background-attachment: fixed` to undo,
+// and the rule is the one measured against Chromium in todo.md: a
+// `top` inset can only push the box down, a `bottom` inset can only
+// pull it up, and the total is clamped to the two distances the box
+// can travel before it leaves its containing block.
+//
+// Reached only through `anySticky`, so a document that never said the
+// word pays one boolean per box painted rather than these lookups.
+int func stickyOffsetY(b:Box) {
+    Style s = b.style
+    if s == null { return 0 }
+    // The containing block is the parent's content box -- measured with
+    // 30px of padding and 30px of border on the parent, which separates
+    // that rectangle from its padding box and its border box. It is
+    // both what a percentage inset is of and what the shift is clamped
+    // to.
+    Box up = parentBox(b)
+    int cbTop = up == null ? b.y : contentY(up)
+    int cbHeight = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int dy = 0
+    if !lenIsAuto(s.top) {
+        int want = paintScrollY + resolveLen(s.top, cbHeight, 0)
+        if want > b.y { dy = want - b.y }
+    }
+    if !lenIsAuto(s.bottom) {
+        int limit = paintScrollY + paintViewHeight - resolveLen(s.bottom, cbHeight, 0)
+        if b.y + b.h + dy > limit { dy = limit - b.y - b.h }
+    }
+    if dy == 0 || up == null { return dy }
+    int low = cbTop - b.y
+    int high = cbTop + cbHeight - b.y - b.h
+    if dy < low { dy = low }
+    if dy > high { dy = high }
+    return dy
+}
+
+// Set to the box `paintSticky` is re-entering `paintBox` for, so its
+// shift goes on once and the box then takes the ordinary path -- which
+// is what lets a sticky box also carry a transform or an offset path
+// without either of them being written out twice here.
+int stickyBoxId = 0
+
+void func paintSticky(b:Box) {
+    int dy = stickyOffsetY(b)
+    if dy == 0 {
+        int plain = stickyBoxId
+        stickyBoxId = b.id
+        paintBox(b)
+        stickyBoxId = plain
+        return
+    }
+    pSaveState()
+    pTranslate(0, dy)
+    // The cull is in document coordinates and this subtree is now drawn
+    // `dy` from where it was laid out, so the window moves with it --
+    // otherwise a box stuck at the top of the screen is culled for
+    // being far above it.
+    int savedTop = paintTop
+    int savedBottom = paintBottom
+    paintTop = paintTop - dy
+    paintBottom = paintBottom - dy
+    int saved = stickyBoxId
+    stickyBoxId = b.id
+    paintBox(b)
+    stickyBoxId = saved
+    paintTop = savedTop
+    paintBottom = savedBottom
+    pRestoreState()
+}
+
 void func paintBox(b:Box) {
     if anyAnchorHidden && anchorHides(b) { return }
+    if anySticky && b.id != stickyBoxId && b.style.position == POS_STICKY {
+        paintSticky(b)
+        return
+    }
     bool offset = anyOffsetPath && boxHasOffset(b)
     if !offset && (!cascadeSawTransform || b.style.transforms.length == 0) {
         paintBoxUntransformed(b)
@@ -4206,6 +4290,7 @@ struct DocFlags {
     crossFade:bool
     offsetPath:bool
     resize:bool
+    sticky:bool
     smallCaps:bool
     // Not every answer is a boolean. The values a property keeps by
     // the computed style's serial live in maps that `cascadeReset`
@@ -4231,6 +4316,7 @@ DocFlags func captureDocFlags() {
     f.crossFade = anyCrossFade
     f.offsetPath = anyOffsetPath
     f.resize = anyResize
+    f.sticky = anySticky
     f.smallCaps = anySmallCaps
     f.fontCaps = fontCapsOfSerial
     return f
@@ -4251,6 +4337,7 @@ void func restoreDocFlags(f:DocFlags) {
     anyCrossFade = f.crossFade
     anyOffsetPath = f.offsetPath
     anyResize = f.resize
+    anySticky = f.sticky
     anySmallCaps = f.smallCaps
     fontCapsOfSerial = f.fontCaps
 }
@@ -4365,8 +4452,14 @@ Box func hitChild(c:Box, x:int, y:int) {
     // document that never said `transform` pays one boolean here.
     int hx = x
     int hy = y
+    // A sticky box is drawn away from where it was laid out, so the
+    // pointer comes back the same distance before this box or anything
+    // under it is tested. The offset is worked out from the scroll
+    // position the painter last drew at, which is the one the click
+    // arrived on: a click is answered after a paint, not before one.
+    if anySticky && c.style.position == POS_STICKY { hy = hy - stickyOffsetY(c) }
     if cascadeSawTransform && c.style.transforms.length > 0 {
-        untransformPoint(c, x, y)
+        untransformPoint(c, hx, hy)
         hx = untransformedX
         hy = untransformedY
     }

@@ -264,6 +264,7 @@ void func cascadeReset() {
     minmaxV = []
     minmaxPct = []
     anyOffsetPath = false
+    anySticky = false
     motionInfos = []
     anyClipMargin = false
     map[int] emptyClipMargin = {}
@@ -8379,9 +8380,10 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if t == 'relative' { s.position = POS_RELATIVE }
         else if t == 'absolute' { s.position = POS_ABSOLUTE }
         else if t == 'fixed' { s.position = POS_FIXED }
-        // `sticky` behaves as `relative` with no scroll offset applied,
-        // which is what it is until scrolling is part of layout.
-        else if t == 'sticky' { s.position = POS_RELATIVE }
+        // `sticky` keeps its place in the flow and is shifted by the
+        // painter, which is the one part of the pipeline that knows
+        // where the document is scrolled to.
+        else if t == 'sticky' { s.position = POS_STICKY  anySticky = true }
     }
     // CSS Masking 1. A shape stays as it was written and is resolved
     // against the box at paint time; `clip` is the same rectangle said

@@ -372,6 +372,19 @@ that box's background. A declared `z-index` on a positioned box makes a context,
 and so do a `transform` and an `opacity` below 1; `z-index: auto` does
 not.
 
+**`position: sticky`** keeps the box where the flow put it and draws it
+somewhere else. A `top` inset holds it that far below the top of the
+window while the page scrolls under it, a `bottom` inset that far above
+the bottom, and it travels no further than its containing block's
+content box — so a stuck heading leaves with its own section rather
+than sitting over the next one. The shift belongs to the painter
+because the scroll position changes on every wheel event and the
+document is laid out once, and clicks come back through it, so a stuck
+box is clickable where it is drawn rather than where it was laid out.
+The two insets that act are the vertical ones: the painter is given the
+document's scroll offset down the page, and the document does not
+scroll across.
+
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and
 `rotate` in any order and composes them left to right, `transform-origin`

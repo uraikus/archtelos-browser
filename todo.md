@@ -3193,6 +3193,17 @@ row is trusted: `@font-face`'s descriptors, `@counter-style`'s
 `speak-as`, and `image()`'s colour fallback -- the last of which
 css-2026.md already admits "has never had to show".
 
+The limit under all of this is that a row grades a property and not a
+*value*. `position` is one row carrying `relative`, and a row says only
+whether the declaration changed the computed style at all: an engine
+that made `sticky` a synonym for `relative` -- which this one did until
+the painter learned the shift -- scores that row exactly as an engine
+that implements it. Changing the row to `sticky` buys nothing, because
+that value would register on the synonym too. It is the same one bit
+per property that `font-variant` runs into, and the answer is the same:
+the check that can tell them apart is a suite, and for `position` it is
+`tests/unit/test_position.f` and `tests/render/sticky.f`.
+
 ### The instrument
 
 **Three measurements exist**, each with a floor in `tests/run.sh`:
@@ -3282,8 +3293,12 @@ rest. In rough order of how often real pages need it:
   escape it; there is a single float list for the document instead, so
   `overflow: hidden` or an inline-block does not contain a float, and a
   float does not grow the parent that holds it.
-- **`position: sticky`**, which computes as `relative` because nothing
-  in layout knows the scroll offset.
+- **A sticky box inside a scroll container**, which sticks to the
+  document's scrollport rather than to the container's. `position:
+  sticky` is a shift the painter applies against `paintScrollY`, and a
+  scroll container's own offset never reaches it. `left` and `right`
+  are the same gap along the other axis: there is no `paintScrollX`,
+  because the document itself does not scroll across.
 - **Sub-pixel layout.** Every length is an integer, so three items
   sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
   rounds only when painting. Distributing free space by rounding the

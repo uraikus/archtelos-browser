@@ -5,6 +5,57 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `position: sticky`
+
+CSS Positioned Layout 3 §3.5. The cascade parsed the keyword and threw
+it away -- it set `POS_RELATIVE` -- and `POS_STICKY` existed only as a
+constant. todo.md gave the reason as layout not knowing the scroll
+offset, which is true and cannot be fixed: layout runs once per
+document and the offset changes on every wheel event. **The painter
+knows.** `paintPage` already sets `paintScrollY` and `paintViewHeight`
+for `background-attachment: fixed` to undo, so the shift goes there,
+which is also where a real engine puts it.
+
+Fifty documents to Chromium 141 first, on three fixtures, reading the
+box's rectangle and the scroll offset back together so the answer is in
+document coordinates. The rule they agree on, in order: a `top` inset
+can only push the box down, to `scroll + top`; a `bottom` inset can only
+pull it up, to `scroll + viewport - bottom`; and the total is clamped
+into the two distances the box can travel before leaving its containing
+block. The clamp is against that block's **content** box, which a
+fixture carrying 30px of padding and 30px of border separates from its
+padding box and its border box -- 290 against 300 and 350, and the test
+was watched failing on both of the other two.
+
+An inset-less sticky box never moves, which falls out of the rule rather
+than needing a case of its own.
+
+`paintSticky` translates the canvas, moves the cull window with it --
+otherwise a box stuck at the top of the screen is culled for being far
+above where it was laid out -- and re-enters `paintBox` for the same
+box, so a sticky box that also carries a transform or an offset path
+gets both without either being written out twice. `hitChild` subtracts
+the same offset from the pointer before testing this box or anything
+under it, so a stuck box is clickable where it is drawn. Both are
+behind `anySticky`: a document that never says the word pays one
+boolean per box painted and one per box tested.
+
+Nineteen pixel checks in `tests/render/sticky.f`, none of which writes
+down a screen row: what each asserts is how far the box moved between
+two scroll positions, because "it did not move" and "it moved exactly
+as far as the page scrolled" are what sticking and not sticking mean,
+while a row worked out here would only test the arithmetic that
+produced it. Fourteen more in `tests/unit/test_position.f` put the
+three Chromium fixtures back to this engine in document coordinates,
+which a pixel check cannot do at scroll positions that carry the box
+off the screen.
+
+What is not reached is written down rather than claimed: a sticky box
+inside an `overflow: scroll` container sticks to the document's
+scrollport and not to that container's, and `left` and `right` do
+nothing, because there is no `paintScrollX` -- the document does not
+scroll across.
+
 ### The intrinsic sizing keywords, and an expectation the engine was right about
 
 CSS Box Sizing 3's `min-content`, `max-content` and `fit-content` as

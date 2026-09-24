@@ -377,4 +377,113 @@ checkEq(topIdAt(
     '<div id="p"><div id="neg"></div><div id="flow"></div></div>', 50, 50),
     'flow', 'and a transparent box still takes the click')
 
+// ---- position: sticky --------------------------------------------------
+//
+// The three fixtures measured against Chromium 141 in todo.md, put back
+// to this engine. What is asserted is the box's position in DOCUMENT
+// coordinates -- where it was laid out plus the painter's shift -- so
+// the answer can be compared at scroll positions that put it off the
+// screen, which a pixel check cannot reach. The pixel side is
+// tests/render/sticky.f.
+
+Page pSticky = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;top:10px;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:350px"></div></body></html>', 'about:blank', 400)
+arr[Box] stA = []
+collectBoxesForTag(pSticky.root, 'p', stA)
+
+// Where the box is drawn, in document coordinates, at a given scroll.
+int func stickyDocY(b:Box, scroll:int, viewport:int) {
+    paintScrollY = scroll
+    paintViewHeight = viewport
+    return b.y + stickyOffsetY(b)
+}
+
+Box qA = stA[0]
+checkEqInt(qA.y, 50, 'the sticky box is laid out where the flow puts it')
+checkEqInt(stickyDocY(qA, 0, 100), 50, 'top: at scroll 0 it has not moved')
+checkEqInt(stickyDocY(qA, 30, 100), 50, 'at scroll 30 it is still in place')
+checkEqInt(stickyDocY(qA, 60, 100), 70, 'at scroll 60 it is stuck at scroll + 10')
+checkEqInt(stickyDocY(qA, 300, 100), 230, 'at scroll 300 it has reached its containing block')
+checkEqInt(stickyDocY(qA, 500, 100), 230, 'and goes no further')
+
+// The same block put at y=400 with the box at its bottom, so a `bottom`
+// inset has something to do.
+Page pStickyB = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:400px"></div>'
+    + '<div style="height:200px">'
+    + '<div style="height:180px"></div>'
+    + '<p id="q" style="margin:0;position:sticky;bottom:10px;height:20px"></p></div>'
+    + '<div style="height:300px"></div></body></html>', 'about:blank', 400)
+arr[Box] stB = []
+collectBoxesForTag(pStickyB.root, 'p', stB)
+Box qB = stB[0]
+checkEqInt(qB.y, 580, 'the bottom-inset box is laid out at the end of its block')
+checkEqInt(stickyDocY(qB, 0, 100), 400, 'bottom: at scroll 0 it is pulled up to its containing block top')
+checkEqInt(stickyDocY(qB, 200, 100), 400, 'and held there')
+checkEqInt(stickyDocY(qB, 400, 100), 470, 'at scroll 400 it is stuck above the viewport bottom')
+checkEqInt(stickyDocY(qB, 490, 100), 560, 'and follows the scroll')
+checkEqInt(stickyDocY(qB, 600, 100), 580, 'until it is back in its own place')
+
+// 30px of padding and 30px of border on the containing block, which
+// separates its content box from its padding box and its border box.
+// Chromium clamps against the content box.
+Page pStickyC = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px;padding:30px;border:30px solid #000">'
+    + '<p id="q" style="margin:0;position:sticky;top:0;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:600px"></div></body></html>', 'about:blank', 400)
+arr[Box] stC = []
+collectBoxesForTag(pStickyC.root, 'p', stC)
+Box qC = stC[0]
+checkEqInt(qC.y, 110, 'the box starts inside the padding and the border')
+checkEqInt(stickyDocY(qC, 0, 100), 110, 'padded: at scroll 0 it has not moved')
+checkEqInt(stickyDocY(qC, 200, 100), 200, 'at scroll 200 it is stuck at the scroll position')
+checkEqInt(stickyDocY(qC, 300, 100), 290, 'at scroll 300 it has reached the content box bottom')
+checkEqInt(stickyDocY(qC, 400, 100), 290, 'which is neither the padding box nor the border box')
+
+// A sticky box with no inset has nothing to stick to.
+Page pStickyN = pageFromHtml('<!doctype html><body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;height:20px"></p></div></body>', 'about:blank', 400)
+arr[Box] stN = []
+collectBoxesForTag(pStickyN.root, 'p', stN)
+checkEqInt(stickyDocY(stN[0], 300, 100), 50, 'a sticky box with no inset never moves')
+
+// And the keyword is its own computed value rather than a synonym for
+// `relative`, which is what the cascade used to make of it -- so an
+// engine that went on mapping it to `relative` fails here as well as on
+// every geometry above.
+checkEqInt(findElement(pSticky.doc, 'p').style.position, POS_STICKY,
+    'position: sticky computes to sticky')
+checkEqInt(findElement(pSticky.doc, 'div').style.position, POS_STATIC,
+    'and leaves its neighbours static')
+
+// A stuck box takes the click where it is drawn, not where it was laid
+// out. The painter's scroll position is what the hit tester reads, so
+// the page is painted first, exactly as the shell does it.
+Page pHit = pageFromHtml('<!doctype html><body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;top:10px;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:350px"></div></body>', 'about:blank', 400)
+clearCanvas()
+paintPage(pHit, 0, 60, 100)
+// At scroll 60 the box is stuck at document 70..90.
+Box hitStuck = hitTest(pHit.root, 10, 80)
+check(hitStuck != null && getAttr(hitStuck.node, 'id') == 'q',
+    'a stuck box is clickable where it is drawn')
+Box hitNatural = hitTest(pHit.root, 10, 60)
+check(hitNatural == null || getAttr(hitNatural.node, 'id') != 'q',
+    'and not where the flow left it')
+
 finish('position')

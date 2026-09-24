@@ -622,6 +622,11 @@ map[int] motionOfSerial = {}
 // one bool test rather than a walk.
 bool anyOffsetPath = false
 
+// Whether any element said `position: sticky`. A sticky box is shifted
+// at paint time, which means asking of every box painted whether it is
+// one; a document that never said the word answers with this instead.
+bool anySticky = false
+
 MotionInfo func motionInfoOf(idx:int) {
     if idx <= 0 || idx > motionInfos.length {
         MotionInfo none
