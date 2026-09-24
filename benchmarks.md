@@ -3659,3 +3659,56 @@ confirmed, which is the first time that has happened in this file.
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing, on a machine idle at
 a one-minute load of 0.20 for every reading above.
+
+## What `position: sticky` cost, and a control that was the same size to the byte
+
+`position: sticky` adds one test to `paintBox`, which runs once per box
+painted, and one to `hitChild`, which runs once per box a click is
+tested against. Both are `anySticky && ...`, so a page that never says
+the word stops at the boolean -- the shape the rule about a call added
+to a hot function exists to catch, because the call it guards,
+`paintSticky`, calls `paintBox` back.
+
+Paired against the revision before it, twenty-five alternating samples
+on `features.html` at 800px, on a machine idle at a one-minute load of
+0.15 to 0.18. Two forward rounds and the mirror image:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, round 1 | 0 | 0 | -1 | **-2** | **+1** |
+| forward, round 2 | 0 | 0 | 0 | **-2** | **+1** |
+| reversed | 0 | 0 | 0 | **+3** | **-1** |
+
+Two forward rounds agreeing is what this file asks for before a reading
+earns a question, and both survived the mirror image: forward -2 against
+reversed +3 leaves the candidate about two and a half milliseconds
+*faster* in layout, and forward +1 against reversed -1 leaves it one
+millisecond slower in paint.
+
+The layout number is the giveaway. **The diff has no line in
+`src/layout/` at all**, so a reading there cannot be work, and this
+file has recorded twice before that it is the compiler putting the
+machine code somewhere else. The control settles both together:
+the parent recompiled with this change's globals, its `DocFlags` field
+and both its functions renamed and **called from nowhere**, which comes
+out at 3,176,456 bytes -- the candidate's size to the byte. Paired
+against that:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, round 1 | 0 | -1 | 0 | **+1** | 0 |
+| forward, round 2 | -1 | 0 | +1 | 0 | 0 |
+| reversed | 0 | 0 | 0 | **+2** | 0 |
+
+The two forward rounds no longer agree on anything, so nothing earns a
+question. Paint, which read +1 against the parent in both forward
+rounds and -1 reversed, reads **zero in all three** against a binary
+holding the same code in the same amount of it. So the millisecond of
+paint was never the two boolean tests: it was where the compiler put
+them, and the two and a half of layout was the same thing with the
+opposite sign.
+
+All three binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing. `tests/bench.sh`
+qualified its own run at 8.5% against `CONTROL_MS`, inside the 15% it
+allows.
