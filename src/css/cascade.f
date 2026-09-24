@@ -6780,34 +6780,120 @@ int func textBoxEdgePair(words:arr[ascii], from:int) {
 // `offset-path: none | ray() | <basic-shape> | path()`. The basic
 // shapes are the ones `clip-path` already reads, so they are read the
 // same way; a ray and a path() are this property's own.
-// The SVG `<path>` a fragment reference names, searched from the
-// document the referring element belongs to. Foreign elements are in
+// The SVG geometry a fragment reference names. Foreign elements are in
 // the DOM with their attributes -- `insertForeignElement` puts them
 // there -- whether or not anything ever draws one, which is the whole
 // reason `offset-path: url()` needs no SVG rendering.
-Node func svgPathById(n:Node, want:text) {
-    if n.kind == NODE_ELEMENT && n.tag == 'path' && attrOf(n.id, 'id') == want { return n }
+//
+// Four of the seven geometry elements are travelled. `<rect>`, `<line>`
+// and `<polyline>` resolve in Chromium and are not taken: a rect wants a
+// rectangle path this engine does not travel -- `inset()` is not a path
+// here either -- and the other two are OPEN, where a `polygon()` closes
+// itself, so the same points would put half way along at the far end
+// (todo.md has both measurements).
+bool func isSvgMotionShape(tag:text) {
+    return tag == 'path' || tag == 'circle' || tag == 'ellipse' || tag == 'polygon'
+}
+
+Node func svgShapeById(n:Node, want:text) {
+    if n.kind == NODE_ELEMENT && isSvgMotionShape(n.tag)
+        && attrOf(n.id, 'id') == want { return n }
     for int i = 0, i < n.children.length, i++ {
-        Node f = svgPathById(n.children[i], want)
+        Node f = svgShapeById(n.children[i], want)
         if f != null { return f }
     }
     return null
 }
 
-// The path data a `url(#id)` resolves to, or `''` for every way it can
-// fail: no such element, an element that is not a `<path>`, and a
-// `<path>` carrying no `d`. All three are an EMPTY path rather than
-// `none` -- measured against Chromium, which still applies the offset
-// and puts the box on the path's single point at the origin, where
-// `none` leaves it where the flow put it (todo.md).
-text func svgPathDataFor(nid:int, want:text) {
-    if nid <= 0 || nid >= nodeRegistry.length { return '' }
+// The numbers in an SVG attribute, which separates them by commas, by
+// spaces or by both. Scanned rather than split, so that `0,60 100,60`
+// and `0 60 100 60` read the same.
+arr[Len] func svgNumbers(t:text, fontSize:int) {
+    arr[Len] out = []
+    ascii a = t.toAscii()
+    if a == null { return out }
+    int i = 0
+    while i < a.length {
+        int c = a.charCodeAt(i)
+        if !(isDigitCode(c) || c == CH_DOT || c == CH_MINUS || c == CH_PLUS) {
+            i++
+            continue
+        }
+        int from = i
+        while i < a.length {
+            int d = a.charCodeAt(i)
+            if isDigitCode(d) || d == CH_DOT || d == CH_MINUS || d == CH_PLUS {
+                i++
+            } else {
+                break
+            }
+        }
+        Len l = parseLength(a.slice(from, i), fontSize)
+        if l.kind != LEN_AUTO { out.push(l) }
+    }
+    return out
+}
+
+Len func svgAttrLen(e:Node, name:text, fontSize:int) {
+    text v = attrOf(e.id, name)
+    if v == null { return lenPx(0.0) }
+    arr[Len] n = svgNumbers(v, fontSize)
+    return n.length > 0 ? n[0] : lenPx(0.0)
+}
+
+// Fills `mi` from whatever a `url(#id)` named. Every way the reference
+// can fail -- no such element, an element that is not one of the four, a
+// `<path>` with no `d` -- leaves an EMPTY path rather than `none`, which
+// is measured against Chromium: the offset still applies and puts the
+// box on the path's single point at the origin, where `none` leaves it
+// where the flow put it (todo.md).
+void func motionFromSvgShape(mi:MotionInfo, nid:int, want:text, fontSize:int) {
+    mi.pathData = ''
+    mi.pathKind = MPATH_PATH
+    if nid <= 0 || nid >= nodeRegistry.length { return }
     Node root = nodeRegistry[documentRootOf(nid)]
-    if root == null { return '' }
-    Node p = svgPathById(root, want)
-    if p == null { return '' }
-    text d = attrOf(p.id, 'd')
-    return d == null ? '' : d
+    if root == null { return }
+    Node e = svgShapeById(root, want)
+    if e == null { return }
+    if e.tag == 'path' {
+        text d = attrOf(e.id, 'd')
+        if d != null { mi.pathData = d }
+        return
+    }
+    // The other three are shapes the cascade already builds and the
+    // motion code already travels, so they are handed over as one.
+    ClipShape sh
+    sh.kind = CLIPSHAPE_NONE
+    sh.geoBox = GEOBOX_BORDER
+    if e.tag == 'polygon' {
+        arr[Len] nums = svgNumbers(attrOf(e.id, 'points'), fontSize)
+        if nums.length < 6 { return }
+        arr[Len] xs = []
+        arr[Len] ys = []
+        for int i = 0, i + 1 < nums.length, i = i + 2 {
+            xs.push(nums[i])
+            ys.push(nums[i + 1])
+        }
+        sh.kind = CLIPSHAPE_POLYGON
+        sh.pointsX = xs
+        sh.pointsY = ys
+    } else {
+        sh.kind = e.tag == 'circle' ? CLIPSHAPE_CIRCLE : CLIPSHAPE_ELLIPSE
+        sh.centreX = svgAttrLen(e, 'cx', fontSize)
+        sh.centreY = svgAttrLen(e, 'cy', fontSize)
+        sh.radiusXKind = CLIPRAD_LENGTH
+        sh.radiusYKind = CLIPRAD_LENGTH
+        if e.tag == 'circle' {
+            Len r = svgAttrLen(e, 'r', fontSize)
+            sh.radiusX = r
+            sh.radiusY = r
+        } else {
+            sh.radiusX = svgAttrLen(e, 'rx', fontSize)
+            sh.radiusY = svgAttrLen(e, 'ry', fontSize)
+        }
+    }
+    mi.shape = sh
+    mi.pathKind = MPATH_SHAPE
 }
 
 void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int, nid:int) {
@@ -6836,8 +6922,12 @@ void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int, nid:int) {
         }
         if uto > ufrom && t.charCodeAt(ufrom) == CH_HASH { ufrom++ }
         // A reference to nothing is still a path -- an empty one.
-        mi.pathData = uto > ufrom ? svgPathDataFor(nid, t.slice(ufrom, uto).toText()) : ''
-        mi.pathKind = MPATH_PATH
+        if uto > ufrom {
+            motionFromSvgShape(mi, nid, t.slice(ufrom, uto).toText(), fontSize)
+        } else {
+            mi.pathData = ''
+            mi.pathKind = MPATH_PATH
+        }
         return
     }
     if asciiStartsWith(lower, 'ray(', 0) {

@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `url()` motion path takes an SVG shape as well as a `<path>`
+
+Chromium resolves five geometry elements besides `<path>`, and three are
+shapes this engine's motion code already travels. Measured at
+`offset-distance: 50%` on the same geometry: a `<circle>` lands where
+`circle()` lands, an `<ellipse>` where `ellipse()` does, and a
+`<polygon>` where `polygon()` does. So the cascade reads the element's
+attributes into the `ClipShape` it already builds for those three
+functions and hands it over as `MPATH_SHAPE`; nothing downstream
+changed, exactly as with the `<path>` case.
+
+The numbers in an SVG attribute are scanned rather than split, because
+`points` separates them by commas, by spaces or by both, and
+`0,60 100,60` has to read the same as `0 60 100 60`.
+
+Eight checks in `tests/render/motion.f`, each the SVG spelling against
+the CSS function of the same geometry, so no coordinate is written down
+and a shape resolved to the wrong centre, radius or winding fails at
+once. One of them is the instrument: a circle at 50% must differ from
+the same circle at 0%. All eight failed before the change, and on an
+independent fixture the engine now answers Chromium's own columns to the
+pixel -- (5, 45), (5, 45) and (95, 26).
+
+Three elements are **not** taken, and why is measured rather than
+assumed. A `<rect>` is travelled round its perimeter -- 50% of a 100x50
+rect is 150 of 300, the far bottom corner -- and this engine cannot
+reuse `inset()` for it, because Chromium puts a start point on a CSS
+`inset()` and then never moves along it. So Chromium travels a `<rect>`
+and refuses to travel the CSS rectangle describing the same shape.
+`<line>` and `<polyline>` are open, where a `polygon()` closes itself,
+so the same two points as a polygon would put half way along at the far
+end instead; they want an open-polyline flag nothing here has.
+
 ### Thirteen shorthand rows come out of the property instrument
 
 The instrument's header says shorthands and legacy aliases do not belong

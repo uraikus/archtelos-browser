@@ -416,7 +416,10 @@ checkEqInt(impY, curveY, 'and down')
 
 text mSvg = '<svg width="0" height="0">'
     + '<path id="p" d="M 0 60 L 100 60"/>'
-    + '<path id="nod"/></svg>'
+    + '<path id="nod"/>'
+    + '<circle id="circ" cx="50" cy="60" r="40"/>'
+    + '<ellipse id="ell" cx="50" cy="60" rx="40" ry="20"/>'
+    + '<polygon id="poly" points="0,60 100,60 100,110"/></svg>'
 
 // The same page `shotMoving` builds, with an SVG the reference can find
 // and a plain div it can wrongly find.
@@ -481,5 +484,51 @@ checkEqInt(urlX, refX, 'and so does an element that is not a path')
 refAt('offset-distance:50%;offset-rotate:0deg')
 check(refX != urlX || refY != urlY,
     'a reference that resolves to nothing is not the same as no offset-path')
+
+// ---- a url() naming an SVG shape rather than a <path> ------------------
+//
+// Chromium resolves five geometry elements besides `<path>`, and three
+// of them are shapes this engine's motion code already travels. Each
+// check is the SVG spelling against the CSS function of the same
+// geometry: measured in Chromium at `offset-distance: 50%`, a `<circle>`
+// lands where `circle()` lands, an `<ellipse>` where `ellipse()` does,
+// and a `<polygon>` where `polygon()` does (todo.md). No coordinate is
+// written down here, and a shape resolved to the wrong centre, the wrong
+// radius or the wrong winding fails immediately.
+//
+// `<rect>`, `<line>` and `<polyline>` are not here: a rect needs a
+// rectangle path this engine does not travel, and the other two are open
+// where a `polygon()` closes itself. todo.md has the measurements.
+
+// The instrument: a curved path has to move the box, or the agreements
+// below hold between two boxes that never went anywhere.
+refAt('offset-path:circle(40px at 50px 60px);offset-distance:0%;offset-rotate:0deg')
+keepRef()
+refAt('offset-path:circle(40px at 50px 60px);offset-distance:50%;offset-rotate:0deg')
+check(refX != urlX, 'a circle at 50% is not a circle at 0%')
+
+refAt('offset-path:url(#circ);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt('offset-path:circle(40px at 50px 60px);offset-distance:50%;offset-rotate:0deg')
+checkEqInt(urlX, refX, 'url() naming a <circle> is circle(), across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#circ);offset-distance:25%;offset-rotate:0deg')
+keepRef()
+refAt('offset-path:circle(40px at 50px 60px);offset-distance:25%;offset-rotate:0deg')
+checkEqInt(urlX, refX, 'and a quarter of the way round, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#ell);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt('offset-path:ellipse(40px 20px at 50px 60px);offset-distance:50%;offset-rotate:0deg')
+checkEqInt(urlX, refX, 'url() naming an <ellipse> is ellipse(), across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#poly);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:polygon(0px 60px, 100px 60px, 100px 110px);offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'url() naming a <polygon> is polygon(), across')
+checkEqInt(urlY, refY, 'and down')
 
 finish('motion path')
