@@ -3137,6 +3137,62 @@ hidden.
 
 The measurement alone; the tests and the implementation follow.
 
+### A `<rect>` with `rx` or `ry`, measured
+
+The one case the section above left wrong rather than absent. A 10px box
+on a `100x50` rect at `x=0 y=0`, `offset-rotate: 0deg`, painted top-left
+(the box's centre sits on the path, so the point is five more in each
+direction):
+
+| `offset-path` | 0% | 25% | 50% | 75% |
+|---|---|---|---|---|
+| `url()` → `<rect rx=20 ry=10>` | (15, -5) | (83, -4.99) | (75, 45) | (4.85, 42.83) |
+| `path()` of the same rounded rect | **(15, -5)** | **(83, -4.99)** | **(75, 45)** | **(4.85, 42.83)** |
+
+The second row is SVG 1.1 §9.2's own equivalent path for a rounded rect,
+written out:
+
+```
+M 20 0 H 80 A 20 10 0 0 1 100 10 V 40 A 20 10 0 0 1 80 50
+       H 20 A 20 10 0 0 1 0 40 V 10 A 20 10 0 0 1 20 0 Z
+```
+
+It agrees with the SVG element at every distance, to the hundredth of a
+pixel Chromium reports. That is the whole finding, and it is again the
+question this file keeps having to be reminded to ask: not "what would a
+rounded rectangle need", but "what does this engine already travel that
+is one". `motionPathData` reads `A`, and converts it to a centre and two
+angles the way the curve-command work left it, so the rounded rect is
+path data and nothing else is required. A reason of the form "needs a
+rounded-rectangle primitive" would have been the fifth wrong one.
+
+The corner radii resolve the way SVG 2 §10.2 says, and that was measured
+too rather than read off:
+
+| the rect | start point | what it says |
+|---|---|---|
+| `rx=20 ry=10` | (20, 0) | both given, both used |
+| `rx=20` alone | (20, 0) | `ry` is `auto`, which is `rx` |
+| `ry=10` alone | (10, 0) | and the same the other way |
+| `rx=80 ry=40` | (50, 0) | clamped to half the side, `w/2 = 50` |
+| neither | (0, 0) | sharp, which is what this engine does today |
+
+The clamp is per axis, and needed a measurement of its own to say so:
+the start point only shows the horizontal one, since `(50, 0)` is where
+a rect with `rx = 50` starts whatever `ry` is. `rx=80 ry=40` against the
+`path()` of `rx=50 ry=25` agrees at 10%, 25% and 40%, and against the
+`path()` of `rx=50 ry=40` it agrees only at 25% -- (68.03, -3.03)
+against (75.55, 2.65) at a tenth of the way round. So `ry` is clamped to
+half the height independently, and 25% is a distance that cannot tell
+the two apart, which is the sort of thing a test picks by accident.
+
+The `rx` alone row is the one worth a test of its own, because a reading
+of the attributes that forgets the `auto` default gives a rect with
+sharp corners in one axis and nothing in the output says which half went
+wrong.
+
+The measurement alone; the test and the implementation follow.
+
 ### `content-visibility: auto`, measured -- a decline that holds
 
 The fourth stated reason tested this session, and the first of them to
