@@ -402,4 +402,84 @@ pointAt('50%', EXPLICIT)
 checkEqInt(impX, curveX, 'a pair after M is a line, so the two spellings agree across')
 checkEqInt(impY, curveY, 'and down')
 
+// ---- offset-path: url() (CSS Motion Path 1 §2.1) -----------------------
+//
+// `url(#p)` names an SVG `<path>` and travels its `d` attribute. The
+// path is never drawn -- this engine renders no SVG -- but the element
+// is in the DOM with its attributes, which is all a reference needs.
+//
+// Every check is an agreement between the two spellings of one path
+// rather than a coordinate written down here. Chromium 141 puts a 10px
+// box at `offset-distance: 50%` in the same place for both, and puts a
+// reference that resolves to nothing somewhere neither `none` nor the
+// path is (todo.md).
+
+text mSvg = '<svg width="0" height="0">'
+    + '<path id="p" d="M 0 60 L 100 60"/>'
+    + '<path id="nod"/></svg>'
+
+// The same page `shotMoving` builds, with an SVG the reference can find
+// and a plain div it can wrongly find.
+void func shotReferenced(style:text) {
+    Page p = pageFromHtml(mHead + mSvg + '<div id="adiv"></div>'
+        + '<div style="position:absolute;left:30px;top:40px;width:40px;height:20px;'
+        + 'background:red;' + style + '">'
+        + '<div style="width:10px;height:20px;background:blue"></div></div>'
+        + '</div></body>', 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+int refX = 0
+int refY = 0
+void func refAt(style:text) {
+    shotReferenced(style)
+    boundsOf(red)
+    int rl = mLeft
+    int rt = mTop
+    boundsOf(blue)
+    refX = mW == 0 ? rl : (mLeft < rl ? mLeft : rl)
+    refY = mW == 0 ? rt : (mTop < rt ? mTop : rt)
+}
+
+int urlX = 0
+int urlY = 0
+void func keepRef() { urlX = refX  urlY = refY }
+
+// The instrument first: the path has to move the box, or every
+// agreement below holds between two boxes that never went anywhere.
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:0%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:50%;offset-rotate:0deg`)
+check(refX != urlX, 'a path at 50% is not a path at 0%')
+
+// The agreement: the two spellings of one path land on one pixel.
+refAt('offset-path:url(#p);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'url(#p) travels the element\'s d, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#p);offset-distance:0%;offset-rotate:0deg')
+keepRef()
+refAt(`offset-path:path('M 0 60 L 100 60');offset-distance:0%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'and agrees at the start of the path too')
+checkEqInt(urlY, refY, 'in both axes')
+
+// A reference that resolves to nothing is an EMPTY path, not `none`.
+// Measured against Chromium, which puts the box on the path's single
+// point at the origin rather than leaving it where the flow did.
+refAt('offset-path:url(#nosuch);offset-distance:50%;offset-rotate:0deg')
+keepRef()
+refAt('offset-path:url(#nod);offset-distance:50%;offset-rotate:0deg')
+checkEqInt(urlX, refX, 'a missing element and a d-less path agree, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt('offset-path:url(#adiv);offset-distance:50%;offset-rotate:0deg')
+checkEqInt(urlX, refX, 'and so does an element that is not a path')
+
+refAt('offset-distance:50%;offset-rotate:0deg')
+check(refX != urlX || refY != urlY,
+    'a reference that resolves to nothing is not the same as no offset-path')
+
 finish('motion path')

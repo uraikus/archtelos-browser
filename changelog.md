@@ -5,6 +5,54 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `offset-path: url()`
+
+CSS Motion Path 1 §2.1. css-2026.md recorded "no `url()` path", which
+reads as needing SVG this engine does not render. **The path does not
+have to be drawn, only read.** Three pieces were already here: the HTML
+parser puts SVG elements in the DOM with their attributes
+(`insertForeignElement`), `motionReadPath` already stores path data as a
+string on `MotionInfo` with `MPATH_PATH` and everything downstream reads
+only those two fields, and `documentRootOf` already walks from a node to
+its document root. So `url(#p)` is: find the element, read `d`, set the
+two fields the `path()` form sets. Nothing in `src/css/motion.f`
+changed.
+
+The fourth stated reason this session to fall over on inspection, after
+`inset()`'s `round` radius, `polygon()`'s fill rule and
+`scroll-snap-stop`. Each time the reason named a capability the engine
+lacks, and the feature needed something narrower it already had.
+
+**A reference that resolves to nothing is not `none`.** The standard
+says it "behaves as `none`"; Chromium disagrees, and so does this engine
+now. `none` leaves the box where the flow put it; a missing element, an
+element that is not a `<path>`, and a `<path>` with no `d` all give an
+*empty* path, and the offset machinery still runs -- the box is centred
+on the path's single point at the origin, eleven pixels and one concept
+away from where the wording would have put it. Measured on all three
+forms.
+
+Eleven checks in `tests/render/motion.f`, every one an agreement between
+two spellings of one path rather than a coordinate written down: `url(#p)`
+must land where `path()` with the same data lands, at the start of the
+path and half way along it; the three ways of resolving to nothing must
+agree with each other; and a reference that resolves to nothing must
+*not* agree with no `offset-path` at all. One of the eleven is the
+instrument -- a path at 50% must differ from the same path at 0%, or
+every agreement holds between two boxes that never moved. Five failed
+before the fix.
+
+Against the fixture the measurement used, the engine now reproduces
+Chromium's geometry exactly: the box at the container origin for `none`,
+at half the path's length minus half its own width for both spellings of
+the path, and at minus half its own width on both axes for all three
+dangling forms.
+
+Not taken, and recorded rather than left to be rediscovered: a `url()`
+naming an SVG shape that is not a `<path>`. Chromium resolves a
+`<circle>`, which means turning a circle, rect or polygon into a path --
+a second feature wearing the same syntax.
+
 ### `scroll-snap-stop`
 
 CSS Scroll Snap 1 §5. css-2026.md said the property "needs a notion of

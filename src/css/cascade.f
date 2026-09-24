@@ -6780,13 +6780,66 @@ int func textBoxEdgePair(words:arr[ascii], from:int) {
 // `offset-path: none | ray() | <basic-shape> | path()`. The basic
 // shapes are the ones `clip-path` already reads, so they are read the
 // same way; a ray and a path() are this property's own.
-void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int) {
+// The SVG `<path>` a fragment reference names, searched from the
+// document the referring element belongs to. Foreign elements are in
+// the DOM with their attributes -- `insertForeignElement` puts them
+// there -- whether or not anything ever draws one, which is the whole
+// reason `offset-path: url()` needs no SVG rendering.
+Node func svgPathById(n:Node, want:text) {
+    if n.kind == NODE_ELEMENT && n.tag == 'path' && attrOf(n.id, 'id') == want { return n }
+    for int i = 0, i < n.children.length, i++ {
+        Node f = svgPathById(n.children[i], want)
+        if f != null { return f }
+    }
+    return null
+}
+
+// The path data a `url(#id)` resolves to, or `''` for every way it can
+// fail: no such element, an element that is not a `<path>`, and a
+// `<path>` carrying no `d`. All three are an EMPTY path rather than
+// `none` -- measured against Chromium, which still applies the offset
+// and puts the box on the path's single point at the origin, where
+// `none` leaves it where the flow put it (todo.md).
+text func svgPathDataFor(nid:int, want:text) {
+    if nid <= 0 || nid >= nodeRegistry.length { return '' }
+    Node root = nodeRegistry[documentRootOf(nid)]
+    if root == null { return '' }
+    Node p = svgPathById(root, want)
+    if p == null { return '' }
+    text d = attrOf(p.id, 'd')
+    return d == null ? '' : d
+}
+
+void func motionReadPath(mi:MotionInfo, v:ascii, fontSize:int, nid:int) {
     mi.pathKind = MPATH_NONE
     if v == null { return }
     ascii t = asciiTrim(v)
     if t.length == 0 { return }
     ascii lower = asciiLower(t)
     if lower == 'none' { return }
+    // `url(#id)` travels the `d` of the SVG <path> it names. The path is
+    // never drawn -- there is no SVG rendering here -- and does not have
+    // to be: only its attribute is read.
+    if asciiStartsWith(lower, 'url(', 0) {
+        int uclose = asciiMatchingParen(t, 3)
+        if uclose < 0 { return }
+        int ufrom = 4
+        int uto = uclose
+        while ufrom < uto && isSpaceCode(t.charCodeAt(ufrom)) { ufrom++ }
+        while uto > ufrom && isSpaceCode(t.charCodeAt(uto - 1)) { uto-- }
+        if uto - ufrom >= 2 {
+            int uq = t.charCodeAt(ufrom)
+            if (uq == CH_QUOTE || uq == CH_APOS) && t.charCodeAt(uto - 1) == uq {
+                ufrom++
+                uto--
+            }
+        }
+        if uto > ufrom && t.charCodeAt(ufrom) == CH_HASH { ufrom++ }
+        // A reference to nothing is still a path -- an empty one.
+        mi.pathData = uto > ufrom ? svgPathDataFor(nid, t.slice(ufrom, uto).toText()) : ''
+        mi.pathKind = MPATH_PATH
+        return
+    }
     if asciiStartsWith(lower, 'ray(', 0) {
         int close = asciiMatchingParen(t, 3)
         if close < 0 { return }
@@ -7913,7 +7966,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         mi.rotateMode = MROT_AUTO
         mi.anchorAuto = true
         mi.posNormal = true
-        motionReadPath(mi, mPath, s.fontSize)
+        motionReadPath(mi, mPath, s.fontSize, n.id)
         motionReadRotate(mi, mRot)
         if mDist != null { mi.distance = parseLength(asciiTrim(mDist), s.fontSize) }
         if mAnch != null {
