@@ -3922,3 +3922,28 @@ the walk does not.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## What an SVG shape in a `url()` motion path cost: nothing, plainly
+
+`features.html` has no `offset-path`. Twenty-five alternating samples at
+800px, idle at 0.22:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| forward, round 1 | 0 | 0 | 0 | 0 | 0 |
+| forward, round 2 | 0 | 0 | -1 | +1 | 0 |
+| reversed | 0 | 0 | -1 | +1 | 0 |
+
+The two forward rounds disagree on both phases that moved at all, so
+nothing earns a question, and paint reads zero in all three. No control
+is needed and none was built.
+
+Worth one line because it is the counter-example to the five sections
+above: the same machine, the same page, the same twenty-five pairs, and
+a diff of 4,216 bytes produced **no** phantom. Whatever the compiler
+does with a few kilobytes, it does not do it every time -- which is why
+the rule those sections converged on is to check whether the phase that
+moved runs any of the diff, rather than to expect a reading at all.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
