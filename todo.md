@@ -3078,6 +3078,81 @@ nothing asked for; under it a background is drawn only where the
 computed value is `exact`. That is Chromium's own model with the flag
 named differently.
 
+### `offset-path: url()`, measured -- and a fourth reason to check
+
+css-2026.md lists the `url()` form of `offset-path` among CSS Motion
+Path 1's gaps. The obvious reading is that it needs SVG, which this
+engine does not render. That reading is wrong, and for a reason worth
+keeping: **the path does not have to be drawn, only read.**
+
+`url(#p)` names an SVG `<path>` element and uses its `d` attribute as
+the motion path. Three things are already here:
+
+- the HTML parser puts SVG elements in the DOM --
+  `insertForeignElement(tok, NS_SVG)` in `src/html/parser.f:1437` -- so
+  a `<path d="...">` is a node with its attribute, whether or not
+  anything ever paints it;
+- `motionReadPath` already stores a path-data string on `MotionInfo` as
+  `mi.pathData` with `mi.pathKind = MPATH_PATH`, and the whole motion
+  machinery downstream reads only those two;
+- `documentRootOf(nid)` at `src/css/cascade.f:728` already walks from a
+  node to its document root, which is what a fragment reference needs.
+
+So `url(#p)` is: find the element, read `d`, set the two fields the
+`path()` form already sets. Nothing in `src/css/motion.f` changes.
+
+Chromium 141, a 10px box on `offset-distance: 50%`, the same path data
+given both ways:
+
+| | computed `offset-path` | painted at |
+|---|---|---|
+| `url(#p)`, `<path id=p d="M 0 0 L 200 0">` | `url("#p")` | **left 95, top 13** |
+| `path("M 0 0 L 200 0")` | `path("M 0 0 L 200 0")` | **left 95, top 13** |
+
+Identical. `CSS.supports('offset-path','url(#p)')` is true. That
+equality is the test to write: the two forms must land on the same
+pixel, which needs no column written down here and fails immediately if
+the reference resolves to nothing, to the wrong element, or to the
+wrong attribute.
+
+The cases that needed deciding rather than guessing were probed too,
+and two of the answers are not what the standard's wording suggests. A
+10px box at `offset-distance: 50%`, absolutely positioned at the
+origin:
+
+| `offset-path` | painted at |
+|---|---|
+| `url(#pgood)`, a `<path d="M 0 0 L 200 0">` | (95, -5) |
+| `url(#nosuch)`, no such element | **(-5, -5)** |
+| `url(#adiv)`, an element that is not SVG | **(-5, -5)** |
+| `url(#pnod)`, a `<path>` with no `d` | **(-5, -5)** |
+| `url(#pcirc)`, an SVG `<circle>` | **(5, 45)** |
+| `none` | (0, 0) |
+
+**A reference that resolves to nothing is not `none`.** `none` leaves
+the box where the flow put it, at (0, 0); a dangling reference gives an
+*empty path*, and the offset machinery still runs -- the box is centred
+on the path's single point at the origin, which for a 10px box is
+(-5, -5). The standard says such a reference "behaves as `none`", and
+writing that would have put the box eleven pixels and one concept away
+from where every browser puts it. This is the fourth time this session
+that specification wording has lost to a probe.
+
+The other surprise is `<circle>`: Chromium resolves it, so `url()` takes
+any SVG geometry element and not only `<path>`. That is a second
+feature wearing the same syntax -- turning a circle, rect or polygon
+into a path -- and it is **not** in this chunk. What is measured about
+it is written here so the next person does not have to rediscover that
+the row is not simply "done".
+
+This is the fourth stated reason this session to fall over on
+inspection, after `inset()`'s `round` radius, `polygon()`'s fill rule
+and `scroll-snap-stop`. The pattern in all four is the same: the reason
+named a capability the engine lacks, and the feature turned out to need
+something narrower that it already had.
+
+The measurement alone; the tests and the implementation follow.
+
 ### `symbols()`: a gap this project's yardstick cannot measure
 
 css-2026.md lists "no `symbols()` function" among Counter Styles 3's
