@@ -3947,3 +3947,37 @@ moved runs any of the diff, rather than to expect a reading at all.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## The same number of bytes, arranged differently, reads half a millisecond
+
+`<rect>`, `<line>` and `<polyline>` as motion paths. `features.html` has
+no `offset-path`, so none of it runs there. Twenty-five alternating
+samples at 800px, idle at 0.23:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| forward, round 1 | 0 | 0 | **-1** |
+| forward, round 2 | 0 | -2 | **-1** |
+| reversed | 0 | -1 | **0** |
+
+Layout's forward rounds disagree, so nothing there. Paint agrees across
+both and flips in the mirror, leaving the candidate about half a
+millisecond faster on a page that reaches none of it -- the negative
+sign that settles itself, for the third time in this file.
+
+What makes this one worth its own section is the binaries. Both are
+**3,189,520 bytes**, to the byte, and `cmp` says they differ in content.
+Every earlier section could point at a size change -- forty bytes, a
+hundred and twelve, four thousand -- as the thing the compiler had to
+rearrange around. Here there is no size change at all. The same number
+of bytes, laid out differently, moves half a millisecond of a phase the
+diff never executes.
+
+That is the cleanest statement of the effect this file has: it is not
+about how much code a change adds. It is about the code moving.
+Together with the null result in the section above -- a 4,216-byte diff
+that produced nothing -- the pair says the reading has no relationship
+to the size of the diff in either direction.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
