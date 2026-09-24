@@ -3773,3 +3773,48 @@ rather than claimed to be free.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## What `inset()`'s `round` radius cost, and a reading that came out negative
+
+The radius adds one integer test to `shapeSpansAt`'s rectangle branch
+and one to `paintShaped`, both asking whether the corners are square, and
+one `int` to `ClipShape` -- which is a by-value field of `Style`, the
+struct the `corner-shape` section found costs layout when it grows. It
+also moves `cornerInset` and `radiusShrink` out of the painter and into
+`src/css/shapes.f`, which changes nothing about what runs and everything
+about where the compiler puts it: the binary grows 4,528 bytes.
+`features.html` contains no `inset(` at all.
+
+Twenty-five alternating samples at 800px, machine idle at a one-minute
+load of 0.20 to 0.39:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| forward, round 1 | -1 | **+3** | -1 |
+| forward, round 2 | -1 | **-1** | -1 |
+| reversed | +2 | **0** | +1 |
+
+Layout's two forward rounds disagree with each other, so by this file's
+own rule nothing there earns a question. What does survive is cascade
+and paint -- both agreeing across two forward rounds and both flipping
+sign in the mirror, which is the shape this file calls real. And both
+say the candidate is about a millisecond **faster**.
+
+That settles it without a control. A change cannot make a page faster by
+adding code the page never reaches, and this page never reaches a line
+of it. The reading is where the compiler put four and a half kilobytes,
+in the same direction as the negative layout readings the
+`polygon()` section above collected from four binaries. It is recorded
+here because a benchmark that only ever reports costs is not being run
+honestly, and a phantom with a sign is still a phantom.
+
+**Not measured**: what a page that does use `inset(... round ...)` pays.
+A rounded rectangle now takes the scanline path instead of one blit,
+which is a real cost to that page and by construction not to any other
+-- `paintShaped` asks whether the corners are square, so every square
+`inset()` still takes the blit. No benchmark page carries one, and
+building a page to measure against itself would say nothing the
+arithmetic does not.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
