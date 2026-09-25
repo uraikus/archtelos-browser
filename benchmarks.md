@@ -4092,3 +4092,16 @@ second time it has been checked rather than assumed.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## A radial and conic mask, on pages that reach no mask at all
+
+One line. The change adds nothing to the per-box or per-fill path --
+every line of it is inside `paintMasked`, which neither benchmark page
+enters, since neither carries a `mask`. The rule this file arrived at
+says that settles it before any round is run, and the rounds agree by
+disagreeing: layout reads -2 then 0, paint -1 then +1, cascade 0 then
++1, over twenty-five alternating samples at 800px each. Nothing earned a
+question; no mirror, no control. The binary grows 4,448 bytes.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
