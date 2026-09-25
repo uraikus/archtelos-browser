@@ -377,11 +377,54 @@ content to agree rather than by writing this engine's metrics down.
 
 **What is left, in the order it is worth doing:**
 
-1. **The other formatting contexts.** A flex, grid, table or
-   multi-column container as, or inside, a vertical box keeps the
-   physical axes: those algorithms read `s.width` and `s.height`
-   directly rather than through the one pair of lengths `layoutBlock`
-   exchanges. Each is the same exchange again, in its own file.
+1. **The other formatting contexts, measured.** A flex, grid, table or
+   multi-column container inside a vertical box keeps the physical
+   axes: those algorithms read `s.width` and `s.height` directly
+   rather than through the one pair of lengths `layoutBlock` exchanges.
+   Chromium, the same container declared twice, 16px monospace, each
+   inside a 400x200 block; the items' rectangles are relative to the
+   container:
+
+   | case | mode | container | first item | second item |
+   |---|---|---|---|---|
+   | `display:flex`, items 40x20 and 25x30 | `horizontal-tb` | 400x30 | 0,0 40x20 | 40,0 25x30 |
+   | | `vertical-rl` | 40x50 | 0,0 40x20 | 15,20 25x30 |
+   | `grid-template-columns: 40px 25px` | `horizontal-tb` | 400x10 | 0,0 40x10 | 40,0 25x10 |
+   | | `vertical-rl` | 10x65 | 0,0 10x40 | 0,40 10x25 |
+   | `grid-template-rows: 40px 25px` | `horizontal-tb` | 400x65 | 0,0 400x40 | 0,40 400x25 |
+   | | `vertical-rl` | 65x10 | 25,0 40x10 | 0,0 25x10 |
+   | `display:table`, cells 40x20 and 25x30 | `horizontal-tb` | 65x30 | 0,0 40x30 | 40,0 25x30 |
+   | | `vertical-rl` | 40x50 | 0,0 40x20 | 0,20 40x30 |
+   | `columns:2; column-gap:10px`, items 20 and 30 tall | `horizontal-tb` | 400x25 | 0,0 195x20 | 0,0 400x25 |
+   | | `vertical-rl` | 10x70 | 0,0 10x20 | 0,40 10x30 |
+
+   Every one of those vertical rows is the horizontal row turned a
+   quarter turn, which is to say: **each algorithm is already right in
+   logical space, and only its lengths are physical.** Flex lays its
+   items along the main axis, which for `flex-direction: row` is the
+   inline axis, so in `vertical-rl` the items stack down the page and
+   each takes its main size from `height`; the cross axis is the block
+   axis, so the shorter item sits against the right edge, which is
+   where `vertical-rl`'s block-start is. Grid's column tracks run along
+   the inline axis and so stack vertically, its row tracks along the
+   block axis and so run right-to-left. A table's cells run along the
+   inline axis and its rows along the block axis, so one row of two
+   cells is 40 wide and 50 tall rather than 65 by 30. Multicol's column
+   boxes are arranged along the inline axis, so they stack vertically
+   and a column's content flows right-to-left: the two rows there are
+   the same balancing (a column tall enough for the 30-tall item alone,
+   plus the gap) read on two different axes, and the horizontal row's
+   second rectangle is 400x25 because `getBoundingClientRect` unions
+   the fragments of an item split across both columns.
+
+   So this is not four algorithms to rewrite. It is the exchange
+   `layoutBlock` already does -- read `height` where the code reads
+   `width` -- applied at each place one of these algorithms asks a box
+   for a length, and the transposition walk at the end of the vertical
+   flow then turns the result. The count of such reads is what makes
+   each a separate piece of work: three in `layoutFlex`, and more in
+   grid and the table.
+
 2. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
