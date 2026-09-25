@@ -281,15 +281,65 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     shaping, which needs contextual forms the toy font API does not
     offer (FINDINGS.md, finding 31).
 
-### Filter Effects 1, when the language allows it
+### Filter Effects 1, and a block that was answering the wrong question
 
-**Blocked, and not on the work.** A filter is a function over the pixels
-an element and its descendants painted, and this browser already paints
-a subtree into an image — that is how `clip-path` and `overflow: hidden`
-work. What it cannot do is read a pixel back: `img.getPixelColor`
-returns a `color`, and a `color` supports equality and nothing else
-(FINDINGS.md, finding 35; the proposal is festina.md, 3p). The pass over
-the pixels is a dozen lines and cannot be written.
+**The language limitation is real and it does not block this.** A
+`color` does support equality and nothing else -- `c.r`, `c.red`,
+`c.toText()`, `c.hex()`, `c.value` and `c.rgba()` each give *cannot
+access field ... on color*, checked rather than recalled -- so
+`img.getPixelColor` cannot be read apart and a pass over a rasterized
+subtree cannot be written (FINDINGS.md, finding 35; the proposal is
+festina.md, 3p).
+
+What does not follow is that a filter cannot be applied. Two facts sat
+either side of that conclusion for months without being put together:
+
+- **This engine's own colours are not `color`s.** They are packed ints,
+  and `colorRed`, `colorGreen`, `colorBlue`, `colorAlpha` and
+  `clampChannel` have been in `src/util/color.f` the whole time. Every
+  colour the painter is *about to draw* is already in pieces; only a
+  colour read back off the canvas is not.
+- **`applyFillColor(c:int)` is a single choke point**, seven call sites
+  in the painter plus `paintFill`.
+
+And every colour filter is **affine**, which is what makes filtering the
+source colours equivalent to filtering the raster rather than merely
+similar. Compositing forms convex combinations, and for `f(x) = Ax + b`
+with weights that sum to one,
+
+```
+f(Cs·a + Cd·(1-a)) = A·Cs·a + A·Cd·(1-a) + b·a + b·(1-a)
+                   = f(Cs)·a + f(Cd)·(1-a)
+```
+
+so the two orders agree exactly, not to within a rounding. Measured in
+Chromium rather than left as algebra, at two rows of one page:
+
+| | predicted from the source colours | Chromium |
+|---|---|---|
+| `rgba(200,100,50,.5)` under `invert(1)`, over an **unfiltered** `rgb(0,128,255)` | (28, 142, 230) | `#1c8ee6` |
+| the same pair with **both** inside the filter | (155, 141, 103) | `#9b8d67` |
+
+The first is the case the equivalence is usually doubted for -- a
+filtered subtree composited onto a backdrop outside it -- and it lands
+on the pixel.
+
+So the reason recorded here named the capability the feature seemed to
+want, reading a pixel, rather than asking what the engine already had
+that would serve. That is the same shape as `inset()`'s "needs a path
+API", `polygon()`'s fill rule, `scroll-snap-stop`'s "needs a notion of
+one gesture" and `offset-path: url()`, and it is the one that cost the
+most, because it stood in front of a whole specification.
+
+**What stays out, and why it is not the same kind of claim.** A bitmap
+image reaches the canvas through `drawImage` and never through
+`applyFillColor`, so an `<img>` or a background image inside a filtered
+subtree is *not* filtered here. That one is the pixel-reading block
+proper and it is real. `blur()` is a convolution over pixels and
+`drop-shadow()` wants the path API an image does not have; both stay out
+for the same reason they always did. `backdrop-filter` is a separate
+question again -- it filters what is *behind* the element, which is
+pixels already on the canvas.
 
 The part that could be done in advance has been. The matrices below are
 Filter Effects 1 §8, derived in a separate script from the specification
@@ -320,9 +370,12 @@ either rule alone misses eight or eleven of them by one.
 | `contrast(2)` | 255,72,0 | — | — |
 | `contrast(0.5)` | 163,113,88 | 191,63,63 | 63,127,191 |
 
-`blur()` and `drop-shadow()` are a second question and stay out
-regardless: one is a convolution and the other wants the path API an
-image does not have.
+The instrument does not move for any of this. The `filter` row in
+`tests/conformance/css-properties.txt` reads `blur(2px)`, which stays
+unimplemented, so the count is unchanged by a specification going from
+nothing to seven functions. Changing that row to one of the seven would
+be choosing the sample after seeing the answer, which is the error the
+thirteen shorthand rows were, and it is not done.
 
 ### What is left of CSS Scroll Snap 1
 
