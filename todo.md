@@ -333,10 +333,26 @@ backwards, and it is measured.
 
 **What is left, in the order it is worth doing.**
 
-1. **`mask-composite` and a second mask layer.** The layers each produce
-   an alpha and the operator combines them, which is arithmetic on two
-   numbers this engine already has; what is missing is the layer list,
-   since only the first is read today.
+1. **`mask-composite` and a second mask layer.** Measured. Two flat
+   layers, the top at alpha 0.8 and the one below at 0.25, on a blue box
+   over white, give Chromium:
+
+   | operator | painted | alpha | Porter-Duff on alpha |
+   |---|---|---|---|
+   | `add` | `#2626ff` | 0.851 | `as + ad - as*ad` = 0.85 |
+   | `subtract` | `#6666ff` | 0.600 | `as * (1 - ad)` = 0.60 |
+   | `intersect` | `#ccccff` | 0.200 | `as * ad` = 0.20 |
+   | `exclude` | `#5959ff` | 0.651 | `as + ad - 2*as*ad` = 0.65 |
+
+   All four agree with the standard's own formulas. **The first probe
+   could not tell `subtract` from `intersect`**, because it used 0.5
+   below: `as*(1-ad)` and `as*ad` are the same number when `ad` is a
+   half. That is the `mask-origin` clamp again -- a value chosen for
+   roundness rather than for separating the answers -- and it is why the
+   table above uses a quarter.
+
+   What is missing is the layer list, since only the first is read
+   today; the arithmetic is four expressions.
 2. **A `mask-image: url(...)` bitmap.** This one IS blocked:
    `img.getPixelColor` returns a `color` with no accessor (FINDINGS.md,
    finding 35), the same block that leaves a bitmap image unfiltered.
