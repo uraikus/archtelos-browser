@@ -44,6 +44,29 @@ FESTINA_HOME=/path/to/festina WPT_HTML_TESTS=/path/to/corpus tests/bench.sh
 
 Everything below was measured on 2026-09-16.
 
+## A machine this table cannot be refreshed from, 2026-09-25
+
+`tests/bench.sh` was run twice on an idle machine and its control failed
+both times: Chromium rendered `generated.html` in 20.4 and then 20.2 ms
+against the 26.0 this file records, 21.5% and 22.3% out, past the 15%
+the run allows. Asked directly, six best-of-5 samples on an idle machine
+give **20.1, 20.2, 21.0, 21.2, 21.9 and 22.0** ms -- a 1.9 ms spread
+around 21, which is tight, so this is not a contended run.
+
+**The reference browser did not change**: it is Chromium 141.0.7390.37,
+the same build named at the top of this file and by the property audit.
+So `CONTROL_MS` stays at 26.0 and the tolerance stays at 15%. What moved
+is the machine, and the control is doing exactly the job it was written
+for -- the numbers from those two runs are not in this file, and the
+table above still records 2026-09-16.
+
+What a machine like this *can* still measure honestly is a **paired**
+comparison: two binaries built from two revisions, run alternately in
+the same minutes on the same hardware, where the machine's own speed
+cancels. That is what `tests/bench.sh`'s absolute table is not and what
+the paired phase comparison is. A reading of this table's kind has to
+wait for a machine whose control lands.
+
 ## The canvas has to match, or the number means nothing
 
 Headless Chromium's `--screenshot` captures the **viewport**. This

@@ -51,6 +51,37 @@ the map answers for whichever was written last -- and the engine was
 right all along in the four cases that looked wrong. Those checks put
 both elements in one document.
 
+### The benchmark's control refused two runs, correctly
+
+`tests/bench.sh` was run twice on an idle machine for the two changes
+above and its control failed both times: Chromium rendered
+`generated.html` in 20.4 and then 20.2 ms against the 26.0
+benchmarks.md records, past the 15% a run is allowed. Asked directly,
+six best-of-5 samples give 20.1 to 22.0 ms -- a spread of 1.9 around
+21, so not a contended run -- and the browser is Chromium
+141.0.7390.37, **the same build benchmarks.md already names**. The
+machine changed, not the reference, so `CONTROL_MS` stays where it is
+and no number from those runs is in the file. benchmarks.md records the
+refusal instead.
+
+**The paired comparison still works on such a machine**, because two
+binaries run alternately in the same minutes cancel its speed, and it
+says this pair of changes costs about **3 ms of 130** on
+`generated.html`: +3 and +3 against the parent across two forward
+rounds, +6 and +3 against a dead-code control built within 16 bytes of
+the candidate, and +4 and +3 for the layout half alone with the cascade
+half reverted -- three agreeing pairings. On `features.html` the same
+binaries read +9 and +4 forward and +1 and -2 mirrored, which does not
+add to zero and so says nothing.
+
+**Which line costs it did not settle.** The layout half's only
+executable additions on a page with no vertical box are a saved copy of
+`cw` and one `!wmRoot` test; a binary without the save read -2 against
+the candidate, one without the test -1, and one without the whole
+auto-margin plumbing read -1 and then +5, which disagrees with itself.
+So the cost is in the layout half and in none of its lines separately,
+which is as far as five binaries got.
+
 ### An auto margin on an orthogonal flow
 
 `margin: 0 auto` on a vertical box inside a horizontal one now centres
