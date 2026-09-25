@@ -3981,3 +3981,51 @@ to the size of the diff in either direction.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## The control that the standing rule had already made unnecessary
+
+A `<rect>`'s `rx` and `ry` on a motion path. The change is entirely in
+`src/css/cascade.f`, and `features.html` has no `offset-path`, so
+nothing it adds runs there. Twenty-five alternating samples at 800px,
+idle at 0.22 to 0.23:
+
+| | cascade | layout | paint |
+|---|---|---|---|
+| forward, round 1 | +1 | **+3** | -1 |
+| forward, round 2 | -1 | **+1** | 0 |
+| reversed | -1 | **-3** | 0 |
+
+Cascade flips sign between the forward rounds, so nothing there. Layout
+stays positive across both and reverses cleanly, which is the shape this
+file has called strongest for a real cost: a reading and its mirror
+adding to about zero.
+
+It is not one, and the way that was established is the point of the
+section. The rule these pages converged on is to ask, before taking a
+reading to the code, whether the phase that moved runs any of the diff.
+Layout does not: there is no line of `src/layout/` in the change, and no
+line of the change is reachable from a page without an `offset-path`.
+That answer was available before the first round was run.
+
+A control was built anyway -- the parent recompiled with the change's
+constant and three functions renamed and **called from nowhere**,
+3,189,688 bytes against the candidate's 3,189,640, rendering both pages
+byte-identically. It reads **layout +2** against the parent over 16 of
+25 pairs. Dead code cannot run, so those two milliseconds are where the
+compiler put the machine code. And the three binaries do not add up:
+parent to candidate is +3, parent to control +2, control to candidate
++2, where the first should be the sum of the other two. A quantity that
+is not additive across three binaries is not a property of any one of
+them.
+
+So the entry in this file is not the phantom, which is the eighth of its
+kind and says nothing the seven before it did not. It is that the rule
+worked and was not used. The cost of re-deriving a known result was four
+benchmark rounds and a control build, against one reading of the diff,
+and the reason it happened is that the mirror image is a compelling
+shape to look at. The order matters: ask whether the phase runs the diff
+**first**, and let the shape of the reading be the thing that has to
+survive that question rather than the thing that prompts it.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.

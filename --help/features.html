@@ -1,0 +1,668 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Feature benchmark page</title>
+<style>body{font-family:sans-serif;margin:20px;line-height:1.5;counter-reset:part}
+h2{color:#234;border-bottom:1px solid #ccd;counter-increment:part}
+h2::before{content:"Part " counter(part) ". ";color:#667}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:8px 0}
+.wide{display:grid;grid-template-columns:120px 1fr;grid-template-areas:"pic note" "pic meta";gap:6px}
+.wide .pic{grid-area:pic}
+.wide .note{grid-area:note}
+.wide .meta{grid-area:meta;color:#667}
+figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc;
+       outline:1px solid #c8cee0;box-shadow:inset 0 0 0 2px #e6ebf5, inset 0 0 6px 0 #d3dcee}
+img{width:96px;height:64px;object-fit:cover;object-position:center}
+.tall img{object-fit:contain}
+figcaption{font-size:12px;color:#556}
+.badge{display:inline-block;padding:1px 6px;background:#dde;border-radius:3px;
+       transform:rotate(-4deg) translateY(-1px)}
+.stamp{display:inline-block;transform:scale(1.2)}
+.cols{column-count:3;column-gap:14px;margin:8px 0}
+.cols p{margin:0 0 6px 0}
+.steps{counter-reset:step;list-style:none;padding-left:0;margin:4px 0}
+.steps li{counter-increment:step;margin:2px 0}
+.steps li::before{content:counter(step, decimal-leading-zero) ") ";color:#667}
+.controls{margin:6px 0;font-size:13px}
+.controls input[type=text]{field-sizing:content}
+.controls input{accent-color:#47a}
+code{font-family:monospace;background:#eef}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:3px 6px}
+th{background:#dde}
+
+.zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
+.zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
+
+.pull1{height:34px;background:#e8dcc8;padding:4px}
+.pull2{height:34px;background:#cfe3d4;padding:4px;margin-top:-18px;margin-left:24px}
+
+.caps{font-variant-caps:small-caps;letter-spacing:0}
+
+.flow{margin:8px 0}
+.flow .fl{float:left;width:90px;height:60px;background:#dfe6ee;
+          border:1px solid #ccd;margin:0 10px 6px 0}
+.flow p{margin:0 0 4px 0}</style></head><body>
+<h1>Feature benchmark page</h1>
+<h2>Section 0</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p><p class="meta"><span class="badge">badge 0</span> <span class="stamp">0</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 0.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 0.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 0.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p>
+<p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p>
+<p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p>
+</div>
+<ol class="steps"><li>Step 0 of section 0: measurement inline transform stacking fragment</li><li>Step 1 of section 0: container marker layout baseline column</li><li>Step 2 of section 0: specificity selector counter replaced cascade</li><li>Step 3 of section 0: inline transform stacking fragment gradient</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m0" checked> best</label> <label><input type="radio" name="m0"> mean</label> <input type="text" value="section 0"> <input type="text" placeholder="search section 0"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p><p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 0.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 0.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 0.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 0.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 0.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 0.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 1</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p><p class="meta"><span class="badge">badge 1</span> <span class="stamp">1</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 1.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 1.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 1.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p>
+<p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p>
+<p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p>
+</div>
+<ol class="steps"><li>Step 0 of section 1: container marker layout baseline column</li><li>Step 1 of section 1: specificity selector counter replaced cascade</li><li>Step 2 of section 1: inline transform stacking fragment gradient</li><li>Step 3 of section 1: marker layout baseline column measurement</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m1" checked> best</label> <label><input type="radio" name="m1"> mean</label> <input type="text" value="section 1"> <input type="text" placeholder="search section 1"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p><p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 1.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 1.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 1.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 1.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 1.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 1.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 2</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p><p class="meta"><span class="badge">badge 2</span> <span class="stamp">2</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 2.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 2.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 2.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p>
+<p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p>
+<p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p>
+</div>
+<ol class="steps"><li>Step 0 of section 2: specificity selector counter replaced cascade</li><li>Step 1 of section 2: inline transform stacking fragment gradient</li><li>Step 2 of section 2: marker layout baseline column measurement</li><li>Step 3 of section 2: selector counter replaced cascade container</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m2" checked> best</label> <label><input type="radio" name="m2"> mean</label> <input type="text" value="section 2"> <input type="text" placeholder="search section 2"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p><p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 2.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 2.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 2.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 2.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 2.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 2.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 3</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p><p class="meta"><span class="badge">badge 3</span> <span class="stamp">3</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 3.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 3.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 3.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p>
+<p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p>
+<p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p>
+</div>
+<ol class="steps"><li>Step 0 of section 3: inline transform stacking fragment gradient</li><li>Step 1 of section 3: marker layout baseline column measurement</li><li>Step 2 of section 3: selector counter replaced cascade container</li><li>Step 3 of section 3: transform stacking fragment gradient specificity</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m3" checked> best</label> <label><input type="radio" name="m3"> mean</label> <input type="text" value="section 3"> <input type="text" placeholder="search section 3"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p><p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 3.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 3.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 3.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 3.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 3.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 3.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 4</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p><p class="meta"><span class="badge">badge 4</span> <span class="stamp">4</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 4.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 4.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 4.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p>
+<p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p>
+<p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p>
+</div>
+<ol class="steps"><li>Step 0 of section 4: marker layout baseline column measurement</li><li>Step 1 of section 4: selector counter replaced cascade container</li><li>Step 2 of section 4: transform stacking fragment gradient specificity</li><li>Step 3 of section 4: layout baseline column measurement inline</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m4" checked> best</label> <label><input type="radio" name="m4"> mean</label> <input type="text" value="section 4"> <input type="text" placeholder="search section 4"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p><p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 4.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 4.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 4.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 4.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 4.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 4.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 5</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p><p class="meta"><span class="badge">badge 5</span> <span class="stamp">5</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 5.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 5.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 5.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p>
+<p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p>
+<p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p>
+</div>
+<ol class="steps"><li>Step 0 of section 5: selector counter replaced cascade container</li><li>Step 1 of section 5: transform stacking fragment gradient specificity</li><li>Step 2 of section 5: layout baseline column measurement inline</li><li>Step 3 of section 5: counter replaced cascade container marker</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m5" checked> best</label> <label><input type="radio" name="m5"> mean</label> <input type="text" value="section 5"> <input type="text" placeholder="search section 5"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p><p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 5.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 5.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 5.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 5.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 5.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 5.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 6</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p><p class="meta"><span class="badge">badge 6</span> <span class="stamp">6</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 6.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 6.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 6.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p>
+<p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p>
+<p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p>
+</div>
+<ol class="steps"><li>Step 0 of section 6: transform stacking fragment gradient specificity</li><li>Step 1 of section 6: layout baseline column measurement inline</li><li>Step 2 of section 6: counter replaced cascade container marker</li><li>Step 3 of section 6: stacking fragment gradient specificity selector</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m6" checked> best</label> <label><input type="radio" name="m6"> mean</label> <input type="text" value="section 6"> <input type="text" placeholder="search section 6"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p><p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 6.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 6.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 6.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 6.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 6.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 6.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 7</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p><p class="meta"><span class="badge">badge 7</span> <span class="stamp">7</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 7.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 7.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 7.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p>
+<p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p>
+<p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p>
+</div>
+<ol class="steps"><li>Step 0 of section 7: layout baseline column measurement inline</li><li>Step 1 of section 7: counter replaced cascade container marker</li><li>Step 2 of section 7: stacking fragment gradient specificity selector</li><li>Step 3 of section 7: baseline column measurement inline transform</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m7" checked> best</label> <label><input type="radio" name="m7"> mean</label> <input type="text" value="section 7"> <input type="text" placeholder="search section 7"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p><p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 7.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 7.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 7.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 7.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 7.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 7.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 8</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p><p class="meta"><span class="badge">badge 8</span> <span class="stamp">8</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 8.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 8.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 8.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p>
+<p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p>
+<p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p>
+</div>
+<ol class="steps"><li>Step 0 of section 8: counter replaced cascade container marker</li><li>Step 1 of section 8: stacking fragment gradient specificity selector</li><li>Step 2 of section 8: baseline column measurement inline transform</li><li>Step 3 of section 8: replaced cascade container marker layout</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m8" checked> best</label> <label><input type="radio" name="m8"> mean</label> <input type="text" value="section 8"> <input type="text" placeholder="search section 8"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p><p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 8.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 8.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 8.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 8.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 8.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 8.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 9</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p><p class="meta"><span class="badge">badge 9</span> <span class="stamp">9</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 9.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 9.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 9.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p>
+<p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p>
+<p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p>
+</div>
+<ol class="steps"><li>Step 0 of section 9: stacking fragment gradient specificity selector</li><li>Step 1 of section 9: baseline column measurement inline transform</li><li>Step 2 of section 9: replaced cascade container marker layout</li><li>Step 3 of section 9: fragment gradient specificity selector counter</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m9" checked> best</label> <label><input type="radio" name="m9"> mean</label> <input type="text" value="section 9"> <input type="text" placeholder="search section 9"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p><p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 9.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 9.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 9.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 9.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 9.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 9.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 10</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p><p class="meta"><span class="badge">badge 10</span> <span class="stamp">10</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 10.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 10.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 10.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p>
+<p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p>
+<p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p>
+</div>
+<ol class="steps"><li>Step 0 of section 10: baseline column measurement inline transform</li><li>Step 1 of section 10: replaced cascade container marker layout</li><li>Step 2 of section 10: fragment gradient specificity selector counter</li><li>Step 3 of section 10: column measurement inline transform stacking</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m10" checked> best</label> <label><input type="radio" name="m10"> mean</label> <input type="text" value="section 10"> <input type="text" placeholder="search section 10"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p><p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 10.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 10.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 10.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 10.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 10.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 10.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 11</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p><p class="meta"><span class="badge">badge 11</span> <span class="stamp">11</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 11.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 11.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 11.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p>
+<p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p>
+<p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p>
+</div>
+<ol class="steps"><li>Step 0 of section 11: replaced cascade container marker layout</li><li>Step 1 of section 11: fragment gradient specificity selector counter</li><li>Step 2 of section 11: column measurement inline transform stacking</li><li>Step 3 of section 11: cascade container marker layout baseline</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m11" checked> best</label> <label><input type="radio" name="m11"> mean</label> <input type="text" value="section 11"> <input type="text" placeholder="search section 11"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p><p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 11.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 11.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 11.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 11.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 11.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 11.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 12</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p><p class="meta"><span class="badge">badge 12</span> <span class="stamp">12</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 12.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 12.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 12.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p>
+<p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p>
+<p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p>
+</div>
+<ol class="steps"><li>Step 0 of section 12: fragment gradient specificity selector counter</li><li>Step 1 of section 12: column measurement inline transform stacking</li><li>Step 2 of section 12: cascade container marker layout baseline</li><li>Step 3 of section 12: gradient specificity selector counter replaced</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m12" checked> best</label> <label><input type="radio" name="m12"> mean</label> <input type="text" value="section 12"> <input type="text" placeholder="search section 12"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p><p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 12.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 12.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 12.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 12.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 12.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 12.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 13</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p><p class="meta"><span class="badge">badge 13</span> <span class="stamp">13</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 13.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 13.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 13.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p>
+<p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p>
+<p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p>
+</div>
+<ol class="steps"><li>Step 0 of section 13: column measurement inline transform stacking</li><li>Step 1 of section 13: cascade container marker layout baseline</li><li>Step 2 of section 13: gradient specificity selector counter replaced</li><li>Step 3 of section 13: measurement inline transform stacking fragment</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m13" checked> best</label> <label><input type="radio" name="m13"> mean</label> <input type="text" value="section 13"> <input type="text" placeholder="search section 13"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p><p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 13.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 13.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 13.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 13.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 13.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 13.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 14</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p><p class="meta"><span class="badge">badge 14</span> <span class="stamp">14</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 14.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 14.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 14.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p>
+<p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p>
+<p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p>
+</div>
+<ol class="steps"><li>Step 0 of section 14: cascade container marker layout baseline</li><li>Step 1 of section 14: gradient specificity selector counter replaced</li><li>Step 2 of section 14: measurement inline transform stacking fragment</li><li>Step 3 of section 14: container marker layout baseline column</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m14" checked> best</label> <label><input type="radio" name="m14"> mean</label> <input type="text" value="section 14"> <input type="text" placeholder="search section 14"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p><p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 14.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 14.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 14.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 14.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 14.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 14.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 15</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p><p class="meta"><span class="badge">badge 15</span> <span class="stamp">15</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 15.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 15.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 15.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p>
+<p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p>
+<p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p>
+</div>
+<ol class="steps"><li>Step 0 of section 15: gradient specificity selector counter replaced</li><li>Step 1 of section 15: measurement inline transform stacking fragment</li><li>Step 2 of section 15: container marker layout baseline column</li><li>Step 3 of section 15: specificity selector counter replaced cascade</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m15" checked> best</label> <label><input type="radio" name="m15"> mean</label> <input type="text" value="section 15"> <input type="text" placeholder="search section 15"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p><p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 15.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 15.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 15.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 15.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 15.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 15.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 16</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p><p class="meta"><span class="badge">badge 16</span> <span class="stamp">16</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 16.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 16.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 16.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p>
+<p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p>
+<p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p>
+</div>
+<ol class="steps"><li>Step 0 of section 16: measurement inline transform stacking fragment</li><li>Step 1 of section 16: container marker layout baseline column</li><li>Step 2 of section 16: specificity selector counter replaced cascade</li><li>Step 3 of section 16: inline transform stacking fragment gradient</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m16" checked> best</label> <label><input type="radio" name="m16"> mean</label> <input type="text" value="section 16"> <input type="text" placeholder="search section 16"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p><p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 16.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 16.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 16.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 16.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 16.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 16.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 17</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p><p class="meta"><span class="badge">badge 17</span> <span class="stamp">17</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 17.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 17.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 17.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p>
+<p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p>
+<p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p>
+</div>
+<ol class="steps"><li>Step 0 of section 17: container marker layout baseline column</li><li>Step 1 of section 17: specificity selector counter replaced cascade</li><li>Step 2 of section 17: inline transform stacking fragment gradient</li><li>Step 3 of section 17: marker layout baseline column measurement</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m17" checked> best</label> <label><input type="radio" name="m17"> mean</label> <input type="text" value="section 17"> <input type="text" placeholder="search section 17"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p><p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 17.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 17.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 17.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 17.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 17.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 17.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 18</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p><p class="meta"><span class="badge">badge 18</span> <span class="stamp">18</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 18.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 18.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 18.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p>
+<p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p>
+<p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline</p>
+</div>
+<ol class="steps"><li>Step 0 of section 18: specificity selector counter replaced cascade</li><li>Step 1 of section 18: inline transform stacking fragment gradient</li><li>Step 2 of section 18: marker layout baseline column measurement</li><li>Step 3 of section 18: selector counter replaced cascade container</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m18" checked> best</label> <label><input type="radio" name="m18"> mean</label> <input type="text" value="section 18"> <input type="text" placeholder="search section 18"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p><p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 18.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 18.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 18.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 18.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 18.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 18.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 19</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p><p class="meta"><span class="badge">badge 19</span> <span class="stamp">19</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 19.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 19.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 19.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker</p>
+<p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector</p>
+<p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform</p>
+</div>
+<ol class="steps"><li>Step 0 of section 19: inline transform stacking fragment gradient</li><li>Step 1 of section 19: marker layout baseline column measurement</li><li>Step 2 of section 19: selector counter replaced cascade container</li><li>Step 3 of section 19: transform stacking fragment gradient specificity</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m19" checked> best</label> <label><input type="radio" name="m19"> mean</label> <input type="text" value="section 19"> <input type="text" placeholder="search section 19"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p><p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 19.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 19.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 19.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 19.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 19.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 19.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 20</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p><p class="meta"><span class="badge">badge 20</span> <span class="stamp">20</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 20.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 20.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 20.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout</p>
+<p>column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter</p>
+<p>cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking</p>
+</div>
+<ol class="steps"><li>Step 0 of section 20: marker layout baseline column measurement</li><li>Step 1 of section 20: selector counter replaced cascade container</li><li>Step 2 of section 20: transform stacking fragment gradient specificity</li><li>Step 3 of section 20: layout baseline column measurement inline</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m20" checked> best</label> <label><input type="radio" name="m20"> mean</label> <input type="text" value="section 20"> <input type="text" placeholder="search section 20"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p><p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 20.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 20.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 20.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 20.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 20.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 20.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 21</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p><p class="meta"><span class="badge">badge 21</span> <span class="stamp">21</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 21.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 21.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 21.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline</p>
+<p>measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced</p>
+<p>container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment</p>
+</div>
+<ol class="steps"><li>Step 0 of section 21: selector counter replaced cascade container</li><li>Step 1 of section 21: transform stacking fragment gradient specificity</li><li>Step 2 of section 21: layout baseline column measurement inline</li><li>Step 3 of section 21: counter replaced cascade container marker</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m21" checked> best</label> <label><input type="radio" name="m21"> mean</label> <input type="text" value="section 21"> <input type="text" placeholder="search section 21"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p><p>baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 21.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 21.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 21.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 21.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 21.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 21.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 22</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p><p class="meta"><span class="badge">badge 22</span> <span class="stamp">22</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 22.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 22.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 22.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column</p>
+<p>inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p>
+<p>marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p>
+</div>
+<ol class="steps"><li>Step 0 of section 22: transform stacking fragment gradient specificity</li><li>Step 1 of section 22: layout baseline column measurement inline</li><li>Step 2 of section 22: counter replaced cascade container marker</li><li>Step 3 of section 22: stacking fragment gradient specificity selector</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m22" checked> best</label> <label><input type="radio" name="m22"> mean</label> <input type="text" value="section 22"> <input type="text" placeholder="search section 22"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p><p>replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 22.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 22.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 22.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 22.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 22.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 22.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+<h2>Section 23</h2>
+<div class="wide"><img class="pic" src="bench-image.png" alt=""><p class="note">layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade</p><p class="meta"><span class="badge">badge 23</span> <span class="stamp">23</span></p></div>
+<div class="cards">
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 23.0, <code>object-fit</code></figcaption></figure>
+<figure class="tall"><img src="bench-image.png" alt=""><figcaption>Figure 23.1, <code>object-fit</code></figcaption></figure>
+<figure class="wide-fit"><img src="bench-image.png" alt=""><figcaption>Figure 23.2, <code>object-fit</code></figcaption></figure>
+</div>
+<div class="cols">
+<p>selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement</p>
+<p>transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container</p>
+<p>layout baseline column measurement inline transform stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p>
+</div>
+<ol class="steps"><li>Step 0 of section 23: layout baseline column measurement inline</li><li>Step 1 of section 23: counter replaced cascade container marker</li><li>Step 2 of section 23: stacking fragment gradient specificity selector</li><li>Step 3 of section 23: baseline column measurement inline transform</li></ol>
+<form class="controls"><label><input type="checkbox" checked> keep</label> <label><input type="checkbox"> drop</label> <label><input type="radio" name="m23" checked> best</label> <label><input type="radio" name="m23"> mean</label> <input type="text" value="section 23"> <input type="text" placeholder="search section 23"> <button type="button">run</button></form>
+<p class="caps">small capitals drawn from capitals at seven tenths of the size</p>
+<div class="zstack"><div class="zback"></div>behind and in front</div>
+<div class="pull1">pulled</div><div class="pull2">up over it</div>
+<div class="flow"><div class="fl"></div><p>stacking fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient specificity</p><p>fragment gradient specificity selector counter replaced cascade container marker layout baseline column measurement inline transform stacking fragment gradient</p></div>
+<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>
+<tr><td>row 23.0</td><td>kind 0</td><td>0</td></tr>
+<tr><td>row 23.1</td><td>kind 1</td><td>37</td></tr>
+<tr><td>row 23.2</td><td>kind 2</td><td>74</td></tr>
+<tr><td>row 23.3</td><td>kind 3</td><td>111</td></tr>
+<tr><td>row 23.4</td><td>kind 0</td><td>148</td></tr>
+<tr><td>row 23.5</td><td>kind 1</td><td>185</td></tr>
+</table>
+</body></html>
