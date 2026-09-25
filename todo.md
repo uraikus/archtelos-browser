@@ -382,9 +382,30 @@ content to agree rather than by writing this engine's metrics down.
    directly rather than through the one pair of lengths `layoutBlock`
    exchanges. Each is the same exchange again, in its own file.
 2. **An indefinite containing block.** Chromium clamps an orthogonal
-   flow to the viewport there; nothing at layout time here knows the
-   viewport's height, so the inline size is left unclamped, which is the
-   same answer on any viewport tall enough to hold the content.
+   flow to the viewport there, exactly:
+
+   | window height | the vertical box | `window.innerHeight` |
+   |---|---|---|
+   | 200 | 216x200 | 200 |
+   | 300 | 144x300 | 300 |
+   | 400 | 108x400 | 400 |
+   | 600 | 72x600 | 600 |
+   | 900 | 54x900 | 900 |
+   | 1400 | 36x1400 | 1400 |
+
+   The inline size is the viewport's height in every case and the block
+   extent falls as the reciprocal, which is the same content rewrapped.
+
+   **And the reason written down for not doing it was wrong.** It said
+   nothing at layout time here knows the viewport's height. `cssViewportHeight`
+   is a global in `src/css/parser.f`, set by `setCssViewport`, read by the
+   `vh`, `vmin` and `vmax` units and by `layoutPositioned` in the same
+   file the clamp is in. That is the failure CLAUDE.md names -- a
+   sentence about what this engine does, written from memory instead of
+   run -- and it is the one that was written *while* the rule was being
+   quoted in the commit beside it.
+
+   The measurement alone; the tests and the implementation follow.
 3. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
