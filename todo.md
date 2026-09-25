@@ -373,10 +373,43 @@ content to agree rather than by writing this engine's metrics down.
 
 **What is left, in the order it is worth doing:**
 
-1. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
-   -- counter-clockwise -- which the painter has no path for; the second
-   is `vertical-rl` with `text-orientation: sideways`, which this
-   engine already renders, so it is a keyword away.
+1. **`sideways-lr` and `sideways-rl`.** Measured rather than assumed,
+   because the guess about `sideways-lr` -- that it is the other
+   rotation and nothing else -- is only half of it.
+
+   **The block axis is the same in all four modes.** Two children of 40
+   and 25 pixels inside a vertical container come out at the same
+   offsets under `vertical-rl` and `sideways-rl` (25,0 and 0,0 of a
+   65x29 box) and under `vertical-lr` and `sideways-lr` (0,0 and 40,0),
+   with or without `text-orientation: sideways`. So no box moves.
+
+   **What moves is the glyph and the direction it advances.** Two `L`s
+   at 32px, each in its own colour, in a box padded 30px off the page:
+
+   | mode | first `L` | second `L` |
+   |---|---|---|
+   | `horizontal-tb` | x 34..46, y 36..56 | x 53..65, y 36..56 |
+   | `vertical-rl` | x 40..60, y 34..46 | x 40..60, y 53..65 |
+   | `vertical-lr` | x 40..60, y 34..46 | x 40..60, y 53..65 |
+   | `sideways-rl` | x 40..60, y 34..46 | x 40..60, y 53..65 |
+   | `sideways-lr` | x 36..56, y 51..64 | x 36..56, y 32..44 |
+
+   An upright `L` is 12 wide and 20 tall; every vertical mode turns it
+   to 20 wide and about 12 tall, so all four turn the glyph. Three of
+   them put the second `L` **below** the first and `sideways-lr` puts it
+   **above**: its inline axis runs bottom to top, and its glyphs are
+   turned counter-clockwise.
+
+   So `sideways-rl` is `vertical-rl` with `text-orientation: sideways`,
+   which this engine already renders the same way on Latin, and is a
+   keyword away. `sideways-lr` is `vertical-lr` with **two** changes:
+   the transposition walk reverses the inline axis, and the glyph
+   painter turns the canvas the other way. The emphasis marks and the
+   upright cells walk the run in the same direction, so they reverse
+   with it; the three decoration lines do not, being rectangles of the
+   line box rather than a walk.
+
+   The measurement alone; the tests and the implementation follow.
 2. **The other formatting contexts.** A flex, grid, table or
    multi-column container as, or inside, a vertical box keeps the
    physical axes: those algorithms read `s.width` and `s.height`
