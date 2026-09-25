@@ -5,6 +5,52 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Who owns a positioned descendant's `z-index`, and `isolation`
+
+CSS2 §9.9 confines a positioned descendant's `z-index` to a **stacking
+context**. This engine confined it to any positioned box at all:
+`collectPositionedPainted` descended only through `PSTEP_SPLIT`
+children, so a `position: relative` box with `z-index: auto` was marked
+`PSTEP_POSITIONED`, painted whole, and painted its own positioned
+descendants inside itself.
+
+A positioned box that is not a stacking context now hoists them into
+the ancestor's list, in tree order after itself, which is what the
+standard's "as if it created a stacking context, but its positioned
+descendants are part of the parent's" comes to. The hit tester hoists
+identically, or a click would land on a box the paint put underneath
+another.
+
+**`isolation` lands with it**, and could not have landed without it. Its
+whole effect here is that `isolation: isolate` creates a stacking
+context; with the old confinement every box behaved as one, so the
+property could not have changed a pixel. **279 → 280.** `filter` and
+`mask` are added to `boxIsStackingContext` in the same line: the
+standard gives each one, both were given `boxPaintsWhole` when they
+landed this session, and that gets a subtree into one layer, which is a
+different question from who owns a `z-index`.
+
+**What still confines, and why.** A replaced leaf, a `clip-path`, an
+`offset-path`, a mask, `contain: paint`, `content-visibility: hidden`
+and `overflow: hidden` keep their positioned descendants. For all but
+the last that agrees with the standard. `overflow: hidden` is a
+divergence: this engine clips by painting the subtree into a layer and
+blitting it back, so hoisting a descendant out would take it out of its
+clip. It is asserted in the suite rather than left to be discovered.
+
+Two things the work turned on. The first attempt suppressed a hoisted
+box from painting its own positioned descendants while collecting them
+with the **mark-based** walk, which only sees marks set for the box
+being walked — so they were suppressed and never collected, and the
+fixture painted white. The structural collector, which the hit tester
+already used, sees the real tree. And the suite that found the original
+bug found it on its **first line**: the instrument check, the one
+asserting the un-isolated case behaves as Chromium does, failed while
+every other check in the file passed vacuously.
+
+No render suite changed its answer. `tests/render/isolation.f`: 9
+passed, 0 failed.
+
 ### `mask-composite`, and a second mask layer
 
 `mask-image` takes a comma-separated list, each layer with its own

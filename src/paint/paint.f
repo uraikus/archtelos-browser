@@ -4191,7 +4191,44 @@ bool func boxIsStackingContext(b:Box) {
     Style s = b.style
     if s.opacity < 1.0 { return true }
     if cascadeSawTransform && s.transforms.length > 0 { return true }
+    // The standard gives each of these one, and each was implemented
+    // here without saying so: a filter and a mask got `boxPaintsWhole`,
+    // which gets the subtree into one layer, and that is a different
+    // question from who owns a `z-index`.
+    if s.isolate { return true }
+    if anyFilter && s.filterIdx > 0 { return true }
+    if anyMask && s.maskIdx > 0 { return true }
     return boxIsPositioned(b) && zIndexIsExplicit(s)
+}
+
+// Whether a box confines its subtree to itself for a reason that is
+// not stacking: it clips, it is a replaced leaf, or it moves the whole
+// subtree somewhere the ancestor's walk could not follow.
+//
+// CSS2 §9.9 hoists a positioned descendant out of a positioned box that
+// is NOT a stacking context, so that its `z-index` competes in the
+// ancestor's context. That is right for an ordinary `position:
+// relative` box and wrong for one of these, where the content must stay
+// where it was painted whatever the stacking rules say -- a clipped
+// subtree hoisted out would escape its clip. `overflow: hidden` is the
+// case that matters: the standard does not give it a stacking context,
+// and this engine cannot hoist through it, so its positioned
+// descendants stay confined. That divergence is recorded in todo.md
+// rather than hidden behind the predicate.
+bool func boxConfinesSubtree(b:Box) {
+    if b.kind == BOX_IMAGE || b.kind == BOX_AUDIO || b.kind == BOX_IFRAME { return true }
+    if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
+    if anyOffsetPath && boxHasOffset(b) { return true }
+    if anyMask && b.style.maskIdx > 0 { return true }
+    if !docHasWholePaint { return false }
+    Style s = b.style
+    return s.contentHidden || s.overflowHidden || s.containPaint
+}
+
+// Whether the positioned descendants of `c` belong to the ancestor's
+// stacking context rather than to `c` itself.
+bool func boxHoistsPositioned(c:Box) {
+    return !boxIsStackingContext(c) && !boxConfinesSubtree(c)
 }
 
 // The negative-`z-index` boxes that belong to this stacking context:
@@ -4464,6 +4501,9 @@ void func collectPositionedIn(b:Box, out:arr[Box]) {
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
         if boxIsPositioned(c) {
             out.push(c)
+            // The hit tester hoists exactly as the painter does, or a
+            // click lands on a box the paint put underneath another.
+            if boxHoistsPositioned(c) { collectPositionedIn(c, out) }
             continue
         }
         if boxIsFloated(c) { continue }
@@ -4479,7 +4519,20 @@ void func collectPositionedIn(b:Box, out:arr[Box]) {
 void func collectPositionedPainted(b:Box, out:arr[Box]) {
     for int i = 0, i < b.children.length, i++ {
         Box c = b.children[i]
-        if c.paintStep == PSTEP_POSITIONED { out.push(c) }
+        if c.paintStep == PSTEP_POSITIONED {
+            out.push(c)
+            // §9.9 again: a positioned box with `z-index: auto` is not a
+            // stacking context, so ITS positioned descendants compete
+            // here rather than inside it. They follow it in the list, in
+            // tree order, which is what the standard's "as if it created
+            // a stacking context, but its positioned descendants are
+            // part of the parent's" comes to.
+            // The STRUCTURAL collector, not this one: the paint marks
+            // are only set for the box being walked, so a mark-based
+            // descent into `c` would see nothing and the descendants
+            // would be suppressed from `c` without joining this list.
+            if boxHoistsPositioned(c) { collectPositionedIn(c, out) }
+        }
         else if c.paintStep == PSTEP_SPLIT { collectPositionedPainted(c, out) }
     }
 }
@@ -4487,6 +4540,12 @@ void func collectPositionedPainted(b:Box, out:arr[Box]) {
 // Them, lowest z first and in document order within a z. The negative
 // ones are not here: they belong to the nearest stacking context and
 // were painted before any of this box's content.
+// How deep inside a stacking context's step-8 list the painter is. A
+// box whose positioned descendants were hoisted into an ancestor's list
+// must not paint them again from inside itself, and this is what tells
+// it so: nonzero means "some ancestor owns the list you are in".
+int posHoistDepth = 0
+
 void func paintPositionedIn(b:Box) {
     arr[Box] pos = []
     collectPositionedPainted(b, pos)
@@ -4495,12 +4554,15 @@ void func paintPositionedIn(b:Box) {
     for int i = 0, i < pos.length, i++ {
         if pos[i].style.zIndex > highest { highest = pos[i].style.zIndex }
     }
+    int prevHoist = posHoistDepth
+    posHoistDepth = prevHoist + 1
     for int z = 0, z <= highest, z++ {
         for int i = 0, i < pos.length, i++ {
             if pos[i].style.zIndex != z { continue }
             paintBox(pos[i])
         }
     }
+    posHoistDepth = prevHoist
 }
 
 // A box's contents, in §9.9's order. Run for every box that paints
@@ -4522,7 +4584,14 @@ void func paintContents(b:Box, ownOutline:bool) {
         if ownOutline { paintOutlineFor(b) }
         paintOutlineWalk(b)
     }
-    if docHasPositioned { paintPositionedIn(b) }
+    // A box whose positioned descendants were hoisted out does not
+    // paint them: the ancestor whose list they joined does, in its own
+    // z order. A stacking context, or a box that confines its subtree,
+    // was never hoisted through and still owns its own.
+    if docHasPositioned
+        && (posHoistDepth == 0 || boxIsStackingContext(b) || boxConfinesSubtree(b)) {
+        paintPositionedIn(b)
+    }
 }
 
 void func paintSubtree(b:Box) {

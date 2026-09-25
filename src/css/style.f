@@ -1551,6 +1551,10 @@ struct Style {
     filterIdx:int
     // `mask`, as a 1-based index into maskSpecs; 0 for no mask.
     maskIdx:int
+    // `isolation: isolate`. It is a property about blending, which this
+    // engine cannot do, and it also creates a stacking context -- which
+    // it can, and which is what makes it change a pixel here.
+    isolate:bool
     anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool

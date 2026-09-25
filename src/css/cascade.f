@@ -8405,6 +8405,8 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if aName != '' { anyAnchorName = true }
         if aScope != '' { anyAnchorScope = true }
     }
+    ascii isoProp = styleProp(props, 'isolation')
+    if isoProp != null { s.isolate = asciiLower(asciiTrim(isoProp)) == 'isolate' }
     // CSS Masking 1's mask, held the same way as the filter below it.
     // Any of the seven longhands brings the layer into being, because
     // `mask-clip` has a computed value whether or not an image is

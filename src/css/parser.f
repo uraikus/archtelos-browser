@@ -1529,7 +1529,7 @@ arr[text] supportedProperties = [
     'offset-path', 'offset-distance', 'offset-rotate', 'offset-anchor', 'offset-position',
     'filter',
     'mask-image', 'mask-mode', 'mask-repeat', 'mask-position', 'mask-size',
-    'mask-origin', 'mask-clip', 'mask-composite',
+    'mask-origin', 'mask-clip', 'mask-composite', 'isolation',
     'anchor-name', 'anchor-scope', 'position-anchor', 'position-area', 'position-try-fallbacks', 'position-try-order', 'position-visibility',
     'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
     'corner-bottom-right-shape', 'corner-bottom-left-shape',

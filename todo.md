@@ -342,70 +342,32 @@ A declaration naming a bitmap is dropped whole rather than
 half-applied, so such an element renders unmasked, and `@supports`
 answers no for it.
 
-### `isolation`, and two stacking contexts this engine does not declare
+### What `overflow: hidden` still confines, and why
 
-`isolation: isolate` is in the property instrument's work list and looks
-like a property about blending, which this engine cannot do: a blend
-mode needs the destination pixel, `getPixelColor` returns a `color` with
-no accessor, and there is no composite-mode builtin either -- the whole
-graphics surface is `fillStyle`, `fillAlpha`, `drawRect`, `drawCircle`,
-`drawText`, `drawImage`, `drawPixel`, `clearPixel`, `fillPath`,
-`strokePath`, the two literal-only gradient fills, `clip` and
-`getPixelColor`. So `mix-blend-mode` and `background-blend-mode` are
-genuinely blocked, and that was checked by listing the builtins rather
-than assumed.
+CSS2 §9.9 confines a positioned descendant's `z-index` to a **stacking
+context**. A positioned box with `z-index: auto` is not one, and its
+positioned descendants now compete in the nearest ancestor that is --
+which is what let `isolation` be measured at all, and what made the
+stacking contexts `filter` and `mask` create observable.
 
-**`isolation` is not blocked, because it is not only about blending.**
-It creates a stacking context, and a stacking context confines a
-descendant's `z-index`, which changes pixels in an engine that already
-implements CSS2 §9.9. Measured: a `z-index: 5` child inside a wrapper,
-against a `z-index: 2` sibling of that wrapper --
+One case is still wrong, deliberately. A box that **confines its
+subtree** keeps its positioned descendants: a replaced leaf, a
+`clip-path`, an `offset-path`, a mask, `contain: paint`,
+`content-visibility: hidden`, and `overflow: hidden`. For all but the
+last that agrees with the standard, because each of them either is a
+stacking context or genuinely takes the subtree somewhere the
+ancestor's walk cannot follow. **`overflow: hidden` is the divergence**:
+the standard does not give it a stacking context, so its positioned
+descendants should compete in the ancestor's, and here they do not.
 
-| | painted |
-|---|---|
-| wrapper with no `isolation` | `#ff0000`, the child escaping to the top |
-| wrapper with `isolation: isolate` | `#0000ff`, the child confined and the sibling above it |
-
-**But it cannot be measured here yet, and finding that out is the
-result.** The test above was written and its *instrument* check failed:
-this engine paints blue with no `isolation` at all. Every other check in
-the file passed, vacuously, because every case painted blue.
-
-**A positioned box confines its positioned descendants here whether or
-not it is a stacking context.** `collectPositionedPainted` descends only
-through `PSTEP_SPLIT` children, so a `position: relative` box with
-`z-index: auto` is marked `PSTEP_POSITIONED`, painted whole, and paints
-its own positioned descendants inside itself. CSS2 §9.9 confines them to
-a **stacking context**; a positioned box with `z-index: auto` is not one,
-and its positioned descendants belong to the nearest ancestor that is.
-
-So `isolation: isolate` cannot change a pixel here until that is fixed,
-and neither can the stacking contexts `filter` and `mask` are supposed
-to create -- both were given `boxPaintsWhole` when they landed this
-session, which gets the subtree into one layer, and neither is in
-`boxIsStackingContext`, which is a separate question that currently
-has no observable answer either way.
-
-**Why it was not fixed in the same pass.** The change is not the one
-line it looks like. `overflow: hidden` paints whole here too and is not
-a stacking context by the standard either, so the same divergence sits
-under clipping -- and a clipped subtree *must* be confined visually
-whatever the stacking rules say. Separating "painted into one layer"
-from "owns a stacking context" is a restructure of the painter's three
-walks, not a predicate, and it is worth its own pass with the whole
-render suite behind it rather than a correction tacked onto a property.
-
-The fixture is kept here so the next pass does not have to re-derive it:
-a `z-index: 5` absolutely positioned child inside a `position: relative`
-wrapper, against a `z-index: 2` absolutely positioned sibling of that
-wrapper. Chromium paints the child on top (red) with no stacking context
-and the sibling on top (blue) with one; this engine paints blue either
-way.
-
-**What this makes of `isolation`.** Not declined and not implemented.
-Storing the keyword today would move the property count by one and
-change nothing drawn, which is the `outline-style` trap, so it is not
-stored. It lands with the §9.9 work or not at all.
+The reason is that this engine clips by painting the subtree into a
+layer and blitting the layer back, which is the same mechanism as
+confinement -- hoisting a descendant out of that layer would take it out
+of its clip. Separating the two needs the clip to be applied to a box
+painted from somewhere else in the order, which is a second layer per
+clipped subtree or a clip region the canvas does not have (FINDINGS.md,
+"an image is a drawable surface with a smaller API"). It is asserted in
+`tests/render/isolation.f` rather than left to be discovered.
 
 ### What is left of Filter Effects 1
 
