@@ -371,8 +371,34 @@ content to agree rather than by writing this engine's metrics down.
 1. **A vertical run's decorations.** An underline, an overline, a
    line-through, an emphasis mark and synthesised small caps are all
    drawn from a horizontal rectangle and a horizontal advance, so a
-   vertical run gets none of them. Each is the same quarter turn the
-   glyphs already take.
+   vertical run gets none of them.
+
+   **The three lines are not the quarter turn the glyphs take.** That
+   was the guess, and Chromium says otherwise. Painted with
+   `color: transparent` and `text-decoration-color: #000`, so that only
+   the line inks, in a box padded 30px away from the page's edge:
+
+   | | `underline` | `line-through` | `overline` |
+   |---|---|---|---|
+   | `vertical-rl`, 16px, box x 30..48 | 29 | 39 | 48 |
+   | `vertical-lr`, 16px, the same | 29 | 39 | 48 |
+   | `horizontal-tb`, 16px, box y 30..48 | 44 | 38 | 29 |
+   | `vertical-rl`, 32px, box x 30..68 | 29-31 | 48-50 | 68-70 |
+   | `vertical-lr`, 32px, the same | 29-31 | 48-50 | 68-70 |
+   | `horizontal-tb`, 32px, box y 30..68 | 59-61 | 46-48 | 27-29 |
+
+   A horizontal underline is 14 below the box's top at 16px and 29-31 at
+   32px, which is the font's baseline plus a pixel -- it follows the
+   **baseline**. A vertical one is at the box's far block edge exactly,
+   its line-through at the middle and its overline at the near edge, at
+   both sizes: it follows the **line box**. So the vertical rule is its
+   own rule rather than the horizontal one turned, and the two vertical
+   modes agree with each other on all three.
+
+   The thickness is one pixel at 16px and three at 32, which is the
+   thickness the horizontal decorations already compute.
+
+   The measurement alone; the tests and the implementation follow.
 2. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
    -- counter-clockwise -- which the painter has no path for; the second
    is `vertical-rl` with `text-orientation: sideways`, which this
