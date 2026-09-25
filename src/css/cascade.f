@@ -7004,12 +7004,28 @@ int anchorInsetPct = -1
 int anchorInsetFallback = ANCHOR_NO_FALLBACK
 
 // The position along the anchor a side keyword names, in hundredths of
-// a percent, or -1 for a word that is not one. Every keyword the
-// function takes is such a position: the physical near sides and their
-// logical spellings are 0, `center` is 5000, and the far sides 10000.
-// There is no `writing-mode` here to make the logical names anything
-// else, which is measured rather than assumed (todo.md).
-int func anchorSidePct(w:ascii) {
+// a percent, or -1 for a word that is not one: the near sides are 0,
+// `center` is 5000, and the far sides 10000.
+//
+// **A physical side must lie on the axis of the property being set.**
+// `top: anchor(left)` names a horizontal edge for a vertical inset, and
+// Chromium treats it as it treats any value it cannot parse -- the
+// declaration has no effect and the box keeps its static position
+// (todo.md has the probe). That is what `vertical` is for, and it was
+// missing: the two keywords were read by position rather than by which
+// axis they name.
+//
+// `start`, `end`, `self-start` and `self-end` are still read as the near
+// and far sides here, which is right only where the axis is not
+// reversed. `direction: rtl` reverses the inline axis and a vertical
+// `writing-mode` the block one, and todo.md records Chromium's answers
+// for both; the percentage is resolved into the cascade's own map for
+// the bare `anchor()` form, before either the containing block or the
+// box's own mode is in hand, so making these follow it is a piece of
+// work of its own rather than a keyword table.
+int func anchorSidePct(w:ascii, vertical:bool) {
+    if w == 'left' || w == 'right' { if vertical { return -1 } }
+    if w == 'top' || w == 'bottom' { if !vertical { return -1 } }
     if w == 'left' || w == 'top' || w == 'start' || w == 'self-start' { return 0 }
     if w == 'center' { return 5000 }
     if w == 'right' || w == 'bottom' || w == 'end' || w == 'self-end' { return 10000 }
@@ -7022,9 +7038,9 @@ int func anchorSidePct(w:ascii) {
 
 // `[ <name>? <side> ] , <fallback>?` -- the inside of one `anchor()`.
 // Answers whether it parsed, and leaves what it said in the three
-// globals above. `axis` is which inset this is, which decides nothing
-// here: the side keywords are read the same way on both axes and it is
-// the resolver that knows which edge to measure from.
+// globals above. `axis` is which inset this is, and it decides whether a
+// physical side keyword is on the right axis to be valid at all; the
+// resolver still knows which edge to measure from.
 bool func parseAnchorInset(inner:ascii, axis:int) {
     anchorInsetName = ''
     anchorInsetPct = -1
@@ -7039,7 +7055,7 @@ bool func parseAnchorInset(inner:ascii, axis:int) {
         anchorInsetName = words[0].toText()
         at = 1
     }
-    int pct = anchorSidePct(words[at])
+    int pct = anchorSidePct(words[at], axis >= ANCHOR_INSET_TOP)
     if pct < 0 { return false }
     anchorInsetPct = pct
     if parts.length == 2 {

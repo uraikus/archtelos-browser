@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A physical side on the wrong axis is invalid in `anchor()`
+
+`top: anchor(--a left)` names a horizontal edge for a vertical inset.
+Chromium treats it as it treats any value it cannot parse -- the
+declaration has no effect and the box keeps its static position -- and
+this engine answered it, giving `top` the anchor's *top* edge: the two
+keywords were being read by position rather than by which axis they
+name. Wrong in the plain horizontal writing mode since `anchor()`
+landed, and nothing to do with writing modes; found while probing them.
+
+The check is an agreement rather than a number, so neither answer has to
+be known in advance: a wrong-axis side must behave exactly as a keyword
+that does not exist, because both are invalid. Its instrument asks that
+an unknown keyword and a valid one land in different places, or the four
+checks would hold on an engine that accepted everything.
+
+**Three of the four findings from that probe are not in this change**,
+and todo.md carries Chromium's numbers for each. `start` and `end`
+follow the containing block's inline direction where the property's axis
+is the inline one and its block direction where that axis is the block
+one -- so `direction: rtl` reverses them on the horizontal axis, and so
+does `vertical-rl` -- and `self-start`/`self-end` are the same question
+asked of the box's own mode. This engine reverses neither and does not
+distinguish the `self-` pair from the plain one. The reason it is a
+separate piece of work rather than a keyword table: the bare `anchor()`
+form has its percentage resolved into the cascade's own map, before
+either the containing block or the box is in hand, so the keyword has to
+survive into layout before any of the three can be answered.
+
 ### An absolutely positioned box no longer turns with a vertical flow
 
 `position: absolute; left: 60px; top: 50px; width: 40px; height: 30px`

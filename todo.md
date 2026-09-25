@@ -722,7 +722,17 @@ declared.
    measured rather than assumed", which was true when it was written and
    is what this measurement replaces.
 
-4. **A physical side on the wrong axis is invalid, and is answered
+4. **A physical side on the wrong axis is invalid. Landed.** `axis` was
+   already threaded into `parseAnchorInset` and decided nothing; it now
+   decides whether a physical side keyword is on the right axis to be a
+   side at all. The three findings above are what is left, and the
+   reason they are a piece of work rather than a keyword table is that
+   the bare `anchor()` form has its percentage resolved into the
+   cascade's own map, before either the containing block or the box's own
+   mode is in hand -- so the keyword has to survive into layout first.
+   The original wording of this item follows.
+
+   **A physical side on the wrong axis is invalid, and is answered
    here.** The same probe, and nothing to do with writing modes:
    Chromium answers `top: anchor(left)` and `left: anchor(top)` with
    nothing at all -- the box stays at `0,0` -- because the side must lie

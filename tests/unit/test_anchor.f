@@ -741,4 +741,32 @@ checkEqInt(insetX('left:calc(anchor(--missing right, 7px) + 1px)'), 8,
 checkEqInt(insetX('left:calc(anchor(--missing right) + 1px)'), insetX(''),
            'and with none the declaration has no effect, leaving the static position')
 
+// ---- a physical side on the wrong axis is invalid -----------------------
+// A side keyword must lie on the axis of the property being set:
+// `top: anchor(left)` names a horizontal edge for a vertical inset, and
+// Chromium treats it as it treats any other value it cannot parse --
+// the declaration has no effect and the box stays at its static
+// position (todo.md has the probe). This engine answered it, reading the
+// two keywords by position rather than by which axis they name.
+//
+// The check is an agreement rather than a number: a wrong-axis side must
+// behave exactly as a keyword that does not exist at all, because both
+// are invalid, and neither answer has to be known in advance.
+checkEqInt(insetY('top:anchor(--a left)'), insetY('top:anchor(--a nonsense)'),
+           'top: anchor(left) is as invalid as a keyword that does not exist')
+checkEqInt(insetY('top:anchor(--a right)'), insetY('top:anchor(--a nonsense)'),
+           'and so is anchor(right) on a vertical inset')
+checkEqInt(insetX('left:anchor(--a top)'), insetX('left:anchor(--a nonsense)'),
+           'left: anchor(top) likewise')
+checkEqInt(insetX('left:anchor(--a bottom)'), insetX('left:anchor(--a nonsense)'),
+           'and anchor(bottom) on a horizontal inset')
+
+// The instrument: if an unknown keyword and a valid one landed in the
+// same place, the four checks above would hold on an engine that
+// accepted everything.
+check(insetY('top:anchor(--a nonsense)') != insetY('top:anchor(--a top)'),
+      'an unknown keyword really does differ from a valid one')
+check(insetX('left:anchor(--a nonsense)') != insetX('left:anchor(--a left)'),
+      'on the other axis too')
+
 finish('anchor positioning')
