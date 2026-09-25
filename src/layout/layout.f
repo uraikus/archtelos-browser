@@ -400,7 +400,24 @@ int func measureSmallCaps(s:Style, t:text, caps:int) {
     return w
 }
 
+// Whether this style sets its text upright along a vertical inline
+// axis, which is a different measurement rather than a different
+// drawing (Writing Modes 4 §5.1).
+bool func wmIsUpright(s:Style) {
+    return anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB
+        && s.textOrientation == TO_UPRIGHT
+}
+
+// The cell one upright character takes along the inline axis.
+int func uprightAdvance(s:Style) {
+    return maxInt(roundPx(s.fontSize.toFloat() * FONT_UPRIGHT), 1)
+}
+
 int func measureWidth(s:Style, t:text) {
+    // An upright run is a row of equal cells, so it is counted rather
+    // than measured -- and counted before the cache, which is keyed by
+    // the font and the string and knows nothing of the orientation.
+    if wmIsUpright(s) { return t.length * uprightAdvance(s) }
     int t0 = archtelosTiming ? now() : 0
     profMeasureCalls++
     text key = `${s.fontKey}|${t}`

@@ -72,7 +72,7 @@ fi
 # Otherwise it only ever goes up, and it is raised with the count: a
 # floor left where it was cannot catch the regression it exists to
 # catch.
-PROPERTIES_MIN=281
+PROPERTIES_MIN=282
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1

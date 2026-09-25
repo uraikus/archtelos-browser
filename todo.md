@@ -360,65 +360,33 @@ rectangle in the subtree a quarter turn at the end. The painter turns
 the canvas about a run's baseline and draws the glyphs as it draws a
 horizontal run. The logical property table follows the mode, the
 orthogonal flow shrinks to fit and is clamped, and `width` and `height`
-stay physical. `tests/unit/test_writingmode.f` and
-`tests/render/writingmode.f` grade it, both by asking the horizontal
-and the vertical layout of the same content to agree rather than by
-writing this engine's metrics down.
+stay physical. `text-orientation: upright` stands each character up in
+a cell of its own, the cell being the measured ratio above.
+`tests/unit/test_writingmode.f` and `tests/render/writingmode.f` grade
+it, both by asking the horizontal and the vertical layout of the same
+content to agree rather than by writing this engine's metrics down.
 
 **What is left, in the order it is worth doing:**
 
-1. **`text-orientation`.** It computes and inherits and does nothing
-   else, so it is deliberately *not* in the property instrument's
-   digest. `upright` is a measurement change rather than a drawing one:
-   each character takes its own cell along the inline axis, and
-   Chromium's cell was measured rather than guessed.
-
-   **What the cell is, and what it is not.** It does not follow
-   `line-height`: three upright glyphs come to 57 at `normal`, at `1`,
-   at `2` and at `40px`, while the block extent moves 19, 16, 32, 40
-   with each. It is not the same for every family either -- 57 in
-   monospace against 51 in sans-serif at the same size -- so it is a
-   font metric, the character's vertical advance, which is exactly what
-   this engine cannot ask for (Festina exposes the inked height of a
-   string and nothing else). So it is measured the way `FONT_CAP` was,
-   by asking Chromium across a range of sizes for the family this engine
-   actually renders in:
-
-   | size | 8 | 10 | 12 | 14 | 16 | 20 | 24 | 32 | 40 | 48 | 64 | 96 | 180 |
-   |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-   | cell | 9 | 11 | 14 | 16 | 17 | 22 | 27 | 36 | 44 | 53 | 72 | 107 | 201 |
-
-   Least squares gives **1.116 x size**, with an intercept of -0.06 --
-   near enough to zero that the ratio alone is the rule. Rounding that
-   product lands on Chromium's own integer at 8 of the 13 sizes and
-   within one pixel at the other five, which is the accuracy the hinted
-   metrics behind those integers allow: they are not a straight line,
-   13.39 rounding to 14 at 12px and 17.86 to 17 at 16.
-
-   A space takes a cell of its own (`A B` upright is three cells), and
-   `sideways` agrees with `mixed` on Latin at every size measured, which
-   is what this engine already does with the two.
-
-   The measurement alone; the tests and the implementation follow.
-2. **A vertical run's decorations.** An underline, an overline, a
+1. **A vertical run's decorations.** An underline, an overline, a
    line-through, an emphasis mark and synthesised small caps are all
    drawn from a horizontal rectangle and a horizontal advance, so a
    vertical run gets none of them. Each is the same quarter turn the
    glyphs already take.
-3. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
+2. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
    -- counter-clockwise -- which the painter has no path for; the second
-   is `vertical-rl` with `text-orientation: sideways`, so it follows
-   from 1.
-4. **The other formatting contexts.** A flex, grid, table or
+   is `vertical-rl` with `text-orientation: sideways`, which this
+   engine already renders, so it is a keyword away.
+3. **The other formatting contexts.** A flex, grid, table or
    multi-column container as, or inside, a vertical box keeps the
    physical axes: those algorithms read `s.width` and `s.height`
    directly rather than through the one pair of lengths `layoutBlock`
    exchanges. Each is the same exchange again, in its own file.
-5. **An indefinite containing block.** Chromium clamps an orthogonal
+4. **An indefinite containing block.** Chromium clamps an orthogonal
    flow to the viewport there; nothing at layout time here knows the
    viewport's height, so the inline size is left unclamped, which is the
    same answer on any viewport tall enough to hold the content.
-6. **Auto margins, `anchor()` and the scroll box.** An auto margin on
+5. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
    physical sides whatever the mode says; and a scroll container inside

@@ -2975,7 +2975,28 @@ void func drawSmallCaps(f:Fragment, s:Style, caps:int, dx:int, dy:int) {
 // Clockwise in both vertical modes: Writing Modes 4 §5.1 keeps the
 // counter-clockwise turn for `sideways-lr`, which this engine does not
 // have.
+// `text-orientation: upright`: no turn at all. Each character stands up
+// in a cell of its own down the inline axis, centred across the line's
+// thickness, which is what the cell measured in layout.f reserved room
+// for. The measurer and the painter walk the run the same way, as the
+// small-caps pair do, or the ink lands where no room was kept.
+void func drawFragmentGlyphsUpright(f:Fragment, s:Style, dx:int, dy:int) {
+    int adv = uprightAdvance(s)
+    int asc = fontAscent(s)
+    arr[text] chars = f.content.split('')
+    setFontFor(s)
+    for int i = 0, i < chars.length, i++ {
+        int gw = measureTextWidth(chars[i])
+        pDrawText(chars[i], f.x + dx + Math.floorDiv(f.w - gw, 2),
+                  f.y + dy + i * adv + asc)
+    }
+}
+
 void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
+    if s.textOrientation == TO_UPRIGHT {
+        drawFragmentGlyphsUpright(f, s, dx, dy)
+        return
+    }
     pSaveState()
     pTranslate(f.baseline + dx, f.y + dy)
     pRotate(90.0)

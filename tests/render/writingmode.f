@@ -144,4 +144,50 @@ check(hW > hH, 'the horizontal box is wider than it is tall')
 checkEqInt(vW, hH, 'the vertical one is as wide as the horizontal one is tall')
 checkEqInt(vH, hW, 'and as tall as it is wide')
 
+// ---- text-orientation: upright ---------------------------------------
+// A turned glyph and an upright one are the same glyph, so their ink
+// must be the same rectangle with its sides exchanged. Neither
+// rectangle is written down: the two are asked of each other, which is
+// the only form of this check that does not depend on knowing what an
+// `L` measures in this font.
+arr[int] func wmInkBox(orient:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:32px">` +
+        `<div style="writing-mode:vertical-rl;text-orientation:${orient};` +
+        `color:#000000">L</div></body>`, 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int minX = 399
+    int maxX = -1
+    int minY = 399
+    int maxY = -1
+    for int x = 0, x < 120, x++ {
+        for int y = 0, y < 120, y++ {
+            if getPixelColor(x, y) == WMPAPER { continue }
+            if x < minX { minX = x }
+            if x > maxX { maxX = x }
+            if y < minY { minY = y }
+            if y > maxY { maxY = y }
+        }
+    }
+    arr[int] out = []
+    out.push(maxX - minX + 1)
+    out.push(maxY - minY + 1)
+    return out
+}
+
+arr[int] upBox = wmInkBox('upright')
+arr[int] sideBox = wmInkBox('sideways')
+check(upBox[0] > 0 && sideBox[0] > 0, 'both orientations put an L on the page')
+// An `L` is taller than it is wide, so the two rectangles are not
+// square and the exchange below can fail.
+check(upBox[1] > upBox[0], 'an upright L is taller than it is wide')
+// Two pixels of slack on a 32px glyph, for the reason the ink profile
+// above needed slack: an upright glyph is hinted, its stems snapped to
+// the pixel grid, and a turned one is hinted along the other axis or
+// not at all. The turned `L` here comes out two longer along its
+// advance and two shorter across it.
+checkNear(sideBox[0], upBox[1], 2, 'a turned L is as wide as the upright one is tall')
+checkNear(sideBox[1], upBox[0], 2, 'and as tall as it is wide')
+
 finish('writing-mode pixels')

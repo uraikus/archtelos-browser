@@ -4198,3 +4198,37 @@ negative, as is `generated.html`'s on all five phases.
 
 The binary grows 9,120 bytes. Both binaries render `generated.html` and
 `features.html` byte-identically, `cmp`-checked before any timing.
+
+## An upright cell, and a reading in a phase that cannot have it
+
+`text-orientation: upright`. Its guard sits at the top of
+`measureWidth`, which is the hottest function in layout -- the width
+cache exists because of how often it is asked -- so the guard is a
+boolean before the cache lookup rather than a call, and neither
+benchmark page says `writing-mode`.
+
+Twenty-five alternating samples at 800px, idle, the five phases summed
+per sample as well:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | +1 | 0 | **+2** (18 of 25) | +1 | 0 | +5 |
+| `features.html`, round 2 | 0 | 0 | **+1** (14 of 25) | -2 | 0 | +1 |
+| `generated.html` | 0 | 0 | 0 | 0 | +1 | -5 |
+
+The two forward rounds on `features.html` agree, weakly, on **cascade**:
++2 at 18 of 25 and then +1 at 14. That is the shape this file usually
+takes to the code, and there is nothing to take it to. **Cascade runs no
+line of this diff**: every line is in `measureWidth`, which layout calls,
+and in `drawFragmentGlyphsVertical`, which the painter calls. The two
+phases that do run it read +1 then -2 and 0 then 0.
+
+So the order of the questions matters, and this is the case that shows
+it: asking *which phase moved* and *whether that phase runs the diff*
+settles a reading that looking at its shape would have sent to the code.
+`generated.html` agrees by reading nothing on any phase and -5 in total.
+
+The binary grows 168 bytes -- the smallest of any change measured here,
+which is what a ratio, a multiply and two branches come to. Both
+binaries render `generated.html` and `features.html` byte-identically,
+`cmp`-checked before any timing.

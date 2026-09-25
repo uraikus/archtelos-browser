@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `text-orientation: upright`
+
+Each character stands up in a cell of its own along the inline axis
+(CSS Writing Modes 4 §5.1). **281 → 282**, with `--fields` naming
+`textOrientation`.
+
+**What the cell is had to be measured, not guessed.** It does not follow
+`line-height` -- three upright glyphs come to 57 at `normal`, at `1`, at
+`2` and at `40px`, while the block extent moves 19, 16, 32 and 40 with
+each -- and it is not the same for every family, 57 in monospace against
+51 in sans-serif. It is the character's vertical advance, which is a
+font metric, and Festina exposes the inked height of a string and
+nothing else. So it is measured the way `FONT_CAP` was: Chromium, across
+8 to 180px, in the family this engine renders in. Least squares gives
+**1.116 x the size** with an intercept of -0.06, and rounding that
+product lands on Chromium's own integer at 8 of the 13 sizes and within
+a pixel at the other five. todo.md has the table.
+
+The measurer counts cells rather than measuring glyphs, before the width
+cache, which is keyed by the font and the string and knows nothing of an
+orientation; the painter walks the run through the same cell, as the
+synthesised small caps do, because a glyph drawn where the measurer
+reserved no room leaves ink outside the box. A space takes a cell of its
+own, and `sideways` agrees with `mixed` on Latin, as they do in
+Chromium.
+
+The render check asks the one thing that does not need this font's
+metrics known: an upright `L` and a turned one are the same glyph, so
+their ink is the same rectangle with its sides exchanged. Two pixels of
+slack on a 32px glyph, for the reason the ink profile below needed
+slack -- an upright glyph is hinted and a turned one is not.
+
 ### A vertical `writing-mode`
 
 CSS Writing Modes 4's `vertical-rl` and `vertical-lr`, which css-2026.md

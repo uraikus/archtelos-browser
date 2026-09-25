@@ -139,4 +139,49 @@ int wanted = Math.floorDiv(pw2[1].w + 149, 150)
 check(wanted >= 4, 'the long line really does need several columns')
 checkEqInt(pl[1].w, wanted * oneLine, 'and the block extent is that many line thicknesses')
 
+// ---- text-orientation -------------------------------------------------
+// `upright` gives each character its own cell along the inline axis
+// (Writing Modes 4 §5.1). Chromium's cell is measured in todo.md; what
+// is asked here is the RULE rather than the number -- that n characters
+// take n times what one takes, that a space takes one too, and that
+// `sideways` and `mixed` agree on Latin, which they do in Chromium.
+int func uprightExtent(orient:text, content:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:400px}</style></head><body><div class="o">` +
+        `<div id="v" style="writing-mode:vertical-rl;text-orientation:${orient}">` +
+        `${content}</div></div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return all[1].h
+}
+
+// The instrument first: on an engine that ignores the property every
+// check below would hold, because all three keywords would measure the
+// same run the same way.
+int oneUp = uprightExtent('upright', 'A')
+int oneMixed = uprightExtent('mixed', 'A')
+check(oneUp != oneMixed, 'upright measures a single character differently from mixed')
+
+checkEqInt(uprightExtent('upright', 'ABC'), 3 * oneUp, 'three upright characters take three cells')
+checkEqInt(uprightExtent('upright', 'ill'), 3 * oneUp, 'and the cell does not depend on the character')
+checkEqInt(uprightExtent('upright', 'A B'), 3 * oneUp, 'a space takes a cell of its own')
+checkEqInt(uprightExtent('sideways', 'ABC'), uprightExtent('mixed', 'ABC'),
+    'sideways and mixed agree on Latin, as they do in Chromium')
+
+// The cell does not follow line-height, which is what told it apart
+// from the line box in the first place.
+int func uprightWithLineHeight(lh:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:400px}</style></head><body><div class="o">` +
+        `<div id="v" style="writing-mode:vertical-rl;text-orientation:upright;` +
+        `line-height:${lh}">ABC</div></div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return all[1].h
+}
+checkEqInt(uprightWithLineHeight('2'), uprightWithLineHeight('normal'),
+    'the cell does not follow line-height')
+
 finish('writing-mode')

@@ -22,6 +22,17 @@ const int WM_VERTICAL_LR = 2
 // With no Unicode database to say which script a character belongs to,
 // `mixed` and `sideways` agree here -- which is what they do on Latin in
 // Chromium too, measured rather than assumed (todo.md).
+// The cell an upright character takes along the inline axis, as a
+// fraction of the font size. It is the character's vertical advance,
+// which is a font metric Festina cannot be asked for, so it is measured
+// the way FONT_CAP is: Chromium, across 8 to 180px, in the family this
+// engine renders in, least-squares 1.116 with an intercept of -0.06.
+// Rounding that product lands on Chromium's own integer at 8 of the 13
+// sizes and within a pixel at the other five; todo.md has the table.
+// It does not follow `line-height`, which is what tells it apart from
+// the line box.
+const float FONT_UPRIGHT = 1.116
+
 const int TO_MIXED = 0
 const int TO_UPRIGHT = 1
 const int TO_SIDEWAYS = 2
