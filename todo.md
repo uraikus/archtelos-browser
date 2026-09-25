@@ -3130,10 +3130,9 @@ already had that would serve.** That is the same mistake as
 of one gesture", and it was written by the hand that had just finished
 correcting both. Four wrong reasons in css-2026.md and now one here.
 
-What is genuinely not reached: a `<rect>` carrying `rx` or `ry` is
-travelled as though its corners were sharp, where Chromium rounds them.
-That one is wrong rather than absent, and is written down rather than
-hidden.
+One case was left wrong rather than absent by that work: a `<rect>`
+carrying `rx` or `ry` was travelled as though its corners were sharp.
+The section below measures it and closes it.
 
 The measurement alone; the tests and the implementation follow.
 
@@ -3190,6 +3189,26 @@ The `rx` alone row is the one worth a test of its own, because a reading
 of the attributes that forgets the `auto` default gives a rect with
 sharp corners in one axis and nothing in the output says which half went
 wrong.
+
+**Three ways a radius can be missing, and three different answers.**
+The defaults above are the ones SVG 2 describes; the edges are not, and
+each was measured:
+
+| the rect | start point | |
+|---|---|---|
+| `rx=20 ry=0` | (0, 0) | a zero in either axis is sharp |
+| `rx=-5 ry=10` | (10, 0) | a negative value is `auto`, so it is `ry` |
+| `rx=20 ry=auto` | (0, 0) | the keyword itself is **zero** |
+
+The last is a divergence from the standard rather than a subtlety in it.
+SVG 2 §10.2 gives `auto` as the initial value of both `rx` and `ry`, and
+defines it as the other axis -- which is exactly how Chromium treats the
+attribute being *absent*. Written out, the same keyword rounds nothing.
+So `rx=20` and `rx=20 ry=auto` describe the same rectangle by the
+standard's own definition and Chromium travels them differently. This
+engine follows Chromium, because agreement with the browser is what the
+tests here are graded on, and the divergence is recorded rather than
+silently inherited.
 
 The measurement alone; the test and the implementation follow.
 

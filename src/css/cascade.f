@@ -6840,6 +6840,38 @@ arr[Len] func svgNumbers(t:text, fontSize:int) {
     return out
 }
 
+// A `<rect>`'s corner radius, which is not `svgAttrLen` because the
+// three ways it can be missing are three different answers, all
+// measured against Chromium rather than read off SVG 2 section 10.2
+// (todo.md):
+//
+//   absent        -- `auto`, which is the other axis
+//   negative      -- also `auto`; Chromium rounds `rx=-5 ry=10` by ten
+//   `auto` itself -- zero, so the corners are sharp, which is NOT what
+//                    the standard says the keyword means
+//
+// The last is a divergence and is written down as one.
+const float SVG_RADIUS_AUTO = 0.0 - 1.0
+
+float func svgRectRadius(e:Node, name:text, fontSize:int) {
+    text v = attrOf(e.id, name)
+    if v == null { return SVG_RADIUS_AUTO }
+    arr[Len] n = svgNumbers(v, fontSize)
+    if n.length == 0 { return 0.0 }
+    return n[0].v < 0.0 ? SVG_RADIUS_AUTO : n[0].v
+}
+
+// SVG 1.1 section 9.2's own equivalent path for a rounded rectangle:
+// four sides joined by four quarter-ellipse arcs, starting at
+// (x + rx, y) and running clockwise. `motionPathData` has read `A` since
+// the curve commands landed, so this needs no primitive of its own.
+text func svgRoundRectPath(x:float, y:float, w:float, h:float, rx:float, ry:float) {
+    return `M ${x + rx} ${y} H ${x + w - rx} A ${rx} ${ry} 0 0 1 ${x + w} ${y + ry}`
+        + ` V ${y + h - ry} A ${rx} ${ry} 0 0 1 ${x + w - rx} ${y + h}`
+        + ` H ${x + rx} A ${rx} ${ry} 0 0 1 ${x} ${y + h - ry}`
+        + ` V ${y + ry} A ${rx} ${ry} 0 0 1 ${x + rx} ${y} Z`
+}
+
 Len func svgAttrLen(e:Node, name:text, fontSize:int) {
     text v = attrOf(e.id, name)
     if v == null { return lenPx(0.0) }
@@ -6892,6 +6924,23 @@ void func motionFromSvgShape(mi:MotionInfo, nid:int, want:text, fontSize:int) {
         Len rw = svgAttrLen(e, 'width', fontSize)
         Len rh = svgAttrLen(e, 'height', fontSize)
         if rw.v <= 0.0 || rh.v <= 0.0 { return }
+        float crx = svgRectRadius(e, 'rx', fontSize)
+        float cry = svgRectRadius(e, 'ry', fontSize)
+        if crx == SVG_RADIUS_AUTO { crx = cry }
+        if cry == SVG_RADIUS_AUTO { cry = crx }
+        if crx == SVG_RADIUS_AUTO { crx = 0.0 }
+        if cry == SVG_RADIUS_AUTO { cry = 0.0 }
+        // Each is clamped to half its own side, which the start point
+        // alone cannot show: (50, 0) is where rx=50 starts whatever ry
+        // is, so the clamp was measured a tenth of the way round.
+        if crx > rw.v / 2.0 { crx = rw.v / 2.0 }
+        if cry > rh.v / 2.0 { cry = rh.v / 2.0 }
+        // A zero in either axis is sharp, so the polygon below still
+        // serves every rect that asks for no rounding.
+        if crx > 0.0 && cry > 0.0 {
+            mi.pathData = svgRoundRectPath(rx.v, ry.v, rw.v, rh.v, crx, cry)
+            return
+        }
         sh.kind = CLIPSHAPE_POLYGON
         sh.pointsX = [rx, lenPx(rx.v + rw.v), lenPx(rx.v + rw.v), rx]
         sh.pointsY = [ry, ry, lenPx(ry.v + rh.v), lenPx(ry.v + rh.v)]

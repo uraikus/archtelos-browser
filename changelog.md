@@ -5,6 +5,52 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `<rect>` on a motion path has its corners rounded
+
+The one case the SVG-shape work left wrong rather than absent: a `<rect>`
+carrying `rx` or `ry` was travelled as though its corners were sharp.
+
+What settled the implementation was measuring, rather than reasoning
+about, what Chromium travels. Its rounded rect agrees to the hundredth
+of a pixel with the `path()` of SVG 1.1 §9.2's own equivalent arc data,
+at 0%, 25%, 50% and 75%, and `motionPathData` has read `A` since the
+curve commands landed. So the rounded rect is path data and the feature
+is one string builder and a radius resolver -- no rounded-rectangle
+primitive, which is the fifth time the useful question has been what
+this engine already travels rather than what the feature seems to want.
+
+The radii cost a second and a third probe, because the start point
+cannot see all of them. It shows the horizontal clamp and not the
+vertical one -- `(50, 0)` is where `rx=50` starts whatever `ry` is -- so
+the per-axis clamp was measured a tenth of the way round instead, where
+`rx=80 ry=40` follows `rx=50 ry=25` and parts from `rx=50 ry=40`. And
+the three ways a radius can be missing turn out to be three answers: a
+zero in either axis is sharp, a negative value is the other axis, and
+the keyword `auto` is **zero**, where SVG 2 §10.2 defines it as the
+other axis and Chromium treats the attribute being absent exactly that
+way. The engine follows Chromium and the divergence is written down.
+
+The render suite gains twenty-two checks. Nineteen were written before
+the implementation and fifteen of them failed, every rx offset reading
+zero; the four that passed compare a coordinate the rounding does not
+move. Eight are the two spellings agreeing at each distance, three are
+offsets taken from Chromium's numbers rather than this engine's --
+rounding by `rx` moves the start point `rx` right, which agreement
+between two identical paths would never catch -- and the rest are the
+`auto` defaults and the per-axis clamp.
+
+The last three came out of the edge measurements and so were written
+after the code, which makes them the ones to justify. Two of them pass
+on the engine as it was, because a sharp rect is what both a zero radius
+and the `auto` keyword should give: they guard against a wrong
+implementation rather than an absent one. That is a weaker thing to be,
+so it was checked rather than assumed -- resolving the keyword `auto` to
+the other axis, which is what the standard says and what the absent
+attribute does here, fails `and the keyword auto is zero, not the other
+axis` by twenty pixels.
+
+`tests/render/motion.f`: 243 passed, 0 failed.
+
 ### `<rect>`, `<line>` and `<polyline>` as motion paths, and a wrong reason of my own
 
 The commit before last left these three out, on two reasons: that a

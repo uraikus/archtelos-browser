@@ -422,7 +422,15 @@ text mSvg = '<svg width="0" height="0">'
     + '<polygon id="poly" points="0,60 100,60 100,110"/>'
     + '<rect id="rect" x="0" y="60" width="100" height="50"/>'
     + '<line id="line" x1="0" y1="60" x2="100" y2="60"/>'
-    + '<polyline id="pline" points="0,60 100,60"/></svg>'
+    + '<polyline id="pline" points="0,60 100,60"/>'
+    + '<rect id="rrect" x="0" y="60" width="100" height="50" rx="20" ry="10"/>'
+    + '<rect id="rxonly" x="0" y="60" width="100" height="50" rx="20"/>'
+    + '<rect id="ryonly" x="0" y="60" width="100" height="50" ry="10"/>'
+    + '<rect id="rclamp" x="0" y="60" width="100" height="50" rx="80" ry="40"/>'
+    + '<rect id="rzero" x="0" y="60" width="100" height="50" rx="20" ry="0"/>'
+    + '<rect id="rauto" x="0" y="60" width="100" height="50" rx="20" ry="auto"/>'
+    + '<rect id="rneg" x="0" y="60" width="100" height="50" rx="-5" ry="10"/>'
+    + '</svg>'
 
 // The same page `shotMoving` builds, with an SVG the reference can find
 // and a plain div it can wrongly find.
@@ -584,5 +592,107 @@ refAt('offset-path:url(#pline);offset-distance:50%;offset-rotate:0deg')
 keepRef()
 refAt(`offset-path:polygon(0px 60px, 100px 60px);offset-distance:50%;offset-rotate:0deg`)
 check(urlX != refX, 'an open polyline is not the closed polygon of the same points')
+
+// ---- a <rect> with rx or ry -------------------------------------------
+//
+// The corners are rounded, and SVG 1.1 section 9.2 gives the equivalent
+// path for one: four straight sides joined by four quarter-ellipse arcs,
+// starting at (x + rx, y). `motionPathData` has read `A` since the curve
+// commands landed, so the rounded rect needs no primitive of its own and
+// the test is the two spellings agreeing.
+//
+// Agreement alone would not catch a rect whose radii were read wrongly,
+// so the three offset checks below come from Chromium's own numbers
+// rather than from this engine: rounding by rx moves the start point rx
+// to the right of the sharp rect's, and that is a distance a
+// misread attribute gets wrong.
+
+text func roundRectPath(x:int, y:int, w:int, h:int, rx:int, ry:int) {
+    return `M ${x + rx} ${y} H ${x + w - rx} A ${rx} ${ry} 0 0 1 ${x + w} ${y + ry}`
+        + ` V ${y + h - ry} A ${rx} ${ry} 0 0 1 ${x + w - rx} ${y + h}`
+        + ` H ${x + rx} A ${rx} ${ry} 0 0 1 ${x} ${y + h - ry}`
+        + ` V ${y + ry} A ${rx} ${ry} 0 0 1 ${x + rx} ${y} Z`
+}
+
+// The instrument: a rounded rect must not start where the sharp one
+// does, or every agreement below holds between two identical paths.
+refAt('offset-path:url(#rect);offset-distance:0%;offset-rotate:0deg')
+keepRef()
+int sharpX = urlX
+refAt('offset-path:url(#rrect);offset-distance:0%;offset-rotate:0deg')
+check(refX != sharpX, 'a rounded <rect> does not start where a sharp one starts')
+checkEqInt(refX - sharpX, 20, 'it starts rx to the right of it')
+
+refAt('offset-path:url(#ryonly);offset-distance:0%;offset-rotate:0deg')
+checkEqInt(refX - sharpX, 10, 'ry alone gives rx the same value, so ten')
+
+refAt('offset-path:url(#rclamp);offset-distance:0%;offset-rotate:0deg')
+checkEqInt(refX - sharpX, 50, 'and an rx past half the width clamps to half')
+
+// The two spellings, all the way round.
+refAt(`offset-path:url(#rrect);offset-distance:0%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 20, 10)}');offset-distance:0%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'a rounded <rect> is its equivalent path, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt(`offset-path:url(#rrect);offset-distance:25%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 20, 10)}');offset-distance:25%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'a quarter of the way round, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt(`offset-path:url(#rrect);offset-distance:50%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 20, 10)}');offset-distance:50%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'half way round, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt(`offset-path:url(#rrect);offset-distance:75%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 20, 10)}');offset-distance:75%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'three quarters round, across')
+checkEqInt(urlY, refY, 'and down')
+
+// The `auto` defaults, each read the way SVG 2 section 10.2 says. These
+// are the checks that tell which half of the attribute reading is
+// wrong, because a rect rounded in one axis only is still rounded.
+refAt(`offset-path:url(#rxonly);offset-distance:25%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 20, 20)}');offset-distance:25%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'rx alone makes ry the same, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt(`offset-path:url(#ryonly);offset-distance:25%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 10, 10)}');offset-distance:25%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'and ry alone makes rx the same, across')
+checkEqInt(urlY, refY, 'and down')
+
+// Each radius is clamped to half its own side, not to half of one of
+// them. Chromium's 25% cannot tell rx=50 ry=25 from rx=50 ry=40, so the
+// distance that can is the one to ask at.
+refAt(`offset-path:url(#rclamp);offset-distance:10%;offset-rotate:0deg`)
+keepRef()
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 50, 25)}');offset-distance:10%;offset-rotate:0deg`)
+checkEqInt(urlX, refX, 'both radii clamp to half their own side, across')
+checkEqInt(urlY, refY, 'and down')
+
+refAt(`offset-path:path('${roundRectPath(0, 60, 100, 50, 50, 40)}');offset-distance:10%;offset-rotate:0deg`)
+check(urlX != refX, 'and clamping ry is what makes that different from ry=40')
+
+// The three ways a radius can be missing are three different answers,
+// and Chromium's are not the ones SVG 2 section 10.2 describes. A zero
+// in either axis is sharp; a negative value is `auto`, so `rx=-5 ry=10`
+// rounds by ten; and the keyword `auto` itself is zero rather than the
+// other axis, which is the divergence (todo.md).
+refAt('offset-path:url(#rzero);offset-distance:0%;offset-rotate:0deg')
+checkEqInt(refX, sharpX, 'a zero radius in one axis leaves the corners sharp')
+
+refAt('offset-path:url(#rauto);offset-distance:0%;offset-rotate:0deg')
+checkEqInt(refX, sharpX, "and the keyword `auto` is zero, not the other axis")
+
+refAt('offset-path:url(#rneg);offset-distance:0%;offset-rotate:0deg')
+checkEqInt(refX - sharpX, 10, 'where a negative one IS the other axis')
 
 finish('motion path')
