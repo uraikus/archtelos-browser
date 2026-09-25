@@ -425,6 +425,40 @@ content to agree rather than by writing this engine's metrics down.
    each a separate piece of work: three in `layoutFlex`, and more in
    grid and the table.
 
+   Declared a second time with the *logical* properties -- container and
+   items sized with `inline-size` and `block-size`, so that the logical
+   layout is identical in all three modes and the physical result must
+   be one turn of the other -- the turn is exact. Container
+   `inline-size:100px; block-size:60px`, items 40x20 and 25x30 logical:
+
+   | case | mode | container | first item | second item |
+   |---|---|---|---|---|
+   | `display:flex` | `horizontal-tb` | 100x60 | 0,0 40x20 | 40,0 25x30 |
+   | | `vertical-rl` | 60x100 | 40,0 20x40 | 30,40 30x25 |
+   | | `vertical-lr` | 60x100 | 0,0 20x40 | 0,40 30x25 |
+   | `display:grid`, 40px 25px / 20px | `horizontal-tb` | 100x60 | 0,0 40x20 | 40,0 25x20 |
+   | | `vertical-rl` | 60x100 | 40,0 20x40 | 40,40 20x25 |
+   | | `vertical-lr` | 60x100 | 0,0 20x40 | 0,40 20x25 |
+   | `display:table`, one row | `horizontal-tb` | 100x60 | 0,0 62x60 | 62,0 38x60 |
+   | | `vertical-rl` | 60x100 | 0,0 60x62 | 0,62 60x38 |
+   | | `vertical-lr` | 60x100 | 0,0 60x62 | 0,62 60x38 |
+   | `columns:2; column-gap:10px` | `horizontal-tb` | 100x60 | 0,0 45x20 | 0,0 100x25 |
+   | | `vertical-rl` | 60x100 | 40,0 20x45 | 35,0 25x100 |
+   | | `vertical-lr` | 60x100 | 0,0 20x45 | 0,0 25x100 |
+
+   Every vertical rectangle is `(B - v - h, u, h, w)` for `vertical-rl`
+   and `(v, u, h, w)` for `vertical-lr`, where `(u, v, w, h)` is the
+   horizontal one and `B` the container's block extent -- which is the
+   transposition walk already at the end of the vertical flow, applied
+   to a layout these algorithms would have produced correctly had they
+   been asked for logical lengths. Two of those rows measure the
+   instrument rather than the engine and are worth naming: the table's
+   two vertical modes are identical, because cells filling the whole
+   block extent leave the block direction's reversal invisible, so that
+   pair cannot tell `vertical-rl` from `vertical-lr`; and multicol's
+   second item is the union of two fragments, since it is split across
+   both columns.
+
 2. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
