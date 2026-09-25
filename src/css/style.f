@@ -634,6 +634,18 @@ bool anySticky = false
 // is itself a cost").
 bool anyFilter = false
 
+// Whether any element on the page carries a `mask-image` this engine
+// can paint. Same shape of flag as `anyFilter`, and for the same
+// reason: a page without one must not reach the masking code at all.
+bool anyMask = false
+
+// `mask-mode`. `match-source` reads a CSS image's ALPHA channel, which
+// is what makes a white-to-black gradient mask nothing at all -- both
+// ends are opaque. Only `luminance` reads the colour (todo.md).
+const int MASKMODE_MATCH = 0
+const int MASKMODE_ALPHA = 1
+const int MASKMODE_LUMINANCE = 2
+
 MotionInfo func motionInfoOf(idx:int) {
     if idx <= 0 || idx > motionInfos.length {
         MotionInfo none
@@ -752,6 +764,21 @@ struct FilterSpec {
 }
 
 arr[FilterSpec] filterSpecs = []
+
+// A mask layer. `mask-*` is `background-*` with the result used as
+// alpha, so the geometry is a BgLayer rather than a second copy of the
+// same five questions, and only the mode is new.
+struct MaskSpec {
+    layer:BgLayer
+    mode:int
+}
+
+arr[MaskSpec] maskSpecs = []
+
+MaskSpec func maskSpecOf(idx:int) {
+    if idx <= 0 || idx > maskSpecs.length { return null }
+    return maskSpecs[idx - 1]
+}
 
 FilterSpec func filterSpecOf(idx:int) {
     if idx <= 0 || idx > filterSpecs.length { return null }
@@ -1494,6 +1521,8 @@ struct Style {
     cornerShapes:int
     // `filter`, as a 1-based index into filterSpecs; 0 for `none`.
     filterIdx:int
+    // `mask`, as a 1-based index into maskSpecs; 0 for no mask.
+    maskIdx:int
     anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool

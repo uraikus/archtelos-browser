@@ -267,6 +267,8 @@ void func cascadeReset() {
     anySticky = false
     anyFilter = false
     filterSpecs = []
+    anyMask = false
+    maskSpecs = []
     insetRadiiList = []
     motionInfos = []
     anyClipMargin = false
@@ -2702,6 +2704,65 @@ int func parseBgOrigin(v:ascii) {
     if low == 'border-box' { return BGORIGIN_BORDER }
     if low == 'content-box' { return BGORIGIN_CONTENT }
     return BGORIGIN_PADDING
+}
+
+// ---- CSS Masking 1: the mask layer ------------------------------------
+//
+// `mask-*` is `background-*` with the result used as alpha, so the
+// geometry is read with the background readers rather than a second
+// copy of the same five questions. Two of the initial values differ and
+// both were measured rather than read off: `mask-origin` is the BORDER
+// box, where `background-origin` is the padding box, and `mask-clip` is
+// the border box like `background-clip`.
+//
+// Only a linear gradient is painted. A `url()` mask needs that image's
+// own alpha per pixel, which is FINDINGS.md finding 35 -- the same block
+// that leaves a bitmap image unfiltered -- and a radial or conic one
+// needs its own projection, which is written down rather than guessed
+// at. A mask this engine cannot paint leaves `maskIdx` at zero, so the
+// element renders unmasked rather than half-masked.
+int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
+    ascii mi = styleProp(props, 'mask-image')
+    if mi == null { return 0 }
+    ascii one = asciiTrim(layerValue(mi, 0))
+    if one == null || one.length == 0 { return 0 }
+    if asciiLower(one) == 'none' { return 0 }
+    Gradient g = parseGradient(one, currentColor, fontSize)
+    if !g.present || g.radial || g.conic { return 0 }
+    MaskSpec spec
+    BgLayer l
+    l.url = null
+    l.fadeUrl = null
+    l.fade = 0.0 - 1.0
+    l.image = g
+    parseBgRepeat(layerValue(styleProp(props, 'mask-repeat'), 0))
+    l.repeatX = bgRepeatXOut
+    l.repeatY = bgRepeatYOut
+    ascii px = layerValue(styleProp(props, 'mask-position-x'), 0)
+    ascii py = layerValue(styleProp(props, 'mask-position-y'), 0)
+    l.posX = px == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(px), true, fontSize)
+    l.posY = py == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(py), false, fontSize)
+    parseBgSize(layerValue(styleProp(props, 'mask-size'), 0), fontSize)
+    l.sizeKind = bgSizeKindOut
+    l.sizeW = bgSizeWOut
+    l.sizeH = bgSizeHOut
+    ascii clip = layerValue(styleProp(props, 'mask-clip'), 0)
+    l.clip = clip == null ? BGCLIP_BORDER : parseBgClip(clip)
+    // The one initial value that is not the background's: the border
+    // box, measured against Chromium (todo.md).
+    ascii orig = layerValue(styleProp(props, 'mask-origin'), 0)
+    l.origin = orig == null ? BGORIGIN_BORDER : parseBgOrigin(orig)
+    l.fixed = false
+    spec.layer = l
+    ascii md = styleProp(props, 'mask-mode')
+    spec.mode = MASKMODE_MATCH
+    if md != null {
+        ascii m = asciiLower(asciiTrim(md))
+        if m == 'alpha' { spec.mode = MASKMODE_ALPHA }
+        else if m == 'luminance' { spec.mode = MASKMODE_LUMINANCE }
+    }
+    maskSpecs.push(spec)
+    return maskSpecs.length
 }
 
 // Everything but the image itself, for one layer past the first.
@@ -8203,6 +8264,11 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }
         if aScope != '' { anyAnchorScope = true }
+    }
+    // CSS Masking 1's mask, held the same way as the filter below it.
+    if styleProp(props, 'mask-image') != null {
+        s.maskIdx = parseMaskLayer(props, s.color, s.fontSize)
+        if s.maskIdx > 0 { anyMask = true }
     }
     // CSS Filter Effects 1. One index on the Style and a flag for the
     // page, so a document with no `filter` reaches none of the painter's
