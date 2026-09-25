@@ -4029,3 +4029,37 @@ survive that question rather than the thing that prompts it.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## The colour filters cost the pages that have none nothing, measured
+
+CSS Filter Effects 1's eight colour functions. Unlike most of the
+sections above this one, the change does put something in the hot path:
+`paintFill` gains a guard on every fill, and `boxPaintsWhole` gains a
+test asked of every box in every paint walk. So the question is a real
+one here rather than a phantom hunt.
+
+Twenty-five alternating samples at 800px, idle at 0.16 to 0.24, on both
+benchmark pages, neither of which carries a `filter`:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | 0 | -1 | **0** |
+| `features.html`, round 2 | 0 | 0 | 0 | 0 | **0** |
+| `generated.html` | 0 | 0 | 0 | +1 | **0** |
+
+Paint is the phase to read and it is zero on every round. The two
+forward rounds on `features.html` agree with each other at zero on every
+phase, so nothing earns a question and no mirror or control was spent --
+which is the rule from the section above this one being followed rather
+than restated. Layout's -1 and +1 are one round each and land on a phase
+that runs no line of the diff.
+
+The guard is what makes this so, and it is written the way the
+`:is()` section argued for: `anyFilter && paintFilters.length > 0` at
+each call site, short-circuiting, rather than a call into a function
+that decides. A page with no `filter` never reaches the filter code and
+never makes the call to find that out.
+
+The binary grows 9,536 bytes, the largest of any change measured on
+these pages, and moves nothing. Both binaries render `generated.html`
+and `features.html` byte-identically, `cmp`-checked before any timing.
