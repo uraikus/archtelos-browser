@@ -21,6 +21,11 @@ that does not exist, because both are invalid. Its instrument asks that
 an unknown keyword and a valid one land in different places, or the four
 checks would hold on an engine that accepted everything.
 
+**Cost: nothing.** The two binaries are the same size to the byte, and
+`anchorSidePct` runs only for a declaration that contains an `anchor()`.
+Paired on `generated.html`, two forward rounds give a total of 0 and
+then +2, which do not agree.
+
 **Three of the four findings from that probe are not in this change**,
 and todo.md carries Chromium's numbers for each. `start` and `end`
 follow the containing block's inline direction where the property's axis
