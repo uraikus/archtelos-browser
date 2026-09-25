@@ -4105,3 +4105,21 @@ question; no mirror, no control. The binary grows 4,448 bytes.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## mask-composite, and a binary that got smaller
+
+The rule again, and again in one line: every line of the change is
+inside the mask code, which neither benchmark page enters. Twenty-five
+alternating samples at 800px, twice: layout -3 then 0, paint -1 then 0,
+cascade 0 then -1. The forward rounds disagree on every phase that moved
+at all, so nothing earned a question and no mirror or control was spent.
+
+One thing is worth a sentence. The binary **shrank** by 368 bytes while
+gaining a feature, because the layer resolution moved out of eighteen
+module globals into one `MaskPrep` struct held in an array. Every other
+entry in this file records a change that grew the binary and moved no
+time; this is the first that shrank it and moved no time either, which
+is the same conclusion from the other side.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
