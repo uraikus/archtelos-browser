@@ -1680,13 +1680,6 @@ void func wmRotateEdges(b:Box, s:Style, cw:int) {
     b.mb = resolveLen(rl ? s.marginLeft : s.marginRight, cw, 0)
 }
 
-// What an orthogonal flow fills when its containing block's block size
-// is indefinite. Chromium clamps to the viewport there; nothing at
-// layout time here knows the viewport's height, so the inline size is
-// left unclamped, which is the same answer on any viewport tall enough
-// to hold the content. todo.md records the divergence.
-const int WM_UNBOUNDED = 1000000
-
 // The quarter turn. Every box, line and fragment under `root` holds a
 // LOGICAL rectangle -- x along the inline axis, y along the block axis
 // -- and this is the one place they become physical ones. The map is a
@@ -2687,13 +2680,17 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // The inline size of an ORTHOGONAL flow is not the containing
     // block's inline size, because that axis is the containing block's
     // BLOCK axis: it shrinks to fit, clamped to the containing block's
-    // block size where that is definite (todo.md has Chromium's
-    // answers). WM_UNBOUNDED stands for an indefinite one, where
-    // Chromium clamps to the viewport and nothing here knows its
-    // height.
+    // block size where that is definite, and to the VIEWPORT where it
+    // is not (todo.md has Chromium's answers for both).
     bool wmVert = anyVerticalWM && s0.writingMode != WM_HORIZONTAL_TB
     bool wmRoot = wmVert && wmStartsVerticalFlow(b)
-    if wmRoot { cw = layoutCBHeight >= 0 ? layoutCBHeight : WM_UNBOUNDED }
+    // An indefinite containing block clamps to the VIEWPORT, which is
+    // what Chromium does at every height measured (todo.md) and which
+    // `cssViewportHeight` has been able to answer all along -- the `vh`
+    // unit and `layoutPositioned` both read it.
+    if wmRoot {
+        cw = layoutCBHeight >= 0 ? layoutCBHeight : maxInt(cssViewportHeight, 0)
+    }
     resolveEdges(b, cw)
     Style s = b.style
     if topMarginApplied { b.mt = 0 }

@@ -4302,3 +4302,24 @@ reading this file has ever traced to work ran 18 or 19.
 
 The binary grows 232 bytes. Both binaries render `generated.html` and
 `features.html` byte-identically, `cmp`-checked before any timing.
+
+## The viewport clamp, which is one expression
+
+`WM_UNBOUNDED` gone and `cssViewportHeight` in its place, in the one
+branch that runs where a vertical flow begins -- which neither benchmark
+page has. Twenty-five alternating samples at 800px, idle:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | -1 | -3 | 0 | -6 |
+| `features.html`, round 2 | 0 | 0 | -1 | +1 | 0 | 0 |
+
+Layout disagrees with itself between the rounds, cascade agrees at -1
+while running no line of a diff that is one expression inside
+`layoutBlock`, and both totals are at or below zero. Nothing earned a
+question.
+
+The binary **shrinks** by 40 bytes: a constant went away and a global
+took its place. That is the second entry in this file to record a
+smaller binary, and the first where the reason is a line deleted rather
+than a structure changed.

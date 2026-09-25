@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An orthogonal flow clamps to the viewport
+
+An orthogonal flow whose containing block has no definite block size now
+takes the **viewport's height** as its inline size, which is what
+Chromium does at every window height measured -- 200, 300, 400, 600, 900
+and 1400 all give a box exactly that tall, its block extent falling as
+the reciprocal.
+
+**The reason recorded for not doing it was wrong**, and worth keeping as
+a lesson rather than quietly deleting: it said nothing at layout time
+knows the viewport's height. `cssViewportHeight` is a global in
+`src/css/parser.f`, set by `setCssViewport`, read by the `vh`, `vmin`
+and `vmax` units and by `layoutPositioned` -- which lives in the same
+file as the clamp that was left unbounded for want of it. That is the
+failure CLAUDE.md names, a sentence about this engine written from
+memory rather than run, and it was written in the same stretch of work
+that quoted the rule.
+
+The check sets two different viewports and asks for the number back, so
+a constant cannot satisfy it.
+
 ### `sideways-rl` and `sideways-lr`
 
 The last two of CSS Writing Modes 4's four vertical modes, which

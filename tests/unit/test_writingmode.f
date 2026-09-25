@@ -209,4 +209,33 @@ checkEqInt(ksl[2].x - ksl[0].x, klr[2].x - klr[0].x, 'and the second')
 // check above would hold on an engine that treated all four alike.
 check(krl[1].x != klr[1].x, 'the rl modes and the lr modes really do differ')
 
+// ---- an indefinite containing block clamps to the viewport ------------
+// Chromium's table is in todo.md: the inline size of an orthogonal flow
+// whose containing block has no definite block size is the viewport's
+// height, at every height measured. The check sets two different
+// viewports and asks for the number back, so it cannot be satisfied by
+// a constant.
+text WMLONG = 'ab cd ef gh ij kl mn op qr st uv wx yz ' +
+              'ab cd ef gh ij kl mn op qr st uv wx yz ' +
+              'ab cd ef gh ij kl mn op qr st uv wx yz ' +
+              'ab cd ef gh ij kl mn op qr st uv wx yz '
+
+int func wmUnboundedExtent(vh:int) {
+    setCssViewport(800, vh)
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `</style></head><body><div style="width:400px">` +
+        `<div id="v" style="writing-mode:vertical-rl">${WMLONG}</div>` +
+        `</div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return all[1].h
+}
+
+int at250 = wmUnboundedExtent(250)
+int at500 = wmUnboundedExtent(500)
+setCssViewport(800, 600)
+checkEqInt(at250, 250, 'an indefinite containing block clamps to the viewport')
+checkEqInt(at500, 500, 'and follows it when it changes')
+
 finish('writing-mode')

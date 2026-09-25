@@ -369,7 +369,8 @@ through the same segment walk the horizontal painter uses, inside the
 turn. **All four vertical modes** are there: `sideways-rl` lays out as
 `vertical-rl` does, and `sideways-lr` as `vertical-lr` with its inline
 axis reversed in the transposition walk and its glyphs turned the other
-way by the painter.
+way by the painter. An orthogonal flow whose containing block has no
+definite block size clamps to the **viewport**, as Chromium's does.
 `tests/unit/test_writingmode.f` and `tests/render/writingmode.f` grade
 it, both by asking the horizontal and the vertical layout of the same
 content to agree rather than by writing this engine's metrics down.
@@ -381,32 +382,7 @@ content to agree rather than by writing this engine's metrics down.
    physical axes: those algorithms read `s.width` and `s.height`
    directly rather than through the one pair of lengths `layoutBlock`
    exchanges. Each is the same exchange again, in its own file.
-2. **An indefinite containing block.** Chromium clamps an orthogonal
-   flow to the viewport there, exactly:
-
-   | window height | the vertical box | `window.innerHeight` |
-   |---|---|---|
-   | 200 | 216x200 | 200 |
-   | 300 | 144x300 | 300 |
-   | 400 | 108x400 | 400 |
-   | 600 | 72x600 | 600 |
-   | 900 | 54x900 | 900 |
-   | 1400 | 36x1400 | 1400 |
-
-   The inline size is the viewport's height in every case and the block
-   extent falls as the reciprocal, which is the same content rewrapped.
-
-   **And the reason written down for not doing it was wrong.** It said
-   nothing at layout time here knows the viewport's height. `cssViewportHeight`
-   is a global in `src/css/parser.f`, set by `setCssViewport`, read by the
-   `vh`, `vmin` and `vmax` units and by `layoutPositioned` in the same
-   file the clamp is in. That is the failure CLAUDE.md names -- a
-   sentence about what this engine does, written from memory instead of
-   run -- and it is the one that was written *while* the rule was being
-   quoted in the commit beside it.
-
-   The measurement alone; the tests and the implementation follow.
-3. **Auto margins, `anchor()` and the scroll box.** An auto margin on
+2. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
    physical sides whatever the mode says; and a scroll container inside
