@@ -4630,6 +4630,43 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
     layoutTableWithWidths(b, cx, y, cw, widths, spacing, edges, target, fixedWidth)
 }
 
+// Grows every cell in a row to the row's height and applies the cell's
+// vertical alignment to the space that adds. Called once as the row is
+// laid out, and again by the post-pass below when a declared table
+// height makes the row taller: the second call sees `cell.h` at the old
+// row height, so the shift it applies is the one the growth adds, and
+// the two compose.
+void func tableStretchRow(row:Box, rowH:int) {
+    for int j = 0, j < row.children.length, j++ {
+        Box cell = row.children[j]
+        int extra = rowH - cell.h
+        if extra > 0 {
+            int va = cell.style.verticalAlign
+            text valign = textLower(getAttr(cell.node, 'valign'))
+            if valign == 'top' { va = VALIGN_TOP }
+            else if valign == 'bottom' { va = VALIGN_BOTTOM }
+            else if valign == 'middle' { va = VALIGN_MIDDLE }
+            int shift = 0
+            if va == VALIGN_MIDDLE || va == VALIGN_BASELINE { shift = Math.floorDiv(extra, 2) }
+            else if va == VALIGN_BOTTOM { shift = extra }
+            if shift > 0 {
+                for int k = 0, k < cell.children.length, k++ { offsetBox(cell.children[k], 0, shift) }
+                for int k = 0, k < cell.lines.length, k++ {
+                    Line ln = cell.lines[k]
+                    ln.y = ln.y + shift
+                    ln.baseline = ln.baseline + shift
+                    for int m = 0, m < ln.frags.length, m++ {
+                        Fragment f = ln.frags[m]
+                        f.y = f.y + shift
+                        f.baseline = f.baseline + shift
+                    }
+                }
+            }
+            cell.h = rowH
+        }
+    }
+}
+
 // Everything after the column widths are known: the table's own width,
 // its margins, then the rows and cells placed into those widths. Both
 // column algorithms end here, which is what keeps `table-layout: fixed`
@@ -4665,6 +4702,8 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
     }
     rowY = rowY + spacing
     int rowIndex = 0
+    arr[Box] tblRows = []
+    arr[int] tblRowH = []
     for int i = 0, i < b.children.length, i++ {
         Box row = b.children[i]
         if row.kind != BOX_ROW { continue }
@@ -4695,37 +4734,49 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
         if rh != null && rh.toInt() != null { rowH = maxInt(rowH, rh.toInt()) }
         Len rowBlock = twVert ? row.style.width : row.style.height
         if rowBlock.kind == LEN_PX { rowH = maxInt(rowH, roundPx(rowBlock.v)) }
-        // stretch cells to the row height and apply vertical alignment
-        for int j = 0, j < row.children.length, j++ {
-            Box cell = row.children[j]
-            int extra = rowH - cell.h
-            if extra > 0 {
-                int va = cell.style.verticalAlign
-                text valign = textLower(getAttr(cell.node, 'valign'))
-                if valign == 'top' { va = VALIGN_TOP }
-                else if valign == 'bottom' { va = VALIGN_BOTTOM }
-                else if valign == 'middle' { va = VALIGN_MIDDLE }
-                int shift = 0
-                if va == VALIGN_MIDDLE || va == VALIGN_BASELINE { shift = Math.floorDiv(extra, 2) }
-                else if va == VALIGN_BOTTOM { shift = extra }
-                if shift > 0 {
-                    for int k = 0, k < cell.children.length, k++ { offsetBox(cell.children[k], 0, shift) }
-                    for int k = 0, k < cell.lines.length, k++ {
-                        Line ln = cell.lines[k]
-                        ln.y = ln.y + shift
-                        ln.baseline = ln.baseline + shift
-                        for int m = 0, m < ln.frags.length, m++ {
-                            Fragment f = ln.frags[m]
-                            f.y = f.y + shift
-                            f.baseline = f.baseline + shift
-                        }
-                    }
-                }
-                cell.h = rowH
-            }
-        }
+        tableStretchRow(row, rowH)
         row.h = rowH
+        tblRows.push(row)
+        tblRowH.push(rowH)
         rowY = rowY + rowH + spacing
+    }
+    // A height on a table is a MINIMUM, and the surplus over what its
+    // rows need is shared among them in proportion to their own heights
+    // -- not equally, and not to the last row (CSS2 17.5.3). todo.md has
+    // Chromium's seven fixtures, including the one that says it is a
+    // minimum: a height under what the rows need is ignored, and the
+    // table stays as tall as they are. A row's own declared height feeds
+    // the proportion rather than being exempt from it, which falls out
+    // of scaling the row heights the loop above arrived at.
+    //
+    // Nothing here runs on a table that declares no height, which is
+    // every table the user-agent stylesheet makes.
+    Len tblH = twVert ? s.width : s.height
+    int tblGrewTo = 0 - 1
+    if tblH.kind == LEN_PX && tblRows.length > 0 {
+        int wantContent = roundPx(tblH.v)
+        if s.boxSizing == BOX_BORDER {
+            wantContent = wantContent - b.pt - b.pb - b.bt - b.bb
+        }
+        int rowsTotal = 0
+        for int i = 0, i < tblRowH.length, i++ { rowsTotal = rowsTotal + tblRowH[i] }
+        int surplus = wantContent - (rowY - contentY(b))
+        if surplus > 0 && rowsTotal > 0 {
+            int target = rowsTotal + surplus
+            int shift = 0
+            for int i = 0, i < tblRows.length, i++ {
+                Box row = tblRows[i]
+                if shift != 0 { offsetBox(row, 0, shift) }
+                int newH = roundPx(tblRowH[i].toFloat() * target.toFloat() / rowsTotal.toFloat())
+                if newH > tblRowH[i] {
+                    tableStretchRow(row, newH)
+                    row.h = newH
+                    shift = shift + newH - tblRowH[i]
+                }
+            }
+            rowY = rowY + shift
+            tblGrewTo = wantContent
+        }
     }
     // the caption that was held back goes under the last row
     if captionBelow {
@@ -4738,6 +4789,13 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
         }
     }
     b.h = rowY - b.y + b.pb + b.bb
+    // The table keeps the height it was told even where the rows, each
+    // rounded on its own, sum to one more -- 50 and 30 scaled to 100 are
+    // 63 and 38, and Chromium leaves the last row overflowing by a pixel
+    // rather than handing it the remainder (todo.md).
+    if tblGrewTo >= 0 {
+        b.h = tblGrewTo + b.pt + b.pb + b.bt + b.bb
+    }
     b.baseline = b.h
 }
 

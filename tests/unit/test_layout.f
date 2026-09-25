@@ -501,4 +501,79 @@ checkEqInt(gridItemH('height:fit-content').h, 60, 'and `fit-content`')
 check(gridItemH('height:min-content').h < stretched,
     'all three stop the stretch, which is the whole of what they do here')
 
+// ---- a definite table height reaches its rows (CSS2 17.5.3) --------------
+// A height on a table is a MINIMUM, and the surplus over what the rows
+// need is distributed among them in proportion to their own heights --
+// not equally, and not to the last row. todo.md has Chromium's seven
+// fixtures. This engine left the rows at their content heights, so the
+// declaration changed nothing at all.
+//
+// The checks are written as proportions rather than as the six numbers,
+// because a proportion holds whatever the rows' content heights turn out
+// to be: doubling the table doubles every row, and the ratio between two
+// rows survives. Only the two that pin the *shape* of the rule -- that it
+// is a minimum, and that it reaches the rows at all -- name a number, and
+// those two come from the table's own declaration rather than from a font
+// metric.
+
+arr[int] func tblRowHeights(tableCss:text, rows:text) {
+    Box root = layoutHtml(
+        `<body style="margin:0"><table style="border-spacing:0;width:100px;${tableCss}">` +
+        `${rows}</table></body>`, 400)
+    Box t = findBox(root, 'table')
+    arr[Box] cells = []
+    collectBoxesForTag(t, 'td', cells)
+    arr[int] out = []
+    out.push(t.h)
+    for int i = 0, i < cells.length, i++ { out.push(cells[i].h) }
+    return out
+}
+
+text THR2 = '<tr><td style="padding:0;height:20px"></td></tr>' +
+           '<tr><td style="padding:0;height:30px"></td></tr>'
+
+arr[int] thAuto = tblRowHeights('', THR2)
+arr[int] th60 = tblRowHeights('height:60px', THR2)
+arr[int] th100 = tblRowHeights('height:100px', THR2)
+arr[int] th40 = tblRowHeights('height:40px', THR2)
+
+// It reaches the rows at all: the table is as tall as it was told, and
+// the rows grew rather than one gap absorbing the difference.
+checkEqInt(th60[0], 60, 'a table takes the height it is given')
+checkEqInt(th60[1] + th60[2], 60, 'and its rows fill it')
+checkEqInt(th100[0], 100, 'at another height too')
+checkEqInt(th100[1] + th100[2], 100, 'whose rows fill it as well')
+
+// The proportion, which needs neither row's own height to be known:
+// doubling the surplus doubles each row's share of it.
+checkEqInt(th100[1], thAuto[1] * 2, 'twice the auto height gives the first row twice its own')
+checkEqInt(th100[2], thAuto[2] * 2, 'and the second row twice its own')
+checkEqInt(th60[1] * 5, thAuto[1] * 6, 'and six fifths of its own at six tenths the height')
+
+// A minimum, not a size: a height under what the rows need is ignored.
+checkEqInt(th40[0], thAuto[0], 'a height less than the rows need is ignored')
+checkEqInt(th40[1], thAuto[1], 'and leaves the first row alone')
+checkEqInt(th40[2], thAuto[2], 'and the second')
+
+// The instrument: if the auto table were already as tall as the declared
+// one, every check above would hold without the rows moving.
+check(thAuto[0] < 60, 'the auto table really is shorter than the declared one')
+check(thAuto[1] != thAuto[2], 'and its two rows really do differ, so a ratio means something')
+
+// A row's own declared height feeds the proportion rather than being
+// exempt from it.
+arr[int] thRow = tblRowHeights('height:100px',
+    '<tr style="height:50px"><td style="padding:0"></td></tr>' +
+    '<tr><td style="padding:0;height:30px"></td></tr>')
+checkEqInt(thRow[0], 100, 'a row asking for a height still lands in a table of 100')
+check(thRow[1] > 50, 'and is scaled up rather than left at what it asked for')
+// Each row is rounded on its own, which is what Chromium does, so 50 and
+// 30 scaled to 100 are 63 and 38 -- and those sum to 101 against a table
+// of 100, the last row overflowing by a pixel rather than being handed
+// the remainder. Numbers rather than a ratio here, because the rounding
+// is part of the answer and a ratio would be satisfied by neither.
+checkEqInt(thRow[1], 63, 'the first row is its own share of 100, rounded on its own')
+checkEqInt(thRow[2], 38, 'and the second is its own')
+check(thRow[1] + thRow[2] > thRow[0], 'so the two together overflow the table by a pixel')
+
 finish('layout')

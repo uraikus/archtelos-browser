@@ -582,7 +582,12 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **A table row does not stretch to a definite table block size, and
+1. **`column-fill: auto` breaks a column early.** The table half of this
+   item has landed -- a definite height reaches the rows in proportion to
+   their own heights, all seven of Chromium's fixtures agreeing -- and
+   the multicol half has not. The original wording of both follows.
+
+   **A table row does not stretch to a definite table block size, and
    `column-fill: auto` breaks a column early.** Both found by the
    fixtures above, and both are gaps in the *horizontal* engine that the
    vertical work only walked past: `display:table` with

@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A definite height on a table reaches its rows (CSS2 17.5.3)
+
+`<table style="height: 60px">` over rows needing 50 left the rows at
+their content heights and the table as tall as their sum, so the
+declaration changed nothing at all. All seven of Chromium's fixtures now
+match, and three of them are the rule:
+
+| rows | table | before | now, and Chromium |
+|---|---|---|---|
+| 20, 30 | `60px` | 100x50, rows 20/30 | 100x60, rows **24/36** |
+| 20, 30 | `100px` | 100x50, rows 20/30 | 100x100, rows **40/60** |
+| 10, 20, 30 | `120px` | 100x60, rows 10/20/30 | 100x120, rows **20/40/60** |
+| 50 (on the row), 30 | `100px` | 100x80 | 100x100, rows **63/38** |
+| 20, 30 | `40px` | 100x50, rows 20/30 | unchanged |
+
+**The surplus is shared in proportion to each row's own height**, not
+equally and not to the last row -- which is why 20 and 30 in 60 are 24
+and 36, both scaled by 1.2, and in 100 are 40 and 60, both scaled by 2.
+A row's own declared height feeds the proportion rather than being
+exempt from it, which falls out of scaling the heights the row loop
+already arrived at. And **a declared height is a minimum**: `40px`
+against 50 of content is ignored, and the table stays 50 tall.
+
+The cell stretch is now a function, because the post-pass calls it a
+second time to grow a row. The second call sees `cell.h` at the old row
+height, so the vertical-align shift it applies is the one the growth
+adds, and the two compose rather than double-counting.
+
+**Each row is rounded on its own, as Chromium rounds them**, so 50 and 30
+scaled to 100 are 63 and 38 -- which sum to 101. The table keeps the
+height it was told and the last row overflows by a pixel, rather than the
+remainder being handed to it. The checks name numbers only there, because
+the rounding is part of the answer and a ratio would be satisfied by
+neither; everywhere else they are proportions, which hold whatever the
+rows' content heights turn out to be.
+
+**Found by the writing-mode fixtures**, which walked past it: a
+`display:table` with `block-size` came out 100x50 where Chromium gives
+100x60, and the agreement checks could not see it because both sides of
+the turn shared the gap.
+
 ### A physical side on the wrong axis is invalid in `anchor()`
 
 `top: anchor(--a left)` names a horizontal edge for a vertical inset.
