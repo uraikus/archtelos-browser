@@ -31,6 +31,12 @@ ways: every horizontal row agrees, so the instrument is not broken; the
 in-flow row agrees in both vertical modes, so the turn itself is right;
 and only the out-of-flow rows differed.
 
+**Cost: nothing, and the binary says so before the benchmark does.**
+The two binaries are the same size to the byte, because the predicate
+sits behind `wmVert &&` and a page that never says `writing-mode` does
+not call it at all. Paired on `generated.html`, two forward rounds give
+a total of -1 and then +1, with 9 and 13 of 25 pairs slower.
+
 **What is still wrong, and asserted so that fixing it says so.** The
 static position -- where an un-inset out-of-flow box goes -- is recorded
 by the flow in logical coordinates and nothing turns it. `horizontal-tb`
