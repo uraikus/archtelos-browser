@@ -342,6 +342,39 @@ A declaration naming a bitmap is dropped whole rather than
 half-applied, so such an element renders unmasked, and `@supports`
 answers no for it.
 
+### `isolation`, and two stacking contexts this engine does not declare
+
+`isolation: isolate` is in the property instrument's work list and looks
+like a property about blending, which this engine cannot do: a blend
+mode needs the destination pixel, `getPixelColor` returns a `color` with
+no accessor, and there is no composite-mode builtin either -- the whole
+graphics surface is `fillStyle`, `fillAlpha`, `drawRect`, `drawCircle`,
+`drawText`, `drawImage`, `drawPixel`, `clearPixel`, `fillPath`,
+`strokePath`, the two literal-only gradient fills, `clip` and
+`getPixelColor`. So `mix-blend-mode` and `background-blend-mode` are
+genuinely blocked, and that was checked by listing the builtins rather
+than assumed.
+
+**`isolation` is not blocked, because it is not only about blending.**
+It creates a stacking context, and a stacking context confines a
+descendant's `z-index`, which changes pixels in an engine that already
+implements CSS2 §9.9. Measured: a `z-index: 5` child inside a wrapper,
+against a `z-index: 2` sibling of that wrapper --
+
+| | painted |
+|---|---|
+| wrapper with no `isolation` | `#ff0000`, the child escaping to the top |
+| wrapper with `isolation: isolate` | `#0000ff`, the child confined and the sibling above it |
+
+**And two more are already true here without being declared.** A
+`filter` and a `mask` each create a stacking context by the standard,
+and both were given `boxPaintsWhole` when they landed, which is what
+makes the subtree reach one layer -- but neither was added to
+`boxIsStackingContext`, so a positioned descendant's `z-index` still
+escapes them. That is a bug the two features shipped with, found by
+reading the predicate next door rather than by a test, and it is fixed
+with `isolation` because it is the same line.
+
 ### What is left of Filter Effects 1
 
 The eight colour functions are in. What follows is the reason they were
