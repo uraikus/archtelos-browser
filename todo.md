@@ -491,11 +491,60 @@ reads one global and nothing else.
    and also its one blind spot, which is why the horizontal numbers
    above are written down beside Chromium's.
 
-2. **Auto margins, `anchor()` and the scroll box.** An auto margin on
-   an orthogonal flow centres in the physical axis rather than the
-   logical one; the anchor functions' `start` and `end` are the
-   physical sides whatever the mode says; and a scroll container inside
-   a vertical flow reserves its bar on the physical axis.
+2. **An auto margin on an orthogonal flow, measured.** A 200x100
+   horizontal block holding a flow of `inline-size:40px;
+   block-size:30px`, so the inner box is 40x30 laid out horizontally
+   and 30x40 turned. Chromium, beside this engine, the rectangle given
+   relative to the outer block:
+
+   | declaration | mode | Chromium | this engine |
+   |---|---|---|---|
+   | `margin: 0 auto` | `horizontal-tb` | 80,0 40x30 | 80,0 40x30 |
+   | `margin-inline: auto` | | 80,0 40x30 | 80,0 40x30 |
+   | `margin-block: auto` | | 0,0 40x30 | 0,0 40x30 |
+   | `margin-left: auto` | | 160,0 40x30 | 160,0 40x30 |
+   | `margin-inline-start: auto` | | 160,0 40x30 | 160,0 40x30 |
+   | `margin-top: auto` | | 0,0 40x30 | 0,0 40x30 |
+   | `margin: 0 auto` | `vertical-rl` | **85,0** 30x40 | 0,30 30x40 |
+   | `margin-inline: auto` | | **0,0** 30x40 | 0,30 30x40 |
+   | `margin-block: auto` | | **85,0** 30x40 | 0,0 30x40 |
+   | `margin-left: auto` | | **170,0** 30x40 | 0,60 30x40 |
+   | `margin-inline-start: auto` | | 0,0 30x40 | 0,0 30x40 |
+   | `margin-top: auto` | | 0,0 30x40 | 0,0 30x40 |
+
+   The six horizontal rows agree exactly, which is what makes the six
+   vertical ones evidence rather than noise. And what they say is that
+   **there is no orthogonal-flow rule to implement.** Two ordinary
+   rules, composed, give every row:
+
+   1. A logical margin property maps through the **element's own**
+      writing mode. `margin-block` on a `vertical-rl` box is its left
+      and right margins; `margin-inline` is its top and bottom. This
+      engine already does that -- `margin-inline-start: auto` gives
+      `0,0` in both engines because it is `margin-top` and a top margin
+      of `auto` computes to zero.
+   2. An auto margin is resolved against the **containing block's**
+      inline axis, which here is the page's horizontal. So
+      `margin-block: auto` centres the turned box at 85 and
+      `margin-left: auto` pushes it to 170, while `margin-inline: auto`
+      does nothing at all: it is the top and bottom pair, and the
+      containing block's block axis does not centre.
+
+   This engine gets every vertical row wrong the same way, and the way
+   says what the fix is: it resolves the auto margins **inside the
+   logical space**, before the transposition walk. `margin: 0 auto`
+   lands at `0,30`, and 30 is `(100 - 40) / 2` -- the box centred in the
+   outer block's *height*, because in logical space that height is the
+   inline axis and `cw` was clamped to it. `margin-left: auto` gives
+   `0,60`, which is the same mistake pushed to one end. So the auto
+   margins of a flow that starts a vertical subtree belong **after** the
+   turn, resolved against the containing block's own inline size rather
+   than the clamped one the logical layout ran with.
+
+3. **`anchor()`'s sides and the scroll box.** The anchor functions'
+   `start` and `end` are the physical sides whatever the mode says, and
+   a scroll container inside a vertical flow reserves its bar on the
+   physical axis. Neither is measured yet.
 
 ### What is left of the masks
 
