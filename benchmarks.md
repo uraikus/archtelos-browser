@@ -4123,3 +4123,50 @@ is the same conclusion from the other side.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## The strongest shape this file recognises, from code that cannot run
+
+CSS2 §9.9's hoisting, with `isolation`. This one is worth the space,
+because it produced every signal this file calls real and was still
+nothing.
+
+Paired against its parent on `features.html`, twenty-five alternating
+samples at 800px on an idle machine, paint read **+2** (19 of 25) and
+then **+3** (19 of 25) — two forward rounds agreeing — and the mirror
+read **-3** (5 of 25), which cancels. Two agreeing forward rounds plus a
+cancelling mirror is the shape this file's own rules call a real cost,
+and paint is a phase that genuinely runs this diff, so there was nowhere
+left to send the question but the code.
+
+The code said no. Removing the hoist descent alone — the one line that
+adds a structural walk — moved paint by **0** (9 of 25). Recompiling the
+parent with the change's global, its eight functions and its modified
+`boxIsStackingContext` appended under different names and **called from
+nowhere** gave a binary 248 bytes from the candidate's; paired against
+that control, paint read +2 (19 of 25), +1 (14 of 25), +2 (19 of 25),
+and the mirror -1 (10 of 25). Summing the five phases per sample, which
+this pairing did for the first time, the same three rounds read 0, +8
+and — mirrored — +4: the second binary to run pays, whichever it is.
+
+What settles it costs nothing to run. `generated.html` declares no
+`position` anywhere, so `docHasPositioned` is false and **not one line
+of the change executes on it**. Paint there:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| round 1 | 0 | 0 | -1 | 0 | **+1** (21 of 25) | +1 |
+| round 2 | 0 | 0 | -1 | 0 | **+1** (17 of 25) | 0 |
+
+Two forward rounds agreeing on a millisecond of paint, on a page whose
+paint is 17 ms, from code the page cannot reach. That is a sixth of the
+phase, and it is where the compiler put the machine code.
+
+So a second control exists beside the dead-code one, and it is cheaper:
+**pair the same two binaries on a page that cannot reach the change.**
+No recompile, no renaming, and it answers the same question — whether a
+reading is work or placement — from the other end. It is only available
+when such a page exists, which is why the dead-code control stays.
+
+The binary grows 4,248 bytes. Both binaries render `generated.html` and
+`features.html` byte-identically, and so does the control and the
+descent-removed probe; every one was `cmp`-checked before any timing.

@@ -51,6 +51,14 @@ every other check in the file passed vacuously.
 No render suite changed its answer. `tests/render/isolation.f`: 9
 passed, 0 failed.
 
+The benchmark cost a day and is written up in benchmarks.md: paired
+against its parent the change showed every signal this project calls a
+real cost, and the same reading appeared on `generated.html`, which
+cannot execute a line of it. CLAUDE.md gains the cheaper control that
+found this -- pair on a page the change cannot reach -- and the
+instruction to sum the five phases, since the compiler moves
+milliseconds between them.
+
 ### `mask-composite`, and a second mask layer
 
 `mask-image` takes a comma-separated list, each layer with its own

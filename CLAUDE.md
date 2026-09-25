@@ -345,6 +345,22 @@ globals, constants and functions renamed and **called from nowhere**,
 check it comes out within a few bytes of the candidate, and pair the
 candidate against *that* rather than against the parent.
 
+**The cheapest control is a page the change cannot reach.** CSS2 §9.9's
+hoisting gave paint two agreeing forward rounds and a cancelling mirror
+against its parent -- every signal the rules above call real, on a phase
+that genuinely runs the diff -- and the same two binaries read the same
++1 of paint on `generated.html`, which declares no `position` at all and
+so executes not one line of the change. A millisecond out of a 17 ms
+phase, from code the page cannot enter, settles it without a recompile
+or a renaming, and it took two rounds rather than the six the dead-code
+control had already spent. So when one of the benchmark pages misses the
+feature entirely, pair on that page **first**: an equal reading there
+says placement, and only a reading that appears on the page exercising
+the feature and vanishes on the page that cannot is a cost. The
+dead-code control stays for changes both pages reach. Sum the five
+phases per sample either way, because the compiler moves milliseconds
+between phases and only the total says whether any work was added.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.
