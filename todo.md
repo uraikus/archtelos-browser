@@ -369,10 +369,37 @@ writing this engine's metrics down.
 
 1. **`text-orientation`.** It computes and inherits and does nothing
    else, so it is deliberately *not* in the property instrument's
-   digest. `upright` is a measurement change rather than a drawing one
-   -- each character taking its own em along the inline axis, 57 against
-   29 for three glyphs in the table above -- which means a second
-   measuring path beside `measureTextWidth` before it can be drawn.
+   digest. `upright` is a measurement change rather than a drawing one:
+   each character takes its own cell along the inline axis, and
+   Chromium's cell was measured rather than guessed.
+
+   **What the cell is, and what it is not.** It does not follow
+   `line-height`: three upright glyphs come to 57 at `normal`, at `1`,
+   at `2` and at `40px`, while the block extent moves 19, 16, 32, 40
+   with each. It is not the same for every family either -- 57 in
+   monospace against 51 in sans-serif at the same size -- so it is a
+   font metric, the character's vertical advance, which is exactly what
+   this engine cannot ask for (Festina exposes the inked height of a
+   string and nothing else). So it is measured the way `FONT_CAP` was,
+   by asking Chromium across a range of sizes for the family this engine
+   actually renders in:
+
+   | size | 8 | 10 | 12 | 14 | 16 | 20 | 24 | 32 | 40 | 48 | 64 | 96 | 180 |
+   |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+   | cell | 9 | 11 | 14 | 16 | 17 | 22 | 27 | 36 | 44 | 53 | 72 | 107 | 201 |
+
+   Least squares gives **1.116 x size**, with an intercept of -0.06 --
+   near enough to zero that the ratio alone is the rule. Rounding that
+   product lands on Chromium's own integer at 8 of the 13 sizes and
+   within one pixel at the other five, which is the accuracy the hinted
+   metrics behind those integers allow: they are not a straight line,
+   13.39 rounding to 14 at 12px and 17.86 to 17 at 16.
+
+   A space takes a cell of its own (`A B` upright is three cells), and
+   `sideways` agrees with `mixed` on Latin at every size measured, which
+   is what this engine already does with the two.
+
+   The measurement alone; the tests and the implementation follow.
 2. **A vertical run's decorations.** An underline, an overline, a
    line-through, an emphasis mark and synthesised small caps are all
    drawn from a horizontal rectangle and a horizontal advance, so a
