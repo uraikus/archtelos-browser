@@ -856,3 +856,38 @@ already holds it alive.
 
 The alternative Festina leaves is a list of ids and a registry to
 resolve them, which is finding 40's cost paid on the way back out.
+
+## 3u Let a local shadow a function of the same name
+
+FINDINGS.md, finding 42. A local variable whose name matches a
+top-level function anywhere in the program is replaced by that
+function, and the program stops compiling at LLVM IR emission:
+
+```
+LLVM IR parse error: main.f:395:20: error: global variable reference
+must have pointer type
+  %t1 = icmp ne i8 @flagX, 0
+```
+
+A global *variable* of the same name is shadowed correctly, so the
+resolver already does the right thing for one kind of top-level binding
+and not for the other.
+
+**The proposal is the smaller of the two obvious ones.** Make a local
+declaration shadow a function binding exactly as it shadows a global
+variable — the scope rule the language already implements once, applied
+to the other table. That keeps every existing program working, because
+a program in which a local currently resolves to a function does not
+compile today.
+
+The alternative, rejecting the collision at name resolution with a
+message naming both declarations, would be an improvement on the
+current diagnostic but a worse language: it would make one module's
+choice of function name an error in another module's unrelated local,
+which is the coupling the shadowing rule exists to prevent.
+
+Either way the diagnostic is worth fixing on its own. The present one
+names a mangled symbol and a line of generated IR, and mentions neither
+the local variable, the function, nor the two files involved. A reader
+who has not seen it before has no way in but to grep the program for
+the symbol.

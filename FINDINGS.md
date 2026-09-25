@@ -1370,3 +1370,56 @@ observes it without taking ownership of everything under it. An
 explicit weak or borrowed element type would do, since the alternative
 -- a list of ids and a registry to resolve them -- is finding 40's cost
 paid on the way back out.
+
+## 42 A global function captures a same-named local in another module
+
+Declaring a function at the top level of one module makes every *local
+variable* of that name, in every module, refer to the function instead.
+The program does not miscompile silently — it fails at LLVM IR emission
+with a message that names neither the local nor the two files — but
+nothing before that point objects.
+
+```festina
+// lib.f
+void func useLocal() {
+    bool flagX = true
+    if flagX { log('the local won') }
+    else { log('the local LOST') }
+}
+```
+
+```festina
+// main.f
+import lib.f
+
+void func flagX() { }
+
+useLocal()
+close(0)
+```
+
+```
+$ festina compile main.f -o main
+main.f:0:0: error: LLVM object emission failed:
+LLVM IR parse error: main.f:395:20: error: global variable reference
+must have pointer type
+  %t1 = icmp ne i8 @flagX, 0
+```
+
+`lib.f`'s `if flagX` has become a truthiness test on the *function*
+`@flagX`. The local declared two lines above it is gone.
+
+**A global variable does not do this**, which is the useful half of the
+finding: replacing `void func flagX()` with `int flagX = 99` compiles,
+`useLocal` prints `the local won`, and the global keeps its own value.
+So locals shadow global variables correctly and only functions capture
+them, which points at the resolver treating a function name as a binding
+that a local declaration does not displace.
+
+The error is loud rather than silent, so no rendering can be wrong
+because of it. What it costs is the diagnosis: the message names the
+mangled symbol and a line number in generated IR, so the reader has to
+grep the whole program for the name before the two-module collision is
+visible. Found when a render suite declared a helper `fRow` and the flex
+code's own `bool fRow = flexIsRow(s)`, in a file the suite merely
+imports, stopped compiling.
