@@ -600,6 +600,41 @@ declared.
    and also its one blind spot, which is why the horizontal numbers
    above are written down beside Chromium's.
 
+   **The table half, measured properly.** A 100px-wide `display:table`
+   with rows whose content heights are given, and a declared height on
+   the table; Chromium:
+
+   | rows' content heights | table's height | the table | the rows |
+   |---|---|---|---|
+   | 20, 30 | `60px` | 100x60 | 24, 36 |
+   | 20, 30 | `100px` | 100x100 | 40, 60 |
+   | 20, 30 | auto | 100x50 | 20, 30 |
+   | 10, 40 | `100px` | 100x100 | 20, 80 |
+   | 10, 20, 30 | `120px` | 100x120 | 20, 40, 60 |
+   | 50 (declared on the row), 30 | `100px` | 100x100 | 63, 38 |
+   | 20, 30 | `40px` | 100x**50** | 20, 30 |
+
+   Three things that settles:
+
+   1. **The surplus is distributed in proportion to each row's own
+      height**, not equally and not to the last row. 20 and 30 in 60 are
+      24 and 36, which is both scaled by 1.2; in 100 they are 40 and 60,
+      scaled by 2; 10 and 40 in 100 are 20 and 80, the same factor on a
+      different pair. Three rows scale the same way.
+   2. **A declared height on the table is a minimum, not a size.** With
+      `height: 40px` against 50 of content the table is **50** tall and
+      the rows keep 20 and 30: the declaration is ignored downwards.
+   3. **A row's own declared height feeds the proportion** rather than
+      being exempt from it: a row asking for 50 beside one whose content
+      is 30 comes out 63 and 38, which is both scaled by 1.25. Chromium
+      rounds each row on its own, so those two sum to 101 against a table
+      of 100 -- the last row overflows by a pixel rather than the
+      remainder being handed to it.
+
+   This engine does none of it: the rows keep their content heights and
+   the table comes out as tall as their sum, so the declared height
+   changes nothing at all.
+
 2. **An absolutely positioned box in a vertical flow is turned, and
    should not be.** Found while probing `anchor()`, whose numbers it
    contaminates. A 200x160 `position: relative` container with a
