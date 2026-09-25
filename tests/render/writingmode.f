@@ -190,4 +190,58 @@ check(upBox[1] > upBox[0], 'an upright L is taller than it is wide')
 checkNear(sideBox[0], upBox[1], 2, 'a turned L is as wide as the upright one is tall')
 checkNear(sideBox[1], upBox[0], 2, 'and as tall as it is wide')
 
+// ---- a vertical run's decoration lines --------------------------------
+// The three lines follow the LINE BOX in a vertical mode rather than
+// the baseline, which is what Chromium says and is a different rule
+// from the horizontal one (todo.md). What is asked here is that rule
+// and not a number: the underline at one block edge, the overline at
+// the other, the line-through between them, and the two outer lines a
+// line box apart. The decoration is painted in its own colour so that
+// the glyphs cannot be mistaken for it.
+color WMDECO = '#ff0000'
+
+arr[int] func wmDecoSpan(mode:text, deco:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:16px">` +
+        `<div style="writing-mode:${mode};text-decoration:${deco};` +
+        `text-decoration-color:#ff0000;color:#000000;padding:20px">HHHH</div></body>`,
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int lo = 399
+    int hi = -1
+    for int x = 0, x < 120, x++ {
+        for int y = 0, y < 200, y++ {
+            if getPixelColor(x, y) != WMDECO { continue }
+            if x < lo { lo = x }
+            if x > hi { hi = x }
+        }
+    }
+    arr[int] out = []
+    out.push(lo)
+    out.push(hi)
+    return out
+}
+
+arr[int] du = wmDecoSpan('vertical-rl', 'underline')
+arr[int] dl = wmDecoSpan('vertical-rl', 'line-through')
+arr[int] doo = wmDecoSpan('vertical-rl', 'overline')
+// The instrument: an engine that draws no vertical decoration at all
+// finds no red pixel, and every comparison below would be between two
+// sentinels.
+check(du[1] >= 0 && dl[1] >= 0 && doo[1] >= 0, 'all three lines are painted in a vertical run')
+check(du[0] < dl[0], 'the underline is on the far side of the line-through')
+check(dl[0] < doo[0], 'and the overline on the other side of it')
+// The two outer lines are a line box apart, and the middle one is
+// between them rather than at either edge.
+int span = doo[0] - du[0]
+check(span >= 16 && span <= 24, 'the outer two are a line box apart')
+checkNear(dl[0] - du[0], Math.floorDiv(span, 2), 2, 'and the line-through is between them')
+
+// The two vertical modes agree on all three, as they do in Chromium.
+arr[int] lu = wmDecoSpan('vertical-lr', 'underline')
+arr[int] lo2 = wmDecoSpan('vertical-lr', 'overline')
+checkEqInt(lu[0], du[0], 'vertical-lr underlines on the same side')
+checkEqInt(lo2[0], doo[0], 'and overlines on the same side')
+
 finish('writing-mode pixels')

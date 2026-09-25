@@ -4232,3 +4232,24 @@ The binary grows 168 bytes -- the smallest of any change measured here,
 which is what a ratio, a multiply and two branches come to. Both
 binaries render `generated.html` and `features.html` byte-identically,
 `cmp`-checked before any timing.
+
+## A vertical run's decoration lines, on pages whose runs are horizontal
+
+The guard is one boolean at the top of `paintDecorationLines`, which
+runs once per decorated fragment rather than once per fragment, so it is
+the lightest touch of the three writing-mode changes. Twenty-five
+alternating samples at 800px, idle, the five phases summed per sample:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | +1 | +4 | 0 | +2 |
+| `features.html`, round 2 | 0 | 0 | 0 | 0 | 0 | +1 |
+| `generated.html` | 0 | 0 | 0 | 0 | -1 | -5 |
+
+The two forward rounds disagree on both phases that moved -- layout +4
+then 0, cascade +1 then 0 -- so nothing earned a question, and neither
+phase runs a line of a diff that is entirely in the painter. Paint,
+which does run it, reads 0, 0 and -1. The binary grows 144 bytes.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.

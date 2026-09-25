@@ -3126,10 +3126,38 @@ void func paintTextFragment(f:Fragment) {
 // One decoration: whichever of the three lines it names, drawn in its
 // own colour and style. The line styles a border has are painted by the
 // border code; `wavy` has no border counterpart and is drawn here.
+// A vertical run's three lines. They do NOT follow the baseline the way
+// a horizontal run's do: Chromium puts the underline at the line box's
+// far block edge, the overline at the near one and the line-through
+// between them, at every size measured and in both vertical modes
+// (todo.md). So this is its own rule rather than the horizontal one
+// turned a quarter turn, which is what the glyphs get.
+void func paintDecorationLinesVertical(f:Fragment, s:Style, lines:int, c:int, style:int,
+                                       thickness:int, offset:int, dx:int, dy:int,
+                                       col:int, alpha:float) {
+    int y = f.y + dy
+    int x = f.x + dx
+    if decoHas(lines, DECO_UNDERLINE) {
+        paintDecorationLineVertical(x - 1 - offset, y, f.h, thickness, style, col, alpha)
+    }
+    if decoHas(lines, DECO_OVERLINE) {
+        paintDecorationLineVertical(x + f.w - 1, y, f.h, thickness, style, col, alpha)
+    }
+    if decoHas(lines, DECO_LINE_THROUGH) {
+        paintDecorationLineVertical(x + Math.floorDiv(f.w, 2) - Math.floorDiv(thickness, 2),
+                                    y, f.h, thickness, style, col, alpha)
+    }
+}
+
 void func paintDecorationLines(f:Fragment, s:Style, lines:int, c:int, style:int,
                                thicknessIn:int, offset:int, dx:int, dy:int, alpha:float) {
     int thickness = thicknessIn > 0 ? thicknessIn : maxInt(1, Math.floorDiv(s.fontSize, 16))
     int col = colorWithOpacity(c, s.effectiveOpacity)
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        paintDecorationLinesVertical(f, s, lines, c, style, thickness, offset,
+                                     dx, dy, col, alpha)
+        return
+    }
     if decoHas(lines, DECO_UNDERLINE) {
         // text-underline-position: under drops the line below the
         // descenders instead of sitting it on the baseline.
@@ -3159,6 +3187,38 @@ void func paintDecorationsAt(f:Fragment, s:Style, c:int, dx:int, dy:int, alpha:f
     if s.inheritedDecoration != DECO_NONE {
         paintDecorationLines(f, s, s.inheritedDecoration, c, s.inheritedDecoStyle,
                              s.inheritedDecoThickness, s.inheritedDecoOffset, dx, dy, alpha)
+    }
+}
+
+// The same line down the page instead of across it. `paintBorderSide`
+// already takes the axis as a flag, which is what makes the dotted,
+// dashed and double styles come out the same either way.
+void func paintDecorationLineVertical(x:int, y:int, h:int, thickness:int, style:int,
+                                      c:int, opacity:float) {
+    if h <= 0 || thickness <= 0 { return }
+    if style == DECOSTYLE_WAVY {
+        paintWavyLineVertical(x, y, h, thickness, c, opacity)
+        return
+    }
+    int border = BORDER_SOLID
+    if style == DECOSTYLE_DOUBLE { border = BORDER_DOUBLE }
+    else if style == DECOSTYLE_DOTTED { border = BORDER_DOTTED }
+    else if style == DECOSTYLE_DASHED { border = BORDER_DASHED }
+    int w = style == DECOSTYLE_DOUBLE ? thickness * 3 : thickness
+    paintBorderSide(x, y, w, h, false, true, border, c, opacity)
+}
+
+// The wave with its two axes exchanged: the steps run down the page and
+// the amplitude is across it.
+void func paintWavyLineVertical(x:int, y:int, h:int, thickness:int, c:int, opacity:float) {
+    paintFill(c, opacity)
+    int step = maxInt(2, thickness * 2)
+    int amp = maxInt(1, thickness)
+    bool out = true
+    for int py = y, py < y + h, py = py + step {
+        int seg = minInt(step, y + h - py)
+        pDrawRect(out ? x - amp : x + amp, py, thickness, seg)
+        out = !out
     }
 }
 

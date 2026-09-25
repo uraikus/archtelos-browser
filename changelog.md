@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A vertical run's decoration lines
+
+`underline`, `overline` and `line-through` on a vertical run, in every
+`text-decoration-style` the horizontal ones have, because
+`paintBorderSide` already takes the axis as a flag.
+
+**They are not the quarter turn the glyphs take**, which was the guess
+and is what Chromium contradicts. A horizontal underline follows the
+**baseline** -- 14 below the line box's top at 16px, 29 to 31 at 32px.
+A vertical one follows the **line box**: the underline at its far block
+edge, the overline at the near one, the line-through between them, at
+both sizes and in both vertical modes. todo.md has the table.
+
+Before this the three lines were drawn by the horizontal code from a
+fragment whose `baseline` is an absolute *x* in a vertical run, so a
+decorated vertical run got a horizontal rule across the page at a
+coordinate that meant nothing. The render suite asks the rule rather
+than the numbers: the underline on the far side of the line-through,
+the overline on the other side of it, the outer two a line box apart
+and the middle one between them, and the two vertical modes agreeing.
+
 ### `text-orientation: upright`
 
 Each character stands up in a cell of its own along the inline axis
