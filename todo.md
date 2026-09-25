@@ -281,6 +281,81 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     shaping, which needs contextual forms the toy font API does not
     offer (FINDINGS.md, finding 31).
 
+### A vertical writing mode, measured
+
+css-2026.md says of CSS Writing Modes 4 only "Nothing", and of
+`writing-mode` that a vertical axis is "a second layout axis, not a
+property". That is the same shape of claim the filters and the masks
+were blocked behind, and it was worth measuring before it was believed.
+Chromium, 16px monospace, containers 400px wide:
+
+| container | its box | first child | second child |
+|---|---|---|---|
+| `vertical-rl`, two blocks, parent 200 tall | 38x29 | 19,0 19x29 | 0,0 19x29 |
+| `vertical-lr`, the same | 38x29 | 0,0 19x29 | 19,0 19x29 |
+| `horizontal-tb`, the same | 400x38 | 0,0 400x19 | 0,19 400x19 |
+| `vertical-rl`, `text-orientation: upright` | 38x57 | 19,0 19x57 | 0,0 19x57 |
+| `vertical-rl`, first child `width:60px;height:30px` | 79x30 | 19,0 60x30 | 0,0 19x30 |
+
+and, with one long line of text inside:
+
+| container | its box | its first line box |
+|---|---|---|
+| `vertical-rl`, parent height auto | 19x366 | 0,0 19x366 |
+| `vertical-rl`, parent 300 tall | 38x300 | 19,0 19x279 |
+| `vertical-lr`, parent 300 tall | 38x300 | 0,0 19x279 |
+| `horizontal-tb`, parent 300 tall | 400x19 | 0,0 366x19 |
+| `vertical-rl`, `width: 120px` | 120x300 | 101,0 19x279 |
+| `vertical-rl`, `inline-size: 120px` | 76x120 | 57,0 19x106 |
+| `vertical-rl`, `block-size: 120px` | 120x300 | 101,0 19x279 |
+| `vertical-rl`, `margin-inline-start: 20px` | 38x280 | 19,0 19x279 |
+
+Four things that table settles, none of which is obvious from the
+specification alone:
+
+1. **A vertical block is the horizontal layout turned ninety degrees
+   clockwise.** The same text is 366 long on the inline axis in both
+   modes, so a rotated Latin glyph keeps its advance; the line boxes are
+   19 thick, which is the line height; and the block axis runs
+   right-to-left for `vertical-rl` and left-to-right for
+   `vertical-lr`. Nothing about the *lengths* differs between the two
+   modes, only the direction the lines stack.
+2. **`width` and `height` stay physical, and the logical properties
+   follow the mode.** `width: 120px` sets the horizontal extent, which
+   in `vertical-rl` is the block axis; `inline-size: 120px` sets the
+   height and `block-size: 120px` the width; `margin-inline-start` is
+   the top margin. That is the existing logical table with one more
+   input, not a new mechanism.
+3. **An orthogonal flow shrinks to fit, clamped.** A vertical block
+   inside a horizontal one does not stretch to the containing block's
+   inline size, because that axis is the containing block's *block*
+   axis. It takes its max-content inline size, clamped to the containing
+   block's block size where that is definite -- 366 clamped to 300 with
+   a 300-tall parent, 29 unclamped with a 200-tall parent and short
+   content, and 366 unclamped with an auto-height parent.
+4. **`text-orientation: upright` is a different inline advance, not a
+   different rotation.** Three upright glyphs take 57 where three
+   sideways ones take 29: each stands in its own em along the inline
+   axis. `sideways` and `mixed` agree with each other on Latin.
+
+**What makes this reachable here.** The canvas has `rotate`, `translate`
+and `scale`, and the painter already uses all three for CSS
+`transform`, with hit testing through the inverse (`paintBox`,
+`hitBox`). A `vertical-rl` subtree is that machinery with an implicit
+rotation: lay the contents out horizontally with the available width set
+to the vertical inline size the table above gives, then paint the
+subtree rotated. What it must **not** borrow from `transform` is the
+stacking context and the containing block, neither of which
+`writing-mode` creates.
+
+`vertical-lr` is the one that does not fall out for free. It is the same
+rotation with the block axis reversed, and a reversal is a reflection,
+which would mirror the glyphs -- so it wants the line order reversed
+during layout rather than a second transform at paint time. That is why
+the two modes are separate pieces of work rather than one.
+
+The measurement alone; the tests and the implementation follow.
+
 ### What is left of the masks
 
 css-2026.md says of CSS Masking 1 only that `mask` and its longhands are
