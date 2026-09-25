@@ -5,6 +5,58 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Flex, grid, table and multicol turn with the writing mode
+
+A flex, grid, table or multi-column container in a vertical mode now
+exchanges its axes, which is the last of CSS Writing Modes 4's layout
+work. Chromium was asked for each of the four twice, once
+`horizontal-tb` and once `vertical-rl`, and every vertical reading is
+the horizontal one turned a quarter turn: a `row` flex container's
+items stack down the page at the main size their `height` declares, a
+grid's column tracks run down the page and its row tracks right to
+left, a table's cells run down the inline axis and its rows across the
+block one, and a multi-column container's column boxes stack along the
+inline axis. **So none of the four algorithms is wrong.** Each is
+already correct in logical space -- which is where everything below a
+vertical flow's root is laid out, the transposition walk turning the
+finished subtree once at the end. Only the lengths they read off a
+style are physical.
+
+Two things were therefore missing, and both are small. A flex, grid or
+table container left `layoutBlock` by an early return of its own and so
+was never turned at all; multicol, which goes down the ordinary block
+path, already was, which is why it needed nothing but the exchange.
+And `flexBaseSize`, `flexMinMainSize`, `flexHeightIndefinite`,
+`layoutGrid`, `layoutTable`, `layoutTableWithWidths`, `tableColumns`,
+`fixedTableColumnWidths` and `computeTableIntrinsic` each reached for
+`width` where they meant the inline size. Each now takes the physical
+axis beside the logical one, from a single local `bool` off the
+container's own writing mode: a `row` flex container's main axis is
+still the inline one whichever way the page is turned, but its length
+is `height` when the page is turned. A page with no vertical box on it
+reads one global per container and nothing else.
+
+The checks ask the vertical layout of a logically-sized container to be
+the horizontal one turned, rather than asking either for a number. That
+form needs the fixtures to discriminate, and three did not until they
+were changed: a grid whose items declare nothing never reads an item's
+length at all, so two more fixtures give one its own inline size inside
+a larger track and leave another's block size to be stretched; a flex
+container whose items all declare both sizes never stretches or grows,
+so three more cover a column container, a stretched item and two that
+grow; and a fixture whose two vertical modes come out identical cannot
+tell a block direction from its reverse, which is now asked of either
+item rather than the first. The four grid and flex reads went from
+passing to failing on the two new fixtures before the exchange was
+written, which is the only reason to believe they were being measured.
+
+**The fixtures found two gaps in the horizontal engine**, which the
+agreement form cannot see because both sides share them, and which are
+written down in todo.md with Chromium's numbers beside this engine's: a
+table row does not stretch to a definite table block size, and
+`column-fill: auto` breaks to a new column before the current one is
+full.
+
 ### An orthogonal flow clamps to the viewport
 
 An orthogonal flow whose containing block has no definite block size now

@@ -238,4 +238,118 @@ setCssViewport(800, 600)
 checkEqInt(at250, 250, 'an indefinite containing block clamps to the viewport')
 checkEqInt(at500, 500, 'and follows it when it changes')
 
+// ---- the other formatting contexts -------------------------------------
+// Chromium's table is in todo.md, "The other formatting contexts,
+// measured": every vertical rectangle is the horizontal one turned a
+// quarter turn. The fixture below sizes the container and its items with
+// the *logical* properties, so the logical layout is identical in all
+// three modes and every difference in the physical result is the turn
+// and nothing else. That is the agreement CLAUDE.md asks two things to
+// be tested against, rather than this engine's own numbers written down:
+// a flex algorithm reading `width` where it means the inline size fails
+// it, and so does one that reads the right length and stacks the wrong
+// way.
+//
+// Each fixture is chosen so that its two items differ on both axes.
+// Where they do not -- a table whose cells fill the whole block extent,
+// a grid whose items share a row -- `vertical-rl` and `vertical-lr`
+// come out identical and the checks would pass on an engine that could
+// not tell one from the other.
+
+arr[Box] func fcBoxes(mode:text, style:text, inner:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:400px;height:200px}.z{margin:0}</style></head><body>` +
+        `<div class="o"><div id="v" style="writing-mode:${mode};${style}">` +
+        `${inner}</div></div>` +
+        `</body></html>`, 'about:blank', 800)
+    arr[Box] divs = []
+    collectBoxesForTag(p.root, 'div', divs)
+    arr[Box] out = []
+    out.push(divs[1])
+    collectBoxesForTag(p.root, 'p', out)
+    return out
+}
+
+void func fcCheck(label:text, style:text, inner:text) {
+    arr[Box] h = fcBoxes('horizontal-tb', style, inner)
+    arr[Box] r = fcBoxes('vertical-rl', style, inner)
+    arr[Box] l = fcBoxes('vertical-lr', style, inner)
+    checkEqInt(h.length, 3, `${label}: the fixture makes one box per item`)
+    checkEqInt(r.length, 3, `${label}: in vertical-rl too`)
+    checkEqInt(l.length, 3, `${label}: and in vertical-lr`)
+    checkEqInt(r[0].w, h[0].h, `${label}: the container is as wide as the horizontal one is tall`)
+    checkEqInt(r[0].h, h[0].w, `${label}: and as tall as it is wide`)
+    for int i = 1, i < 3, i++ {
+        checkEqInt(r[i].h, h[i].w, `${label}: item ${i}'s inline extent becomes its height`)
+        checkEqInt(r[i].w, h[i].h, `${label}: and its block extent its width`)
+        checkEqInt(r[i].y - r[0].y, h[i].x - h[0].x, `${label}: item ${i} keeps its inline offset`)
+        checkEqInt((r[i].x - r[0].x) + r[i].w, r[0].w - (h[i].y - h[0].y),
+            `${label}: and lies that far from the block-start edge, which is the right one`)
+        checkEqInt(l[i].h, h[i].w, `${label}: vertical-lr agrees on item ${i}'s inline extent`)
+        checkEqInt(l[i].w, h[i].h, `${label}: and on its block extent`)
+        checkEqInt(l[i].y - l[0].y, h[i].x - h[0].x, `${label}: and on its inline offset`)
+        checkEqInt(l[i].x - l[0].x, h[i].y - h[0].y,
+            `${label}: and puts item ${i} that far from the left, its block-start edge`)
+    }
+    // A fixture whose two vertical modes come out identical cannot tell
+    // a block direction from its reverse, and every check above would
+    // hold on an engine that treated them alike. One item is enough to
+    // tell them apart; a fixture that stretches an item across the whole
+    // block extent hides the difference in that one.
+    check(r[1].x - r[0].x != l[1].x - l[0].x || r[2].x - r[0].x != l[2].x - l[0].x,
+        `${label}: the two block directions really do differ`)
+}
+
+fcCheck('flex', 'display:flex;inline-size:100px;block-size:60px',
+    '<p class=z style="inline-size:40px;block-size:20px"></p>' +
+    '<p class=z style="inline-size:25px;block-size:30px"></p>')
+
+fcCheck('grid', 'display:grid;grid-template-columns:40px 25px;grid-template-rows:20px 25px;' +
+    'inline-size:100px;block-size:60px',
+    '<p class=z style="grid-column:1;grid-row:1"></p>' +
+    '<p class=z style="grid-column:2;grid-row:2"></p>')
+
+fcCheck('table', 'display:table;inline-size:100px;block-size:60px',
+    '<div style="display:table-row"><p class=z style="display:table-cell;block-size:20px"></p></div>' +
+    '<div style="display:table-row"><p class=z style="display:table-cell;block-size:30px"></p></div>')
+
+fcCheck('multicol', 'columns:2;column-gap:10px;column-fill:auto;inline-size:100px;block-size:60px',
+    '<p class=z style="block-size:20px"></p>' +
+    '<p class=z style="block-size:30px"></p>')
+
+// The two cases above leave grid's own length reads untouched, because
+// tracks size items that declare nothing. These two make them matter:
+// the first gives an item a logical size of its own inside a larger
+// track and leaves the second's block size to be stretched to its row,
+// the second leaves the container's block size to be found from the
+// tracks.
+fcCheck('grid sized',
+    'display:grid;grid-template-columns:60px 40px;grid-template-rows:30px 25px;' +
+    'inline-size:100px;block-size:60px',
+    '<p class=z style="grid-column:1;grid-row:1;inline-size:40px;block-size:20px"></p>' +
+    '<p class=z style="grid-column:2;grid-row:2;inline-size:25px"></p>')
+
+fcCheck('grid auto',
+    'display:grid;grid-template-columns:60px 40px;inline-size:100px',
+    '<p class=z style="grid-column:1;block-size:20px"></p>' +
+    '<p class=z style="grid-column:2;block-size:35px"></p>')
+
+// Flex, likewise, is graded by three more fixtures: a column container,
+// whose main axis is the block one and whose lengths therefore exchange
+// the other way; an item with no block size of its own, which stretches
+// to the line's cross size; and two items that grow, so that the
+// resolved main size is not simply what was declared.
+fcCheck('flex column', 'display:flex;flex-direction:column;inline-size:100px;block-size:60px',
+    '<p class=z style="inline-size:40px;block-size:20px"></p>' +
+    '<p class=z style="inline-size:25px;block-size:30px"></p>')
+
+fcCheck('flex stretch', 'display:flex;inline-size:100px;block-size:60px',
+    '<p class=z style="inline-size:40px"></p>' +
+    '<p class=z style="inline-size:25px;block-size:30px;align-self:start"></p>')
+
+fcCheck('flex grow', 'display:flex;inline-size:100px;block-size:60px',
+    '<p class=z style="flex:1 1 20px;block-size:20px"></p>' +
+    '<p class=z style="flex:2 1 20px;block-size:30px"></p>')
+
 finish('writing-mode')

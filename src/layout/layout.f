@@ -2696,6 +2696,10 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     if topMarginApplied { b.mt = 0 }
     if b.kind == BOX_TABLE {
         layoutTable(b, cx, y, cw)
+        // The quarter turn, as at the end of the block path: a flex,
+        // grid or table container that starts a vertical flow has laid
+        // itself out in logical space like any other box.
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
         return
     }
     if b.kind == BOX_AUDIO {
@@ -2838,6 +2842,8 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutCBHeight = fh
         layoutFlex(b, cx, y, cw)
         layoutCBHeight = savedFlexCB
+        // the quarter turn, as at the end of the block path
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
         return
     }
     // A grid container sizes its tracks and places its items into them
@@ -2851,6 +2857,8 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutCBHeight = gh
         layoutGrid(b, cx, y, cw, width)
         layoutCBHeight = savedGridCB
+        // the quarter turn, as at the end of the block path
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
         return
     }
 
@@ -4376,6 +4384,12 @@ int func tableColumnCount(b:Box) {
 }
 
 arr[ColumnInfo] func tableColumns(b:Box) {
+    // Below a vertical flow everything is in logical space: a cell's
+    // inline size is `height` rather than `width`, because the table's
+    // rows run down the block axis and its cells across the inline one
+    // whichever way the page is turned (todo.md, "The other formatting
+    // contexts, measured").
+    bool tcVert = anyVerticalWM && b.style.writingMode != WM_HORIZONTAL_TB
     int cols = tableColumnCount(b)
     arr[ColumnInfo] out = []
     for int i = 0, i < cols, i++ {
@@ -4399,12 +4413,13 @@ arr[ColumnInfo] func tableColumns(b:Box) {
                 ci.minW = maxInt(ci.minW, minEach)
                 ci.maxW = maxInt(ci.maxW, maxEach)
                 if span == 1 {
-                    if cell.style.width.kind == LEN_PX {
-                        int fw = roundPx(cell.style.width.v) + horizontalExtras(cell, 0)
+                    Len cellInline = tcVert ? cell.style.height : cell.style.width
+                    if cellInline.kind == LEN_PX {
+                        int fw = roundPx(cellInline.v) + horizontalExtras(cell, 0)
                         ci.fixedW = maxInt(ci.fixedW, fw)
                         ci.maxW = maxInt(ci.maxW, fw)
-                    } else if cell.style.width.kind == LEN_PERCENT {
-                        ci.pctW = maxInt(roundPx(ci.pctW), roundPx(cell.style.width.v)).toFloat()
+                    } else if cellInline.kind == LEN_PERCENT {
+                        ci.pctW = maxInt(roundPx(ci.pctW), roundPx(cellInline.v)).toFloat()
                     }
                 }
             }
@@ -4420,6 +4435,7 @@ arr[ColumnInfo] func tableColumns(b:Box) {
 // the whole point of the algorithm and the reason it is a separate
 // pass rather than a flag inside the automatic one.
 arr[int] func fixedTableColumnWidths(b:Box, target:int, spacing:int) {
+    bool ftVert = anyVerticalWM && b.style.writingMode != WM_HORIZONTAL_TB
     int cols = tableColumnCount(b)
     arr[int] widths = []
     for int i = 0, i < cols, i++ { widths.push(-1) }
@@ -4432,10 +4448,11 @@ arr[int] func fixedTableColumnWidths(b:Box, target:int, spacing:int) {
             Box cell = row.children[j]
             int span = cell.colspan
             if span == 1 && col < cols {
-                if cell.style.width.kind == LEN_PX {
-                    widths[col] = maxInt(roundPx(cell.style.width.v), 0)
-                } else if cell.style.width.kind == LEN_PERCENT {
-                    widths[col] = maxInt(roundPx(available.toFloat() * cell.style.width.v / 100.0), 0)
+                Len cellInline = ftVert ? cell.style.height : cell.style.width
+                if cellInline.kind == LEN_PX {
+                    widths[col] = maxInt(roundPx(cellInline.v), 0)
+                } else if cellInline.kind == LEN_PERCENT {
+                    widths[col] = maxInt(roundPx(available.toFloat() * cellInline.v / 100.0), 0)
                 }
             }
             col = col + span
@@ -4473,8 +4490,10 @@ void func computeTableIntrinsic(b:Box) {
         minW = minW + cols[i].minW + spacing
         maxW = maxW + maxInt(cols[i].maxW, cols[i].fixedW) + spacing
     }
-    if b.style.width.kind == LEN_PX {
-        int fixed = roundPx(b.style.width.v)
+    Len tblInline = anyVerticalWM && b.style.writingMode != WM_HORIZONTAL_TB
+                    ? b.style.height : b.style.width
+    if tblInline.kind == LEN_PX {
+        int fixed = roundPx(tblInline.v)
         maxW = maxInt(fixed, minW)
         minW = maxW
     }
@@ -4485,6 +4504,12 @@ void func computeTableIntrinsic(b:Box) {
 
 void func layoutTable(b:Box, cx:int, y:int, cw:int) {
     Style s = b.style
+    // Below a vertical flow everything is in logical space: a cell's
+    // inline size is `height` rather than `width`, because the table's
+    // rows run down the block axis and its cells across the inline one
+    // whichever way the page is turned (todo.md, "The other formatting
+    // contexts, measured").
+    Len tblW = anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB ? s.height : s.width
     int spacing = s.borderCollapse ? 0 : s.borderSpacing
     bool fixedLayout = s.tableLayoutFixed
     // the automatic algorithm's intrinsic pass is skipped entirely when
@@ -4501,13 +4526,13 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
     }
     int avail = cw - b.ml - b.mr - edges
     int target = 0
-    bool fixedWidth = !lenIsAuto(s.width)
+    bool fixedWidth = !lenIsAuto(tblW)
     if fixedLayout {
         // with no intrinsic widths to fall back on, an auto width is
         // the space available
-        target = fixedWidth ? resolveLen(s.width, cw, 0) : avail
+        target = fixedWidth ? resolveLen(tblW, cw, 0) : avail
     } else if fixedWidth {
-        target = maxInt(resolveLen(s.width, cw, 0), totalMin)
+        target = maxInt(resolveLen(tblW, cw, 0), totalMin)
     } else {
         target = minInt(totalMax, avail)
         if target < totalMin { target = totalMin }
@@ -4566,6 +4591,7 @@ void func layoutTable(b:Box, cx:int, y:int, cw:int) {
 // a different way of choosing widths rather than a second table layout.
 void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
                                 spacing:int, edges:int, target:int, fixedWidth:bool) {
+    bool twVert = anyVerticalWM && b.style.writingMode != WM_HORIZONTAL_TB
     Style s = b.style
     int n = widths.length
     int tableContentW = spacing
@@ -4622,7 +4648,8 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
         rowIndex++
         text rh = getAttr(row.node, 'height')
         if rh != null && rh.toInt() != null { rowH = maxInt(rowH, rh.toInt()) }
-        if row.style.height.kind == LEN_PX { rowH = maxInt(rowH, roundPx(row.style.height.v)) }
+        Len rowBlock = twVert ? row.style.width : row.style.height
+        if rowBlock.kind == LEN_PX { rowH = maxInt(rowH, roundPx(rowBlock.v)) }
         // stretch cells to the row height and apply vertical alignment
         for int j = 0, j < row.children.length, j++ {
             Box cell = row.children[j]
@@ -4693,7 +4720,9 @@ void func layoutCell(cell:Box, x:int, y:int, w:int) {
         contentH = layoutBlockChildren(cell, contentX(cell), contentY(cell), inner)
     }
     int h = contentH
-    if cell.style.height.kind == LEN_PX { h = maxInt(h, roundPx(cell.style.height.v)) }
+    Len cellBlock = anyVerticalWM && cell.style.writingMode != WM_HORIZONTAL_TB
+                    ? cell.style.width : cell.style.height
+    if cellBlock.kind == LEN_PX { h = maxInt(h, roundPx(cellBlock.v)) }
     text ha = getAttr(cell.node, 'height')
     if ha != null && ha.toInt() != null { h = maxInt(h, ha.toInt()) }
     cell.h = h + cell.pt + cell.pb + cell.bt + cell.bb
@@ -4720,12 +4749,20 @@ bool func flexIsReverse(s:Style) {
 }
 
 // The item's base size along the main axis, before growing or shrinking.
-int func flexBaseSize(item:Box, row:bool, inner:int) {
+//
+// `row` is the LOGICAL question -- is the main axis the inline one --
+// and `rowPhys` the physical one, which is its opposite below a
+// vertical flow, where a row container's main axis runs down the page
+// and an item's main size therefore comes from `height`. Everything
+// else in here is in logical space, because `wmTransposeSubtree` turns
+// the whole subtree at the end (todo.md, "The other formatting
+// contexts, measured").
+int func flexBaseSize(item:Box, row:bool, rowPhys:bool, inner:int) {
     Style s = item.style
     if s.flexBasis.kind != LEN_AUTO {
         return maxInt(resolveLen(s.flexBasis, inner, 0), 0)
     }
-    Len own = row ? s.width : s.height
+    Len own = rowPhys ? s.width : s.height
     if !lenIsAuto(own) { return maxInt(resolveLen(own, inner, 0), 0) }
     if row {
         computeIntrinsic(item)
@@ -4743,15 +4780,15 @@ int func flexBaseSize(item:Box, row:bool, inner:int) {
 // cut. A declared minimum takes that away, and so does the item being a
 // scroll container, whose automatic minimum the standard puts at zero
 // because the content can scroll instead.
-int func flexMinMainSize(item:Box, row:bool, inner:int) {
+int func flexMinMainSize(item:Box, row:bool, rowPhys:bool, inner:int) {
     Style s = item.style
-    Len declared = row ? s.minWidth : s.minHeight
+    Len declared = rowPhys ? s.minWidth : s.minHeight
     if declared.kind != LEN_AUTO { return maxInt(resolveLen(declared, inner, 0), 0) }
     if s.overflowHidden { return 0 }
     if !row { return 0 }
     computeIntrinsic(item)
     int content = maxInt(item.contentMin, 0)
-    Len own = s.width
+    Len own = rowPhys ? s.width : s.height
     if !lenIsAuto(own) {
         int specified = maxInt(resolveLen(own, inner, 0), 0)
         if specified < content { return specified }
@@ -4786,7 +4823,8 @@ int func flexOffsetFor(justify:int, spare:int, count:int, index:int, gap:int) {
 // True when the container has no definite height to distribute, which
 // is the case for an auto height and, because this engine resolves no
 // percentage heights, for a percentage one too.
-bool func flexHeightIndefinite(s:Style) {
+bool func flexHeightIndefinite(s:Style, vert:bool) {
+    if vert { return s.width.kind != LEN_PX }
     return s.height.kind != LEN_PX
 }
 
@@ -5449,6 +5487,12 @@ arr[GridArea] func gridExpandSubgrids(areas:arr[GridArea], inline:bool) {
 
 void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
     Style s = b.style
+    // Below a vertical flow everything here is in logical space -- the
+    // column tracks run along the inline axis and the row tracks along
+    // the block one whichever way the page is turned -- so an item's
+    // inline size is its `height` and its block size its `width`
+    // (todo.md, "The other formatting contexts, measured").
+    bool gdVert = anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB
     // What this box was handed as a subgrid item, taken before anything
     // else can overwrite it.
     arr[int] givenCols = subgridColSizes
@@ -5562,7 +5606,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         if !rowsIntrinsic { continue }
         int measureW = gridSpanSize(colSizes, colGap, a.col, a.colSpan, colCollapsed)
         Box c = a.box
-        c.forcedWidthPx = lenIsAuto(c.style.width) ? measureW : -1
+        c.forcedWidthPx = lenIsAuto(gdVert ? c.style.height : c.style.width) ? measureW : -1
         layoutBlock(c, 0, 0, measureW, false)
         c.forcedWidthPx = -1
     }
@@ -5587,7 +5631,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         int aw = gridSpanSize(colSizes, colGap, a.col, a.colSpan, colCollapsed)
         int ah = gridSpanSize(rowSizes, rowGap, a.row, a.rowSpan, rowCollapsed)
         Box c = a.box
-        c.forcedWidthPx = lenIsAuto(c.style.width) ? aw : -1
+        c.forcedWidthPx = lenIsAuto(gdVert ? c.style.height : c.style.width) ? aw : -1
         // An item that is itself a subgrid takes the lines it spans
         // here, where they are known. The two assignments cost a page
         // without a subgrid on it nothing but the flags being false.
@@ -5602,7 +5646,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         layoutBlock(c, ax, ay, aw, false)
         subgridColSizes = []
         subgridRowSizes = []
-        if lenIsAuto(c.style.height) && ah > c.h { c.h = ah }
+        if lenIsAuto(gdVert ? c.style.width : c.style.height) && ah > c.h { c.h = ah }
         c.forcedWidthPx = -1
     }
 
@@ -5611,7 +5655,7 @@ void func layoutGrid(b:Box, cx:int, y:int, cw:int, width:int) {
         totalH = totalH + rowSizes[i] + (i > 0 ? rowGap : 0)
     }
     int gridEdges = b.pt + b.pb + b.bt + b.bb
-    if lenIsAuto(s.height) { b.h = totalH + gridEdges }
+    if lenIsAuto(gdVert ? s.width : s.height) { b.h = totalH + gridEdges }
     b.w = width + b.pl + b.pr + b.bl + b.br
     applyContainerAspect(b)
     if b.baseline == 0 { b.baseline = b.h }
@@ -6035,6 +6079,14 @@ arr[int] func gridSizeAxis(b:Box, areas:arr[GridArea], explicit:arr[Track],
 void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     Style s = b.style
     bool row = flexIsRow(s)
+    // Below a vertical flow the two axes are exchanged: the main axis of
+    // a `row` container is still the inline one, but the inline axis is
+    // now the page's vertical, so every length read off a style is the
+    // other one of the pair. The flex container's own mode decides,
+    // because `width` and `height` are physical and it is the container
+    // that orients the axes.
+    bool wmVertFlex = anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB
+    bool rowPhys = wmVertFlex ? !row : row
     bool wrap = s.flexWrap != FLEXWRAP_NOWRAP
     bool wrapReverse = s.flexWrap == FLEXWRAP_WRAP_REVERSE
     int innerMain = row ? b.w - b.pl - b.pr - b.bl - b.br : 0
@@ -6064,7 +6116,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     int crossGap = row ? s.rowGap : s.columnGap
     int count = items.length
     if count == 0 {
-        if row && flexHeightIndefinite(s) { b.h = b.pt + b.pb + b.bt + b.bb }
+        if row && flexHeightIndefinite(s, wmVertFlex) { b.h = b.pt + b.pb + b.bt + b.bb }
         applyContainerAspect(b)
         b.baseline = b.h
         return
@@ -6075,13 +6127,13 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     for int i = 0, i < count, i++ {
         Box it = items[i]
         resolveEdges(it, innerMain > 0 ? innerMain : cw)
-        mainSize.push(flexBaseSize(it, row, row ? innerMain : cw))
+        mainSize.push(flexBaseSize(it, row, rowPhys, row ? innerMain : cw))
     }
 
     // The main axis's available size. A column of auto height has none,
     // and a container with none never wraps: there is no size to
     // overflow.
-    int mainAvail = row ? innerMain : (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
+    int mainAvail = row ? innerMain : (flexHeightIndefinite(s, wmVertFlex) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
 
     // ---- break the items into lines ----------------------------------
     arr[int] lineFirst = []
@@ -6111,7 +6163,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     int lines = lineFirst.length
 
     int crossAvail = row
-        ? (flexHeightIndefinite(s) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
+        ? (flexHeightIndefinite(s, wmVertFlex) ? -1 : b.h - b.pt - b.pb - b.bt - b.bb)
         : b.w - b.pl - b.pr - b.bl - b.br
 
     // ---- resolve each line's flexible lengths, and lay its items out --
@@ -6169,7 +6221,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
             arr[int] minMain = []
             for int i = first, i <= last, i++ {
                 frozen.push(false)
-                minMain.push(flexMinMainSize(items[i], row, mainAvail))
+                minMain.push(flexMinMainSize(items[i], row, rowPhys, mainAvail))
             }
             int owed = 0 - spare
             int rounds = 0
@@ -6239,7 +6291,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
                 }
             } else {
                 layoutBlock(item, flexOriginX, flexOriginY, crossAvail, false)
-                if !lenIsAuto(item.style.height) || item.style.flexBasis.kind != LEN_AUTO {
+                if !lenIsAuto(rowPhys ? item.style.width : item.style.height) || item.style.flexBasis.kind != LEN_AUTO {
                     item.h = mainSize[i]
                 } else {
                     mainSize[i] = item.h
@@ -6320,9 +6372,10 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
 
             // stretch fills the line's own cross size, not the container's
             if align == BOXALIGN_STRETCH && thisCross > 0 {
-                if row && lenIsAuto(item.style.height) {
+                Len crossLen = rowPhys ? item.style.height : item.style.width
+                if row && lenIsAuto(crossLen) {
                     item.h = thisCross - item.mt - item.mb
-                } else if !row && lenIsAuto(item.style.width) {
+                } else if !row && lenIsAuto(crossLen) {
                     item.w = thisCross - item.ml - item.mr
                 }
             }
@@ -6374,7 +6427,7 @@ void func layoutFlex(b:Box, cx:int, y:int, cw:int) {
     }
 
     // an auto cross size fits the lines
-    if flexHeightIndefinite(s) {
+    if flexHeightIndefinite(s, wmVertFlex) {
         if row {
             b.h = crossUsed + b.pt + b.pb + b.bt + b.bb
         } else {
