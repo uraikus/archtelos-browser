@@ -376,6 +376,29 @@ content to agree rather than by writing this engine's metrics down.
    -- they follow the line box rather than the baseline, which is the
    rule the table above measured.
 
+   **Where the mark goes, measured.** `color: transparent` with a
+   coloured `text-emphasis-color`, so only the mark inks, in a box
+   padded 30px off the page edge. The line box is x 30..47 in the
+   vertical cases and y 30..47 in the horizontal one:
+
+   | `text-emphasis-position` | `vertical-rl` | `vertical-lr` | `horizontal-tb` |
+   |---|---|---|---|
+   | `over right` | x 51..53 | x 51..53 | y 33..35 |
+   | `over left` | x 33..35 | x 33..35 | y 33..35 |
+   | `under right` | x 51..53 | x 51..53 | y 51..53 |
+   | `under left` | x 33..35 | x 33..35 | y 51..53 |
+
+   So in a vertical mode the `left`/`right` half of the property decides
+   the side and the `over`/`under` half is ignored, which is what CSS
+   Writing Modes 4 says; in a horizontal mode it is the other way round.
+   The two vertical modes agree, and the marks run **down** the line --
+   y 33..64 against a box of y 30..67 -- rather than across it. This
+   engine has only the over/under half in its computed style, so the
+   default (`over right`) is the right-hand side and `under` is the
+   left, which is the nearest thing it can say.
+
+   The measurement alone; the tests and the implementation follow.
+
 2. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
    -- counter-clockwise -- which the painter has no path for; the second
    is `vertical-rl` with `text-orientation: sideways`, which this
