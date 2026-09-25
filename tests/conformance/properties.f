@@ -52,6 +52,29 @@ text func filterKey(s:Style) {
     return out
 }
 
+// The mask layer, flattened. The instrument has to be able to see it,
+// or no mask property could ever register however complete the
+// implementation is. The `mask-image` row is `url(a.png)`, which this
+// engine drops, so that row goes on failing; the geometry longhands are
+// a different question and todo.md records it rather than settling it
+// here.
+text func maskKey(s:Style) {
+    MaskSpec spec = maskSpecOf(s.maskIdx)
+    if spec == null { return 'none' }
+    BgLayer l = spec.layer
+    // The image contributes only when it is one this engine paints. A
+    // `mask-image: url()` with nothing beside it makes no spec at all
+    // (src/css/cascade.f), so this only has to keep an unpaintable
+    // image from moving the key when a geometry longhand put the spec
+    // there -- otherwise the property would score on a value nothing
+    // reads, which is the trap `outline-style` was.
+    text imgKey = spec.paintable ? `g${l.image.angle}:${l.image.stops.length}` : 'no'
+    return `${spec.mode}|${l.repeatX ? 1 : 0}${l.repeatY ? 1 : 0}`
+        + `|${lenKey(l.posX)}|${lenKey(l.posY)}`
+        + `|${l.sizeKind}|${lenKey(l.sizeW)}|${lenKey(l.sizeH)}`
+        + `|${l.clip}|${l.origin}|${imgKey}`
+}
+
 arr[text] func styleDigestFields(s:Style) {
     return [`${s.display}`, `${s.color}`, `${s.background}`, `${s.fontSize}`, 
         `${s.fontBold}`, `${s.fontItalic}`, `${s.fontFamily}`, 
@@ -77,7 +100,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.borderLeftColor}`, `${s.borderStyle}`, `${s.borderRadius}`, `${lenKey(s.radiusTopLeftX)}`, `${lenKey(s.radiusTopLeftY)}`,
         `${lenKey(s.radiusTopRightX)}`, `${lenKey(s.radiusTopRightY)}`, `${lenKey(s.radiusBottomRightX)}`, `${lenKey(s.radiusBottomRightY)}`, `${lenKey(s.radiusBottomLeftX)}`, `${lenKey(s.radiusBottomLeftY)}`, 
         `${cornerKAt(s.cornerShapes, 0)}`, `${cornerKAt(s.cornerShapes, 1)}`, `${cornerKAt(s.cornerShapes, 2)}`, `${cornerKAt(s.cornerShapes, 3)}`, 
-        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, `${clipMarginPacked(s)}`, `${textBoxPacked(s)}`, `${decorationIsClone(s) ? 1 : 0}`, `${overscrollPacked(s)}`, `${filterKey(s)}`, 
+        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, `${clipMarginPacked(s)}`, `${textBoxPacked(s)}`, `${decorationIsClone(s) ? 1 : 0}`, `${overscrollPacked(s)}`, `${filterKey(s)}`, `${maskKey(s)}`, 
         `${s.borderSpacing}`, `${s.borderCollapse}`, `${s.borderTopStyle}`, 
         `${s.borderRightStyle}`, `${s.borderBottomStyle}`, 
         `${s.borderLeftStyle}`, `${s.textIndent}`, `${s.letterSpacing}`, 
@@ -188,7 +211,7 @@ arr[text] func styleDigestFieldNames() {
         'radiusBottomRightX', 'radiusBottomRightY', 'radiusBottomLeftX', 'radiusBottomLeftY',
         'cornerTopLeftShape', 'cornerTopRightShape', 'cornerBottomRightShape', 'cornerBottomLeftShape',
         'anchorName', 'positionAnchor', 'positionArea', 'positionTryFallbacks', 'positionTryOrder', 'positionVisibility', 'anchorScope',
-        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition', 'overflowClipMargin', 'textBox', 'boxDecorationBreak', 'overscrollBehavior', 'filter',
+        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition', 'overflowClipMargin', 'textBox', 'boxDecorationBreak', 'overscrollBehavior', 'filter', 'mask',
         'borderSpacing', 'borderCollapse', 
         'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 
         'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 

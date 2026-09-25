@@ -771,13 +771,27 @@ arr[FilterSpec] filterSpecs = []
 struct MaskSpec {
     layer:BgLayer
     mode:int
+    // Whether the image is one this engine paints. A `url()` bitmap, a
+    // radial gradient and a conic one are all stored and none is
+    // painted, so this is what the instrument's key must carry rather
+    // than the image itself: a mask-image the engine throws away must
+    // not move the computed style.
+    paintable:bool
 }
 
 arr[MaskSpec] maskSpecs = []
 
+// `maskIdx` is the 1-based index, NEGATED when the mask is declared but
+// not one this engine can paint -- a `url()` bitmap, a radial or conic
+// gradient, or geometry longhands with no image beside them. The
+// computed style carries it either way, because that is what a computed
+// style is and because the painter reads every one of those longhands
+// the moment a paintable image does appear; only painting asks whether
+// the index is positive.
 MaskSpec func maskSpecOf(idx:int) {
-    if idx <= 0 || idx > maskSpecs.length { return null }
-    return maskSpecs[idx - 1]
+    int at = idx < 0 ? 0 - idx : idx
+    if at <= 0 || at > maskSpecs.length { return null }
+    return maskSpecs[at - 1]
 }
 
 FilterSpec func filterSpecOf(idx:int) {

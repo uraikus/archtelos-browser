@@ -2706,6 +2706,14 @@ int func parseBgOrigin(v:ascii) {
     return BGORIGIN_PADDING
 }
 
+// The two axes of one layer's position. Out-parameters, because a
+// Festina function returns one value (FINDINGS.md). Declared here
+// rather than beside `splitBackgroundPosition`, which is four thousand
+// lines below, because the mask reader uses them and globals are not
+// hoisted (FINDINGS.md, finding 9).
+text bgPosXOut = ''
+text bgPosYOut = ''
+
 // ---- CSS Masking 1: the mask layer ------------------------------------
 //
 // `mask-*` is `background-*` with the result used as alpha, so the
@@ -2721,14 +2729,31 @@ int func parseBgOrigin(v:ascii) {
 // needs its own projection, which is written down rather than guessed
 // at. A mask this engine cannot paint leaves `maskIdx` at zero, so the
 // element renders unmasked rather than half-masked.
+bool func anyMaskGeometry(props:map[text]) {
+    return styleProp(props, 'mask-mode') != null
+        || styleProp(props, 'mask-repeat') != null
+        || styleProp(props, 'mask-position') != null
+        || styleProp(props, 'mask-size') != null
+        || styleProp(props, 'mask-origin') != null
+        || styleProp(props, 'mask-clip') != null
+}
+
 int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
+    // Paintable or not, the longhands are computed and stored; the sign
+    // of the returned index says which (style.f). A mask this engine
+    // cannot paint leaves the element rendered unmasked rather than
+    // half-masked.
+    bool paintable = false
+    Gradient g
+    g.present = false
     ascii mi = styleProp(props, 'mask-image')
-    if mi == null { return 0 }
-    ascii one = asciiTrim(layerValue(mi, 0))
-    if one == null || one.length == 0 { return 0 }
-    if asciiLower(one) == 'none' { return 0 }
-    Gradient g = parseGradient(one, currentColor, fontSize)
-    if !g.present || g.radial || g.conic { return 0 }
+    if mi != null {
+        ascii one = asciiTrim(layerValue(mi, 0))
+        if one != null && one.length > 0 && asciiLower(one) != 'none' {
+            g = parseGradient(one, currentColor, fontSize)
+            paintable = g.present && !g.radial && !g.conic
+        }
+    }
     MaskSpec spec
     BgLayer l
     l.url = null
@@ -2738,10 +2763,19 @@ int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
     parseBgRepeat(layerValue(styleProp(props, 'mask-repeat'), 0))
     l.repeatX = bgRepeatXOut
     l.repeatY = bgRepeatYOut
-    ascii px = layerValue(styleProp(props, 'mask-position-x'), 0)
-    ascii py = layerValue(styleProp(props, 'mask-position-y'), 0)
-    l.posX = px == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(px), true, fontSize)
-    l.posY = py == null ? lenPercent(0.0) : parsePositionAxis(asciiLower(py), false, fontSize)
+    // CSS Masking 1 has no `mask-position-x`/`-y`, so the two axes are
+    // split here rather than read as longhands the way a background's
+    // are.
+    ascii mp = layerValue(styleProp(props, 'mask-position'), 0)
+    l.posX = lenPercent(0.0)
+    l.posY = lenPercent(0.0)
+    if mp != null {
+        splitBackgroundPosition(mp)
+        if bgPosXOut != '' {
+            l.posX = parsePositionAxis(asciiLower(bgPosXOut.toAscii()), true, fontSize)
+            l.posY = parsePositionAxis(asciiLower(bgPosYOut.toAscii()), false, fontSize)
+        }
+    }
     parseBgSize(layerValue(styleProp(props, 'mask-size'), 0), fontSize)
     l.sizeKind = bgSizeKindOut
     l.sizeW = bgSizeWOut
@@ -2754,6 +2788,7 @@ int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
     l.origin = orig == null ? BGORIGIN_BORDER : parseBgOrigin(orig)
     l.fixed = false
     spec.layer = l
+    spec.paintable = paintable
     ascii md = styleProp(props, 'mask-mode')
     spec.mode = MASKMODE_MATCH
     if md != null {
@@ -2761,8 +2796,12 @@ int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
         if m == 'alpha' { spec.mode = MASKMODE_ALPHA }
         else if m == 'luminance' { spec.mode = MASKMODE_LUMINANCE }
     }
+    // An unpaintable image with no geometry beside it leaves nothing to
+    // store: the engine throws the image away, so a computed style that
+    // recorded it would be claiming a value nothing reads.
+    if !paintable && !anyMaskGeometry(props) { return 0 }
     maskSpecs.push(spec)
-    return maskSpecs.length
+    return paintable ? maskSpecs.length : 0 - maskSpecs.length
 }
 
 // Everything but the image itself, for one layer past the first.
@@ -4211,11 +4250,6 @@ void func applyBackgroundShorthand(props:map[text], value:ascii) {
 // One value positions the horizontal axis and centres the other, unless
 // it is a vertical keyword, in which case it does the reverse -- which
 // is what Chromium computes for `background-position: top` too.
-// The two axes of one layer's position. Out-parameters, because a
-// Festina function returns one value (FINDINGS.md).
-text bgPosXOut = ''
-text bgPosYOut = ''
-
 void func splitBackgroundPosition(value:ascii) {
     bgPosXOut = ''
     bgPosYOut = ''
@@ -4237,6 +4271,67 @@ void func splitBackgroundPosition(value:ascii) {
         bgPosXOut = parts[0].toText()
         bgPosYOut = 'center'
     }
+}
+
+// `mask` (CSS Masking 1 §6.7). A shorthand sets every longhand it
+// covers, so each is reset to its initial value first and then whatever
+// the value names is written over it -- otherwise a `mask` after a
+// `mask-repeat` would leave the repeat standing, which is not what a
+// shorthand does.
+//
+// One geometry box sets BOTH origin and clip; two set origin then clip,
+// in that order. A `/` separates the position from the size.
+void func applyMaskShorthand(props:map[text], value:ascii) {
+    props['mask-image'] = 'none'
+    props['mask-mode'] = 'match-source'
+    props['mask-repeat'] = 'repeat'
+    props['mask-position'] = '0% 0%'
+    props['mask-size'] = 'auto'
+    props['mask-origin'] = 'border-box'
+    props['mask-clip'] = 'border-box'
+    ascii v = asciiTrim(value)
+    if v.length == 0 { return }
+    int slash = asciiIndexOf(v, '/', 0)
+    ascii sizePart = null
+    if slash >= 0 {
+        sizePart = asciiTrim(v.slice(slash + 1, v.length))
+        v = asciiTrim(v.slice(0, slash))
+    }
+    arr[ascii] toks = cssTokens(v)
+    text posToks = ''
+    int boxes = 0
+    for int i = 0, i < toks.length, i++ {
+        // `dup`, because an `ascii` local bound straight to an array
+        // element aliases it and both are released (FINDINGS.md,
+        // "ascii aliasing"). Valgrind caught the double free here with
+        // all 28 pixel checks passing.
+        ascii tok = dup(toks[i])
+        ascii low = asciiLower(tok)
+        if asciiIndexOf(low, '(', 0) >= 0 || low == 'none' {
+            props['mask-image'] = tok.toText()
+        } else if low == 'repeat' || low == 'no-repeat' || low == 'repeat-x'
+            || low == 'repeat-y' || low == 'round' || low == 'space' {
+            props['mask-repeat'] = tok.toText()
+        } else if low == 'alpha' || low == 'luminance' || low == 'match-source' {
+            props['mask-mode'] = tok.toText()
+        } else if low == 'border-box' || low == 'padding-box' || low == 'content-box' {
+            if boxes == 0 {
+                props['mask-origin'] = tok.toText()
+                props['mask-clip'] = tok.toText()
+            } else {
+                props['mask-clip'] = tok.toText()
+            }
+            boxes++
+        } else if low == 'no-clip' {
+            props['mask-clip'] = 'border-box'
+            boxes++
+        } else {
+            if posToks != '' { posToks = posToks + ' ' }
+            posToks = posToks + tok.toText()
+        }
+    }
+    if posToks != '' { props['mask-position'] = posToks }
+    if sizePart != null && sizePart.length > 0 { props['mask-size'] = sizePart.toText() }
 }
 
 void func applyBackgroundPositionShorthand(props:map[text], value:ascii) {
@@ -4520,6 +4615,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     }
     if name == 'background-position' {
         applyBackgroundPositionShorthand(props, value)
+        return
+    }
+    if name == 'mask' {
+        applyMaskShorthand(props, value)
         return
     }
     // `container: <name> [ / <type> ]` (CSS Conditional 4 §2.3). A
@@ -8266,7 +8365,15 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         if aScope != '' { anyAnchorScope = true }
     }
     // CSS Masking 1's mask, held the same way as the filter below it.
-    if styleProp(props, 'mask-image') != null {
+    // Any of the seven longhands brings the layer into being, because
+    // `mask-clip` has a computed value whether or not an image is
+    // beside it -- and the painter reads it as soon as one is.
+    if styleProp(props, 'mask-image') != null || styleProp(props, 'mask-mode') != null
+        || styleProp(props, 'mask-repeat') != null
+        || styleProp(props, 'mask-position') != null
+        || styleProp(props, 'mask-size') != null
+        || styleProp(props, 'mask-origin') != null
+        || styleProp(props, 'mask-clip') != null {
         s.maskIdx = parseMaskLayer(props, s.color, s.fontSize)
         if s.maskIdx > 0 { anyMask = true }
     }

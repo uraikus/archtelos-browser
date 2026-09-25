@@ -281,7 +281,7 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     shaping, which needs contextual forms the toy font API does not
     offer (FINDINGS.md, finding 31).
 
-### Masks, measured, and the blit that makes them possible
+### What is left of the masks
 
 css-2026.md says of CSS Masking 1 only that `mask` and its longhands are
 untouched. No reason is given, and the one that would have been given --
@@ -331,12 +331,26 @@ half of the box fully transparent, and `mask-position: 25px 0` leaves
 the first 25 pixels transparent. That is the semantic most easily got
 backwards, and it is measured.
 
-**What will not be reachable.** A `mask-image: url(...)` bitmap needs
-that image's own alpha per pixel, and `img.getPixelColor` returns a
-`color` with no accessor (FINDINGS.md, finding 35) -- the same block
-that leaves a bitmap image unfiltered. A gradient mask has no such
-problem, because this engine computes the gradient's colours itself and
-therefore already knows every alpha in it.
+**What is left, in the order it is worth doing.**
+
+1. **A radial or conic gradient mask.** Neither is blocked -- both are
+   computable the way the linear one is -- and each needs its own
+   projection from a pixel to the gradient's parameter: a distance over
+   a resolved radius, or an angle. The radius resolution
+   (`closest-side`, `farthest-corner` and the rest) already exists in
+   `paintRadialGradient` and would have to be lifted out of it.
+2. **`mask-composite` and a second mask layer.** The layers each produce
+   an alpha and the operator combines them, which is arithmetic on two
+   numbers this engine already has; what is missing is the layer list,
+   since only the first is read today.
+3. **A `mask-image: url(...)` bitmap.** This one IS blocked:
+   `img.getPixelColor` returns a `color` with no accessor (FINDINGS.md,
+   finding 35), the same block that leaves a bitmap image unfiltered.
+   It waits on festina.md 3p.
+
+A declaration naming an image of the third kind -- or, today, of the
+first -- is dropped whole rather than half-applied, so such an element
+renders unmasked, and `@supports` answers no for it.
 
 ### What is left of Filter Effects 1
 

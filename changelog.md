@@ -5,6 +5,65 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Masking 1's `mask`, over a linear gradient
+
+css-2026.md said only that `mask` and its longhands were untouched, with
+no reason given. The reason that would have been given -- a mask is
+per-pixel alpha and this engine cannot read a pixel -- is wrong the same
+way the filter block was, and one measurement settles it: **`drawImage`
+honours `fillAlpha`**. An opaque red image blitted over white at
+`fillAlpha(1.0)` gives `#ff0000` and at `fillAlpha(0.5)` gives
+`#ff7f7f`, exactly the half composite. The clip machinery already paints
+a subtree into a layer and blits it back in pieces, so a mask is that
+loop with an alpha per piece instead of a span per row. The alpha is
+computed, not sampled: this engine builds the gradient's colours itself
+and so knows every alpha in one.
+
+The other half of the answer is that **`mask-*` is `background-*` with
+the result used as alpha**, so `mask-repeat`, `mask-position`,
+`mask-size`, `mask-origin` and `mask-clip` are read with the background
+readers rather than a second copy of the same five questions. One
+initial value differs and was measured rather than assumed:
+`mask-origin` is the border box where `background-origin` is the padding
+box. `mask-image`, `mask-mode` and the `mask` shorthand complete the
+set; a masked element is a stacking context.
+
+**The count moves from 272 to 278**, and every one of the six is a
+property the painter reads and a pixel test exercises: `mask-clip`,
+`mask-mode`, `mask-origin`, `mask-position`, `mask-repeat` and
+`mask-size`. `mask-image`'s row is `url(a.png)`, which stays
+unimplemented and stays failing.
+
+That needed the computed style to be got right rather than the
+instrument. The six longhands first registered as nothing, because a
+spec was only built when a paintable image was there; they are stored
+whenever any of the seven is declared, since `mask-clip` has a computed
+value whether or not an image is beside it and the painter reads it the
+moment one is. The mirror of that: `mask-image: url()` with nothing
+beside it builds no spec at all, because the engine throws the image
+away and a computed style that recorded it would be scoring on a value
+nothing reads -- the `outline-style` trap. `@supports` answers no for a
+bitmap, a radial gradient and a conic one, so it and the instrument
+agree.
+
+**The bug the tests caught.** `cutRegion` copies with `drawImage`, which
+honours `fillAlpha` -- so cutting the next run while the previous run's
+alpha was still set faded each run by the one before it, and a uniform
+half-alpha mask came out at a quarter. The check that found it is the
+agreement that needs no number: a mask whose alpha is uniformly a half
+must paint what `opacity: 0.5` paints. Both now give (127, 127, 255),
+and the gradient matches Chromium to the pixel at its first pixel
+(1, 1, 255) and its midpoint (129, 129, 255).
+
+What stays out, recorded rather than hidden: a `url()` bitmap mask needs
+that image's own alpha per pixel, which is FINDINGS.md finding 35 again;
+a radial or conic gradient mask needs a projection this engine does not
+compute; `mask-composite` and a second mask layer are not implemented.
+A declaration naming any of the three unpaintable images is dropped
+whole, so the element renders unmasked rather than half-masked.
+
+28 pixel checks in `tests/render/mask.f`.
+
 ### CSS Filter Effects 1's colour functions, and a block that was answering the wrong question
 
 The specification was recorded here as blocked on the language, and half

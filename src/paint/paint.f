@@ -3765,6 +3765,188 @@ void func paintSticky(b:Box) {
     pRestoreState()
 }
 
+// ---- CSS Masking 1: a mask layer -------------------------------------
+//
+// A mask is per-pixel alpha, and this engine cannot read a pixel back
+// (FINDINGS.md, finding 35). It does not need to. `drawImage` honours
+// `fillAlpha` -- measured -- and the clip machinery already paints a
+// subtree into a layer and blits it back in pieces. A mask is that loop
+// with an alpha per piece instead of a span per row.
+//
+// The alpha is computed rather than sampled: this engine builds the
+// gradient's colours itself, so it knows every alpha in one without
+// reading a pixel. Only a linear gradient is painted; a `url()` mask
+// would need the bitmap's own alpha, which is the block proper.
+//
+// These describe the mask in force, set up once per masked box, because
+// a Festina function returns one value (FINDINGS.md).
+Gradient maskGrad
+arr[float] maskOffsets = []
+int maskMode = 0
+int maskTileX = 0
+int maskTileY = 0
+float maskTileW = 0.0
+float maskTileH = 0.0
+bool maskRepX = false
+bool maskRepY = false
+float maskDirXv = 0.0
+float maskDirYv = 1.0
+float maskLenV = 0.0
+float maskX0v = 0.0
+float maskY0v = 0.0
+int maskedBoxId = 0
+
+// CSS Masking 1 §7.1's luminanceToAlpha, in sRGB, which is what
+// Chromium's answer for a white-to-black gradient under
+// `mask-mode: luminance` matches (todo.md).
+float func maskLuminance(c:int) {
+    return (0.2125 * colorRed(c).toFloat()
+        + 0.7154 * colorGreen(c).toFloat()
+        + 0.0721 * colorBlue(c).toFloat()) / 255.0
+}
+
+// The mask's alpha at one document pixel, 0 to 255. Outside the tile of
+// a mask that does not repeat on that axis the answer is ZERO, not full
+// -- the semantic most easily got backwards, and measured.
+int func maskAlphaAt(px:int, py:int) {
+    float lx = (px - maskTileX).toFloat() + 0.5
+    float ly = (py - maskTileY).toFloat() + 0.5
+    if maskRepX {
+        lx = lx - Math.floor(lx / maskTileW) * maskTileW
+    } else if lx < 0.0 || lx >= maskTileW { return 0 }
+    if maskRepY {
+        ly = ly - Math.floor(ly / maskTileH) * maskTileH
+    } else if ly < 0.0 || ly >= maskTileH { return 0 }
+    float t = ((lx - maskX0v) * maskDirXv + (ly - maskY0v) * maskDirYv) / maskLenV
+    if t < 0.0 { t = 0.0 }
+    if t > 1.0 { t = 1.0 }
+    int c = gradientColorAt(maskGrad, maskOffsets, t)
+    int a = colorAlpha(c)
+    if maskMode == MASKMODE_LUMINANCE {
+        return roundPx(a.toFloat() * maskLuminance(c))
+    }
+    return a
+}
+
+// One axis of the tile. `auto` on a gradient is the positioning area,
+// because a gradient has no intrinsic size of its own.
+int func maskTileSide(kind:int, l:Len, area:int) {
+    if kind != BGSIZE_EXPLICIT { return area }
+    if l.kind == LEN_PERCENT { return roundPx(area.toFloat() * l.v / 100.0) }
+    if l.kind == LEN_PX { return roundPx(l.v) }
+    return area
+}
+
+void func paintMasked(b:Box) {
+    MaskSpec spec = maskSpecOf(b.style.maskIdx)
+    if spec == null { return }
+    BgLayer ml = spec.layer
+    // The clip box is what the layer covers, so `mask-clip` is done by
+    // not painting outside it at all.
+    int mcx = b.x
+    int mcy = b.y
+    int mcw = b.w
+    int mch = b.h
+    if ml.clip == BGCLIP_PADDING || ml.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.bl
+        mcy = mcy + b.bt
+        mcw = mcw - b.bl - b.br
+        mch = mch - b.bt - b.bb
+    }
+    if ml.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.pl
+        mcy = mcy + b.pt
+        mcw = mcw - b.pl - b.pr
+        mch = mch - b.pt - b.pb
+    }
+    if mcw <= 0 || mch <= 0 { return }
+    // The positioning area `mask-origin` names. Its initial value is the
+    // BORDER box, where `background-origin`'s is the padding box --
+    // measured against Chromium, not assumed.
+    int mox = b.x
+    int moy = b.y
+    int mow = b.w
+    int moh = b.h
+    if ml.origin == BGORIGIN_PADDING || ml.origin == BGORIGIN_CONTENT {
+        mox = mox + b.bl
+        moy = moy + b.bt
+        mow = mow - b.bl - b.br
+        moh = moh - b.bt - b.bb
+    }
+    if ml.origin == BGORIGIN_CONTENT {
+        mox = mox + b.pl
+        moy = moy + b.pt
+        mow = mow - b.pl - b.pr
+        moh = moh - b.pt - b.pb
+    }
+    if mow <= 0 || moh <= 0 { return }
+    int mtw = maskTileSide(ml.sizeKind, ml.sizeW, mow)
+    int mth = maskTileSide(ml.sizeKind, ml.sizeH, moh)
+    if mtw <= 0 || mth <= 0 { return }
+    maskTileX = mox + resolvePositionAxis(ml.posX, mow - mtw, b.style.fontSize)
+    maskTileY = moy + resolvePositionAxis(ml.posY, moh - mth, b.style.fontSize)
+    maskTileW = mtw.toFloat()
+    maskTileH = mth.toFloat()
+    maskRepX = ml.repeatX
+    maskRepY = ml.repeatY
+    maskGrad = ml.image
+    maskMode = spec.mode
+    // The gradient line inside one tile: the same construction
+    // `paintLinearGradient` makes over a box.
+    gradientDirection(ml.image.angle)
+    float mHalfW = maskTileW / 2.0
+    float mHalfH = maskTileH / 2.0
+    float mHalf = absFloat(mHalfW * gradDirX) + absFloat(mHalfH * gradDirY)
+    if mHalf <= 0.0 { return }
+    maskDirXv = gradDirX
+    maskDirYv = gradDirY
+    maskLenV = mHalf + mHalf
+    maskX0v = mHalfW - gradDirX * mHalf
+    maskY0v = mHalfH - gradDirY * mHalf
+    resolveGradientStops(ml.image, maskLenV)
+    maskOffsets = gradOffsets
+
+    int maskWas = maskedBoxId
+    maskedBoxId = b.id
+    img maskPrev = paintLayer
+    img maskLayer = blankImage(mcw, mch)
+    maskLayer.translate(0 - mcx, 0 - mcy)
+    paintLayer = maskLayer
+    paintBox(b)
+    paintLayer = maskPrev
+    maskedBoxId = maskWas
+
+    // Back in runs of one alpha. A vertical gradient gives one run a
+    // row; a horizontal one gives as many runs as it has distinct
+    // alphas, which is what a band decomposition would have cost.
+    for int mrow = 0, mrow < mch, mrow++ {
+        int my = mcy + mrow
+        int runFrom = 0
+        int runA = maskAlphaAt(mcx, my)
+        for int mi = 1, mi <= mcw, mi++ {
+            int ma = mi < mcw ? maskAlphaAt(mcx + mi, my) : 0 - 1
+            if ma == runA { continue }
+            if runA > 0 {
+                // `cutRegion` copies with `drawImage`, which honours
+                // `fillAlpha` -- so the alpha has to be back at one
+                // before the cut and reset after the blit, or each run
+                // is faded by the run before it. A uniform half-alpha
+                // mask came out at a quarter, which is what the
+                // agreement against `opacity: 0.5` caught.
+                img piece = cutRegion(maskLayer, runFrom, mrow, mi - runFrom, 1)
+                if piece != null {
+                    fillAlpha(runA.toFloat() / 255.0)
+                    pDrawImage(piece, mcx + runFrom, my)
+                    fillAlpha(1.0)
+                }
+            }
+            runFrom = mi
+            runA = ma
+        }
+    }
+    fillAlpha(1.0)
+}
+
 void func paintFiltered(b:Box) {
     int was = filteredBoxId
     filteredBoxId = b.id
@@ -3776,6 +3958,13 @@ void func paintFiltered(b:Box) {
 
 void func paintBox(b:Box) {
     if anyAnchorHidden && anchorHides(b) { return }
+    // The mask goes outside the filter: a filter applies to the
+    // element's own rendering, and the mask applies to the result.
+    if anyMask && b.style != null && b.style.maskIdx > 0
+        && b.id != maskedBoxId {
+        paintMasked(b)
+        return
+    }
     if anyFilter && b.style != null && b.style.filterIdx > 0
         && b.id != filteredBoxId {
         paintFiltered(b)
@@ -4010,6 +4199,10 @@ bool func boxPaintsWhole(b:Box) {
     // colour, which is what going through `paintBox` gives it. An
     // ordinary in-flow block never reaches `paintBox` otherwise.
     if anyFilter && b.style.filterIdx > 0 { return true }
+    // A mask needs the box to paint whole for the same reason a filter
+    // does: the whole subtree has to reach one layer before it can be
+    // blitted back through the mask's alpha.
+    if anyMask && b.style.maskIdx > 0 { return true }
     if cascadeSawTransform && b.style.transforms.length > 0 { return true }
     // A positioned box is not asked about: every caller steps over one
     // before it gets here, so the `z-index` half of
