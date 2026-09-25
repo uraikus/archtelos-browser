@@ -281,6 +281,63 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     shaping, which needs contextual forms the toy font API does not
     offer (FINDINGS.md, finding 31).
 
+### Masks, measured, and the blit that makes them possible
+
+css-2026.md says of CSS Masking 1 only that `mask` and its longhands are
+untouched. No reason is given, and the one that would have been given --
+a mask is per-pixel alpha, and this engine cannot read a pixel -- is
+wrong for the same shape of reason the filter block was.
+
+**`drawImage` honours `fillAlpha`.** Measured rather than assumed: an
+opaque red 10x10 image blitted over white at `fillAlpha(1.0)` gives
+`#ff0000`, and the same image at `fillAlpha(0.5)` gives `#ff7f7f`,
+exactly the half composite. So a layer can be blitted at any alpha
+without a pixel ever being read, and the clip machinery already cuts a
+layer into pieces and blits them one at a time (`paintShaped`, with
+`cutRegion`). A mask is that loop with an alpha per piece instead of a
+span per row.
+
+**And `mask-*` is `background-*` with the result used as alpha.** The
+positioning, sizing, repeating, origin and clip are the same five
+questions this engine already answers for a background layer, which is
+where the implementation should come from rather than a second copy.
+
+What Chromium does, measured on a 100x40 `rgb(0,0,255)` box over white:
+
+| the mask | left | middle | right |
+|---|---|---|---|
+| `linear-gradient(to right, black, transparent)` | `#0101ff` | `#8181ff` | `#fbfbff` |
+| `linear-gradient(to right, white, black)`, `mask-mode: luminance` | `#0202ff` | `#8181ff` | `#fbfbff` |
+| `linear-gradient(to right, white, black)`, default mode | `#0000ff` | `#0000ff` | `#0000ff` |
+| `linear-gradient(rgba(0,0,0,1), rgba(0,0,0,.5))` | `#0000ff` | `#4040ff` | `#7d7dff` |
+| `mask-image: none` | `#0000ff` | `#0000ff` | `#0000ff` |
+
+The third row is the one worth reading twice. A white-to-black gradient
+masks **nothing**, because the default `mask-mode` is `match-source` and
+a CSS image's source is its *alpha*, which is 1 all the way across. Only
+`luminance` reads the colour. Written from memory that row comes out
+backwards.
+
+**Two agreements to test against, needing no number.** Both measured
+exactly:
+
+- a mask whose alpha is uniformly a half paints what `opacity: 0.5`
+  paints -- `#7f7fff` from each;
+- a fully opaque mask paints what no mask paints -- `#0000ff` from each.
+
+**Where the mask image is not**, alpha is zero rather than one:
+`mask-size: 50% 100%` with `mask-repeat: no-repeat` leaves the right
+half of the box fully transparent, and `mask-position: 25px 0` leaves
+the first 25 pixels transparent. That is the semantic most easily got
+backwards, and it is measured.
+
+**What will not be reachable.** A `mask-image: url(...)` bitmap needs
+that image's own alpha per pixel, and `img.getPixelColor` returns a
+`color` with no accessor (FINDINGS.md, finding 35) -- the same block
+that leaves a bitmap image unfiltered. A gradient mask has no such
+problem, because this engine computes the gradient's colours itself and
+therefore already knows every alpha in it.
+
 ### What is left of Filter Effects 1
 
 The eight colour functions are in. What follows is the reason they were
