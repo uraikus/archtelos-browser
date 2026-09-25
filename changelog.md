@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A mask over a radial or conic gradient
+
+todo.md recorded these as the next mask work and said the radius
+resolution would have to be lifted out of `paintRadialGradient`. It does
+not: `radialRadii` is already its own function writing `radRx` and
+`radRy`, and `resolveGradientCenter` already gives the centre. That is
+the fourth written-down obstacle this session to dissolve on reading the
+code rather than the note, and the first where the note was **mine**,
+written two hours earlier.
+
+So each shape is one expression. A radial mask's parameter is the point
+in the ending ellipse's own coordinates, `sqrt((dx/rx)^2 + (dy/ry)^2)`,
+which is 1 on the ending shape whatever its two radii are; a conic
+mask's is the angle clockwise from pointing up, less `conicFrom`, over
+360 -- `conicFrom` being the convention the background painter already
+uses. The blit is unchanged and is now shared by all three shapes,
+because only the alpha function differs between them.
+
+All fifteen pixels measured match Chromium 141 exactly: five columns
+each of `radial-gradient(closest-side, ...)`, `radial-gradient(circle
+20px at 50px 20px, ...)` and `conic-gradient(...)`. Six of them are
+asserted as absolutes, and the check that earns its place is the 20px
+circle -- it leaves the columns 25 pixels either side of the centre
+fully transparent, so an implementation that resolved no radius and
+covered the box fails on white against white rather than on two shades
+of blue.
+
+`@supports` now answers yes for a radial and conic mask and no only for
+a bitmap. The count does not move: `mask-image`'s row is `url(a.png)`.
+
+`tests/render/mask.f`: 44 passed, 0 failed.
+
 ### CSS Masking 1's `mask`, over a linear gradient
 
 css-2026.md said only that `mask` and its longhands were untouched, with

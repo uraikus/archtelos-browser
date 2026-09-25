@@ -1668,16 +1668,11 @@ bool func supportsDeclaration(decl:ascii) {
     if prop.length == 0 { return false }
     // A custom property or a vendor prefix is dropped at parse time.
     if prop.charCodeAt(0) == CH_MINUS { return false }
-    // `mask-image` is supported for a linear gradient and not for a
-    // bitmap, a radial one or a conic one: the first needs the image's
-    // own alpha per pixel, which is the block this engine cannot pass,
-    // and the other two need a projection it does not compute. The
-    // property name alone cannot say that, so it is asked here.
-    if prop == 'mask-image' {
-        ascii mv = asciiLower(val)
-        if asciiIndexOf(mv, 'url(', 0) >= 0 { return false }
-        if asciiIndexOf(mv, 'radial-gradient(', 0) >= 0 { return false }
-        if asciiIndexOf(mv, 'conic-gradient(', 0) >= 0 { return false }
+    // `mask-image` is supported for a gradient and not for a bitmap,
+    // which needs the image's own alpha per pixel. The property name
+    // alone cannot say that, so it is asked here.
+    if prop == 'mask-image' && asciiIndexOf(asciiLower(val), 'url(', 0) >= 0 {
+        return false
     }
     return cssKnownProperty(prop) && cssValueEvaluable(val)
 }

@@ -333,37 +333,18 @@ backwards, and it is measured.
 
 **What is left, in the order it is worth doing.**
 
-1. **A radial or conic gradient mask.** Neither is blocked, and neither
-   needs anything lifted out of anything: `radialRadii` already writes
-   the resolved radii to `radRx`/`radRy` as its own function, and
-   `resolveGradientCenter` already gives the centre. The projection is
-   one line each -- `sqrt(((px-cx)/rx)^2 + ((py-cy)/ry)^2)` for a
-   radial, and the angle clockwise from pointing up less `conicFrom`,
-   over 360, for a conic. Chromium, on a 100x40 `rgb(0,0,255)` box over
-   white, at x = 2, 25, 50, 75, 98:
-
-   | the mask | | | | | |
-   |---|---|---|---|---|---|
-   | `radial-gradient(closest-side, black, transparent)` | `#f2f2ff` | `#7d7dff` | `#0707ff` | `#8282ff` | `#f7f7ff` |
-   | `radial-gradient(circle 20px at 50px 20px, ...)` | `#ffffff` | `#ffffff` | `#0909ff` | `#ffffff` | `#ffffff` |
-   | `conic-gradient(black, transparent)` | `#bfbfff` | `#bebeff` | `#6060ff` | `#4141ff` | `#4040ff` |
-
-   The second row is the one to keep: a 20px circle centred at (50, 20)
-   leaves x = 25 and x = 75 fully transparent, so a radial mask that
-   forgot its radius and covered the box would be caught by it rather
-   than by a shade of blue.
-2. **`mask-composite` and a second mask layer.** The layers each produce
+1. **`mask-composite` and a second mask layer.** The layers each produce
    an alpha and the operator combines them, which is arithmetic on two
    numbers this engine already has; what is missing is the layer list,
    since only the first is read today.
-3. **A `mask-image: url(...)` bitmap.** This one IS blocked:
+2. **A `mask-image: url(...)` bitmap.** This one IS blocked:
    `img.getPixelColor` returns a `color` with no accessor (FINDINGS.md,
    finding 35), the same block that leaves a bitmap image unfiltered.
    It waits on festina.md 3p.
 
-A declaration naming an image of the third kind -- or, today, of the
-first -- is dropped whole rather than half-applied, so such an element
-renders unmasked, and `@supports` answers no for it.
+A declaration naming a bitmap is dropped whole rather than
+half-applied, so such an element renders unmasked, and `@supports`
+answers no for it.
 
 ### What is left of Filter Effects 1
 

@@ -24,6 +24,13 @@ color mkHalf = '#7f7fff'
 // transparent)` over this blue, at the first pixel and the midpoint.
 color mkNearBlue = '#0101ff'
 color mkMid = '#8181ff'
+// Chromium's answers for the radial and conic masks below.
+color mkRadEdge = '#f2f2ff'
+color mkRadMid = '#0707ff'
+color mkCircMid = '#0909ff'
+color mkConA = '#bfbfff'
+color mkConMid = '#6060ff'
+color mkConB = '#4040ff'
 
 // One 100x40 blue box per row, at y = 40*row, on a white page.
 text mkRows = ''
@@ -148,5 +155,45 @@ check(getPixelColor(2, 20) == getPixelColor(2, 60), 'the shorthand paints what t
 check(getPixelColor(30, 20) == getPixelColor(30, 60), 'in the middle')
 check(getPixelColor(70, 20) == getPixelColor(70, 60), 'and past the end of the tile')
 check(getPixelColor(70, 20) == mkWhite, 'where both are masked out')
+
+// ---- radial and conic gradient masks ----------------------------------
+//
+// Both are computed the way the linear one is, each with its own
+// projection from a pixel to the gradient's parameter. The check that
+// earns its place is the circle with a radius: a 20px circle centred at
+// (50, 20) must leave the columns 25 pixels either side FULLY
+// transparent, so an implementation that resolved no radius and covered
+// the box fails on white against white rather than on two shades of
+// blue.
+
+mkRows = ''
+mkAdd('mask-image:radial-gradient(closest-side, black, transparent)')       // 0
+mkAdd('mask-image:radial-gradient(circle 20px at 50px 20px, black, transparent)') // 1
+mkAdd('mask-image:conic-gradient(black, transparent)')                      // 2
+mkAdd('')                                                                   // 3 plain
+mkPaint()
+
+check(mkAt(1, 25) == mkWhite, 'a 20px circle mask leaves x=25 fully transparent')
+check(mkAt(1, 75) == mkWhite, 'and x=75 too')
+check(mkAt(1, 50) != mkWhite, 'while its centre is painted')
+check(mkAt(1, 50) != mkAt(3, 50), 'and is not simply the unmasked colour')
+
+check(mkAt(0, 50) != mkWhite, 'a closest-side radial mask paints its centre')
+check(mkAt(0, 2) != mkAt(0, 50), 'and fades away from it')
+check(mkAt(0, 2) != mkAt(1, 2), 'closest-side is not the 20px circle')
+
+check(mkAt(2, 2) != mkWhite, 'a conic mask paints somewhere')
+check(mkAt(2, 2) != mkAt(2, 98), 'and sweeps, so two columns differ')
+check(mkAt(2, 50) != mkAt(3, 50), 'and it is not the unmasked colour')
+
+// And the absolutes. All fifteen pixels of the three masks match
+// Chromium 141 exactly; these six are the ones a wrong projection could
+// not pass by accident -- a centre and an edge of each shape.
+check(mkAt(0, 2) == mkRadEdge, 'closest-side radial: Chromium at x=2')
+check(mkAt(0, 50) == mkRadMid, 'and at its centre')
+check(mkAt(1, 50) == mkCircMid, 'the 20px circle at its centre')
+check(mkAt(2, 2) == mkConA, 'conic at x=2')
+check(mkAt(2, 50) == mkConMid, 'at x=50')
+check(mkAt(2, 98) == mkConB, 'and at x=98')
 
 finish('mask')

@@ -3795,6 +3795,20 @@ float maskLenV = 0.0
 float maskX0v = 0.0
 float maskY0v = 0.0
 int maskedBoxId = 0
+// A radial or conic mask: the centre and, for a radial, the two
+// resolved radii. `radialRadii` and `resolveGradientCenter` already
+// compute both for the background painter, so neither had to be lifted
+// out of anything.
+int maskKind = 0
+float maskCxv = 0.0
+float maskCyv = 0.0
+float maskRxv = 0.0
+float maskRyv = 0.0
+float maskFromDeg = 0.0
+
+const int MASKSHAPE_LINEAR = 0
+const int MASKSHAPE_RADIAL = 1
+const int MASKSHAPE_CONIC = 2
 
 // CSS Masking 1 §7.1's luminanceToAlpha, in sRGB, which is what
 // Chromium's answer for a white-to-black gradient under
@@ -3817,7 +3831,23 @@ int func maskAlphaAt(px:int, py:int) {
     if maskRepY {
         ly = ly - Math.floor(ly / maskTileH) * maskTileH
     } else if ly < 0.0 || ly >= maskTileH { return 0 }
-    float t = ((lx - maskX0v) * maskDirXv + (ly - maskY0v) * maskDirYv) / maskLenV
+    float t = 0.0
+    if maskKind == MASKSHAPE_RADIAL {
+        // The ellipse's own coordinates: a point is at parameter 1 on
+        // the ending shape itself, whatever its two radii are.
+        if maskRxv <= 0.0 || maskRyv <= 0.0 { return 0 }
+        float ex = (lx - maskCxv) / maskRxv
+        float ey = (ly - maskCyv) / maskRyv
+        t = Math.sqrt(ex * ex + ey * ey)
+    } else if maskKind == MASKSHAPE_CONIC {
+        // Clockwise from pointing up, which is `conicFrom`'s own
+        // convention in the background painter.
+        float deg = motionDegOf(lx - maskCxv, ly - maskCyv) + 90.0 - maskFromDeg
+        deg = deg - Math.floor(deg / 360.0) * 360.0
+        t = deg / 360.0
+    } else {
+        t = ((lx - maskX0v) * maskDirXv + (ly - maskY0v) * maskDirYv) / maskLenV
+    }
     if t < 0.0 { t = 0.0 }
     if t > 1.0 { t = 1.0 }
     int c = gradientColorAt(maskGrad, maskOffsets, t)
@@ -3891,6 +3921,29 @@ void func paintMasked(b:Box) {
     maskRepY = ml.repeatY
     maskGrad = ml.image
     maskMode = spec.mode
+    // A radial or conic mask parameterises the tile differently, and
+    // each is one expression over what the background painter's own
+    // helpers already resolve.
+    if ml.image.radial || ml.image.conic {
+        maskKind = ml.image.radial ? MASKSHAPE_RADIAL : MASKSHAPE_CONIC
+        maskCxv = resolveGradientCenter(ml.image.radialPosX, mtw, b.style.fontSize)
+        maskCyv = resolveGradientCenter(ml.image.radialPosY, mth, b.style.fontSize)
+        maskFromDeg = ml.image.conicFrom
+        if ml.image.radial {
+            radialRadii(ml.image, maskCxv, maskCyv, 0, 0, mtw, mth, b.style.fontSize)
+            maskRxv = radRx
+            maskRyv = radRy
+            if maskRxv <= 0.0 || maskRyv <= 0.0 { return }
+            resolveGradientStops(ml.image, maskRxv)
+        } else {
+            resolveGradientStops(ml.image, 1.0)
+        }
+        maskOffsets = gradOffsets
+        maskGrad = ml.image
+        maskBlit(b, mcx, mcy, mcw, mch)
+        return
+    }
+    maskKind = MASKSHAPE_LINEAR
     // The gradient line inside one tile: the same construction
     // `paintLinearGradient` makes over a box.
     gradientDirection(ml.image.angle)
@@ -3905,7 +3958,13 @@ void func paintMasked(b:Box) {
     maskY0v = mHalfH - gradDirY * mHalf
     resolveGradientStops(ml.image, maskLenV)
     maskOffsets = gradOffsets
+    maskBlit(b, mcx, mcy, mcw, mch)
+}
 
+// The subtree into one layer, and back in runs of one alpha. Shared by
+// every mask shape, because only the alpha function differs between
+// them.
+void func maskBlit(b:Box, mcx:int, mcy:int, mcw:int, mch:int) {
     int maskWas = maskedBoxId
     maskedBoxId = b.id
     img maskPrev = paintLayer

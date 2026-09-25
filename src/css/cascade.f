@@ -2723,12 +2723,12 @@ text bgPosYOut = ''
 // box, where `background-origin` is the padding box, and `mask-clip` is
 // the border box like `background-clip`.
 //
-// Only a linear gradient is painted. A `url()` mask needs that image's
-// own alpha per pixel, which is FINDINGS.md finding 35 -- the same block
-// that leaves a bitmap image unfiltered -- and a radial or conic one
-// needs its own projection, which is written down rather than guessed
-// at. A mask this engine cannot paint leaves `maskIdx` at zero, so the
-// element renders unmasked rather than half-masked.
+// Every gradient is painted -- linear, radial and conic -- each with its
+// own projection from a pixel to the gradient's parameter. A `url()`
+// mask is not: it needs that image's own alpha per pixel, which is
+// FINDINGS.md finding 35, the same block that leaves a bitmap image
+// unfiltered. A mask this engine cannot paint leaves `maskIdx`
+// negative, so the element renders unmasked rather than half-masked.
 bool func anyMaskGeometry(props:map[text]) {
     return styleProp(props, 'mask-mode') != null
         || styleProp(props, 'mask-repeat') != null
@@ -2751,7 +2751,7 @@ int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
         ascii one = asciiTrim(layerValue(mi, 0))
         if one != null && one.length > 0 && asciiLower(one) != 'none' {
             g = parseGradient(one, currentColor, fontSize)
-            paintable = g.present && !g.radial && !g.conic
+            paintable = g.present
         }
     }
     MaskSpec spec
