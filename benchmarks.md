@@ -4063,3 +4063,32 @@ never makes the call to find that out.
 The binary grows 9,536 bytes, the largest of any change measured on
 these pages, and moves nothing. Both binaries render `generated.html`
 and `features.html` byte-identically, `cmp`-checked before any timing.
+
+## The masks cost nothing either, and the rounds disagreed on their own
+
+CSS Masking 1's `mask` over a linear gradient. Like the filters before
+it, this change puts something in the hot path: `paintBox` gains a guard
+on every box and `boxPaintsWhole` a test asked of every box in every
+paint walk. Twenty-five alternating samples at 800px, idle at 0.20 to
+0.24, on the two benchmark pages, neither of which carries a `mask`:
+
+| | parse | stylesheets | cascade | layout | paint |
+|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | +1 | +1 | **0** |
+| `features.html`, round 2 | 0 | 0 | 0 | -1 | **-1** |
+| `generated.html` | 0 | 0 | 0 | 0 | **0** |
+
+The two forward rounds on `features.html` disagree on every phase that
+moved at all, so nothing earns a question and no mirror or control was
+spent. `generated.html` reads zero on all five. Paint is the phase to
+watch, being where the guard is, and it reads 0, then -1, then 0.
+
+The binary grows 17,888 bytes, larger again than the colour filters, and
+moves nothing. That is now the fourth reading in this file saying the
+same thing about size, and the second in a row where the change really
+did touch a hot loop and the answer was still nothing -- which is what a
+short-circuiting guard at the call site is supposed to buy, and the
+second time it has been checked rather than assumed.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.
