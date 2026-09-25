@@ -50,6 +50,19 @@ item rather than the first. The four grid and flex reads went from
 passing to failing on the two new fixtures before the exchange was
 written, which is the only reason to believe they were being measured.
 
+**Cost: nothing measurable.** The exchange is one global read per
+flex, grid or table container and one ternary per cell, and *both*
+benchmark pages reach it -- `features.html` has 24 tables and two
+grids, `generated.html` 40 tables -- so neither could serve as the page
+the change cannot reach. Paired against the parent, two forward rounds
+each: `features.html` gave a total of +4 ms median (mean +0.76, 14 of
+25 pairs slower) and then +1 (mean -1.84, 13 of 25); `generated.html`
++3 (mean +5.44, 15 of 25) and then -4 (mean -0.72, 11 of 25). No two
+rounds agree, the means change sign, and the parent's own median moved
+from 155 to 160 ms between the first page's two rounds -- more than the
+difference being claimed. Nothing there earns a question to the code,
+and benchmarks.md is unchanged.
+
 **The fixtures found two gaps in the horizontal engine**, which the
 agreement form cannot see because both sides share them, and which are
 written down in todo.md with Chromium's numbers beside this engine's: a
