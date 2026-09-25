@@ -541,6 +541,54 @@ reads one global and nothing else.
    turn, resolved against the containing block's own inline size rather
    than the clamped one the logical layout ran with.
 
+   **Underneath it, twelve logical shorthands that never ask the mode.**
+   The `margin-block`/`margin-inline` rows above came out swapped, and
+   the cause is not the auto margin at all: `applyDecl` sends every
+   logical *longhand* through `wmPhysicalName`, and then expands the
+   two-value shorthands further down with physical names written into
+   the source. Asking the code which those are -- every name in
+   `src/css/cascade.f` containing `inline` or `block`, minus the ones
+   `wmPhysicalName` answers -- gives twelve, and a hand-written list
+   would have got two of them:
+
+   `margin-inline`, `margin-block`, `padding-inline`, `padding-block`,
+   `inset-inline`, `inset-block`, `border-inline`, `border-block`,
+   `contain-intrinsic-inline-size`, `contain-intrinsic-block-size`,
+   `overscroll-behavior-inline`, `overscroll-behavior-block`.
+
+   Chromium, asked for the computed physical longhands of each in four
+   combinations. `margin-inline: 11px 22px` and `margin-block: 11px
+   22px` stand for the whole family, because padding, the insets and
+   the borders answer identically:
+
+   | | `margin-inline: 11px 22px` | `margin-block: 11px 22px` |
+   |---|---|---|
+   | `horizontal-tb` `ltr` | left 11, right 22 | top 11, bottom 22 |
+   | `horizontal-tb` `rtl` | **right 11, left 22** | top 11, bottom 22 |
+   | `vertical-rl` | **top 11, bottom 22** | **right 11, left 22** |
+   | `vertical-lr` | **top 11, bottom 22** | **left 11, right 22** |
+
+   and the two axis pairs, which have no order to get wrong:
+
+   | | `horizontal-tb` | `vertical-rl` and `vertical-lr` |
+   |---|---|---|
+   | `contain-intrinsic-inline-size` | `contain-intrinsic-width` | `contain-intrinsic-height` |
+   | `contain-intrinsic-block-size` | `contain-intrinsic-height` | `contain-intrinsic-width` |
+   | `overscroll-behavior-inline` | `overscroll-behavior-x` | `overscroll-behavior-y` |
+   | `overscroll-behavior-block` | `overscroll-behavior-y` | `overscroll-behavior-x` |
+
+   Every bolded cell is a case this engine gets wrong, and the `rtl` row
+   says the gap is not only the vertical modes: **a two-value inline
+   shorthand does not follow `direction` either**, which has been true
+   since the logical properties landed and which no test asked. The
+   rule is exactly the one the longhands already use -- the inline pair
+   is `wmInlineStartSide()` then `wmInlineEndSide()`, the block pair
+   `wmBlockStartSide()` then `wmBlockEndSide()` -- so the check that
+   earns its place needs no numbers at all: **a two-value logical
+   shorthand must land where its own two longhands land**, in every
+   mode. That is the agreement CLAUDE.md asks for, it covers all twelve,
+   and it fails today.
+
 3. **`anchor()`'s sides and the scroll box.** The anchor functions'
    `start` and `end` are the physical sides whatever the mode says, and
    a scroll container inside a vertical flow reserves its bar on the
