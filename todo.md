@@ -683,6 +683,45 @@ declared.
    the four. `self-start` and `self-end` follow the positioned box's own
    mode and agree with `start`/`end` wherever the two modes match.
 
+   **And `direction` does the same thing to them, which is a second
+   finding and nothing to do with writing modes.** The same fixture with
+   `direction` on the containing block and on the positioned box
+   separately -- which is what tells `start` from `self-start`:
+
+   | container / box | setting `left` | `start` | `end` | `self-start` | `self-end` |
+   |---|---|---|---|---|---|
+   | `ltr` / `ltr` | | 60 | 100 | 60 | 100 |
+   | `rtl` / `ltr` | | **100** | **60** | 60 | 100 |
+   | `ltr` / `rtl` | | 60 | 100 | **100** | **60** |
+   | `rtl` / `rtl` | | **100** | **60** | **100** | **60** |
+
+   and setting `top`, every row is 50 for the near pair and 80 for the
+   far one: `direction` is an inline-axis property and the vertical axis
+   is the block axis in a horizontal mode.
+
+   So the whole rule, for the axis of the property being set:
+
+   - `start`/`end` follow the **containing block's** inline direction
+     where that axis is the inline one, and its **block** direction
+     where that axis is the block one. In `horizontal-tb` the horizontal
+     axis is the inline one, so `direction` decides it; in a vertical
+     mode the horizontal axis is the *block* one, so `vertical-rl`
+     reverses it and `vertical-lr` does not.
+   - `self-start`/`self-end` are the same question asked of the
+     **positioned box's own** mode and direction.
+   - A physical side is never reversed, and is **invalid on the wrong
+     axis**.
+
+   `anchorSidePct` in `src/css/cascade.f` does none of this: it maps each
+   word to a percentage along the anchor with no axis, no direction and
+   no writing mode, so it gets four things wrong at once -- the `rtl`
+   rows, the `vertical-rl` column, the wrong-axis side, and
+   `self-start`/`self-end`, which it does not distinguish from
+   `start`/`end` at all. Its own comment says "there is no
+   `writing-mode` here to make the logical names anything else, which is
+   measured rather than assumed", which was true when it was written and
+   is what this measurement replaces.
+
 4. **A physical side on the wrong axis is invalid, and is answered
    here.** The same probe, and nothing to do with writing modes:
    Chromium answers `top: anchor(left)` and `left: anchor(top)` with
