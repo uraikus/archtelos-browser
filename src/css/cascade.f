@@ -2729,44 +2729,30 @@ text bgPosYOut = ''
 // FINDINGS.md finding 35, the same block that leaves a bitmap image
 // unfiltered. A mask this engine cannot paint leaves `maskIdx`
 // negative, so the element renders unmasked rather than half-masked.
-bool func anyMaskGeometry(props:map[text]) {
-    return styleProp(props, 'mask-mode') != null
-        || styleProp(props, 'mask-repeat') != null
-        || styleProp(props, 'mask-position') != null
-        || styleProp(props, 'mask-size') != null
-        || styleProp(props, 'mask-origin') != null
-        || styleProp(props, 'mask-clip') != null
-}
-
-int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
-    // Paintable or not, the longhands are computed and stored; the sign
-    // of the returned index says which (style.f). A mask this engine
-    // cannot paint leaves the element rendered unmasked rather than
-    // half-masked.
-    bool paintable = false
-    Gradient g
-    g.present = false
-    ascii mi = styleProp(props, 'mask-image')
-    if mi != null {
-        ascii one = asciiTrim(layerValue(mi, 0))
-        if one != null && one.length > 0 && asciiLower(one) != 'none' {
-            g = parseGradient(one, currentColor, fontSize)
-            paintable = g.present
-        }
-    }
-    MaskSpec spec
+// One mask layer's geometry and mode, read with the background readers.
+void func maskOneLayer(spec:MaskSpec, props:map[text], i:int,
+                       currentColor:int, fontSize:int) {
     BgLayer l
     l.url = null
     l.fadeUrl = null
     l.fade = 0.0 - 1.0
+    Gradient g
+    g.present = false
+    ascii mi = styleProp(props, 'mask-image')
+    if mi != null {
+        ascii one = asciiTrim(layerValue(mi, i))
+        if one != null && one.length > 0 && asciiLower(one) != 'none' {
+            g = parseGradient(one, currentColor, fontSize)
+        }
+    }
     l.image = g
-    parseBgRepeat(layerValue(styleProp(props, 'mask-repeat'), 0))
+    parseBgRepeat(layerValue(styleProp(props, 'mask-repeat'), i))
     l.repeatX = bgRepeatXOut
     l.repeatY = bgRepeatYOut
     // CSS Masking 1 has no `mask-position-x`/`-y`, so the two axes are
     // split here rather than read as longhands the way a background's
     // are.
-    ascii mp = layerValue(styleProp(props, 'mask-position'), 0)
+    ascii mp = layerValue(styleProp(props, 'mask-position'), i)
     l.posX = lenPercent(0.0)
     l.posY = lenPercent(0.0)
     if mp != null {
@@ -2776,26 +2762,80 @@ int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
             l.posY = parsePositionAxis(asciiLower(bgPosYOut.toAscii()), false, fontSize)
         }
     }
-    parseBgSize(layerValue(styleProp(props, 'mask-size'), 0), fontSize)
+    parseBgSize(layerValue(styleProp(props, 'mask-size'), i), fontSize)
     l.sizeKind = bgSizeKindOut
     l.sizeW = bgSizeWOut
     l.sizeH = bgSizeHOut
-    ascii clip = layerValue(styleProp(props, 'mask-clip'), 0)
+    ascii clip = layerValue(styleProp(props, 'mask-clip'), i)
     l.clip = clip == null ? BGCLIP_BORDER : parseBgClip(clip)
     // The one initial value that is not the background's: the border
     // box, measured against Chromium (todo.md).
-    ascii orig = layerValue(styleProp(props, 'mask-origin'), 0)
+    ascii orig = layerValue(styleProp(props, 'mask-origin'), i)
     l.origin = orig == null ? BGORIGIN_BORDER : parseBgOrigin(orig)
     l.fixed = false
-    spec.layer = l
-    spec.paintable = paintable
-    ascii md = styleProp(props, 'mask-mode')
-    spec.mode = MASKMODE_MATCH
+    spec.layers.push(l)
+
+    int mode = MASKMODE_MATCH
+    ascii md = layerValue(styleProp(props, 'mask-mode'), i)
     if md != null {
         ascii m = asciiLower(asciiTrim(md))
-        if m == 'alpha' { spec.mode = MASKMODE_ALPHA }
-        else if m == 'luminance' { spec.mode = MASKMODE_LUMINANCE }
+        if m == 'alpha' { mode = MASKMODE_ALPHA }
+        else if m == 'luminance' { mode = MASKMODE_LUMINANCE }
     }
+    spec.modes.push(mode)
+
+    int op = MASKOP_ADD
+    ascii co = layerValue(styleProp(props, 'mask-composite'), i)
+    if co != null {
+        ascii c = asciiLower(asciiTrim(co))
+        if c == 'subtract' { op = MASKOP_SUBTRACT }
+        else if c == 'intersect' { op = MASKOP_INTERSECT }
+        else if c == 'exclude' { op = MASKOP_EXCLUDE }
+    }
+    spec.composites.push(op)
+}
+
+bool func anyMaskGeometry(props:map[text]) {
+    return styleProp(props, 'mask-mode') != null
+        || styleProp(props, 'mask-repeat') != null
+        || styleProp(props, 'mask-position') != null
+        || styleProp(props, 'mask-size') != null
+        || styleProp(props, 'mask-origin') != null
+        || styleProp(props, 'mask-clip') != null
+        || styleProp(props, 'mask-composite') != null
+}
+
+// How many comma-separated layers the longhands between them describe.
+// `mask-image` decides it, as the background's image list does; a
+// shorter list on another longhand repeats, which is what `layerValue`
+// already does.
+int func maskLayerCount(props:map[text]) {
+    ascii mi = styleProp(props, 'mask-image')
+    if mi == null { return 1 }
+    return splitTopLevelCommas(mi).length
+}
+
+// Every gradient is painted -- linear, radial and conic -- each with its
+// own projection from a pixel to the gradient's parameter. A `url()`
+// mask is not: it needs that image's own alpha per pixel, which is
+// FINDINGS.md finding 35, the same block that leaves a bitmap image
+// unfiltered. A mask this engine cannot paint leaves `maskIdx`
+// negative, so the element renders unmasked rather than half-masked.
+int func parseMaskLayer(props:map[text], currentColor:int, fontSize:int) {
+    MaskSpec spec
+    spec.layers = []
+    spec.modes = []
+    spec.composites = []
+    int n = maskLayerCount(props)
+    if n < 1 { n = 1 }
+    for int i = 0, i < n, i++ {
+        maskOneLayer(spec, props, i, currentColor, fontSize)
+    }
+    bool paintable = false
+    for int i = 0, i < spec.layers.length, i++ {
+        if spec.layers[i].image.present { paintable = true }
+    }
+    spec.paintable = paintable
     // An unpaintable image with no geometry beside it leaves nothing to
     // store: the engine throws the image away, so a computed style that
     // recorded it would be claiming a value nothing reads.
@@ -4289,6 +4329,7 @@ void func applyMaskShorthand(props:map[text], value:ascii) {
     props['mask-size'] = 'auto'
     props['mask-origin'] = 'border-box'
     props['mask-clip'] = 'border-box'
+    props['mask-composite'] = 'add'
     ascii v = asciiTrim(value)
     if v.length == 0 { return }
     int slash = asciiIndexOf(v, '/', 0)
@@ -8368,12 +8409,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // Any of the seven longhands brings the layer into being, because
     // `mask-clip` has a computed value whether or not an image is
     // beside it -- and the painter reads it as soon as one is.
-    if styleProp(props, 'mask-image') != null || styleProp(props, 'mask-mode') != null
-        || styleProp(props, 'mask-repeat') != null
-        || styleProp(props, 'mask-position') != null
-        || styleProp(props, 'mask-size') != null
-        || styleProp(props, 'mask-origin') != null
-        || styleProp(props, 'mask-clip') != null {
+    if styleProp(props, 'mask-image') != null || anyMaskGeometry(props) {
         s.maskIdx = parseMaskLayer(props, s.color, s.fontSize)
         if s.maskIdx > 0 { anyMask = true }
     }

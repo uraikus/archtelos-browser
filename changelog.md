@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `mask-composite`, and a second mask layer
+
+`mask-image` takes a comma-separated list, each layer with its own
+`mask-mode`, `mask-repeat`, `mask-position`, `mask-size`, `mask-origin`
+and `mask-composite`, combined bottom upwards. **272 → 279**, with
+`mask-composite` the property that moved and `--fields` naming the mask
+field.
+
+The four operators are Porter-Duff on the alpha channel alone (§7.5),
+and all four agree with Chromium to the pixel on two flat layers at 0.8
+over 0.25:
+
+| operator | painted | alpha | |
+|---|---|---|---|
+| `add` | `#2626ff` | 0.851 | `as + ad - as*ad` |
+| `subtract` | `#6666ff` | 0.600 | `as * (1 - ad)` |
+| `intersect` | `#ccccff` | 0.200 | `as * ad` |
+| `exclude` | `#5959ff` | 0.651 | `as + ad - 2*as*ad` |
+
+**The first probe could not tell `subtract` from `intersect`**, because
+it put 0.5 below: `as*(1-ad)` and `as*ad` are the same number when `ad`
+is a half, so both read `#9999ff` and a wrong implementation would have
+passed. A quarter separates them, 0.6 against 0.2. That is the third
+time this session the fix was to choose a probe that can fail, after
+`mask-origin`'s clamp and the `<rect>` radii, and it is the same rule
+this project already writes down about instruments applied to a
+measurement.
+
+The layer resolution moved out of the painter's globals into a
+`MaskPrep` per layer, prepared once per masked box and read per pixel,
+because one set of globals cannot describe two layers at once. The blit
+is untouched and is now shared by every shape and layer count: only the
+alpha differs.
+
+`tests/render/mask.f`: 54 passed, 0 failed.
+
 ### A mask over a radial or conic gradient
 
 todo.md recorded these as the next mask work and said the radius

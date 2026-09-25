@@ -61,18 +61,24 @@ text func filterKey(s:Style) {
 text func maskKey(s:Style) {
     MaskSpec spec = maskSpecOf(s.maskIdx)
     if spec == null { return 'none' }
-    BgLayer l = spec.layer
+    if spec.layers.length == 0 { return 'none' }
+    BgLayer l = spec.layers[0]
     // The image contributes only when it is one this engine paints. A
     // `mask-image: url()` with nothing beside it makes no spec at all
     // (src/css/cascade.f), so this only has to keep an unpaintable
     // image from moving the key when a geometry longhand put the spec
     // there -- otherwise the property would score on a value nothing
     // reads, which is the trap `outline-style` was.
-    text imgKey = spec.paintable ? `g${l.image.angle}:${l.image.stops.length}` : 'no'
-    return `${spec.mode}|${l.repeatX ? 1 : 0}${l.repeatY ? 1 : 0}`
+    text imgKey = l.image.present ? `g${l.image.angle}:${l.image.stops.length}` : 'no'
+    text out = `${spec.layers.length}|${spec.modes[0]}|${spec.composites[0]}`
+        + `|${l.repeatX ? 1 : 0}${l.repeatY ? 1 : 0}`
         + `|${lenKey(l.posX)}|${lenKey(l.posY)}`
         + `|${l.sizeKind}|${lenKey(l.sizeW)}|${lenKey(l.sizeH)}`
         + `|${l.clip}|${l.origin}|${imgKey}`
+    for int i = 1, i < spec.layers.length, i++ {
+        out = out + `;${spec.modes[i]}|${spec.composites[i]}`
+    }
+    return out
 }
 
 arr[text] func styleDigestFields(s:Style) {

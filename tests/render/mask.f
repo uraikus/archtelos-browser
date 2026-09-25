@@ -31,6 +31,13 @@ color mkCircMid = '#0909ff'
 color mkConA = '#bfbfff'
 color mkConMid = '#6060ff'
 color mkConB = '#4040ff'
+// Chromium's answers for the two layers and their four composites.
+color mkTop8 = '#3333ff'
+color mkBot25 = '#bfbfff'
+color mkCompAdd = '#2626ff'
+color mkCompSub = '#6666ff'
+color mkCompInt = '#ccccff'
+color mkCompExc = '#5959ff'
 
 // One 100x40 blue box per row, at y = 40*row, on a white page.
 text mkRows = ''
@@ -195,5 +202,42 @@ check(mkAt(1, 50) == mkCircMid, 'the 20px circle at its centre')
 check(mkAt(2, 2) == mkConA, 'conic at x=2')
 check(mkAt(2, 50) == mkConMid, 'at x=50')
 check(mkAt(2, 98) == mkConB, 'and at x=98')
+
+// ---- mask-composite, and a second layer -------------------------------
+//
+// Two flat layers, the top at alpha 0.8 and the one below at 0.25, each
+// operator combining them. The absolutes are Chromium's own answers.
+//
+// A quarter below rather than a half, deliberately: `subtract` is
+// `as * (1 - ad)` and `intersect` is `as * ad`, which are the SAME
+// number when `ad` is a half. A test written with 0.5 would pass on an
+// engine that confused the two.
+
+const text TOP = 'linear-gradient(rgba(0,0,0,0.8), rgba(0,0,0,0.8))'
+const text BOT = 'linear-gradient(rgba(0,0,0,0.25), rgba(0,0,0,0.25))'
+
+mkRows = ''
+mkAdd(`mask-image:${TOP}, ${BOT};mask-composite:add, add`)          // 0
+mkAdd(`mask-image:${TOP}, ${BOT};mask-composite:subtract, add`)     // 1
+mkAdd(`mask-image:${TOP}, ${BOT};mask-composite:intersect, add`)    // 2
+mkAdd(`mask-image:${TOP}, ${BOT};mask-composite:exclude, add`)      // 3
+mkAdd(`mask-image:${TOP}`)                                          // 4
+mkAdd(`mask-image:${BOT}`)                                          // 5
+mkPaint()
+
+check(mkAt(4, 50) == mkTop8, 'the top layer alone is alpha 0.8')
+check(mkAt(5, 50) == mkBot25, 'and the one below it alpha 0.25')
+
+check(mkAt(0, 50) == mkCompAdd, 'add')
+check(mkAt(1, 50) == mkCompSub, 'subtract')
+check(mkAt(2, 50) == mkCompInt, 'intersect')
+check(mkAt(3, 50) == mkCompExc, 'exclude')
+
+// The four must be four different answers, which is what a second layer
+// combined by the wrong operator -- or ignored altogether -- fails.
+check(mkAt(0, 50) != mkAt(1, 50), 'add is not subtract')
+check(mkAt(1, 50) != mkAt(2, 50), 'subtract is not intersect')
+check(mkAt(2, 50) != mkAt(3, 50), 'intersect is not exclude')
+check(mkAt(0, 50) != mkAt(4, 50), 'and none of them is the top layer alone')
 
 finish('mask')

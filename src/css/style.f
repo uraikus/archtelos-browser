@@ -768,14 +768,28 @@ arr[FilterSpec] filterSpecs = []
 // A mask layer. `mask-*` is `background-*` with the result used as
 // alpha, so the geometry is a BgLayer rather than a second copy of the
 // same five questions, and only the mode is new.
+// `mask-composite` (CSS Masking 1 §7.5), as Porter-Duff on the alpha
+// channel alone. Measured against Chromium rather than read off, with a
+// quarter below rather than a half -- `subtract` and `intersect` are
+// the same number when the lower alpha is a half (todo.md).
+const int MASKOP_ADD = 0
+const int MASKOP_SUBTRACT = 1
+const int MASKOP_INTERSECT = 2
+const int MASKOP_EXCLUDE = 3
+
 struct MaskSpec {
-    layer:BgLayer
-    mode:int
-    // Whether the image is one this engine paints. A `url()` bitmap, a
-    // radial gradient and a conic one are all stored and none is
-    // painted, so this is what the instrument's key must carry rather
-    // than the image itself: a mask-image the engine throws away must
-    // not move the computed style.
+    // One entry per comma-separated layer, first is the TOP one, in
+    // parallel arrays because Festina has no tuples. The geometry is a
+    // BgLayer for the same reason the single-layer version was: `mask-*`
+    // is `background-*` with the result used as alpha.
+    layers:arr[BgLayer]
+    modes:arr[int]
+    composites:arr[int]
+    // Whether any layer's image is one this engine paints. A `url()`
+    // bitmap is stored and not painted, so this is what the
+    // instrument's key must carry rather than the image itself: a
+    // mask-image the engine throws away must not move the computed
+    // style.
     paintable:bool
 }
 

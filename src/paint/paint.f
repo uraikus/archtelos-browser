@@ -3765,7 +3765,7 @@ void func paintSticky(b:Box) {
     pRestoreState()
 }
 
-// ---- CSS Masking 1: a mask layer -------------------------------------
+// ---- CSS Masking 1: a mask ------------------------------------------
 //
 // A mask is per-pixel alpha, and this engine cannot read a pixel back
 // (FINDINGS.md, finding 35). It does not need to. `drawImage` honours
@@ -3775,40 +3775,41 @@ void func paintSticky(b:Box) {
 //
 // The alpha is computed rather than sampled: this engine builds the
 // gradient's colours itself, so it knows every alpha in one without
-// reading a pixel. Only a linear gradient is painted; a `url()` mask
+// reading a pixel. Every gradient shape is painted; a `url()` mask
 // would need the bitmap's own alpha, which is the block proper.
-//
-// These describe the mask in force, set up once per masked box, because
-// a Festina function returns one value (FINDINGS.md).
-Gradient maskGrad
-arr[float] maskOffsets = []
-int maskMode = 0
-int maskTileX = 0
-int maskTileY = 0
-float maskTileW = 0.0
-float maskTileH = 0.0
-bool maskRepX = false
-bool maskRepY = false
-float maskDirXv = 0.0
-float maskDirYv = 1.0
-float maskLenV = 0.0
-float maskX0v = 0.0
-float maskY0v = 0.0
-int maskedBoxId = 0
-// A radial or conic mask: the centre and, for a radial, the two
-// resolved radii. `radialRadii` and `resolveGradientCenter` already
-// compute both for the background painter, so neither had to be lifted
-// out of anything.
-int maskKind = 0
-float maskCxv = 0.0
-float maskCyv = 0.0
-float maskRxv = 0.0
-float maskRyv = 0.0
-float maskFromDeg = 0.0
 
 const int MASKSHAPE_LINEAR = 0
 const int MASKSHAPE_RADIAL = 1
 const int MASKSHAPE_CONIC = 2
+
+// One layer, resolved against the box it masks. Prepared once per
+// masked box, then read per pixel.
+struct MaskPrep {
+    kind:int
+    mode:int
+    composite:int
+    grad:Gradient
+    offsets:arr[float]
+    tileX:int
+    tileY:int
+    tileW:float
+    tileH:float
+    repX:bool
+    repY:bool
+    dirX:float
+    dirY:float
+    lineLen:float
+    x0:float
+    y0:float
+    cx:float
+    cy:float
+    rx:float
+    ry:float
+    fromDeg:float
+}
+
+arr[MaskPrep] maskPreps = []
+int maskedBoxId = 0
 
 // CSS Masking 1 §7.1's luminanceToAlpha, in sRGB, which is what
 // Chromium's answer for a white-to-black gradient under
@@ -3819,43 +3820,66 @@ float func maskLuminance(c:int) {
         + 0.0721 * colorBlue(c).toFloat()) / 255.0
 }
 
-// The mask's alpha at one document pixel, 0 to 255. Outside the tile of
-// a mask that does not repeat on that axis the answer is ZERO, not full
-// -- the semantic most easily got backwards, and measured.
-int func maskAlphaAt(px:int, py:int) {
-    float lx = (px - maskTileX).toFloat() + 0.5
-    float ly = (py - maskTileY).toFloat() + 0.5
-    if maskRepX {
-        lx = lx - Math.floor(lx / maskTileW) * maskTileW
-    } else if lx < 0.0 || lx >= maskTileW { return 0 }
-    if maskRepY {
-        ly = ly - Math.floor(ly / maskTileH) * maskTileH
-    } else if ly < 0.0 || ly >= maskTileH { return 0 }
+// One layer's alpha at one document pixel, 0 to 1. Outside the tile of
+// a layer that does not repeat on that axis the answer is ZERO, not
+// full -- the semantic most easily got backwards, and measured.
+float func maskLayerAlphaAt(pr:MaskPrep, px:int, py:int) {
+    if pr.grad.stops.length < 2 { return 0.0 }
+    float lx = (px - pr.tileX).toFloat() + 0.5
+    float ly = (py - pr.tileY).toFloat() + 0.5
+    if pr.repX {
+        lx = lx - Math.floor(lx / pr.tileW) * pr.tileW
+    } else if lx < 0.0 || lx >= pr.tileW { return 0.0 }
+    if pr.repY {
+        ly = ly - Math.floor(ly / pr.tileH) * pr.tileH
+    } else if ly < 0.0 || ly >= pr.tileH { return 0.0 }
     float t = 0.0
-    if maskKind == MASKSHAPE_RADIAL {
+    if pr.kind == MASKSHAPE_RADIAL {
         // The ellipse's own coordinates: a point is at parameter 1 on
         // the ending shape itself, whatever its two radii are.
-        if maskRxv <= 0.0 || maskRyv <= 0.0 { return 0 }
-        float ex = (lx - maskCxv) / maskRxv
-        float ey = (ly - maskCyv) / maskRyv
+        if pr.rx <= 0.0 || pr.ry <= 0.0 { return 0.0 }
+        float ex = (lx - pr.cx) / pr.rx
+        float ey = (ly - pr.cy) / pr.ry
         t = Math.sqrt(ex * ex + ey * ey)
-    } else if maskKind == MASKSHAPE_CONIC {
+    } else if pr.kind == MASKSHAPE_CONIC {
         // Clockwise from pointing up, which is `conicFrom`'s own
         // convention in the background painter.
-        float deg = motionDegOf(lx - maskCxv, ly - maskCyv) + 90.0 - maskFromDeg
+        float deg = motionDegOf(lx - pr.cx, ly - pr.cy) + 90.0 - pr.fromDeg
         deg = deg - Math.floor(deg / 360.0) * 360.0
         t = deg / 360.0
     } else {
-        t = ((lx - maskX0v) * maskDirXv + (ly - maskY0v) * maskDirYv) / maskLenV
+        t = ((lx - pr.x0) * pr.dirX + (ly - pr.y0) * pr.dirY) / pr.lineLen
     }
     if t < 0.0 { t = 0.0 }
     if t > 1.0 { t = 1.0 }
-    int c = gradientColorAt(maskGrad, maskOffsets, t)
-    int a = colorAlpha(c)
-    if maskMode == MASKMODE_LUMINANCE {
-        return roundPx(a.toFloat() * maskLuminance(c))
-    }
+    int c = gradientColorAt(pr.grad, pr.offsets, t)
+    float a = colorAlpha(c).toFloat() / 255.0
+    if pr.mode == MASKMODE_LUMINANCE { return a * maskLuminance(c) }
     return a
+}
+
+// The layers combined, bottom upwards, each with its own operator --
+// Porter-Duff on the alpha channel alone (§7.5), measured against
+// Chromium. Entry zero is the TOP layer, so the walk runs backwards.
+int func maskAlphaAt(px:int, py:int) {
+    float acc = 0.0
+    bool first = true
+    for int i = maskPreps.length - 1, i >= 0, i-- {
+        MaskPrep pr = maskPreps[i]
+        float src = maskLayerAlphaAt(pr, px, py)
+        if first {
+            acc = src
+            first = false
+            continue
+        }
+        if pr.composite == MASKOP_SUBTRACT { acc = src * (1.0 - acc) }
+        else if pr.composite == MASKOP_INTERSECT { acc = src * acc }
+        else if pr.composite == MASKOP_EXCLUDE { acc = src + acc - 2.0 * src * acc }
+        else { acc = src + acc - src * acc }
+    }
+    if acc <= 0.0 { return 0 }
+    if acc >= 1.0 { return 255 }
+    return roundPx(acc * 255.0)
 }
 
 // One axis of the tile. `auto` on a gradient is the positioning area,
@@ -3867,29 +3891,14 @@ int func maskTileSide(kind:int, l:Len, area:int) {
     return area
 }
 
-void func paintMasked(b:Box) {
-    MaskSpec spec = maskSpecOf(b.style.maskIdx)
-    if spec == null { return }
-    BgLayer ml = spec.layer
-    // The clip box is what the layer covers, so `mask-clip` is done by
-    // not painting outside it at all.
-    int mcx = b.x
-    int mcy = b.y
-    int mcw = b.w
-    int mch = b.h
-    if ml.clip == BGCLIP_PADDING || ml.clip == BGCLIP_CONTENT {
-        mcx = mcx + b.bl
-        mcy = mcy + b.bt
-        mcw = mcw - b.bl - b.br
-        mch = mch - b.bt - b.bb
-    }
-    if ml.clip == BGCLIP_CONTENT {
-        mcx = mcx + b.pl
-        mcy = mcy + b.pt
-        mcw = mcw - b.pl - b.pr
-        mch = mch - b.pt - b.pb
-    }
-    if mcw <= 0 || mch <= 0 { return }
+// One layer resolved against the box. Returns false where the layer
+// cannot be painted at all, which leaves it contributing nothing.
+bool func maskPrepare(pr:MaskPrep, ml:BgLayer, mode:int, op:int, b:Box) {
+    pr.mode = mode
+    pr.composite = op
+    pr.grad = ml.image
+    pr.offsets = []
+    if !ml.image.present || ml.image.stops.length < 2 { return false }
     // The positioning area `mask-origin` names. Its initial value is the
     // BORDER box, where `background-origin`'s is the padding box --
     // measured against Chromium, not assumed.
@@ -3909,61 +3918,88 @@ void func paintMasked(b:Box) {
         mow = mow - b.pl - b.pr
         moh = moh - b.pt - b.pb
     }
-    if mow <= 0 || moh <= 0 { return }
+    if mow <= 0 || moh <= 0 { return false }
     int mtw = maskTileSide(ml.sizeKind, ml.sizeW, mow)
     int mth = maskTileSide(ml.sizeKind, ml.sizeH, moh)
-    if mtw <= 0 || mth <= 0 { return }
-    maskTileX = mox + resolvePositionAxis(ml.posX, mow - mtw, b.style.fontSize)
-    maskTileY = moy + resolvePositionAxis(ml.posY, moh - mth, b.style.fontSize)
-    maskTileW = mtw.toFloat()
-    maskTileH = mth.toFloat()
-    maskRepX = ml.repeatX
-    maskRepY = ml.repeatY
-    maskGrad = ml.image
-    maskMode = spec.mode
-    // A radial or conic mask parameterises the tile differently, and
-    // each is one expression over what the background painter's own
-    // helpers already resolve.
+    if mtw <= 0 || mth <= 0 { return false }
+    pr.tileX = mox + resolvePositionAxis(ml.posX, mow - mtw, b.style.fontSize)
+    pr.tileY = moy + resolvePositionAxis(ml.posY, moh - mth, b.style.fontSize)
+    pr.tileW = mtw.toFloat()
+    pr.tileH = mth.toFloat()
+    pr.repX = ml.repeatX
+    pr.repY = ml.repeatY
     if ml.image.radial || ml.image.conic {
-        maskKind = ml.image.radial ? MASKSHAPE_RADIAL : MASKSHAPE_CONIC
-        maskCxv = resolveGradientCenter(ml.image.radialPosX, mtw, b.style.fontSize)
-        maskCyv = resolveGradientCenter(ml.image.radialPosY, mth, b.style.fontSize)
-        maskFromDeg = ml.image.conicFrom
+        pr.kind = ml.image.radial ? MASKSHAPE_RADIAL : MASKSHAPE_CONIC
+        pr.cx = resolveGradientCenter(ml.image.radialPosX, mtw, b.style.fontSize)
+        pr.cy = resolveGradientCenter(ml.image.radialPosY, mth, b.style.fontSize)
+        pr.fromDeg = ml.image.conicFrom
         if ml.image.radial {
-            radialRadii(ml.image, maskCxv, maskCyv, 0, 0, mtw, mth, b.style.fontSize)
-            maskRxv = radRx
-            maskRyv = radRy
-            if maskRxv <= 0.0 || maskRyv <= 0.0 { return }
-            resolveGradientStops(ml.image, maskRxv)
+            radialRadii(ml.image, pr.cx, pr.cy, 0, 0, mtw, mth, b.style.fontSize)
+            pr.rx = radRx
+            pr.ry = radRy
+            if pr.rx <= 0.0 || pr.ry <= 0.0 { return false }
+            resolveGradientStops(ml.image, pr.rx)
         } else {
             resolveGradientStops(ml.image, 1.0)
         }
-        maskOffsets = gradOffsets
-        maskGrad = ml.image
-        maskBlit(b, mcx, mcy, mcw, mch)
-        return
+        pr.offsets = gradOffsets
+        return true
     }
-    maskKind = MASKSHAPE_LINEAR
+    pr.kind = MASKSHAPE_LINEAR
     // The gradient line inside one tile: the same construction
     // `paintLinearGradient` makes over a box.
     gradientDirection(ml.image.angle)
-    float mHalfW = maskTileW / 2.0
-    float mHalfH = maskTileH / 2.0
+    float mHalfW = pr.tileW / 2.0
+    float mHalfH = pr.tileH / 2.0
     float mHalf = absFloat(mHalfW * gradDirX) + absFloat(mHalfH * gradDirY)
-    if mHalf <= 0.0 { return }
-    maskDirXv = gradDirX
-    maskDirYv = gradDirY
-    maskLenV = mHalf + mHalf
-    maskX0v = mHalfW - gradDirX * mHalf
-    maskY0v = mHalfH - gradDirY * mHalf
-    resolveGradientStops(ml.image, maskLenV)
-    maskOffsets = gradOffsets
+    if mHalf <= 0.0 { return false }
+    pr.dirX = gradDirX
+    pr.dirY = gradDirY
+    pr.lineLen = mHalf + mHalf
+    pr.x0 = mHalfW - gradDirX * mHalf
+    pr.y0 = mHalfH - gradDirY * mHalf
+    resolveGradientStops(ml.image, pr.lineLen)
+    pr.offsets = gradOffsets
+    return true
+}
+
+void func paintMasked(b:Box) {
+    MaskSpec spec = maskSpecOf(b.style.maskIdx)
+    if spec == null || spec.layers.length == 0 { return }
+    // The clip box is what the layer covers, so `mask-clip` is done by
+    // not painting outside it at all. The topmost layer's clip decides
+    // it, which is the one an author writes when there is only one.
+    BgLayer top = spec.layers[0]
+    int mcx = b.x
+    int mcy = b.y
+    int mcw = b.w
+    int mch = b.h
+    if top.clip == BGCLIP_PADDING || top.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.bl
+        mcy = mcy + b.bt
+        mcw = mcw - b.bl - b.br
+        mch = mch - b.bt - b.bb
+    }
+    if top.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.pl
+        mcy = mcy + b.pt
+        mcw = mcw - b.pl - b.pr
+        mch = mch - b.pt - b.pb
+    }
+    if mcw <= 0 || mch <= 0 { return }
+    maskPreps = []
+    for int i = 0, i < spec.layers.length, i++ {
+        MaskPrep pr
+        if maskPrepare(pr, spec.layers[i], spec.modes[i], spec.composites[i], b) {
+            maskPreps.push(pr)
+        }
+    }
+    if maskPreps.length == 0 { return }
     maskBlit(b, mcx, mcy, mcw, mch)
 }
 
 // The subtree into one layer, and back in runs of one alpha. Shared by
-// every mask shape, because only the alpha function differs between
-// them.
+// every mask shape and layer count, because only the alpha differs.
 void func maskBlit(b:Box, mcx:int, mcy:int, mcw:int, mch:int) {
     int maskWas = maskedBoxId
     maskedBoxId = b.id
@@ -3975,9 +4011,6 @@ void func maskBlit(b:Box, mcx:int, mcy:int, mcw:int, mch:int) {
     paintLayer = maskPrev
     maskedBoxId = maskWas
 
-    // Back in runs of one alpha. A vertical gradient gives one run a
-    // row; a horizontal one gives as many runs as it has distinct
-    // alphas, which is what a band decomposition would have cost.
     for int mrow = 0, mrow < mch, mrow++ {
         int my = mcy + mrow
         int runFrom = 0
