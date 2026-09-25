@@ -333,12 +333,25 @@ backwards, and it is measured.
 
 **What is left, in the order it is worth doing.**
 
-1. **A radial or conic gradient mask.** Neither is blocked -- both are
-   computable the way the linear one is -- and each needs its own
-   projection from a pixel to the gradient's parameter: a distance over
-   a resolved radius, or an angle. The radius resolution
-   (`closest-side`, `farthest-corner` and the rest) already exists in
-   `paintRadialGradient` and would have to be lifted out of it.
+1. **A radial or conic gradient mask.** Neither is blocked, and neither
+   needs anything lifted out of anything: `radialRadii` already writes
+   the resolved radii to `radRx`/`radRy` as its own function, and
+   `resolveGradientCenter` already gives the centre. The projection is
+   one line each -- `sqrt(((px-cx)/rx)^2 + ((py-cy)/ry)^2)` for a
+   radial, and the angle clockwise from pointing up less `conicFrom`,
+   over 360, for a conic. Chromium, on a 100x40 `rgb(0,0,255)` box over
+   white, at x = 2, 25, 50, 75, 98:
+
+   | the mask | | | | | |
+   |---|---|---|---|---|---|
+   | `radial-gradient(closest-side, black, transparent)` | `#f2f2ff` | `#7d7dff` | `#0707ff` | `#8282ff` | `#f7f7ff` |
+   | `radial-gradient(circle 20px at 50px 20px, ...)` | `#ffffff` | `#ffffff` | `#0909ff` | `#ffffff` | `#ffffff` |
+   | `conic-gradient(black, transparent)` | `#bfbfff` | `#bebeff` | `#6060ff` | `#4141ff` | `#4040ff` |
+
+   The second row is the one to keep: a 20px circle centred at (50, 20)
+   leaves x = 25 and x = 75 fully transparent, so a radial mask that
+   forgot its radius and covered the box would be caught by it rather
+   than by a shade of blue.
 2. **`mask-composite` and a second mask layer.** The layers each produce
    an alpha and the operator combines them, which is arithmetic on two
    numbers this engine already has; what is missing is the layer list,
