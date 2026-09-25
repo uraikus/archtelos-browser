@@ -269,9 +269,7 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    painted by this engine and dragged through the mouse events it
    already receives, and a control's chrome is this engine's to draw
    or not to draw.
-14. **Writing Modes 3, completed**: `writing-mode` and
-    `text-orientation`, which need a second layout axis rather than a
-    property; reordering across two inline boxes on one line rather than
+14. **Writing Modes 3, completed**: reordering across two inline boxes on one line rather than
     within each, which is what would let an isolate differ from an
     embedding here rather than only in its own content; rule W1, which
     resolves a combining mark to the class of the character it sits on,
@@ -354,7 +352,50 @@ which would mirror the glyphs -- so it wants the line order reversed
 during layout rather than a second transform at paint time. That is why
 the two modes are separate pieces of work rather than one.
 
-The measurement alone; the tests and the implementation follow.
+**What landed.** Both vertical modes, laid out exactly that way: the
+ordinary block algorithm in logical space, with `resolveEdges` rotating
+the box's own edges once and `layoutBlock` reading `height` where it
+reads `width`, and one walk turning every box, line and fragment
+rectangle in the subtree a quarter turn at the end. The painter turns
+the canvas about a run's baseline and draws the glyphs as it draws a
+horizontal run. The logical property table follows the mode, the
+orthogonal flow shrinks to fit and is clamped, and `width` and `height`
+stay physical. `tests/unit/test_writingmode.f` and
+`tests/render/writingmode.f` grade it, both by asking the horizontal
+and the vertical layout of the same content to agree rather than by
+writing this engine's metrics down.
+
+**What is left, in the order it is worth doing:**
+
+1. **`text-orientation`.** It computes and inherits and does nothing
+   else, so it is deliberately *not* in the property instrument's
+   digest. `upright` is a measurement change rather than a drawing one
+   -- each character taking its own em along the inline axis, 57 against
+   29 for three glyphs in the table above -- which means a second
+   measuring path beside `measureTextWidth` before it can be drawn.
+2. **A vertical run's decorations.** An underline, an overline, a
+   line-through, an emphasis mark and synthesised small caps are all
+   drawn from a horizontal rectangle and a horizontal advance, so a
+   vertical run gets none of them. Each is the same quarter turn the
+   glyphs already take.
+3. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
+   -- counter-clockwise -- which the painter has no path for; the second
+   is `vertical-rl` with `text-orientation: sideways`, so it follows
+   from 1.
+4. **The other formatting contexts.** A flex, grid, table or
+   multi-column container as, or inside, a vertical box keeps the
+   physical axes: those algorithms read `s.width` and `s.height`
+   directly rather than through the one pair of lengths `layoutBlock`
+   exchanges. Each is the same exchange again, in its own file.
+5. **An indefinite containing block.** Chromium clamps an orthogonal
+   flow to the viewport there; nothing at layout time here knows the
+   viewport's height, so the inline size is left unclamped, which is the
+   same answer on any viewport tall enough to hold the content.
+6. **Auto margins, `anchor()` and the scroll box.** An auto margin on
+   an orthogonal flow centres in the physical axis rather than the
+   logical one; the anchor functions' `start` and `end` are the
+   physical sides whatever the mode says; and a scroll container inside
+   a vertical flow reserves its bar on the physical axis.
 
 ### What is left of the masks
 
@@ -673,7 +714,8 @@ So the shorthand is `<x> <y>` with one value applying to both, an
 invalid keyword leaves the initial `auto`, and **the two logical
 longhands are the two physical ones under other names**: `inline` reads
 back as `-x` and `block` as `-y`, and `dir="rtl"` changes neither. Only
-a `writing-mode` could swap those axes and this engine has none, so the
+a vertical `writing-mode` could swap those axes, and `overflow-block`
+and `overflow-inline` do follow one now; on a horizontal box the
 logical pair is a spelling rather than a mapping to resolve. It computes
 on a box that does not scroll, too; it simply has no effect there. The
 root element's value is `auto`.
@@ -757,8 +799,8 @@ coordinates:
 **The logical side names are the physical ones here.** `top:
 anchor(--a start)` is 80 and `end` is 140, and `left: anchor(--a
 self-start)` is 100 -- the block axis runs down and the inline axis
-runs right, and this engine has no `writing-mode` to make them
-anything else.
+runs right. A vertical `writing-mode` would make them anything else,
+and the anchor functions do not follow one: that is on the list below.
 
 **`anchor-size(<name>? <dimension>, <fallback>?)`** gives the anchor's
 own border-box size. Measured against a second fixture -- an anchor 100

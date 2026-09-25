@@ -172,6 +172,17 @@ bool cascadeSawColorScheme = false
 bool cascadeSawDirection = false
 bool cascadeApplyRtl = false
 
+// The same question for `writing-mode`, and for the same reason: a
+// vertical mode makes `inline-start` the top edge and `block-start` a
+// side, so the mode has to be known before the declarations are
+// applied. A page that never says `writing-mode` never asks.
+bool cascadeSawWritingMode = false
+int cascadeApplyWM = 0
+// Whether any element on this document is in a vertical writing mode.
+// Layout and paint both ask it once per box, so it guards the work that
+// would otherwise be done for pages with no vertical text on them.
+bool anyVerticalWM = false
+
 // What the container queries came to, keyed by element and query. It is
 // filled by layoutDocument from the box tree of the pass before, so it
 // is empty on the first pass and every container rule is dropped --
@@ -301,6 +312,9 @@ void func cascadeReset() {
     cascadeSawColorScheme = false
     cascadeSawDirection = false
     cascadeApplyRtl = false
+    cascadeSawWritingMode = false
+    cascadeApplyWM = 0
+    anyVerticalWM = false
     map[int] emptyContainerAnswers = {}
     containerQueryAnswers = emptyContainerAnswers
     cssResetContainerQueries()
@@ -453,6 +467,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyQuotes && dn == 'quotes' { anyQuotes = true }
             if !cascadeSawColorScheme && dn == 'color-scheme' { cascadeSawColorScheme = true }
             if !cascadeSawDirection && dn == 'direction' { cascadeSawDirection = true }
+            if !cascadeSawWritingMode && dn == 'writing-mode' { cascadeSawWritingMode = true }
             if !cascadeSawFontSizeAdjust && dn == 'font-size-adjust' {
                 cascadeSawFontSizeAdjust = true
             }
@@ -1815,6 +1830,9 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
             }
+            if !cascadeSawWritingMode && decls[d].name == 'writing-mode' {
+                cascadeSawWritingMode = true
+            }
             if !cascadeSawFontSizeAdjust && decls[d].name == 'font-size-adjust' {
                 cascadeSawFontSizeAdjust = true
             }
@@ -2373,6 +2391,7 @@ void func computePseudoFor(n:Node, own:Style, which:text) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode ? matchedWritingMode(matches, own.writingMode) : 0
     applyMatches(props, matches)
     // open-quote and close-quote read the element's own `quotes` list,
     // and move a document-wide depth as a side effect, so the list has
@@ -2444,6 +2463,7 @@ void func computeFirstLetterFor(n:Node, own:Style) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode ? matchedWritingMode(matches, own.writingMode) : 0
     applyMatches(props, matches)
     Style ps = computeStyleValues(n, own, false, props)
     ascii il = styleProp(props, 'initial-letter')
@@ -2472,6 +2492,7 @@ Style func placeholderStyleFor(n:Node, own:Style) {
     if matches.length == 0 { return own }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode ? matchedWritingMode(matches, own.writingMode) : 0
     applyMatches(props, matches)
     // Through the ordinary sharing cache, because the same reasoning
     // holds: two placeholders that matched the same declarations in the
@@ -2497,6 +2518,7 @@ void func computeFirstLineFor(n:Node, own:Style) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode ? matchedWritingMode(matches, own.writingMode) : 0
     applyMatches(props, matches)
     pseudoStyles[pseudoKey(n.id, 'first-line')] = computeStyleValues(n, own, false, props)
     pseudoHasFirstLine[pseudoKey(n.id, 'first-line')] = true
@@ -2552,6 +2574,7 @@ void func computeMarkerFor(n:Node, own:Style) {
     if matches.length == 0 { return }
     map[text] props = {}
     cascadeApplyRtl = cascadeSawDirection && matchedDirectionRtl(matches, own.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode ? matchedWritingMode(matches, own.writingMode) : 0
     applyMatches(props, matches)
     arr[text] noQuotes = []
     contentQuotePairs = noQuotes
@@ -4419,6 +4442,29 @@ bool func matchedDirectionRtl(matches:arr[Match], parentRtl:bool) {
     return rtl
 }
 
+// One of the WM_ values from a keyword, or -1 for anything this engine
+// does not recognise, which leaves the inherited mode standing.
+int func writingModeKeyword(v:ascii) {
+    if v == 'horizontal-tb' { return WM_HORIZONTAL_TB }
+    if v == 'vertical-rl' { return WM_VERTICAL_RL }
+    if v == 'vertical-lr' { return WM_VERTICAL_LR }
+    // The two SVG spellings CSS Writing Modes 4 §3.1 keeps as aliases.
+    if v == 'tb' || v == 'tb-rl' { return WM_VERTICAL_RL }
+    return -1
+}
+
+// The same question `matchedDirectionRtl` answers, for `writing-mode`,
+// and asked at the same point and for the same reason.
+int func matchedWritingMode(matches:arr[Match], parentMode:int) {
+    int wm = parentMode
+    for int i = 0, i < matches.length, i++ {
+        if matches[i].decl.name != 'writing-mode' { continue }
+        int k = writingModeKeyword(asciiLower(asciiTrim(matches[i].decl.value)))
+        if k >= 0 { wm = k }
+    }
+    return wm
+}
+
 // The weight of a declaration in the user-agent origin that is not
 // important: `originRank` gives it 0, and everything else at least 1,
 // so one comparison says which side of the origin boundary a match
@@ -4560,6 +4606,80 @@ bool func declIsCssWide(value:ascii) {
 }
 
 
+// The logical-to-physical table for a vertical writing mode. The
+// horizontal table below is a renaming of the inline edges only, and
+// cannot be extended in place, because a vertical mode moves the BLOCK
+// edges as well: `block-start` is a side rather than the top, and
+// `inline-start` is the top rather than a side. Chromium's answers are
+// in todo.md -- `inline-size` sets the height, `block-size` the width,
+// `margin-inline-start` the top margin.
+//
+// A page in the ordinary horizontal mode never calls this: the caller
+// tests one integer, which is zero unless some element on the document
+// declared a vertical mode.
+text func wmInlineStartSide() { return cascadeApplyRtl ? 'bottom' : 'top' }
+text func wmInlineEndSide() { return cascadeApplyRtl ? 'top' : 'bottom' }
+text func wmBlockStartSide() { return cascadeApplyWM == WM_VERTICAL_RL ? 'right' : 'left' }
+text func wmBlockEndSide() { return cascadeApplyWM == WM_VERTICAL_RL ? 'left' : 'right' }
+
+text func wmPhysicalName(name:text) {
+    // The two sizes exchange axes outright.
+    if name == 'inline-size' { return 'height' }
+    if name == 'block-size' { return 'width' }
+    if name == 'min-inline-size' { return 'min-height' }
+    if name == 'max-inline-size' { return 'max-height' }
+    if name == 'min-block-size' { return 'min-width' }
+    if name == 'max-block-size' { return 'max-width' }
+    if name == 'overflow-block' { return 'overflow-x' }
+    if name == 'overflow-inline' { return 'overflow-y' }
+    // The insets name a side on their own.
+    if name == 'inset-block-start' { return wmBlockStartSide() }
+    if name == 'inset-block-end' { return wmBlockEndSide() }
+    if name == 'inset-inline-start' { return wmInlineStartSide() }
+    if name == 'inset-inline-end' { return wmInlineEndSide() }
+    // A corner is a block side and an inline side, and the physical
+    // name puts the horizontal one second: in `vertical-rl` the
+    // start-start corner is the block-start side (the right) and the
+    // inline-start side (the top), which is `border-top-right-radius`.
+    if name == 'border-start-start-radius' { return `border-${wmInlineStartSide()}-${wmBlockStartSide()}-radius` }
+    if name == 'border-start-end-radius' { return `border-${wmInlineEndSide()}-${wmBlockStartSide()}-radius` }
+    if name == 'border-end-start-radius' { return `border-${wmInlineStartSide()}-${wmBlockEndSide()}-radius` }
+    if name == 'border-end-end-radius' { return `border-${wmInlineEndSide()}-${wmBlockEndSide()}-radius` }
+    if name == 'margin-inline-start' { return `margin-${wmInlineStartSide()}` }
+    if name == 'margin-inline-end' { return `margin-${wmInlineEndSide()}` }
+    if name == 'margin-block-start' { return `margin-${wmBlockStartSide()}` }
+    if name == 'margin-block-end' { return `margin-${wmBlockEndSide()}` }
+    if name == 'padding-inline-start' { return `padding-${wmInlineStartSide()}` }
+    if name == 'padding-inline-end' { return `padding-${wmInlineEndSide()}` }
+    if name == 'padding-block-start' { return `padding-${wmBlockStartSide()}` }
+    if name == 'padding-block-end' { return `padding-${wmBlockEndSide()}` }
+    if name == 'scroll-padding-inline-start' { return `scroll-padding-${wmInlineStartSide()}` }
+    if name == 'scroll-padding-inline-end' { return `scroll-padding-${wmInlineEndSide()}` }
+    if name == 'scroll-padding-block-start' { return `scroll-padding-${wmBlockStartSide()}` }
+    if name == 'scroll-padding-block-end' { return `scroll-padding-${wmBlockEndSide()}` }
+    if name == 'scroll-margin-inline-start' { return `scroll-margin-${wmInlineStartSide()}` }
+    if name == 'scroll-margin-inline-end' { return `scroll-margin-${wmInlineEndSide()}` }
+    if name == 'scroll-margin-block-start' { return `scroll-margin-${wmBlockStartSide()}` }
+    if name == 'scroll-margin-block-end' { return `scroll-margin-${wmBlockEndSide()}` }
+    if name == 'border-inline-start' { return `border-${wmInlineStartSide()}` }
+    if name == 'border-inline-end' { return `border-${wmInlineEndSide()}` }
+    if name == 'border-block-start' { return `border-${wmBlockStartSide()}` }
+    if name == 'border-block-end' { return `border-${wmBlockEndSide()}` }
+    if name == 'border-inline-start-width' { return `border-${wmInlineStartSide()}-width` }
+    if name == 'border-inline-end-width' { return `border-${wmInlineEndSide()}-width` }
+    if name == 'border-block-start-width' { return `border-${wmBlockStartSide()}-width` }
+    if name == 'border-block-end-width' { return `border-${wmBlockEndSide()}-width` }
+    if name == 'border-inline-start-style' { return `border-${wmInlineStartSide()}-style` }
+    if name == 'border-inline-end-style' { return `border-${wmInlineEndSide()}-style` }
+    if name == 'border-block-start-style' { return `border-${wmBlockStartSide()}-style` }
+    if name == 'border-block-end-style' { return `border-${wmBlockEndSide()}-style` }
+    if name == 'border-inline-start-color' { return `border-${wmInlineStartSide()}-color` }
+    if name == 'border-inline-end-color' { return `border-${wmInlineEndSide()}-color` }
+    if name == 'border-block-start-color' { return `border-${wmBlockStartSide()}-color` }
+    if name == 'border-block-end-color' { return `border-${wmBlockEndSide()}-color` }
+    return name
+}
+
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
     // `all` (Cascade 4 §3.2) sets every property at once to one
@@ -4612,6 +4732,7 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // The logical border shorthands are renamed before anything else,
     // because the shorthand dispatch below reads the name: renaming
     // afterwards left `border-block-start` as a longhand nobody handles.
+    if cascadeApplyWM != WM_HORIZONTAL_TB { name = wmPhysicalName(name) }
     if name == 'border-block-start' { name = 'border-top' }
     else if name == 'border-block-end' { name = 'border-bottom' }
     else if name == 'border-inline-start' { name = cascadeApplyRtl ? 'border-right' : 'border-left' }
@@ -4809,6 +4930,11 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         }
         return
     }
+    // A vertical writing mode moves the block edges as well as the
+    // inline ones, so its whole table is asked first and the horizontal
+    // one below then finds a name already made physical. One integer
+    // test, and zero on every page that never says `writing-mode`.
+    if cascadeApplyWM != WM_HORIZONTAL_TB { name = wmPhysicalName(name) }
     if name == 'inline-size' { name = 'width' }
     if name == 'block-size' { name = 'height' }
     // The inline edges. `inline-start` is the left edge of a
@@ -6533,6 +6659,9 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     int t1 = archtelosTiming ? now() : 0
     cascadeApplyRtl = cascadeSawDirection
         && matchedDirectionRtl(matches, isRoot ? false : parent.directionRtl)
+    cascadeApplyWM = cascadeSawWritingMode
+        ? matchedWritingMode(matches, isRoot ? WM_HORIZONTAL_TB : parent.writingMode)
+        : WM_HORIZONTAL_TB
     applyMatches(props, matches)
     if archtelosTiming {
         profApplyMs = profApplyMs + (now() - t1)
@@ -7569,6 +7698,29 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         ascii t = asciiLower(asciiTrim(dirv))
         if t == 'rtl' { s.directionRtl = true }
         else if t == 'ltr' { s.directionRtl = false }
+    }
+    // `writing-mode` inherits, and the logical properties resolve
+    // against it, so it is read here beside `direction` for the same
+    // reason. A vertical mode is recorded for the document as a whole
+    // as well: layout and paint both ask per box whether they are in
+    // one, and on a page with no vertical text that question is a
+    // boolean rather than a walk.
+    s.writingMode = isRootIn ? WM_HORIZONTAL_TB : parent.writingMode
+    ascii wmv = styleProp(props, 'writing-mode')
+    if wmv != null {
+        int k = writingModeKeyword(asciiLower(asciiTrim(wmv)))
+        if k >= 0 { s.writingMode = k }
+    }
+    if s.writingMode != WM_HORIZONTAL_TB { anyVerticalWM = true }
+    // `text-orientation` inherits too, and says nothing in a horizontal
+    // mode (Writing Modes 4 §5.1).
+    s.textOrientation = isRootIn ? TO_MIXED : parent.textOrientation
+    ascii torv = styleProp(props, 'text-orientation')
+    if torv != null {
+        ascii tt = asciiLower(asciiTrim(torv))
+        if tt == 'upright' { s.textOrientation = TO_UPRIGHT }
+        else if tt == 'sideways' || tt == 'sideways-right' { s.textOrientation = TO_SIDEWAYS }
+        else if tt == 'mixed' { s.textOrientation = TO_MIXED }
     }
     // `unicode-bidi` does not inherit: an element opens an embedding of
     // its own or it does not, and its children decide that again.

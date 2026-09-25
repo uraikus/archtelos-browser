@@ -8,6 +8,24 @@
 
 import ../util/color.f
 
+// CSS Writing Modes 4 §3.1. `horizontal-tb` is the mode a box is in
+// unless it says otherwise; the two vertical ones run the inline axis
+// down the page and stack their lines along the horizontal axis, to the
+// left in `vertical-rl` and to the right in `vertical-lr`.
+const int WM_HORIZONTAL_TB = 0
+const int WM_VERTICAL_RL = 1
+const int WM_VERTICAL_LR = 2
+
+// CSS Writing Modes 4 §5.1. `mixed` turns a horizontal script sideways
+// and leaves an upright one upright; `upright` gives every character its
+// own em along the inline axis; `sideways` turns everything sideways.
+// With no Unicode database to say which script a character belongs to,
+// `mixed` and `sideways` agree here -- which is what they do on Latin in
+// Chromium too, measured rather than assumed (todo.md).
+const int TO_MIXED = 0
+const int TO_UPRIGHT = 1
+const int TO_SIDEWAYS = 2
+
 // display
 // DejaVu Sans metrics (the fonts fontconfig serves for the generic
 // families here), in em: ascent 0.93, descent 0.24. Festina exposes
@@ -1301,6 +1319,12 @@ struct Style {
     // inherited; `left` and `right` can.
     textAlignExplicit:bool
     unicodeBidi:int         // unicode-bidi, as one of the UBIDI_ values
+    // writing-mode, as one of the WM_ values, and text-orientation as
+    // one of the TO_ values. Both inherit. A vertical mode exchanges the
+    // two layout axes rather than renaming a property, so it is read by
+    // the layout engine and not only by the cascade.
+    writingMode:int
+    textOrientation:int
     width:Len
     height:Len
     minWidth:Len

@@ -1616,6 +1616,170 @@ bool func hasInlineContent(b:Box) {
 
 // ---- geometry helpers ---------------------------------------------------------
 
+// CSS Writing Modes 4: a vertical box is laid out in a LOGICAL space
+// whose x axis is its inline axis and whose y axis is its block axis,
+// and the finished subtree is turned a quarter turn into place at the
+// end. The layout engine reads physical edges, so the edges are rotated
+// here, once, rather than at the hundred places that read them:
+// `padding-top` is the inline-start padding in a vertical mode, so it
+// becomes the logical left, and `padding-right` is the block-start
+// padding in `vertical-rl`, so it becomes the logical top.
+//
+// The margins rotate with the rest, because the inline size an
+// orthogonal flow shrinks to fit is measured along the inline axis and
+// so must lose the inline-axis margins. The box that starts the flow is
+// then put back where its parent's flow meant it to go, once the
+// subtree has been turned (wmTransposeSubtree).
+//
+// Each edge is read from the style rather than exchanged in place, so
+// that calling this twice on one box gives the same answer as calling
+// it once. `resolveEdges` is not only layoutBlock's: an inline box, a
+// table row, a table cell and a flex item all ask for it, and a
+// document can be laid out twice over the same boxes.
+void func wmRotateEdges(b:Box, s:Style, cw:int) {
+    bool rl = s.writingMode == WM_VERTICAL_RL
+    b.pl = resolveLen(s.paddingTop, cw, 0)
+    b.pr = resolveLen(s.paddingBottom, cw, 0)
+    b.pt = resolveLen(rl ? s.paddingRight : s.paddingLeft, cw, 0)
+    b.pb = resolveLen(rl ? s.paddingLeft : s.paddingRight, cw, 0)
+    b.bl = s.borderTop
+    b.br = s.borderBottom
+    b.bt = rl ? s.borderRight : s.borderLeft
+    b.bb = rl ? s.borderLeft : s.borderRight
+    b.ml = resolveLen(s.marginTop, cw, 0)
+    b.mr = resolveLen(s.marginBottom, cw, 0)
+    b.mt = resolveLen(rl ? s.marginRight : s.marginLeft, cw, 0)
+    b.mb = resolveLen(rl ? s.marginLeft : s.marginRight, cw, 0)
+}
+
+// What an orthogonal flow fills when its containing block's block size
+// is indefinite. Chromium clamps to the viewport there; nothing at
+// layout time here knows the viewport's height, so the inline size is
+// left unclamped, which is the same answer on any viewport tall enough
+// to hold the content. todo.md records the divergence.
+const int WM_UNBOUNDED = 1000000
+
+// The quarter turn. Every box, line and fragment under `root` holds a
+// LOGICAL rectangle -- x along the inline axis, y along the block axis
+// -- and this is the one place they become physical ones. The map is a
+// rotation about the root's own border-box corner:
+//
+//     physical x = PX + BH - v - h   (vertical-rl, whose block axis
+//     physical x = PX + v            (vertical-lr)  runs right to left)
+//     physical y = PY + u
+//     physical w = h, physical h = w
+//
+// with (u, v) the logical offset from the corner the layout used and BH
+// the root's logical block extent. The root maps to itself with its two
+// sides exchanged, which is the check that the map and the sizing
+// agree.
+void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int) {
+    int L = root.x
+    int T = root.y
+    int BH = root.h
+    bool rl = mode == WM_VERTICAL_RL
+    // The root's margins were logical for the sizing above. Physical
+    // again, they are what its parent's flow places it with, so the
+    // turned subtree is emitted about that corner rather than about the
+    // one the logical layout happened to use.
+    wmUnrotateEdges(root, rl)
+    wmTransposeWalk(root, L, T, BH, cx + root.ml, y + root.mt, rl)
+    root.baseline = root.h
+}
+
+// The edges were rotated for the layout; these are the physical ones
+// again, which is what the painter draws.
+void func wmUnrotateEdges(b:Box, rl:bool) {
+    int pt = b.pt
+    int pr = b.pr
+    int pb = b.pb
+    int pl = b.pl
+    int bt = b.bt
+    int br = b.br
+    int bb = b.bb
+    int bl = b.bl
+    int mt = b.mt
+    int mr = b.mr
+    int mb = b.mb
+    int ml = b.ml
+    b.pt = pl
+    b.pb = pr
+    b.pr = rl ? pt : pb
+    b.pl = rl ? pb : pt
+    b.bt = bl
+    b.bb = br
+    b.br = rl ? bt : bb
+    b.bl = rl ? bb : bt
+    b.mt = ml
+    b.mb = mr
+    b.mr = rl ? mt : mb
+    b.ml = rl ? mb : mt
+}
+
+void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) {
+    int u = b.x - L
+    int v = b.y - T
+    int w = b.w
+    int h = b.h
+    b.x = rl ? PX + BH - v - h : PX + v
+    b.y = PY + u
+    b.w = h
+    b.h = w
+    for int i = 0, i < b.lines.length, i++ {
+        Line ln = b.lines[i]
+        int lu = ln.x - L
+        int lv = ln.y - T
+        int lw = ln.w
+        int lh = ln.h
+        int lb = ln.baseline - ln.y
+        ln.x = rl ? PX + BH - lv - lh : PX + lv
+        ln.y = PY + lu
+        ln.w = lh
+        ln.h = lw
+        // A baseline is an absolute coordinate along the block axis, so
+        // it becomes an absolute x here rather than staying a y. It is
+        // mapped within its own rectangle rather than through the
+        // rotation above, because a glyph is turned clockwise in BOTH
+        // vertical modes (Writing Modes 4 §5.1 keeps the other turn for
+        // `sideways-lr`): its ascent is on the right of the line in
+        // `vertical-lr` as much as in `vertical-rl`, which the rotation
+        // on its own would mirror.
+        ln.baseline = ln.x + ln.w - lb
+        for int j = 0, j < ln.frags.length, j++ {
+            Fragment f = ln.frags[j]
+            int fu = f.x - L
+            int fv = f.y - T
+            int fw = f.w
+            int fh = f.h
+            int fb = f.baseline - f.y
+            f.x = rl ? PX + BH - fv - fh : PX + fv
+            f.y = PY + fu
+            f.w = fh
+            f.h = fw
+            f.baseline = f.x + f.w - fb
+        }
+    }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        // Exactly the boxes offsetBox moves: a text box and a break
+        // carry no rectangle of their own, their geometry being in the
+        // fragments above.
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        wmUnrotateEdges(c, rl)
+        wmTransposeWalk(c, L, T, BH, PX, PY, rl)
+    }
+}
+
+// Whether this box is where a vertical flow begins: it is in a vertical
+// mode and its parent is not. `writing-mode` inherits, so every box
+// inside the island answers no, and the island is laid out once.
+bool func wmStartsVerticalFlow(b:Box) {
+    if b.style.writingMode == WM_HORIZONTAL_TB { return false }
+    Box p = parentBox(b)
+    if p == null { return true }
+    return p.style.writingMode == WM_HORIZONTAL_TB
+}
+
 void func resolveEdges(b:Box, cw:int) {
     Style s = b.style
     b.mt = resolveLen(s.marginTop, cw, 0)
@@ -1639,6 +1803,12 @@ void func resolveEdges(b:Box, cw:int) {
     // it cost two milliseconds of layout on a page with no
     // `anchor-size()` on it -- measured, and recovered by this.
     if anyAnchorSize { applyAnchorSizeMargins(b, cw) }
+    // The same shape of guard, and for the same reason: one boolean on
+    // a page with no vertical text on it, and the call only for the
+    // boxes that are in one.
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        wmRotateEdges(b, s, cw)
+    }
 }
 
 void func applyAnchorSizeMargins(b:Box, cw:int) {
@@ -2438,9 +2608,14 @@ int layoutCBHeight = -1
 int func definiteContentHeight(b:Box) {
     Style s = b.style
     int h = 0
-    if s.height.kind == LEN_PX { h = maxInt(roundPx(s.height.v), 0) }
-    else if s.height.kind == LEN_PERCENT && layoutCBHeight >= 0 {
-        h = maxInt(roundPx(layoutCBHeight.toFloat() * s.height.v / 100.0), 0)
+    // In a vertical writing mode the block axis is the horizontal one,
+    // so the length that gives the block size is `width`. The box is
+    // laid out in logical space, where the block axis is y, so this is
+    // still "the height" to everything that calls it.
+    Len hl = anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB ? s.width : s.height
+    if hl.kind == LEN_PX { h = maxInt(roundPx(hl.v), 0) }
+    else if hl.kind == LEN_PERCENT && layoutCBHeight >= 0 {
+        h = maxInt(roundPx(layoutCBHeight.toFloat() * hl.v / 100.0), 0)
     } else { return -1 }
     if s.boxSizing == BOX_BORDER { h = maxInt(h - (b.pt + b.pb + b.bt + b.bb), 0) }
     return h
@@ -2463,11 +2638,29 @@ int func heightLimitPx(l:Len, vEdges:int, boxSizing:int) {
 // declared height was a length.
 bool func hasDefiniteHeight(b:Box) {
     Style s = b.style
-    return s.height.kind == LEN_PX
-        || (s.height.kind == LEN_PERCENT && layoutCBHeight >= 0)
+    Len hl = anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB ? s.width : s.height
+    return hl.kind == LEN_PX
+        || (hl.kind == LEN_PERCENT && layoutCBHeight >= 0)
 }
 
 void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
+    Style s0 = b.style
+    // A vertical writing mode lays the box out in logical space: the
+    // inline axis is x and the block axis is y, exactly as a horizontal
+    // box, and the subtree is turned a quarter turn at the end. What
+    // changes here is which declared length names which axis, and -- at
+    // the box where the flow turns -- what it is allowed to fill.
+    //
+    // The inline size of an ORTHOGONAL flow is not the containing
+    // block's inline size, because that axis is the containing block's
+    // BLOCK axis: it shrinks to fit, clamped to the containing block's
+    // block size where that is definite (todo.md has Chromium's
+    // answers). WM_UNBOUNDED stands for an indefinite one, where
+    // Chromium clamps to the viewport and nothing here knows its
+    // height.
+    bool wmVert = anyVerticalWM && s0.writingMode != WM_HORIZONTAL_TB
+    bool wmRoot = wmVert && wmStartsVerticalFlow(b)
+    if wmRoot { cw = layoutCBHeight >= 0 ? layoutCBHeight : WM_UNBOUNDED }
     resolveEdges(b, cw)
     Style s = b.style
     if topMarginApplied { b.mt = 0 }
@@ -2510,7 +2703,14 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // a declared width -- `appearance: none` is exactly the request not
     // to draw the control, and it has to be able to take the size away
     // with it, which it could not do if this were a declaration.
-    if b.controlKind != CONTROL_NONE && lenIsAuto(s.width) && b.forcedWidthPx < 0 {
+    // The length that names the INLINE axis, which is `width` in a
+    // horizontal mode and `height` in a vertical one. One ternary per
+    // block box, and a page with no vertical text answers it on the
+    // first term.
+    Len wmW = wmVert ? s.height : s.width
+    Len wmMinW = wmVert ? s.minHeight : s.minWidth
+    Len wmMaxW = wmVert ? s.maxHeight : s.maxWidth
+    if b.controlKind != CONTROL_NONE && lenIsAuto(wmW) && b.forcedWidthPx < 0 {
         if b.controlKind == CONTROL_CHECK && s.appearanceAuto {
             b.forcedWidthPx = CHECK_CONTROL_PX
         } else if b.controlKind == CONTROL_FIELD && !s.fieldSizingContent {
@@ -2523,7 +2723,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         int asWidth = anchorSizeAgainst(b, ANCHOR_SIZE_WIDTH, cw)
         if asWidth >= 0 { b.forcedWidthPx = asWidth }
     }
-    bool autoWidth = lenIsAuto(s.width) && b.forcedWidthPx < 0
+    bool autoWidth = lenIsAuto(wmW) && b.forcedWidthPx < 0
     // A definite height and a ratio give the width, block-level or not:
     // Chromium makes `aspect-ratio: 2; height: 40px` eighty pixels wide
     // rather than letting it fill its containing block. The field is
@@ -2537,12 +2737,12 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // it, taken unclamped. The keyword is asked for here rather than in
     // resolveLen because the answer is the box's own content, which
     // only the box has.
-    if !autoWidth && s.width.kind == LEN_INTRINSIC && b.forcedWidthPx < 0 {
+    if !autoWidth && wmW.kind == LEN_INTRINSIC && b.forcedWidthPx < 0 {
         computeIntrinsic(b)
         int iExtras = horizontalExtras(b, 0)
         int iPref = b.maxContent - iExtras
         int iMin = b.minContent - iExtras
-        int iKind = roundPx(s.width.v)
+        int iKind = roundPx(wmW.v)
         if iKind == INTRINSIC_MIN { width = iMin }
         else if iKind == INTRINSIC_MAX { width = iPref }
         else { width = minInt(maxInt(iMin, cw - b.ml - b.mr - edges), iPref) }
@@ -2551,7 +2751,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     } else if autoWidth {
         if arHeight >= 0 {
             width = aspectWidthFromHeight(b, arHeight)
-        } else if widthIsShrinkToFit(b) {
+        } else if wmRoot || widthIsShrinkToFit(b) {
             computeIntrinsic(b)
             int avail = cw - b.ml - b.mr
             int pref = b.maxContent - horizontalExtras(b, 0) + edges
@@ -2563,7 +2763,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
             if width < 0 { width = 0 }
         }
     } else {
-        width = b.forcedWidthPx >= 0 ? b.forcedWidthPx : maxInt(resolveLen(s.width, cw, 0), 0)
+        width = b.forcedWidthPx >= 0 ? b.forcedWidthPx : maxInt(resolveLen(wmW, cw, 0), 0)
         // `box-sizing: border-box` means the declared width IS the
         // border box, so the padding and border come out of it.
         if s.boxSizing == BOX_BORDER { width = maxInt(width - edges, 0) }
@@ -2571,18 +2771,18 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     int asMaxW = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MAXWIDTH, cw) : -1
     if asMaxW >= 0 {
         if width > asMaxW { width = asMaxW }
-    } else if s.maxWidth.kind != LEN_AUTO {
-        int mx = resolveLen(s.maxWidth, cw, width)
+    } else if wmMaxW.kind != LEN_AUTO {
+        int mx = resolveLen(wmMaxW, cw, width)
         if width > mx { width = mx }
     }
     int asMinW = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MINWIDTH, cw) : -1
     if asMinW >= 0 {
         if width < asMinW { width = asMinW }
-    } else if s.minWidth.kind != LEN_AUTO {
-        int mn = resolveLen(s.minWidth, cw, 0)
+    } else if wmMinW.kind != LEN_AUTO {
+        int mn = resolveLen(wmMinW, cw, 0)
         if width < mn { width = mn }
     }
-    if !autoWidth || s.maxWidth.kind != LEN_AUTO {
+    if !autoWidth || wmMaxW.kind != LEN_AUTO {
         // auto margins center a box narrower than its container
         int freeSpace = cw - width - edges
         if lenIsAuto(s.marginLeft) && lenIsAuto(s.marginRight) && freeSpace > 0 {
@@ -2736,14 +2936,18 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     }
     int asMinH = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MINHEIGHT, maxInt(layoutCBHeight, 0)) : -1
     int minH = asMinH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMinH - vEdges, 0) : asMinH)
-                           : heightLimitPx(s.minHeight, vEdges, s.boxSizing)
+                           : heightLimitPx(wmVert ? s.minWidth : s.minHeight, vEdges, s.boxSizing)
     if minH >= 0 { h = maxInt(h, minH) }
     int asMaxH = anyAnchorSize ? anchorSizeAgainst(b, ANCHOR_SIZE_MAXHEIGHT, maxInt(layoutCBHeight, 0)) : -1
     int maxH = asMaxH >= 0 ? (s.boxSizing == BOX_BORDER ? maxInt(asMaxH - vEdges, 0) : asMaxH)
-                           : heightLimitPx(s.maxHeight, vEdges, s.boxSizing)
+                           : heightLimitPx(wmVert ? s.maxWidth : s.maxHeight, vEdges, s.boxSizing)
     if maxH >= 0 && h > maxH { h = maxH }
     b.h = h + vEdges + b.sbH
     if b.baseline == 0 { b.baseline = b.h }
+    // The quarter turn. Everything below this box is in logical space,
+    // and this is where it becomes the rectangle the painter, the hit
+    // tester and the parent's flow all read.
+    if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
 }
 
 // Stacks the block-level children of b; returns the content height.

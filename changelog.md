@@ -5,6 +5,54 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A vertical `writing-mode`
+
+CSS Writing Modes 4's `vertical-rl` and `vertical-lr`, which css-2026.md
+called "Nothing" and dismissed as "a second layout axis, not a
+property". Chromium says otherwise and todo.md has the table: a vertical
+block is the horizontal layout turned a quarter turn clockwise, with the
+same inline lengths and the same line thicknesses, and only the
+direction the lines stack differing between the two modes. **280 →
+281**, with `--fields` naming `writingMode` as the field that moved.
+
+**How it is done.** The box is laid out in a *logical* space whose x
+axis is its inline axis, by the ordinary block algorithm: `resolveEdges`
+rotates the box's own padding, border and margins once, `layoutBlock`
+reads the length that names the inline axis -- `height` in a vertical
+mode -- and one walk at the end turns every box, line and fragment
+rectangle in the subtree into place. The painter turns the canvas about
+a run's baseline and then draws the run exactly as a horizontal one, so
+a rotated Latin glyph keeps its advance.
+
+Everything that is not the layout of a block follows from the same
+rotation and none of it is here yet: `text-orientation` computes and
+inherits and does nothing, so it is deliberately not in the digest; a
+vertical run gets no underline, emphasis mark or synthesised small caps;
+and a flex, grid, table or multi-column container keeps the physical
+axes. todo.md lists all six in the order they are worth doing.
+
+**The logical properties follow the mode.** `inline-size` sets the
+height and `block-size` the width, `margin-inline-start` is the top
+margin and `margin-block-start` a side -- the right in `vertical-rl` --
+while `width` and `height` stay physical. The horizontal table could not
+be extended in place, because it renames the inline edges only; the
+vertical one is asked first, and a page that never says `writing-mode`
+tests one integer and calls nothing.
+
+**An orthogonal flow shrinks to fit**, clamped to the containing block's
+block size where that is definite, because the axis it would otherwise
+fill is the containing block's *block* axis. Where that is indefinite
+Chromium clamps to the viewport and this does not clamp at all, nothing
+at layout time here knowing the viewport's height.
+
+Both suites ask the horizontal and the vertical layout of the same
+content to agree rather than writing this engine's metrics down: the
+vertical container is as wide as the horizontal one is tall, and the
+ink profile of a line set horizontally, column by column, is the ink
+profile of the same line set vertically, row by row.
+`tests/unit/test_writingmode.f`: 20 passed, 0 failed.
+`tests/render/writingmode.f`: 8 passed, 0 failed.
+
 ### Who owns a positioned descendant's `z-index`, and `isolation`
 
 CSS2 §9.9 confines a positioned descendant's `z-index` to a **stacking

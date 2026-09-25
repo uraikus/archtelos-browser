@@ -2965,7 +2965,39 @@ void func drawSmallCaps(f:Fragment, s:Style, caps:int, dx:int, dy:int) {
     setFontFor(s)
 }
 
+// A vertical fragment's glyphs. The layout put the fragment's rectangle
+// where it belongs and turned its baseline into an absolute x; this
+// turns the canvas a quarter turn about that baseline, at the point the
+// run begins, and then draws the run exactly as a horizontal one --
+// local +x is the inline direction, which is down the page, and local
+// -y is up from the baseline, which is to the right of it.
+//
+// Clockwise in both vertical modes: Writing Modes 4 §5.1 keeps the
+// counter-clockwise turn for `sideways-lr`, which this engine does not
+// have.
+void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
+    pSaveState()
+    pTranslate(f.baseline + dx, f.y + dy)
+    pRotate(90.0)
+    if s.letterSpacing == 0 {
+        pDrawText(f.content, 0, 0)
+        pRestoreState()
+        return
+    }
+    arr[text] chars = f.content.split('')
+    int x = 0
+    for int i = 0, i < chars.length, i++ {
+        pDrawText(chars[i], x, 0)
+        x = x + measureTextWidth(chars[i]) + s.letterSpacing
+    }
+    pRestoreState()
+}
+
 void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        drawFragmentGlyphsVertical(f, s, dx, dy)
+        return
+    }
     int caps = fontCapsOf(s)
     if caps != CAPS_NORMAL {
         drawSmallCaps(f, s, caps, dx, dy)

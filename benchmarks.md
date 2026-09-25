@@ -4170,3 +4170,31 @@ when such a page exists, which is why the dead-code control stays.
 The binary grows 4,248 bytes. Both binaries render `generated.html` and
 `features.html` byte-identically, and so does the control and the
 descent-removed probe; every one was `cmp`-checked before any timing.
+
+## A vertical writing mode, on two pages that stay horizontal
+
+CSS Writing Modes 4's `writing-mode`. Unlike the four entries above it,
+this change does put something on the path every page walks: a guard in
+`resolveEdges`, which runs for every box of every page, two more in the
+definite-height helpers, one in `drawFragmentGlyphs`, which runs for
+every text fragment, and three ternaries in `layoutBlock`. None of them
+is a call -- each is `anyVerticalWM && ...`, answered on the first term
+by a page that never says `writing-mode` -- but the test itself is real
+work, and neither benchmark page says it.
+
+Twenty-five alternating samples at 800px, idle at 0.23, with the five
+phases summed per sample as well:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | +1 | 0 | -1 | **-2** |
+| `features.html`, round 2 | -1 | 0 | 0 | -2 | 0 | **-4** |
+| `generated.html` | 0 | 0 | -2 | -2 | 0 | **-5** |
+
+The two forward rounds disagree on every phase that moved at all --
+cascade +1 then 0, layout 0 then -2, paint -1 then 0 -- so nothing
+earned a question and no mirror or control was spent. Both totals are
+negative, as is `generated.html`'s on all five phases.
+
+The binary grows 9,120 bytes. Both binaries render `generated.html` and
+`features.html` byte-identically, `cmp`-checked before any timing.
