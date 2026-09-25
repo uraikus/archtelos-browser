@@ -352,4 +352,68 @@ fcCheck('flex grow', 'display:flex;inline-size:100px;block-size:60px',
     '<p class=z style="flex:1 1 20px;block-size:20px"></p>' +
     '<p class=z style="flex:2 1 20px;block-size:30px"></p>')
 
+// ---- an auto margin on an orthogonal flow ------------------------------
+// Chromium's twelve rows are in todo.md, "An auto margin on an
+// orthogonal flow, measured". What they say is that nothing here is
+// special: a logical margin property maps through the element's own
+// writing mode, and an auto margin resolves against the CONTAINING
+// BLOCK's inline axis -- which for an orthogonal flow is the page's
+// horizontal, not the axis the flow was laid out along. So the check is
+// the agreement that follows. A turned box whose physical side margins
+// are auto must land exactly where an ordinary block of the same
+// physical size and the same physical margins lands, whichever
+// property was written to produce them.
+
+int func amPlaced(style:text, mode:text, sizes:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:200px;height:100px}</style></head><body>` +
+        `<div class="o"><div style="writing-mode:${mode};${style};${sizes}">a` +
+        `</div></div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return all[1].x - all[0].x
+}
+
+// The reference: an ordinary horizontal block, 30 wide and 40 tall.
+int func amRef(style:text) {
+    return amPlaced(style, 'horizontal-tb', 'width:30px;height:40px')
+}
+// The flow: the same physical box, arrived at by turning a 40x30 one.
+int func amFlow(style:text) {
+    return amPlaced(style, 'vertical-rl', 'inline-size:40px;block-size:30px')
+}
+
+// The reference is anchored to Chromium's own numbers, so the agreement
+// below cannot be satisfied by two engines being wrong together.
+checkEqInt(amRef('margin:0 auto'), 85, 'two auto side margins centre a 30-wide block in a 200-wide one')
+checkEqInt(amRef('margin-left:auto'), 170, 'one auto side margin pushes it to the far edge')
+checkEqInt(amRef('margin-top:auto'), 0, 'an auto top margin moves it sideways not at all')
+
+// The instrument: three references that are all the same number would
+// grade a broken engine and a working one alike.
+check(amRef('margin:0 auto') != amRef('margin-left:auto'), 'the three references differ')
+check(amRef('margin:0 auto') != amRef('margin-top:auto'), 'and the third differs from the first')
+
+// `margin: 0 auto` names the physical sides, and they are the
+// containing block's inline axis whatever the flow inside is doing.
+checkEqInt(amFlow('margin:0 auto'), amRef('margin:0 auto'),
+    'a turned box with two auto side margins centres where a block does')
+checkEqInt(amFlow('margin-left:auto'), amRef('margin-left:auto'),
+    'and with one it reaches the same far edge')
+
+// `margin-block` on a vertical box IS its left and right margins, so it
+// must land in the same place as writing them physically.
+checkEqInt(amFlow('margin-block:auto'), amRef('margin-left:auto;margin-right:auto'),
+    'margin-block on a vertical box is the side pair, and centres')
+
+// `margin-inline` on a vertical box is its top and bottom margins,
+// which the containing block's block axis does not centre.
+checkEqInt(amFlow('margin-inline:auto'), amRef('margin-top:auto;margin-bottom:auto'),
+    'margin-inline on a vertical box is the other pair, and does not')
+checkEqInt(amFlow('margin-inline-start:auto'), amRef('margin-top:auto'),
+    'and margin-inline-start is its top margin')
+checkEqInt(amFlow('margin-top:auto'), amRef('margin-top:auto'),
+    'an auto top margin still moves it sideways not at all')
+
 finish('writing-mode')

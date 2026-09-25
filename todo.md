@@ -471,6 +471,115 @@ widths, row heights and cell heights do too. Each is one local `bool`
 off the container's own writing mode, so a page with no vertical box
 reads one global and nothing else.
 
+**An auto margin on an orthogonal flow, measured.** A 200x100
+horizontal block holding a flow of `inline-size:40px;
+block-size:30px`, so the inner box is 40x30 laid out horizontally
+and 30x40 turned. Chromium, beside this engine, the rectangle given
+relative to the outer block:
+
+| declaration | mode | Chromium | this engine |
+|---|---|---|---|
+| `margin: 0 auto` | `horizontal-tb` | 80,0 40x30 | 80,0 40x30 |
+| `margin-inline: auto` | | 80,0 40x30 | 80,0 40x30 |
+| `margin-block: auto` | | 0,0 40x30 | 0,0 40x30 |
+| `margin-left: auto` | | 160,0 40x30 | 160,0 40x30 |
+| `margin-inline-start: auto` | | 160,0 40x30 | 160,0 40x30 |
+| `margin-top: auto` | | 0,0 40x30 | 0,0 40x30 |
+| `margin: 0 auto` | `vertical-rl` | **85,0** 30x40 | 0,30 30x40 |
+| `margin-inline: auto` | | **0,0** 30x40 | 0,30 30x40 |
+| `margin-block: auto` | | **85,0** 30x40 | 0,0 30x40 |
+| `margin-left: auto` | | **170,0** 30x40 | 0,60 30x40 |
+| `margin-inline-start: auto` | | 0,0 30x40 | 0,0 30x40 |
+| `margin-top: auto` | | 0,0 30x40 | 0,0 30x40 |
+
+The six horizontal rows agree exactly, which is what makes the six
+vertical ones evidence rather than noise. And what they say is that
+**there is no orthogonal-flow rule to implement.** Two ordinary
+rules, composed, give every row:
+
+1. A logical margin property maps through the **element's own**
+   writing mode. `margin-block` on a `vertical-rl` box is its left
+   and right margins; `margin-inline` is its top and bottom. This
+   engine already does that -- `margin-inline-start: auto` gives
+   `0,0` in both engines because it is `margin-top` and a top margin
+   of `auto` computes to zero.
+2. An auto margin is resolved against the **containing block's**
+   inline axis, which here is the page's horizontal. So
+   `margin-block: auto` centres the turned box at 85 and
+   `margin-left: auto` pushes it to 170, while `margin-inline: auto`
+   does nothing at all: it is the top and bottom pair, and the
+   containing block's block axis does not centre.
+
+This engine gets every vertical row wrong the same way, and the way
+says what the fix is: it resolves the auto margins **inside the
+logical space**, before the transposition walk. `margin: 0 auto`
+lands at `0,30`, and 30 is `(100 - 40) / 2` -- the box centred in the
+outer block's *height*, because in logical space that height is the
+inline axis and `cw` was clamped to it. `margin-left: auto` gives
+`0,60`, which is the same mistake pushed to one end. So the auto
+margins of a flow that starts a vertical subtree belong **after** the
+turn, resolved against the containing block's own inline size rather
+than the clamped one the logical layout ran with.
+
+**Underneath it, twelve logical shorthands that never ask the mode.**
+The `margin-block`/`margin-inline` rows above came out swapped, and
+the cause is not the auto margin at all: `applyDecl` sends every
+logical *longhand* through `wmPhysicalName`, and then expands the
+two-value shorthands further down with physical names written into
+the source. Asking the code which those are -- every name in
+`src/css/cascade.f` containing `inline` or `block`, minus the ones
+`wmPhysicalName` answers -- gives twelve, and a hand-written list
+would have got two of them:
+
+`margin-inline`, `margin-block`, `padding-inline`, `padding-block`,
+`inset-inline`, `inset-block`, `border-inline`, `border-block`,
+`contain-intrinsic-inline-size`, `contain-intrinsic-block-size`,
+`overscroll-behavior-inline`, `overscroll-behavior-block`.
+
+Chromium, asked for the computed physical longhands of each in four
+combinations. `margin-inline: 11px 22px` and `margin-block: 11px
+22px` stand for the whole family, because padding, the insets and
+the borders answer identically:
+
+| | `margin-inline: 11px 22px` | `margin-block: 11px 22px` |
+|---|---|---|
+| `horizontal-tb` `ltr` | left 11, right 22 | top 11, bottom 22 |
+| `horizontal-tb` `rtl` | **right 11, left 22** | top 11, bottom 22 |
+| `vertical-rl` | **top 11, bottom 22** | **right 11, left 22** |
+| `vertical-lr` | **top 11, bottom 22** | **left 11, right 22** |
+
+and the two axis pairs, which have no order to get wrong:
+
+| | `horizontal-tb` | `vertical-rl` and `vertical-lr` |
+|---|---|---|
+| `contain-intrinsic-inline-size` | `contain-intrinsic-width` | `contain-intrinsic-height` |
+| `contain-intrinsic-block-size` | `contain-intrinsic-height` | `contain-intrinsic-width` |
+| `overscroll-behavior-inline` | `overscroll-behavior-x` | `overscroll-behavior-y` |
+| `overscroll-behavior-block` | `overscroll-behavior-y` | `overscroll-behavior-x` |
+
+Every bolded cell is a case this engine gets wrong, and the `rtl` row
+says the gap is not only the vertical modes: **a two-value inline
+shorthand does not follow `direction` either**, which has been true
+since the logical properties landed and which no test asked. The
+rule is exactly the one the longhands already use -- the inline pair
+is `wmInlineStartSide()` then `wmInlineEndSide()`, the block pair
+`wmBlockStartSide()` then `wmBlockEndSide()` -- so the check that
+earns its place needs no numbers at all: **a two-value logical
+shorthand must land where its own two longhands land**, in every
+mode. That is the agreement CLAUDE.md asks for, it covers all twelve,
+and it fails today.
+
+**What landed.** Both, and the second was the reason the first looked
+wrong. The flow's auto side margins are resolved after the turn,
+against the containing block's own inline size rather than the clamped
+one -- which is also the only point at which the box's physical
+margins and its turned width are both to hand. And the twelve
+shorthands ask the mode: four side functions that answer in both modes
+(`wmInlineStartSide` and its neighbours are vertical-only, being called
+from nowhere else) and four renames added to `wmPhysicalName`. Nothing
+calls the side functions unless one of the six two-value shorthands is
+declared.
+
 **What is left, in the order it is worth doing:**
 
 1. **A table row does not stretch to a definite table block size, and
@@ -491,105 +600,7 @@ reads one global and nothing else.
    and also its one blind spot, which is why the horizontal numbers
    above are written down beside Chromium's.
 
-2. **An auto margin on an orthogonal flow, measured.** A 200x100
-   horizontal block holding a flow of `inline-size:40px;
-   block-size:30px`, so the inner box is 40x30 laid out horizontally
-   and 30x40 turned. Chromium, beside this engine, the rectangle given
-   relative to the outer block:
-
-   | declaration | mode | Chromium | this engine |
-   |---|---|---|---|
-   | `margin: 0 auto` | `horizontal-tb` | 80,0 40x30 | 80,0 40x30 |
-   | `margin-inline: auto` | | 80,0 40x30 | 80,0 40x30 |
-   | `margin-block: auto` | | 0,0 40x30 | 0,0 40x30 |
-   | `margin-left: auto` | | 160,0 40x30 | 160,0 40x30 |
-   | `margin-inline-start: auto` | | 160,0 40x30 | 160,0 40x30 |
-   | `margin-top: auto` | | 0,0 40x30 | 0,0 40x30 |
-   | `margin: 0 auto` | `vertical-rl` | **85,0** 30x40 | 0,30 30x40 |
-   | `margin-inline: auto` | | **0,0** 30x40 | 0,30 30x40 |
-   | `margin-block: auto` | | **85,0** 30x40 | 0,0 30x40 |
-   | `margin-left: auto` | | **170,0** 30x40 | 0,60 30x40 |
-   | `margin-inline-start: auto` | | 0,0 30x40 | 0,0 30x40 |
-   | `margin-top: auto` | | 0,0 30x40 | 0,0 30x40 |
-
-   The six horizontal rows agree exactly, which is what makes the six
-   vertical ones evidence rather than noise. And what they say is that
-   **there is no orthogonal-flow rule to implement.** Two ordinary
-   rules, composed, give every row:
-
-   1. A logical margin property maps through the **element's own**
-      writing mode. `margin-block` on a `vertical-rl` box is its left
-      and right margins; `margin-inline` is its top and bottom. This
-      engine already does that -- `margin-inline-start: auto` gives
-      `0,0` in both engines because it is `margin-top` and a top margin
-      of `auto` computes to zero.
-   2. An auto margin is resolved against the **containing block's**
-      inline axis, which here is the page's horizontal. So
-      `margin-block: auto` centres the turned box at 85 and
-      `margin-left: auto` pushes it to 170, while `margin-inline: auto`
-      does nothing at all: it is the top and bottom pair, and the
-      containing block's block axis does not centre.
-
-   This engine gets every vertical row wrong the same way, and the way
-   says what the fix is: it resolves the auto margins **inside the
-   logical space**, before the transposition walk. `margin: 0 auto`
-   lands at `0,30`, and 30 is `(100 - 40) / 2` -- the box centred in the
-   outer block's *height*, because in logical space that height is the
-   inline axis and `cw` was clamped to it. `margin-left: auto` gives
-   `0,60`, which is the same mistake pushed to one end. So the auto
-   margins of a flow that starts a vertical subtree belong **after** the
-   turn, resolved against the containing block's own inline size rather
-   than the clamped one the logical layout ran with.
-
-   **Underneath it, twelve logical shorthands that never ask the mode.**
-   The `margin-block`/`margin-inline` rows above came out swapped, and
-   the cause is not the auto margin at all: `applyDecl` sends every
-   logical *longhand* through `wmPhysicalName`, and then expands the
-   two-value shorthands further down with physical names written into
-   the source. Asking the code which those are -- every name in
-   `src/css/cascade.f` containing `inline` or `block`, minus the ones
-   `wmPhysicalName` answers -- gives twelve, and a hand-written list
-   would have got two of them:
-
-   `margin-inline`, `margin-block`, `padding-inline`, `padding-block`,
-   `inset-inline`, `inset-block`, `border-inline`, `border-block`,
-   `contain-intrinsic-inline-size`, `contain-intrinsic-block-size`,
-   `overscroll-behavior-inline`, `overscroll-behavior-block`.
-
-   Chromium, asked for the computed physical longhands of each in four
-   combinations. `margin-inline: 11px 22px` and `margin-block: 11px
-   22px` stand for the whole family, because padding, the insets and
-   the borders answer identically:
-
-   | | `margin-inline: 11px 22px` | `margin-block: 11px 22px` |
-   |---|---|---|
-   | `horizontal-tb` `ltr` | left 11, right 22 | top 11, bottom 22 |
-   | `horizontal-tb` `rtl` | **right 11, left 22** | top 11, bottom 22 |
-   | `vertical-rl` | **top 11, bottom 22** | **right 11, left 22** |
-   | `vertical-lr` | **top 11, bottom 22** | **left 11, right 22** |
-
-   and the two axis pairs, which have no order to get wrong:
-
-   | | `horizontal-tb` | `vertical-rl` and `vertical-lr` |
-   |---|---|---|
-   | `contain-intrinsic-inline-size` | `contain-intrinsic-width` | `contain-intrinsic-height` |
-   | `contain-intrinsic-block-size` | `contain-intrinsic-height` | `contain-intrinsic-width` |
-   | `overscroll-behavior-inline` | `overscroll-behavior-x` | `overscroll-behavior-y` |
-   | `overscroll-behavior-block` | `overscroll-behavior-y` | `overscroll-behavior-x` |
-
-   Every bolded cell is a case this engine gets wrong, and the `rtl` row
-   says the gap is not only the vertical modes: **a two-value inline
-   shorthand does not follow `direction` either**, which has been true
-   since the logical properties landed and which no test asked. The
-   rule is exactly the one the longhands already use -- the inline pair
-   is `wmInlineStartSide()` then `wmInlineEndSide()`, the block pair
-   `wmBlockStartSide()` then `wmBlockEndSide()` -- so the check that
-   earns its place needs no numbers at all: **a two-value logical
-   shorthand must land where its own two longhands land**, in every
-   mode. That is the agreement CLAUDE.md asks for, it covers all twelve,
-   and it fails today.
-
-3. **`anchor()`'s sides and the scroll box.** The anchor functions'
+2. **`anchor()`'s sides and the scroll box.** The anchor functions'
    `start` and `end` are the physical sides whatever the mode says, and
    a scroll container inside a vertical flow reserves its bar on the
    physical axis. Neither is measured yet.

@@ -5,6 +5,72 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Twelve logical shorthands that never asked the writing mode
+
+`margin-inline`, `margin-block`, `padding-inline`, `padding-block`,
+`inset-inline`, `inset-block`, `border-inline`, `border-block`,
+`contain-intrinsic-inline-size`, `contain-intrinsic-block-size`,
+`overscroll-behavior-inline` and `overscroll-behavior-block` now follow
+the writing mode, and the six two-value ones follow `direction` as well.
+
+**Found by a test that was aimed at something else.** The auto-margin
+checks below came out with `margin-block` and `margin-inline` swapped,
+and the cause was not the auto margin. `applyDecl` sends every logical
+*longhand* through `wmPhysicalName` and then expands the two-value
+shorthands further down with physical names written into the source.
+Asking the source which names those are -- every one containing
+`inline` or `block`, minus the ones `wmPhysicalName` answers -- gave
+twelve; the two the test happened to name are the two a hand-written
+list would have had.
+
+**The `rtl` row is the part that is not about writing modes at all.**
+Chromium answers `margin-inline: 11px 22px` on a right-to-left box with
+`margin-right: 11px; margin-left: 22px`, and this engine answered
+left 11, right 22. That has been wrong since the logical properties
+landed, in a file whose own opening paragraph says the inline aliases
+are the ones `direction` decides, and no check asked.
+
+The fix is four side functions that answer in both modes -- the
+existing `wmInlineStartSide` and its neighbours are vertical-only,
+being called from nowhere else -- and the four renames added to
+`wmPhysicalName`. Nothing calls the side functions unless one of the
+six two-value shorthands is declared.
+
+The check needs no numbers, because a shorthand and its own two
+longhands are two ways of writing one thing: whatever
+`margin-inline-start` and `margin-inline-end` compute to,
+`margin-inline` must compute to the same, in every mode and either
+direction. 87 checks failed on that before the fix.
+
+**One of them failed for a reason worth keeping.**
+`overscroll-behavior` is not a field of `Style`: it lives in a side map
+keyed by the style's serial, and `cascadeReset` restarts the serials.
+Two styles computed in two documents therefore cannot be compared
+through it -- the second document's styles take the first's serials and
+the map answers for whichever was written last -- and the engine was
+right all along in the four cases that looked wrong. Those checks put
+both elements in one document.
+
+### An auto margin on an orthogonal flow
+
+`margin: 0 auto` on a vertical box inside a horizontal one now centres
+it in its parent's **width**, where it centred it in its parent's
+height before.
+
+Chromium's twelve rows are in todo.md, and what they say is that there
+is no orthogonal-flow rule to implement: a logical margin maps through
+the element's own writing mode, an auto margin resolves against the
+containing block's inline axis, and the two composed give every row.
+This engine resolved the auto margins inside the logical space the
+subtree is laid out in, where that axis is the flow's *block* axis and
+`cw` had been clamped to it, so `margin: 0 auto` landed at 30 -- which
+is `(100 - 40) / 2`, the box centred in the outer block's height.
+
+They are resolved after the turn now, against the containing block's
+own inline size rather than the clamped one, which is also the only
+point at which the box's physical side margins and its turned width are
+both to hand.
+
 ### Flex, grid, table and multicol turn with the writing mode
 
 A flex, grid, table or multi-column container in a vertical mode now

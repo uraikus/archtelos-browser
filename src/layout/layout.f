@@ -1694,7 +1694,33 @@ void func wmRotateEdges(b:Box, s:Style, cw:int) {
 // the root's logical block extent. The root maps to itself with its two
 // sides exchanged, which is the check that the map and the sizing
 // agree.
-void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int) {
+// An auto margin on an orthogonal flow resolves against the CONTAINING
+// BLOCK's inline axis, which is the page's horizontal, and so cannot be
+// resolved in the logical space the subtree was laid out in: there that
+// axis is the flow's BLOCK axis, and `cw` was clamped to it. Chromium's
+// twelve rows are in todo.md, "An auto margin on an orthogonal flow,
+// measured", and what they say is that nothing here is special --
+// `margin-block` on a `vertical-rl` box is its left and right margins,
+// and two auto side margins centre it in its parent's width exactly as
+// they centre an ordinary block. `physW` is what the box's width
+// becomes once it is turned.
+void func wmAutoMargins(b:Box, cw:int, physW:int) {
+    Style s = b.style
+    bool leftAuto = lenIsAuto(s.marginLeft)
+    if !leftAuto && !lenIsAuto(s.marginRight) { return }
+    int freeSpace = cw - physW - b.ml - b.mr
+    if freeSpace <= 0 { return }
+    if leftAuto && lenIsAuto(s.marginRight) {
+        b.ml = b.ml + Math.floorDiv(freeSpace, 2)
+        b.mr = b.mr + freeSpace - Math.floorDiv(freeSpace, 2)
+    } else if leftAuto {
+        b.ml = b.ml + freeSpace
+    } else {
+        b.mr = b.mr + freeSpace
+    }
+}
+
+void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int, cwOuter:int) {
     int L = root.x
     int T = root.y
     int BH = root.h
@@ -1708,6 +1734,10 @@ void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int) {
     // turned subtree is emitted about that corner rather than about the
     // one the logical layout happened to use.
     wmUnrotateEdges(root, rl, up)
+    // The margins are physical again here, which is the only point at
+    // which the box's own side margins and its turned width are both to
+    // hand.
+    wmAutoMargins(root, cwOuter, BH)
     wmTransposeWalk(root, L, T, BH, IW, cx + root.ml, y + root.mt, rl, up)
     root.baseline = root.h
 }
@@ -2688,6 +2718,10 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // what Chromium does at every height measured (todo.md) and which
     // `cssViewportHeight` has been able to answer all along -- the `vh`
     // unit and `layoutPositioned` both read it.
+    // The containing block's own inline size, which the clamp below is
+    // about to replace and which the flow's auto side margins resolve
+    // against once the subtree is turned.
+    int wmOuterCW = cw
     if wmRoot {
         cw = layoutCBHeight >= 0 ? layoutCBHeight : maxInt(cssViewportHeight, 0)
     }
@@ -2699,7 +2733,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // The quarter turn, as at the end of the block path: a flex,
         // grid or table container that starts a vertical flow has laid
         // itself out in logical space like any other box.
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
         return
     }
     if b.kind == BOX_AUDIO {
@@ -2816,7 +2850,10 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         int mn = resolveLen(wmMinW, cw, 0)
         if width < mn { width = mn }
     }
-    if !autoWidth || wmMaxW.kind != LEN_AUTO {
+    // `wmRoot` is excluded because its auto side margins belong to the
+    // containing block's inline axis, which this logical space does not
+    // have; `wmAutoMargins` resolves them after the turn.
+    if !wmRoot && (!autoWidth || wmMaxW.kind != LEN_AUTO) {
         // auto margins center a box narrower than its container
         int freeSpace = cw - width - edges
         if lenIsAuto(s.marginLeft) && lenIsAuto(s.marginRight) && freeSpace > 0 {
@@ -2843,7 +2880,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutFlex(b, cx, y, cw)
         layoutCBHeight = savedFlexCB
         // the quarter turn, as at the end of the block path
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
         return
     }
     // A grid container sizes its tracks and places its items into them
@@ -2858,7 +2895,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutGrid(b, cx, y, cw, width)
         layoutCBHeight = savedGridCB
         // the quarter turn, as at the end of the block path
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
         return
     }
 
@@ -2985,7 +3022,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // The quarter turn. Everything below this box is in logical space,
     // and this is where it becomes the rectangle the painter, the hit
     // tester and the parent's flow all read.
-    if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y) }
+    if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
 }
 
 // Stacks the block-level children of b; returns the content height.

@@ -4630,6 +4630,30 @@ text func wmInlineEndSide() { return cascadeApplyRtl != wmInlineUpwards() ? 'top
 text func wmBlockStartSide() { return wmBlockRightToLeft() ? 'right' : 'left' }
 text func wmBlockEndSide() { return wmBlockRightToLeft() ? 'left' : 'right' }
 
+// The four physical sides in whichever writing mode and direction is in
+// force. `wmInlineStartSide` and its three neighbours answer for a
+// vertical mode only, because that is the only place `wmPhysicalName`
+// calls them; a two-value logical shorthand needs the answer in both,
+// since it names its two sides itself rather than going through the
+// longhand table. Nothing calls these unless such a shorthand is
+// declared, so a page without one pays nothing.
+text func logicalInlineStartSide() {
+    if cascadeApplyWM != WM_HORIZONTAL_TB { return wmInlineStartSide() }
+    return cascadeApplyRtl ? 'right' : 'left'
+}
+text func logicalInlineEndSide() {
+    if cascadeApplyWM != WM_HORIZONTAL_TB { return wmInlineEndSide() }
+    return cascadeApplyRtl ? 'left' : 'right'
+}
+text func logicalBlockStartSide() {
+    if cascadeApplyWM != WM_HORIZONTAL_TB { return wmBlockStartSide() }
+    return 'top'
+}
+text func logicalBlockEndSide() {
+    if cascadeApplyWM != WM_HORIZONTAL_TB { return wmBlockEndSide() }
+    return 'bottom'
+}
+
 text func wmPhysicalName(name:text) {
     // The two sizes exchange axes outright.
     if name == 'inline-size' { return 'height' }
@@ -4640,6 +4664,10 @@ text func wmPhysicalName(name:text) {
     if name == 'max-block-size' { return 'max-width' }
     if name == 'overflow-block' { return 'overflow-x' }
     if name == 'overflow-inline' { return 'overflow-y' }
+    if name == 'contain-intrinsic-inline-size' { return 'contain-intrinsic-height' }
+    if name == 'contain-intrinsic-block-size' { return 'contain-intrinsic-width' }
+    if name == 'overscroll-behavior-inline' { return 'overscroll-behavior-y' }
+    if name == 'overscroll-behavior-block' { return 'overscroll-behavior-x' }
     // The insets name a side on their own.
     if name == 'inset-block-start' { return wmBlockStartSide() }
     if name == 'inset-block-end' { return wmBlockEndSide() }
@@ -4746,10 +4774,10 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     else if name == 'border-inline-start' { name = cascadeApplyRtl ? 'border-right' : 'border-left' }
     else if name == 'border-inline-end' { name = cascadeApplyRtl ? 'border-left' : 'border-right' }
     else if name == 'border-block' {
-        applyBorderShorthand(props, ['top', 'bottom'], value)
+        applyBorderShorthand(props, [logicalBlockStartSide(), logicalBlockEndSide()], value)
         return
     } else if name == 'border-inline' {
-        applyBorderShorthand(props, ['left', 'right'], value)
+        applyBorderShorthand(props, [logicalInlineStartSide(), logicalInlineEndSide()], value)
         return
     }
     if name == 'scroll-padding' || name == 'scroll-margin' {
@@ -4956,11 +4984,11 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     if name == 'padding-inline-end' { name = cascadeApplyRtl ? 'padding-left' : 'padding-right' }
     if name == 'margin-block-start' { name = 'margin-top' }
     if name == 'margin-block-end' { name = 'margin-bottom' }
-    // The rest of the logical box, which in a left-to-right horizontal
-    // writing mode is a renaming and nothing more: `inline-start` is the
-    // left edge and `block-start` the top. css-2026.md records that this
-    // engine assumes that mode throughout, which is what makes these
-    // aliases rather than a feature of their own.
+    // The rest of the logical box. These lines are the LEFT-TO-RIGHT
+    // HORIZONTAL answers, and nothing more: `inline-start` is the left
+    // edge and `block-start` the top. A vertical mode never reaches
+    // them, because `wmPhysicalName` above has already turned the name
+    // into a physical one that none of these tests matches.
     if name == 'padding-block-start' { name = 'padding-top' }
     if name == 'padding-block-end' { name = 'padding-bottom' }
     // The scroll box's two families take the same aliases, because a
@@ -5017,8 +5045,17 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         if t.length == 0 { return }
         ascii a = dup(t[0])
         ascii b = dup(t.length > 1 ? t[1] : t[0])
-        if name == 'inset-block' { setProp(props, 'top', a)  setProp(props, 'bottom', b) }
-        else { setProp(props, 'left', a)  setProp(props, 'right', b) }
+        // The pair is start then end, and which physical side each is
+        // depends on the writing mode and on `direction` -- exactly as
+        // it does for the longhands, which reach the same answer
+        // through `wmPhysicalName` and the horizontal table below.
+        if name == 'inset-block' {
+            setProp(props, logicalBlockStartSide(), a)
+            setProp(props, logicalBlockEndSide(), b)
+        } else {
+            setProp(props, logicalInlineStartSide(), a)
+            setProp(props, logicalInlineEndSide(), b)
+        }
         return
     }
     if name == 'margin-inline' || name == 'padding-inline' || name == 'margin-block' || name == 'padding-block' {
@@ -5028,8 +5065,8 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         ascii b = dup(t.length > 1 ? t[1] : t[0])
         bool inline = name == 'margin-inline' || name == 'padding-inline'
         text base = asciiStartsWith(name.toAscii(), 'margin', 0) ? 'margin' : 'padding'
-        setProp(props, inline ? `${base}-left` : `${base}-top`, a)
-        setProp(props, inline ? `${base}-right` : `${base}-bottom`, b)
+        setProp(props, `${base}-${inline ? logicalInlineStartSide() : logicalBlockStartSide()}`, a)
+        setProp(props, `${base}-${inline ? logicalInlineEndSide() : logicalBlockEndSide()}`, b)
         return
     }
     // `text-decoration` is the shorthand for the line, the style, the
@@ -5208,8 +5245,9 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // says none of them.
     if anyLateShorthand {
         // The two logical spellings are the same properties under other
-        // names: in the horizontal writing mode this engine assumes,
-        // the inline axis is the horizontal one. Renamed rather than
+        // names; these are the horizontal answers, a vertical mode
+        // having been answered by `wmPhysicalName` above. Renamed
+        // rather than
         // read separately, so that a logical declaration and its
         // physical twin occupy one key and the cascade decides between
         // them -- Chromium answers
