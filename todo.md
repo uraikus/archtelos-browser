@@ -600,10 +600,79 @@ declared.
    and also its one blind spot, which is why the horizontal numbers
    above are written down beside Chromium's.
 
-2. **`anchor()`'s sides and the scroll box.** The anchor functions'
-   `start` and `end` are the physical sides whatever the mode says, and
-   a scroll container inside a vertical flow reserves its bar on the
-   physical axis. Neither is measured yet.
+2. **An absolutely positioned box in a vertical flow is turned, and
+   should not be.** Found while probing `anchor()`, whose numbers it
+   contaminates. A 200x160 `position: relative` container with a
+   `writing-mode`, holding one box; Chromium beside this engine:
+
+   | case | mode | Chromium | this engine |
+   |---|---|---|---|
+   | `position:absolute; left:60px; top:50px; width:40px; height:30px` | `horizontal-tb` | 60,50 40x30 | 60,50 40x30 |
+   | | `vertical-rl` | 60,50 **40x30** | 60,50 30x40 |
+   | | `vertical-lr` | 60,50 **40x30** | 60,50 30x40 |
+   | `position:absolute; inset-inline-start:60px; inset-block-start:50px` | `horizontal-tb` | 60,50 40x30 | 60,50 40x30 |
+   | | `vertical-rl` | **110,60** 40x30 | 120,60 30x40 |
+   | | `vertical-lr` | 50,60 40x30 | 50,60 30x40 |
+   | `position:absolute; right:20px; bottom:10px` | `horizontal-tb` | 140,120 40x30 | 140,120 40x30 |
+   | | `vertical-rl` | **140,120** 40x30 | 150,110 30x40 |
+   | `position:absolute`, no insets | `horizontal-tb` | 0,0 40x30 | 0,0 40x30 |
+   | | `vertical-rl` | **160,0** 40x30 | 0,0 30x40 |
+   | | `vertical-lr` | 0,0 40x30 | 0,0 30x40 |
+   | `width:40px; height:30px`, in flow | `vertical-rl` | 160,0 40x30 | 160,0 40x30 |
+   | | `vertical-lr` | 0,0 40x30 | 0,0 40x30 |
+
+   The fixture discriminates three ways at once, which is what makes it
+   worth keeping: **every horizontal row agrees**, so the instrument is
+   not broken; the **in-flow** row agrees in both vertical modes, so the
+   turn itself is right; and every **out-of-flow** row has this engine's
+   box 30x40 where Chromium's is 40x30.
+
+   So the cause is narrow. An in-flow block comes out right because
+   `layoutBlock` compensates before the turn -- it reads `height` where
+   it means the inline extent, and the quarter turn puts `width` back on
+   the horizontal axis. `layoutPositioned` does not compensate, and the
+   box is turned all the same, because it sits inside the subtree
+   `wmTransposeSubtree` walks. Its declared `width` and `height` come
+   out exchanged, and the wrong positions follow from the wrong size:
+   `right:20px` with a 30-wide box is 150 rather than 140.
+
+   The static position is a second, separate thing the same rows show:
+   with no insets at all, Chromium puts the box at the block-start edge
+   of the containing block, which in `vertical-rl` is `160,0` -- exactly
+   where the in-flow box goes -- and this engine puts it at `0,0`.
+
+3. **`anchor()`'s sides, measured** -- with the caveat that the numbers
+   above contaminate this engine's column, since the anchor element is
+   itself absolutely positioned. Chromium, an anchor at `left:60px;
+   top:50px; width:40px; height:30px` in a 200x160 block:
+
+   | setting | side | `horizontal-tb` | `vertical-rl` | `vertical-lr` |
+   |---|---|---|---|---|
+   | `top` | `start` | 50 | 50 | 50 |
+   | `top` | `end` | 80 | 80 | 80 |
+   | `left` | `start` | 60 | **100** | 60 |
+   | `left` | `end` | 100 | **60** | 100 |
+   | `left` | `center` | 80 | 80 | 80 |
+
+   **Exactly one cell moves**: the horizontal axis in `vertical-rl`,
+   where `start` is the anchor's right edge and `end` its left, because
+   the horizontal axis is that mode's block axis and it runs right to
+   left. The vertical axis never moves, because it is the inline axis in
+   a vertical mode and the inline axis runs top to bottom in three of
+   the four. `self-start` and `self-end` follow the positioned box's own
+   mode and agree with `start`/`end` wherever the two modes match.
+
+4. **A physical side on the wrong axis is invalid, and is answered
+   here.** The same probe, and nothing to do with writing modes:
+   Chromium answers `top: anchor(left)` and `left: anchor(top)` with
+   nothing at all -- the box stays at `0,0` -- because the side must lie
+   on the axis of the property being set. This engine answers both, and
+   gives `top: anchor(left)` the anchor's top edge: the two keywords are
+   being read by position rather than by which axis they name. That has
+   been wrong in the plain horizontal mode since `anchor()` landed.
+
+5. **The scroll box.** A scroll container inside a vertical flow
+   reserves its bar on the physical axis. Not measured yet.
 
 ### What is left of the masks
 
