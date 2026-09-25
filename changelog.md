@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An absolutely positioned box no longer turns with a vertical flow
+
+`position: absolute; left: 60px; top: 50px; width: 40px; height: 30px`
+inside a `vertical-rl` container came out **30x40**, where every browser
+gives 40x30: `left`, `top`, `width` and `height` are physical, and a
+writing mode does not move a physical thing. The wrong positions
+followed from the wrong size -- `right: 20px` put a 30-wide box at 150
+rather than 140.
+
+**The cause is that such a box is laid out twice.** The in-flow pass
+turns the subtree, and then `layoutPositioned` lays the out-of-flow box
+out again, by which time everything around it is already physical. The
+second layout treated it as an ordinary box *inside* a vertical flow --
+logical, awaiting a turn that had already happened and would not come
+again. So it starts a fresh vertical flow instead, and
+`wmStartsVerticalFlow` says so for any out-of-flow box whatever its
+parent is. One predicate; twelve of the thirteen failing checks came
+back with it.
+
+The checks need no number from either engine. `left`, `top`, `width`
+and `height` being physical means the same declaration must give the
+same rectangle in all three modes, and the fixture discriminates three
+ways: every horizontal row agrees, so the instrument is not broken; the
+in-flow row agrees in both vertical modes, so the turn itself is right;
+and only the out-of-flow rows differed.
+
+**What is still wrong, and asserted so that fixing it says so.** The
+static position -- where an un-inset out-of-flow box goes -- is recorded
+by the flow in logical coordinates and nothing turns it. `horizontal-tb`
+and `vertical-lr` put a first child at the origin, so they come out
+right for a reason that does not reach `vertical-rl`, which should start
+the box at the container's right edge and starts it at 0. Turning the
+recorded point in `wmTransposeWalk` was tried and made it worse, because
+the point is recorded before the box has any extent to turn it by. The
+suite asserts the gap; todo.md says what the fix wants.
+
 ### Twelve logical shorthands that never asked the writing mode
 
 `margin-inline`, `margin-block`, `padding-inline`, `padding-block`,

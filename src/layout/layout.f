@@ -1831,6 +1831,14 @@ void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, IW:int, PX:int, PY:int,
 // inside the island answers no, and the island is laid out once.
 bool func wmStartsVerticalFlow(b:Box) {
     if b.style.writingMode == WM_HORIZONTAL_TB { return false }
+    // An out-of-flow box is laid out a second time, by
+    // `layoutPositioned`, after the in-flow pass has turned everything
+    // around it. So it starts a fresh vertical flow whatever its parent
+    // is: its contents are logical and its own box physical, which is
+    // what makes `width` and `height` mean what they say on it
+    // (todo.md, "An absolutely positioned box in a vertical flow is
+    // turned, and should not be").
+    if boxIsOutOfFlow(b) { return true }
     Box p = parentBox(b)
     if p == null { return true }
     return p.style.writingMode == WM_HORIZONTAL_TB

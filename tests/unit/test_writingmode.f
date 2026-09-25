@@ -416,4 +416,92 @@ checkEqInt(amFlow('margin-inline-start:auto'), amRef('margin-top:auto'),
 checkEqInt(amFlow('margin-top:auto'), amRef('margin-top:auto'),
     'an auto top margin still moves it sideways not at all')
 
+// ---- an absolutely positioned box in a vertical flow -------------------
+// `left`, `top`, `width` and `height` are physical, and a writing mode
+// does not move a physical thing. So an absolutely positioned box given
+// all four must come out at exactly the same rectangle in all three
+// modes. That needs no number from either engine, and todo.md records
+// Chromium keeping it.
+
+arr[int] func apRect(mode:text, style:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:200px;height:160px;position:relative}</style></head><body>` +
+        `<div class="o" style="writing-mode:${mode}"><div style="${style}"></div>` +
+        `</div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    Box o = all[0]
+    Box b = all[1]
+    arr[int] r = []
+    r.push(b.x - o.x)
+    r.push(b.y - o.y)
+    r.push(b.w)
+    r.push(b.h)
+    return r
+}
+
+void func sameRect(a:arr[int], b:arr[int], label:text) {
+    checkEqInt(a[0], b[0], `${label}: the x`)
+    checkEqInt(a[1], b[1], `${label}: the y`)
+    checkEqInt(a[2], b[2], `${label}: the width`)
+    checkEqInt(a[3], b[3], `${label}: the height`)
+}
+
+text APLT = 'position:absolute;left:60px;top:50px;width:40px;height:30px'
+text APRB = 'position:absolute;right:20px;bottom:10px;width:40px;height:30px'
+
+arr[int] apH = apRect('horizontal-tb', APLT)
+sameRect(apRect('vertical-rl', APLT), apH, 'physical insets and a physical size survive vertical-rl')
+sameRect(apRect('vertical-lr', APLT), apH, 'and vertical-lr')
+arr[int] apRBh = apRect('horizontal-tb', APRB)
+sameRect(apRect('vertical-rl', APRB), apRBh, 'the far insets survive vertical-rl')
+sameRect(apRect('vertical-lr', APRB), apRBh, 'and vertical-lr')
+
+// The static position: with no inset at all the box goes where the flow
+// would have put it. That is asked of the flow itself rather than
+// written down -- but of two modes rather than three, because the third
+// is a gap this engine has and todo.md records: the flow notes the
+// static position in LOGICAL coordinates on its way past, the
+// transposition walk does not turn what it noted, and in `vertical-rl`
+// alone the two differ. `horizontal-tb` and `vertical-lr` both put a
+// first child at the origin, so their static positions are right for a
+// reason that does not extend to the third.
+text APNONE = 'position:absolute;width:40px;height:30px'
+text APFLOW = 'width:40px;height:30px'
+arr[text] APMODES = ['horizontal-tb', 'vertical-lr']
+for int i = 0, i < APMODES.length, i++ {
+    arr[int] st = apRect(APMODES[i], APNONE)
+    arr[int] fl = apRect(APMODES[i], APFLOW)
+    checkEqInt(st[0], fl[0], `an un-inset box starts where the flow would put it in ${APMODES[i]}: the x`)
+    checkEqInt(st[1], fl[1], `an un-inset box starts where the flow would put it in ${APMODES[i]}: the y`)
+    sameRect(st, apRect(APMODES[i], APNONE), `${APMODES[i]} is stable`)
+}
+// And the gap itself, asserted so that closing it fails this line and
+// says so, rather than being noticed years later.
+checkEqInt(apRect('vertical-rl', APNONE)[0], 0,
+    'the static position in vertical-rl is still the logical one (todo.md)')
+check(apRect('vertical-rl', APFLOW)[0] != 0,
+    'and the flow really would have put it elsewhere')
+
+// The instrument: if the three modes put the in-flow box in the same
+// place, every check above would hold on an engine that ignored the
+// mode. They do not -- vertical-rl starts at the right edge.
+check(apRect('vertical-rl', APFLOW)[0] != apRect('vertical-lr', APFLOW)[0],
+    'the two vertical modes really do start a box at opposite edges')
+check(apRect('vertical-rl', APFLOW)[0] != apRect('horizontal-tb', APFLOW)[0],
+    'and neither is where the horizontal one starts it')
+
+// A logical inset on an out-of-flow box follows the mode, which is the
+// agreement with the physical spelling it means: in vertical-rl
+// inline-start is the top and block-start the right.
+sameRect(apRect('vertical-rl',
+        'position:absolute;inset-inline-start:60px;inset-block-start:50px;width:40px;height:30px'),
+    apRect('vertical-rl', 'position:absolute;top:60px;right:50px;width:40px;height:30px'),
+    'a logical inset on an out-of-flow box is its physical twin in vertical-rl')
+sameRect(apRect('vertical-lr',
+        'position:absolute;inset-inline-start:60px;inset-block-start:50px;width:40px;height:30px'),
+    apRect('vertical-lr', 'position:absolute;top:60px;left:50px;width:40px;height:30px'),
+    'and in vertical-lr')
+
 finish('writing-mode')

@@ -641,6 +641,27 @@ declared.
    of the containing block, which in `vertical-rl` is `160,0` -- exactly
    where the in-flow box goes -- and this engine puts it at `0,0`.
 
+   **What landed.** One predicate. `wmStartsVerticalFlow` now answers
+   yes for an out-of-flow box whatever its parent is, because
+   `layoutPositioned` lays such a box out a *second* time, after the
+   in-flow pass has turned everything around it -- so it starts a fresh
+   vertical flow, its contents logical and its own box physical. Twelve
+   of the thirteen failing checks came back with that line.
+
+   **The static position is still the logical one in `vertical-rl`, and
+   the suite says so rather than looking away.** The flow records where
+   an out-of-flow box would have gone (`staticPosX`, `staticPosY`) on its
+   way past, in logical coordinates, and nothing turns what it recorded.
+   `horizontal-tb` and `vertical-lr` both put a first child at the
+   origin, so their static positions come out right for a reason that
+   does not reach the third: `vertical-rl` should start it at the
+   container's right edge, 160 here, and starts it at 0. Turning the
+   recorded point inside `wmTransposeWalk` was tried and made it worse
+   -- the y went from 0 to 200 -- because the point is recorded before
+   the box has any extent to turn it by, so the fix wants the static
+   position stored as a block-start offset rather than a left one. The
+   check asserts the gap, so closing it fails that line and says so.
+
 3. **`anchor()`'s sides, measured** -- with the caveat that the numbers
    above contaminate this engine's column, since the anchor element is
    itself absolutely positioned. Chromium, an anchor at `left:60px;
