@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### An emphasis mark and small caps on a vertical run
+
+`text-emphasis` marks now run **down** a vertical line beside it rather
+than across it, and `font-variant-caps` synthesises its small capitals
+inside the turn rather than drawing the letters at full size in room
+kept for smaller ones.
+
+**Which side the marks go on was measured.** In a vertical mode the
+`left`/`right` half of `text-emphasis-position` decides the side and the
+`over`/`under` half is ignored -- the other way round from a horizontal
+mode, where `over` and `under` decide. The two vertical modes agree.
+This engine's computed style carries only the over/under half, so the
+default is the right-hand side and `under` is the left, which is the
+nearest thing it can say; todo.md records that divergence with
+Chromium's table.
+
+**The small caps were half working, which is the worse half.**
+`measureWidth` already answered the shorter length, because the
+measurement is the same measurement either way, so the box was the right
+size and the painter drew the letters at full size inside it. The walk
+is now one function taking a starting point rather than a fragment, so
+the vertical painter asks for it at the origin of its own turned space
+-- the same pair of functions the horizontal path uses, which is what
+keeps the ink inside the room the measurer kept. The render suite asks
+exactly that: the ink of an `all-small-caps` vertical run stays within
+the extent the measurer gave it.
+
 ### A vertical run's decoration lines
 
 `underline`, `overline` and `line-through` on a vertical run, in every

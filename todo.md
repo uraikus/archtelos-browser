@@ -361,58 +361,32 @@ the canvas about a run's baseline and draws the glyphs as it draws a
 horizontal run. The logical property table follows the mode, the
 orthogonal flow shrinks to fit and is clamped, and `width` and `height`
 stay physical. `text-orientation: upright` stands each character up in
-a cell of its own, the cell being the measured ratio above.
+a cell of its own, the cell being the measured ratio above. The three
+decoration lines, the emphasis marks and synthesised small caps all
+follow a vertical run: the lines down the line box's two block edges
+and its middle, the marks down the side of the line, and the caps
+through the same segment walk the horizontal painter uses, inside the
+turn.
 `tests/unit/test_writingmode.f` and `tests/render/writingmode.f` grade
 it, both by asking the horizontal and the vertical layout of the same
 content to agree rather than by writing this engine's metrics down.
 
 **What is left, in the order it is worth doing:**
 
-1. **An emphasis mark and synthesised small caps on a vertical run.**
-   Both are drawn from a horizontal advance, so a vertical run gets
-   neither: an emphasis mark is placed beside each character across the
-   line, and the small-caps painter walks the run in segments with
-   `measureTextWidth` between them. The three decoration LINES are done
-   -- they follow the line box rather than the baseline, which is the
-   rule the table above measured.
-
-   **Where the mark goes, measured.** `color: transparent` with a
-   coloured `text-emphasis-color`, so only the mark inks, in a box
-   padded 30px off the page edge. The line box is x 30..47 in the
-   vertical cases and y 30..47 in the horizontal one:
-
-   | `text-emphasis-position` | `vertical-rl` | `vertical-lr` | `horizontal-tb` |
-   |---|---|---|---|
-   | `over right` | x 51..53 | x 51..53 | y 33..35 |
-   | `over left` | x 33..35 | x 33..35 | y 33..35 |
-   | `under right` | x 51..53 | x 51..53 | y 51..53 |
-   | `under left` | x 33..35 | x 33..35 | y 51..53 |
-
-   So in a vertical mode the `left`/`right` half of the property decides
-   the side and the `over`/`under` half is ignored, which is what CSS
-   Writing Modes 4 says; in a horizontal mode it is the other way round.
-   The two vertical modes agree, and the marks run **down** the line --
-   y 33..64 against a box of y 30..67 -- rather than across it. This
-   engine has only the over/under half in its computed style, so the
-   default (`over right`) is the right-hand side and `under` is the
-   left, which is the nearest thing it can say.
-
-   The measurement alone; the tests and the implementation follow.
-
-2. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
+1. **`sideways-lr` and `sideways-rl`.** The first is the other rotation
    -- counter-clockwise -- which the painter has no path for; the second
    is `vertical-rl` with `text-orientation: sideways`, which this
    engine already renders, so it is a keyword away.
-3. **The other formatting contexts.** A flex, grid, table or
+2. **The other formatting contexts.** A flex, grid, table or
    multi-column container as, or inside, a vertical box keeps the
    physical axes: those algorithms read `s.width` and `s.height`
    directly rather than through the one pair of lengths `layoutBlock`
    exchanges. Each is the same exchange again, in its own file.
-4. **An indefinite containing block.** Chromium clamps an orthogonal
+3. **An indefinite containing block.** Chromium clamps an orthogonal
    flow to the viewport there; nothing at layout time here knows the
    viewport's height, so the inline size is left unclamped, which is the
    same answer on any viewport tall enough to hold the content.
-5. **Auto margins, `anchor()` and the scroll box.** An auto margin on
+4. **Auto margins, `anchor()` and the scroll box.** An auto margin on
    an orthogonal flow centres in the physical axis rather than the
    logical one; the anchor functions' `start` and `end` are the
    physical sides whatever the mode says; and a scroll container inside

@@ -244,4 +244,99 @@ arr[int] lo2 = wmDecoSpan('vertical-lr', 'overline')
 checkEqInt(lu[0], du[0], 'vertical-lr underlines on the same side')
 checkEqInt(lo2[0], doo[0], 'and overlines on the same side')
 
+// ---- an emphasis mark, and synthesised small caps ---------------------
+// The marks run DOWN a vertical line, beside it, rather than across it
+// (todo.md has Chromium's table). Painted in their own colour so the
+// glyphs cannot be mistaken for them.
+color WMMARK = '#00aa00'
+
+arr[int] func wmMarkBox(mode:text, pos:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:16px">` +
+        `<div style="writing-mode:${mode};text-emphasis:filled circle;` +
+        `text-emphasis-color:#00aa00;text-emphasis-position:${pos};` +
+        `color:#000000;padding:30px">HHHH</div></body>`,
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int x0 = 399
+    int x1 = -1
+    int y0 = 399
+    int y1 = -1
+    for int x = 0, x < 160, x++ {
+        for int y = 0, y < 200, y++ {
+            if getPixelColor(x, y) != WMMARK { continue }
+            if x < x0 { x0 = x }
+            if x > x1 { x1 = x }
+            if y < y0 { y0 = y }
+            if y > y1 { y1 = y }
+        }
+    }
+    arr[int] out = []
+    out.push(x0)
+    out.push(x1)
+    out.push(y0)
+    out.push(y1)
+    return out
+}
+
+arr[int] mv = wmMarkBox('vertical-rl', 'over right')
+arr[int] mh = wmMarkBox('horizontal-tb', 'over right')
+// The instrument: an engine painting no mark at all finds no green
+// pixel, and the comparison below would be between two sentinels.
+check(mv[1] >= 0 && mh[1] >= 0, 'both runs paint their emphasis marks')
+// The horizontal run's marks lie in a row and the vertical run's in a
+// column: each is longer along its own inline axis than across it.
+check(mh[1] - mh[0] > mh[3] - mh[2], 'a horizontal run marks across the line')
+check(mv[3] - mv[2] > mv[1] - mv[0], 'and a vertical run marks down it')
+// Four characters, four marks, so the run of marks is about as long as
+// the run of text: the two are asked of each other rather than of a
+// number.
+checkNear(mv[3] - mv[2], mh[1] - mh[0], 3, 'as many marks, over as long a run')
+
+// The two vertical modes agree, as they do in Chromium.
+arr[int] ml = wmMarkBox('vertical-lr', 'over right')
+checkEqInt(ml[0], mv[0], 'vertical-lr marks on the same side')
+
+// Synthesised small caps in a vertical run. `all-small-caps` shrinks
+// every letter, so the run is shorter than the same letters at full
+// size -- which is the same thing the horizontal suite asks of it, and
+// needs no number either.
+int func wmCapsExtent(decl:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;font-size:16px">` +
+        `<div id="v" style="writing-mode:vertical-rl;${decl}">HHHH</div></body>`,
+        'tests/fixtures/page.html', 400)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return all[0].h
+}
+int plainRun = wmCapsExtent('')
+int capsRun = wmCapsExtent('font-variant-caps:all-small-caps')
+check(plainRun > 0, 'the plain vertical run has an extent at all')
+check(capsRun < plainRun, 'all-small-caps shortens a vertical run')
+
+// And the ink has to fit the room that reserved. The measurer already
+// answers the shorter length, so a painter that drew the letters at
+// full size would run past the box -- which is the failure the
+// horizontal pair of functions exists to prevent, asked of the vertical
+// pair.
+int func wmCapsInk(decl:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:16px">` +
+        `<div style="writing-mode:vertical-rl;color:#000000;${decl}">HHHH</div></body>`,
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int last = -1
+    for int y = 0, y < 300, y++ {
+        for int x = 0, x < 120, x++ {
+            if getPixelColor(x, y) != WMPAPER { last = y }
+        }
+    }
+    return last
+}
+check(wmCapsInk('font-variant-caps:all-small-caps') <= capsRun,
+    'and its ink stays inside the room the measurer kept')
+
 finish('writing-mode pixels')

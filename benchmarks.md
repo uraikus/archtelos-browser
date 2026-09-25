@@ -4253,3 +4253,25 @@ which does run it, reads 0, 0 and -1. The binary grows 144 bytes.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## The emphasis marks and the small caps, split in two
+
+The mark painter gets a guard that runs once per fragment carrying a
+`text-emphasis`, and the small-caps walk is split into a function taking
+a starting point so the vertical painter can call it from inside its own
+turn. A split is the kind of change the entries above keep finding
+nothing in and the compiler keeps moving milliseconds around.
+Twenty-five alternating samples at 800px, idle:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | -2 | +1 | +1 | -1 |
+| `features.html`, round 2 | 0 | 0 | 0 | -2 | -1 | -5 |
+
+The two forward rounds disagree on every phase that moved -- cascade -2
+then 0, layout +1 then -2, paint +1 then -1 -- so nothing earned a
+question and no mirror, control or second page was spent. Both totals
+are negative. The binary grows 4,192 bytes.
+
+Both binaries render `generated.html` and `features.html`
+byte-identically, `cmp`-checked before any timing.

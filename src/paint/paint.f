@@ -2939,22 +2939,29 @@ void func paintListMarker(b:Box) {
 // purpose: a segment drawn where the measurer did not put one leaves
 // the ink somewhere the layout reserved no room for.
 void func drawSmallCaps(f:Fragment, s:Style, caps:int, dx:int, dy:int) {
+    drawSmallCapsAt(f.content, s, caps, f.x + dx, f.baseline + dy)
+}
+
+// The walk itself, from a starting point rather than from a fragment,
+// so that a vertical run can ask for it inside its own turned space --
+// where the run begins at the origin and advances along local +x.
+void func drawSmallCapsAt(content:text, s:Style, caps:int, startX:int, baseY:int) {
     int small = smallCapsSize(s)
-    ascii a = f.content.toAscii()
-    int x = f.x + dx
+    ascii a = content.toAscii()
+    int x = startX
     int i = 0
     while i < a.length {
-        int j = smallCapsRunAt(caps, f.content, i)
-        bool isSmall = smallCapsAt(caps, f.content, i)
+        int j = smallCapsRunAt(caps, content, i)
+        bool isSmall = smallCapsAt(caps, content, i)
         if isSmall { setFontAt(s, small) } else { setFontFor(s) }
         text seg = isSmall ? asciiUpper(a.slice(i, j)).toText() : a.slice(i, j).toText()
         if s.letterSpacing == 0 {
-            pDrawText(seg, x, f.baseline + dy)
+            pDrawText(seg, x, baseY)
             x = x + measureTextWidth(seg)
         } else {
             arr[text] chars = seg.split('')
             for int k = 0, k < chars.length, k++ {
-                pDrawText(chars[k], x, f.baseline + dy)
+                pDrawText(chars[k], x, baseY)
                 x = x + measureTextWidth(chars[k]) + s.letterSpacing
             }
         }
@@ -3000,6 +3007,15 @@ void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
     pSaveState()
     pTranslate(f.baseline + dx, f.y + dy)
     pRotate(90.0)
+    // Inside the turn, local +x is the inline direction, so everything
+    // below is the horizontal painter with the run starting at zero.
+    int caps = fontCapsOf(s)
+    if caps != CAPS_NORMAL {
+        drawSmallCapsAt(f.content, s, caps, 0, 0)
+        pRestoreState()
+        setFontFor(s)
+        return
+    }
     if s.letterSpacing == 0 {
         pDrawText(f.content, 0, 0)
         pRestoreState()
@@ -3042,10 +3058,39 @@ void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
 // over the text by default and under it when asked. The mark is a
 // character of its own, so the standard's five shapes need no drawing
 // code and a `<string>` value needs no special case.
+// A vertical run's marks, which run DOWN the line beside it rather than
+// across it. In a vertical mode the standard's `left`/`right` half of
+// `text-emphasis-position` decides the side and the `over`/`under` half
+// is ignored, which is the other way round from a horizontal mode
+// (todo.md has Chromium's table). This engine's computed style carries
+// only the over/under half, so the default is the right-hand side and
+// `under` is the left -- the nearest thing it can say.
+void func paintEmphasisMarksVertical(f:Fragment, s:Style, markW:int) {
+    int gap = maxInt(roundPx(s.fontSize.toFloat() * 0.1), 1)
+    int x = s.emphasisUnder ? f.x - markW - gap : f.x + f.w + gap
+    int asc = fontAscent(s)
+    bool upright = s.textOrientation == TO_UPRIGHT
+    int cell = upright ? uprightAdvance(s) : 0
+    arr[text] chars = f.content.split('')
+    int y = f.y
+    for int i = 0, i < chars.length, i++ {
+        int cw = upright ? cell : measureTextWidth(chars[i]) + s.letterSpacing
+        if chars[i] != ' ' {
+            pDrawText(s.emphasisMark, x, y + Math.floorDiv(cw - asc, 2) + asc)
+        }
+        y = y + cw
+    }
+}
+
 void func paintEmphasisMarks(f:Fragment, s:Style) {
     if s.emphasisMark == '' { return }
     int c = s.emphasisColor == COLOR_UNSET ? s.color : s.emphasisColor
     paintFill(c, s.effectiveOpacity)
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        paintEmphasisMarksVertical(f, s, measureTextWidth(s.emphasisMark))
+        paintFill(s.color, s.effectiveOpacity)
+        return
+    }
     int markW = measureTextWidth(s.emphasisMark)
     // over the ascender, or below the descender
     int y = s.emphasisUnder
