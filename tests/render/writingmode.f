@@ -339,4 +339,81 @@ int func wmCapsInk(decl:text) {
 check(wmCapsInk('font-variant-caps:all-small-caps') <= capsRun,
     'and its ink stays inside the room the measurer kept')
 
+// ---- sideways-lr: the other turn, and the other direction -------------
+// Two `L`s, each in its own colour, so which one comes first is visible
+// without knowing anything about the font.
+color WMFIRST = '#ff0000'
+color WMSECOND = '#0000ff'
+
+// Returns: first's y range, second's y range, and the first glyph's ink
+// centroid as a fraction of its own width, in tenths.
+arr[int] func wmTwoLs(mode:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:32px">` +
+        `<div style="writing-mode:${mode};padding:30px;display:inline-block">` +
+        `<span style="color:#ff0000">L</span><span style="color:#0000ff">L</span>` +
+        `</div></body>`, 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int ay0 = 399
+    int ay1 = -1
+    int by0 = 399
+    int by1 = -1
+    int ax0 = 399
+    int ax1 = -1
+    int sumX = 0
+    int n = 0
+    for int x = 0, x < 200, x++ {
+        for int y = 0, y < 200, y++ {
+            color c = getPixelColor(x, y)
+            if c == WMFIRST {
+                if y < ay0 { ay0 = y }
+                if y > ay1 { ay1 = y }
+                if x < ax0 { ax0 = x }
+                if x > ax1 { ax1 = x }
+                sumX = sumX + x
+                n++
+            }
+            if c == WMSECOND {
+                if y < by0 { by0 = y }
+                if y > by1 { by1 = y }
+            }
+        }
+    }
+    arr[int] out = []
+    out.push(ay0)
+    out.push(ay1)
+    out.push(by0)
+    out.push(by1)
+    // The centroid of the first glyph's ink across the block axis, in
+    // tenths of its own width. A turn one way and a turn the other put
+    // it either side of the middle.
+    out.push(n == 0 || ax1 <= ax0 ? -1 : Math.floorDiv(10 * (Math.floorDiv(sumX, n) - ax0), ax1 - ax0))
+    return out
+}
+
+arr[int] lrl = wmTwoLs('vertical-lr')
+arr[int] lsl = wmTwoLs('sideways-lr')
+// The instrument: both runs have to paint both glyphs, or the
+// comparisons below are between sentinels.
+check(lrl[1] >= 0 && lrl[3] >= 0, 'vertical-lr paints both glyphs')
+check(lsl[1] >= 0 && lsl[3] >= 0, 'sideways-lr paints both glyphs')
+
+// vertical-lr runs down the page; sideways-lr runs up it.
+check(lrl[0] < lrl[2], 'vertical-lr puts the second glyph below the first')
+check(lsl[0] > lsl[2], 'and sideways-lr puts it above')
+
+// And the glyph itself is turned the other way, so the weight of its
+// ink falls on the other side of its own box. Neither fraction is
+// written down: the two are asked to be mirror images.
+check(lrl[4] >= 0 && lsl[4] >= 0, 'both glyphs have ink to weigh')
+checkNear(lrl[4] + lsl[4], 10, 2, 'the two turns mirror each other')
+
+// sideways-rl is vertical-rl with the sideways orientation, which this
+// engine already draws the same way on Latin, so the two agree outright.
+arr[int] rrl = wmTwoLs('vertical-rl')
+arr[int] rsr = wmTwoLs('sideways-rl')
+checkEqInt(rsr[0], rrl[0], 'sideways-rl starts its run where vertical-rl does')
+checkEqInt(rsr[2], rrl[2], 'and puts the second glyph in the same place')
+
 finish('writing-mode pixels')

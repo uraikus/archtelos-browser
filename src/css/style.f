@@ -15,6 +15,13 @@ import ../util/color.f
 const int WM_HORIZONTAL_TB = 0
 const int WM_VERTICAL_RL = 1
 const int WM_VERTICAL_LR = 2
+// The two sideways modes. `sideways-rl` is `vertical-rl` with the
+// sideways orientation, which this engine already draws the same way on
+// Latin; `sideways-lr` is `vertical-lr` with its inline axis running
+// bottom to top and its glyphs turned the other way, both measured
+// rather than assumed (todo.md).
+const int WM_SIDEWAYS_RL = 3
+const int WM_SIDEWAYS_LR = 4
 
 // CSS Writing Modes 4 §5.1. `mixed` turns a horizontal script sideways
 // and leaves an upright one upright; `upright` gives every character its

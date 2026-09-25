@@ -4448,6 +4448,8 @@ int func writingModeKeyword(v:ascii) {
     if v == 'horizontal-tb' { return WM_HORIZONTAL_TB }
     if v == 'vertical-rl' { return WM_VERTICAL_RL }
     if v == 'vertical-lr' { return WM_VERTICAL_LR }
+    if v == 'sideways-rl' { return WM_SIDEWAYS_RL }
+    if v == 'sideways-lr' { return WM_SIDEWAYS_LR }
     // The two SVG spellings CSS Writing Modes 4 §3.1 keeps as aliases.
     if v == 'tb' || v == 'tb-rl' { return WM_VERTICAL_RL }
     return -1
@@ -4617,10 +4619,16 @@ bool func declIsCssWide(value:ascii) {
 // A page in the ordinary horizontal mode never calls this: the caller
 // tests one integer, which is zero unless some element on the document
 // declared a vertical mode.
-text func wmInlineStartSide() { return cascadeApplyRtl ? 'bottom' : 'top' }
-text func wmInlineEndSide() { return cascadeApplyRtl ? 'top' : 'bottom' }
-text func wmBlockStartSide() { return cascadeApplyWM == WM_VERTICAL_RL ? 'right' : 'left' }
-text func wmBlockEndSide() { return cascadeApplyWM == WM_VERTICAL_RL ? 'left' : 'right' }
+// `sideways-lr` runs its inline axis bottom to top, so its inline-start
+// is the bottom edge where every other vertical mode's is the top.
+bool func wmInlineUpwards() { return cascadeApplyWM == WM_SIDEWAYS_LR }
+bool func wmBlockRightToLeft() {
+    return cascadeApplyWM == WM_VERTICAL_RL || cascadeApplyWM == WM_SIDEWAYS_RL
+}
+text func wmInlineStartSide() { return cascadeApplyRtl != wmInlineUpwards() ? 'bottom' : 'top' }
+text func wmInlineEndSide() { return cascadeApplyRtl != wmInlineUpwards() ? 'top' : 'bottom' }
+text func wmBlockStartSide() { return wmBlockRightToLeft() ? 'right' : 'left' }
+text func wmBlockEndSide() { return wmBlockRightToLeft() ? 'left' : 'right' }
 
 text func wmPhysicalName(name:text) {
     // The two sizes exchange axes outright.

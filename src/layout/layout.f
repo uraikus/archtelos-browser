@@ -1653,18 +1653,29 @@ bool func hasInlineContent(b:Box) {
 // it once. `resolveEdges` is not only layoutBlock's: an inline box, a
 // table row, a table cell and a flex item all ask for it, and a
 // document can be laid out twice over the same boxes.
+// Which way the block axis runs, and which way the inline axis does.
+// `sideways-lr` is the only mode whose inline axis runs bottom to top,
+// and the only one whose glyphs are turned counter-clockwise; the two
+// go together, because a run reads from where it starts.
+bool func wmBlockRTL(mode:int) {
+    return mode == WM_VERTICAL_RL || mode == WM_SIDEWAYS_RL
+}
+
+bool func wmInlineUp(mode:int) { return mode == WM_SIDEWAYS_LR }
+
 void func wmRotateEdges(b:Box, s:Style, cw:int) {
-    bool rl = s.writingMode == WM_VERTICAL_RL
-    b.pl = resolveLen(s.paddingTop, cw, 0)
-    b.pr = resolveLen(s.paddingBottom, cw, 0)
+    bool rl = wmBlockRTL(s.writingMode)
+    bool up = wmInlineUp(s.writingMode)
+    b.pl = resolveLen(up ? s.paddingBottom : s.paddingTop, cw, 0)
+    b.pr = resolveLen(up ? s.paddingTop : s.paddingBottom, cw, 0)
     b.pt = resolveLen(rl ? s.paddingRight : s.paddingLeft, cw, 0)
     b.pb = resolveLen(rl ? s.paddingLeft : s.paddingRight, cw, 0)
-    b.bl = s.borderTop
-    b.br = s.borderBottom
+    b.bl = up ? s.borderBottom : s.borderTop
+    b.br = up ? s.borderTop : s.borderBottom
     b.bt = rl ? s.borderRight : s.borderLeft
     b.bb = rl ? s.borderLeft : s.borderRight
-    b.ml = resolveLen(s.marginTop, cw, 0)
-    b.mr = resolveLen(s.marginBottom, cw, 0)
+    b.ml = resolveLen(up ? s.marginBottom : s.marginTop, cw, 0)
+    b.mr = resolveLen(up ? s.marginTop : s.marginBottom, cw, 0)
     b.mt = resolveLen(rl ? s.marginRight : s.marginLeft, cw, 0)
     b.mb = resolveLen(rl ? s.marginLeft : s.marginRight, cw, 0)
 }
@@ -1694,19 +1705,23 @@ void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int) {
     int L = root.x
     int T = root.y
     int BH = root.h
-    bool rl = mode == WM_VERTICAL_RL
+    // The root's logical inline extent, which a mode whose inline axis
+    // runs upwards measures its offsets back from.
+    int IW = root.w
+    bool rl = wmBlockRTL(mode)
+    bool up = wmInlineUp(mode)
     // The root's margins were logical for the sizing above. Physical
     // again, they are what its parent's flow places it with, so the
     // turned subtree is emitted about that corner rather than about the
     // one the logical layout happened to use.
-    wmUnrotateEdges(root, rl)
-    wmTransposeWalk(root, L, T, BH, cx + root.ml, y + root.mt, rl)
+    wmUnrotateEdges(root, rl, up)
+    wmTransposeWalk(root, L, T, BH, IW, cx + root.ml, y + root.mt, rl, up)
     root.baseline = root.h
 }
 
 // The edges were rotated for the layout; these are the physical ones
 // again, which is what the painter draws.
-void func wmUnrotateEdges(b:Box, rl:bool) {
+void func wmUnrotateEdges(b:Box, rl:bool, up:bool) {
     int pt = b.pt
     int pr = b.pr
     int pb = b.pb
@@ -1719,27 +1734,28 @@ void func wmUnrotateEdges(b:Box, rl:bool) {
     int mr = b.mr
     int mb = b.mb
     int ml = b.ml
-    b.pt = pl
-    b.pb = pr
+    b.pt = up ? pr : pl
+    b.pb = up ? pl : pr
     b.pr = rl ? pt : pb
     b.pl = rl ? pb : pt
-    b.bt = bl
-    b.bb = br
+    b.bt = up ? br : bl
+    b.bb = up ? bl : br
     b.br = rl ? bt : bb
     b.bl = rl ? bb : bt
-    b.mt = ml
-    b.mb = mr
+    b.mt = up ? mr : ml
+    b.mb = up ? ml : mr
     b.mr = rl ? mt : mb
     b.ml = rl ? mb : mt
 }
 
-void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) {
+void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, IW:int, PX:int, PY:int,
+                          rl:bool, up:bool) {
     int u = b.x - L
     int v = b.y - T
     int w = b.w
     int h = b.h
     b.x = rl ? PX + BH - v - h : PX + v
-    b.y = PY + u
+    b.y = up ? PY + IW - u - w : PY + u
     b.w = h
     b.h = w
     for int i = 0, i < b.lines.length, i++ {
@@ -1750,7 +1766,7 @@ void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) 
         int lh = ln.h
         int lb = ln.baseline - ln.y
         ln.x = rl ? PX + BH - lv - lh : PX + lv
-        ln.y = PY + lu
+        ln.y = up ? PY + IW - lu - lw : PY + lu
         ln.w = lh
         ln.h = lw
         // A baseline is an absolute coordinate along the block axis, so
@@ -1761,7 +1777,7 @@ void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) 
         // `sideways-lr`): its ascent is on the right of the line in
         // `vertical-lr` as much as in `vertical-rl`, which the rotation
         // on its own would mirror.
-        ln.baseline = ln.x + ln.w - lb
+        ln.baseline = up ? ln.x + lb : ln.x + ln.w - lb
         for int j = 0, j < ln.frags.length, j++ {
             Fragment f = ln.frags[j]
             int fu = f.x - L
@@ -1770,10 +1786,10 @@ void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) 
             int fh = f.h
             int fb = f.baseline - f.y
             f.x = rl ? PX + BH - fv - fh : PX + fv
-            f.y = PY + fu
+            f.y = up ? PY + IW - fu - fw : PY + fu
             f.w = fh
             f.h = fw
-            f.baseline = f.x + f.w - fb
+            f.baseline = up ? f.x + fb : f.x + f.w - fb
         }
     }
     for int i = 0, i < b.children.length, i++ {
@@ -1782,8 +1798,8 @@ void func wmTransposeWalk(b:Box, L:int, T:int, BH:int, PX:int, PY:int, rl:bool) 
         // carry no rectangle of their own, their geometry being in the
         // fragments above.
         if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
-        wmUnrotateEdges(c, rl)
-        wmTransposeWalk(c, L, T, BH, PX, PY, rl)
+        wmUnrotateEdges(c, rl, up)
+        wmTransposeWalk(c, L, T, BH, IW, PX, PY, rl, up)
     }
 }
 

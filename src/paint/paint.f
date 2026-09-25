@@ -2990,12 +2990,13 @@ void func drawSmallCapsAt(content:text, s:Style, caps:int, startX:int, baseY:int
 void func drawFragmentGlyphsUpright(f:Fragment, s:Style, dx:int, dy:int) {
     int adv = uprightAdvance(s)
     int asc = fontAscent(s)
+    bool up = wmInlineUp(s.writingMode)
     arr[text] chars = f.content.split('')
     setFontFor(s)
     for int i = 0, i < chars.length, i++ {
         int gw = measureTextWidth(chars[i])
-        pDrawText(chars[i], f.x + dx + Math.floorDiv(f.w - gw, 2),
-                  f.y + dy + i * adv + asc)
+        int cellTop = up ? f.y + f.h - (i + 1) * adv : f.y + i * adv
+        pDrawText(chars[i], f.x + dx + Math.floorDiv(f.w - gw, 2), cellTop + dy + asc)
     }
 }
 
@@ -3004,9 +3005,13 @@ void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
         drawFragmentGlyphsUpright(f, s, dx, dy)
         return
     }
+    // `sideways-lr` turns the other way and runs bottom to top, so its
+    // run starts at the far end of the fragment and local +x points up
+    // the page. Every line below is the same for both.
+    bool up = wmInlineUp(s.writingMode)
     pSaveState()
-    pTranslate(f.baseline + dx, f.y + dy)
-    pRotate(90.0)
+    pTranslate(f.baseline + dx, up ? f.y + f.h + dy : f.y + dy)
+    pRotate(up ? -90.0 : 90.0)
     // Inside the turn, local +x is the inline direction, so everything
     // below is the horizontal painter with the run starting at zero.
     int caps = fontCapsOf(s)
@@ -3071,14 +3076,16 @@ void func paintEmphasisMarksVertical(f:Fragment, s:Style, markW:int) {
     int asc = fontAscent(s)
     bool upright = s.textOrientation == TO_UPRIGHT
     int cell = upright ? uprightAdvance(s) : 0
+    bool up = wmInlineUp(s.writingMode)
     arr[text] chars = f.content.split('')
-    int y = f.y
+    int y = up ? f.y + f.h : f.y
     for int i = 0, i < chars.length, i++ {
         int cw = upright ? cell : measureTextWidth(chars[i]) + s.letterSpacing
+        if up { y = y - cw }
         if chars[i] != ' ' {
             pDrawText(s.emphasisMark, x, y + Math.floorDiv(cw - asc, 2) + asc)
         }
-        y = y + cw
+        if !up { y = y + cw }
     }
 }
 
@@ -3182,11 +3189,17 @@ void func paintDecorationLinesVertical(f:Fragment, s:Style, lines:int, c:int, st
                                        col:int, alpha:float) {
     int y = f.y + dy
     int x = f.x + dx
+    // The near and far block edges, which is what the two lines name:
+    // `sideways-lr` turns its glyphs the other way, so the side its
+    // overline belongs on is the other one.
+    bool up = wmInlineUp(s.writingMode)
+    int nearX = up ? x - 1 : x + f.w - 1
+    int farX = up ? x + f.w - 1 + offset : x - 1 - offset
     if decoHas(lines, DECO_UNDERLINE) {
-        paintDecorationLineVertical(x - 1 - offset, y, f.h, thickness, style, col, alpha)
+        paintDecorationLineVertical(farX, y, f.h, thickness, style, col, alpha)
     }
     if decoHas(lines, DECO_OVERLINE) {
-        paintDecorationLineVertical(x + f.w - 1, y, f.h, thickness, style, col, alpha)
+        paintDecorationLineVertical(nearX, y, f.h, thickness, style, col, alpha)
     }
     if decoHas(lines, DECO_LINE_THROUGH) {
         paintDecorationLineVertical(x + Math.floorDiv(f.w, 2) - Math.floorDiv(thickness, 2),

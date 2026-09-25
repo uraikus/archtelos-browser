@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `sideways-rl` and `sideways-lr`
+
+The last two of CSS Writing Modes 4's four vertical modes, which
+completes `writing-mode`'s value list.
+
+**No box moves.** The block axis is the same in all four: two children
+of 40 and 25 pixels land at the same offsets under `vertical-rl` and
+`sideways-rl`, and under `vertical-lr` and `sideways-lr`, with or
+without `text-orientation: sideways`. What differs is the glyph and the
+direction the run advances -- two `L`s at 32px put the second below the
+first in three of the modes and **above** it in `sideways-lr`, whose
+inline axis runs bottom to top and whose glyphs are turned
+counter-clockwise.
+
+So `sideways-rl` is `vertical-rl` with the sideways orientation, which
+this engine already draws the same way on Latin. `sideways-lr` is
+`vertical-lr` with two changes rather than one: the transposition walk
+measures its inline offsets back from the far end, and the glyph painter
+turns the canvas the other way. Everything that walks a run in the
+inline direction reverses with it -- the upright cells, the emphasis
+marks -- and the decoration lines do not, being rectangles of the line
+box; but the ascent side they name is the other one, so the underline
+and the overline change places.
+
+The render suite asks for the two things a unit test cannot see: which
+glyph is painted higher, and which side of its own box the ink of a
+turned `L` falls on. Neither is written down -- the two turns are asked
+to be mirror images of each other.
+
 ### An emphasis mark and small caps on a vertical run
 
 `text-emphasis` marks now run **down** a vertical line beside it rather

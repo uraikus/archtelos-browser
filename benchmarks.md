@@ -4275,3 +4275,30 @@ are negative. The binary grows 4,192 bytes.
 
 Both binaries render `generated.html` and `features.html`
 byte-identically, `cmp`-checked before any timing.
+
+## Two sideways modes, and two agreeing rounds in phases that cannot run
+
+`sideways-rl` and `sideways-lr` add two keywords to the cascade's
+`writingModeKeyword`, which is called only where a page says
+`writing-mode`, and a pair of sign flips inside the vertical layout and
+paint paths, which no horizontal page enters. So **neither benchmark
+page can reach a line of this diff.**
+
+Twenty-five alternating samples at 800px, idle:
+
+| | parse | stylesheets | cascade | layout | paint | total |
+|---|---|---|---|---|---|---|
+| `features.html`, round 1 | 0 | 0 | **+1** (13 of 25) | **+1** (13 of 25) | 0 | +1 |
+| `features.html`, round 2 | 0 | 0 | **+1** (14 of 25) | **+1** (13 of 25) | -1 | +2 |
+| `generated.html` | 0 | 0 | 0 | -1 | 0 | -2 |
+
+The two forward rounds **agree**, on cascade +1 and layout +1, which the
+rules above call the point at which a reading earns a question. It has
+nowhere to go twice over: neither phase runs a line of this diff on a
+page that never says `writing-mode`, and the same two binaries read
+nothing at all on `generated.html`, which cannot reach it either. Both
+counts are 13 and 14 of 25 -- a coin's distance from half -- where a
+reading this file has ever traced to work ran 18 or 19.
+
+The binary grows 232 bytes. Both binaries render `generated.html` and
+`features.html` byte-identically, `cmp`-checked before any timing.

@@ -184,4 +184,29 @@ int func uprightWithLineHeight(lh:text) {
 checkEqInt(uprightWithLineHeight('2'), uprightWithLineHeight('normal'),
     'the cell does not follow line-height')
 
+// ---- the two sideways modes -------------------------------------------
+// No box moves: the block axis is the same in all four vertical modes,
+// which is what Chromium says (todo.md) and is the whole of what a unit
+// test can see -- the difference between them is the glyph's turn and
+// the direction the run advances, and the render suite asks that.
+arr[Box] func kidsOfMode(mode:text) {
+    return kidsOf(`writing-mode: ${mode}`, 'height:200px')
+}
+
+arr[Box] krl = kidsOfMode('vertical-rl')
+arr[Box] ksr = kidsOfMode('sideways-rl')
+checkEqInt(ksr[0].w, krl[0].w, 'sideways-rl gives the container the same block extent')
+checkEqInt(ksr[1].x - ksr[0].x, krl[1].x - krl[0].x, 'and puts the first child where vertical-rl does')
+checkEqInt(ksr[2].x - ksr[0].x, krl[2].x - krl[0].x, 'and the second')
+
+arr[Box] klr = kidsOfMode('vertical-lr')
+arr[Box] ksl = kidsOfMode('sideways-lr')
+checkEqInt(ksl[0].w, klr[0].w, 'sideways-lr gives the container the same block extent')
+checkEqInt(ksl[1].x - ksl[0].x, klr[1].x - klr[0].x, 'and puts the first child where vertical-lr does')
+checkEqInt(ksl[2].x - ksl[0].x, klr[2].x - klr[0].x, 'and the second')
+
+// The instrument: the two pairs must not be the same pair, or every
+// check above would hold on an engine that treated all four alike.
+check(krl[1].x != klr[1].x, 'the rl modes and the lr modes really do differ')
+
 finish('writing-mode')
