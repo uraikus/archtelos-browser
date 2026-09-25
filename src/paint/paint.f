@@ -267,8 +267,42 @@ void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
     pFillRoundedCorners(x, y, w, h, r, r, r, r)
 }
 
+// ---- CSS Filter Effects 1: the filters in force ----------------------
+//
+// A filter applies to the element and its descendants, and a filter
+// inside a filter composes, so the indices in force are a stack: entry
+// zero is the outermost. A colour is filtered by the innermost first,
+// because that is the order the raster would have been produced in.
+//
+// Nothing here is reached on a page with no `filter`. The guard is
+// written at each call site as `anyFilter && paintFilters.length > 0`,
+// which short-circuits, rather than inside the fill -- a call the
+// common case skips still costs the pages that never reach it
+// (CLAUDE.md).
+arr[int] paintFilters = []
+
+int func filteredColor(c:int) {
+    int out = c
+    for int i = paintFilters.length - 1, i >= 0, i-- {
+        FilterSpec spec = filterSpecOf(paintFilters[i])
+        if spec == null { continue }
+        for int k = 0, k < spec.kinds.length, k++ {
+            out = colorFilterOne(out, spec.kinds[k], spec.amounts[k])
+        }
+    }
+    return out
+}
+
+// The box whose filter is already on the stack, so that re-entering
+// paintBox for it does not push the same filter for ever. The same
+// device `position: sticky` uses.
+int filteredBoxId = 0
+
 void func paintFill(c:int, opacity:float) {
-    applyFillColor(colorWithOpacity(c, opacity))
+    int v = colorWithOpacity(c, opacity)
+    // See "the filters in force": the guard short-circuits, so a page
+    // with no `filter` on it does not make the call.
+    applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(v) : v)
 }
 
 // A rounded-rectangle path; the caller fills or strokes it.
@@ -1975,7 +2009,7 @@ void func paintConicGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:flo
     for int k = 0, k < wedges, k++ {
         int c = gradientColorAt(g, offsets, (k.toFloat() + 0.5) / wedges.toFloat())
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         for int row = y, row < y + h, row++ {
             float dy = row.toFloat() + 0.5 - cyf
             int want = dy < 0.0 ? 1 : 0 - 1
@@ -2039,7 +2073,7 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         float t1 = (i + 1).toFloat() / steps.toFloat()
         int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         if horizontal || vertical {
             // the band is a rectangle, so no polygon is needed
             float a0 = x0 + dx * length * t0 + dy * 0.0
@@ -2194,7 +2228,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
             float t1 = tEnd * (i + 1).toFloat() / bands.toFloat()
             int c = gradientColorAt(g, mirrored, (t0 + t1) / 2.0)
             if colorAlpha(c) == 0 { continue }
-            applyFillColor(c)
+            applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
             int ra = maxInt(roundPx(cx + t0 * rx), x)
             int rb = minInt(roundPx(cx + t1 * rx), x + w)
             if rb > ra { pDrawRect(ra, y, rb - ra, h) }
@@ -2213,7 +2247,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         int last = g.stops[g.stops.length - 1]
         if colorAlpha(last) == 0 { return }
         fillAlpha(opacity)
-        applyFillColor(last)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(last) : last)
         pDrawRect(x, y, w, h)
         fillAlpha(1.0)
         return
@@ -2253,7 +2287,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         float t1 = tMax * (i + 1).toFloat() / steps.toFloat()
         int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         // On each row the band is the pair of intervals where the
         // normalised distance falls between t0 and t1: solving
         // ((px-cx)/rx)^2 + ((row-cy)/ry)^2 = t^2 for px gives a half
@@ -3731,8 +3765,22 @@ void func paintSticky(b:Box) {
     pRestoreState()
 }
 
+void func paintFiltered(b:Box) {
+    int was = filteredBoxId
+    filteredBoxId = b.id
+    paintFilters.push(b.style.filterIdx)
+    paintBox(b)
+    paintFilters.pop()
+    filteredBoxId = was
+}
+
 void func paintBox(b:Box) {
     if anyAnchorHidden && anchorHides(b) { return }
+    if anyFilter && b.style != null && b.style.filterIdx > 0
+        && b.id != filteredBoxId {
+        paintFiltered(b)
+        return
+    }
     if anySticky && b.id != stickyBoxId && b.style.position == POS_STICKY {
         paintSticky(b)
         return
@@ -3956,6 +4004,12 @@ bool func boxPaintsWhole(b:Box) {
     // a page that declares none of these pays six boolean tests.
     if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
     if anyOffsetPath && boxHasOffset(b) { return true }
+    // A `filter` makes the element a stacking context, and this engine
+    // needs it to paint whole for a second reason: the filter has to be
+    // in force for the box's own background and for every descendant's
+    // colour, which is what going through `paintBox` gives it. An
+    // ordinary in-flow block never reaches `paintBox` otherwise.
+    if anyFilter && b.style.filterIdx > 0 { return true }
     if cascadeSawTransform && b.style.transforms.length > 0 { return true }
     // A positioned box is not asked about: every caller steps over one
     // before it gets here, so the `z-index` half of
@@ -4221,7 +4275,8 @@ void func paintFrame(b:Box) {
     int cw = b.w - b.bl - b.br - b.pl - b.pr
     int ch = b.h - b.bt - b.bb - b.pt - b.pb
     if cw <= 0 || ch <= 0 { return }
-    applyFillColor(COLOR_WHITE)
+    int fw = anyFilter && paintFilters.length > 0 ? filteredColor(COLOR_WHITE) : COLOR_WHITE
+    applyFillColor(fw)
     pDrawRect(cx, cy, cw, ch)
     fillAlpha(1.0)
     if b.frameKey == null { return }

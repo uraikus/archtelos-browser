@@ -5,6 +5,65 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Filter Effects 1's colour functions, and a block that was answering the wrong question
+
+The specification was recorded here as blocked on the language, and half
+of that was true: a filter is a pass over the pixels a subtree painted,
+and a `color` read back off the canvas supports equality and nothing
+else. Checked rather than recalled -- `c.r`, `c.red`, `c.toText()`,
+`c.hex()`, `c.value` and `c.rgba()` each give *cannot access field ...
+on color*.
+
+The conclusion did not follow, and two facts sat either side of it for
+months. This engine's own colours are packed ints with `colorRed`,
+`colorGreen`, `colorBlue`, `colorAlpha` and `clampChannel` already
+written; and `applyFillColor` is a single choke point. Only a colour
+read *back* is opaque. Every colour filter is affine, compositing forms
+convex combinations, and an affine map commutes with those, so filtering
+each source colour as it is drawn gives exactly the pixels filtering the
+raster would. Measured in Chromium on the case that equivalence is
+usually doubted for -- a half-transparent colour under `invert(1)`
+composited over an *unfiltered* backdrop -- where the prediction from
+the source colours and the browser's pixel are the same three numbers.
+
+`filter` now takes `grayscale()`, `sepia()`, `saturate()`,
+`hue-rotate()`, `invert()`, `brightness()`, `contrast()` and
+`opacity()`, each with a number or a percentage and `hue-rotate()` with
+an angle. A list applies left to right, the filter reaches the element
+and its descendants, and a filter inside a filter composes. A filtered
+element paints whole, which it must anyway, being a stacking context.
+
+**The count does not move, and is not meant to.** The `filter` row in
+`tests/conformance/css-properties.txt` reads `blur(2px)`, which stays
+unimplemented. Changing it to one of the eight would be choosing the
+sample after seeing the answer -- the error the thirteen shorthand rows
+were -- so it stays. What was checked instead is that the instrument
+*could* see the property: the digest gains the filter list, and with the
+row temporarily set to `grayscale(1)` the count reads 273 of 405 with
+`--fields` naming `filter` itself as the field that moved. Reverted, it
+reads 272 again.
+
+**What stays out.** A bitmap image reaches the canvas through
+`drawImage` and never through the fill, so an `<img>` or a background
+image inside a filtered subtree is not filtered; that one is the
+pixel-reading block proper. `blur()` is a convolution and
+`drop-shadow()` wants a path API, so a declaration naming either is
+dropped whole rather than partly applied, and `@supports` answers no.
+`backdrop-filter` filters what is behind an element and is separate.
+
+**The bug the tests caught.** Applying a component transfer by dividing
+into 0..1 and multiplying back loses a unit, and truncation keeps it
+lost: `255 * (1 - 55/255)` is 199.99999999999997. A single filter is
+right and `invert(1)` inside `invert(1)` comes back one short of where
+it started. The nesting check is written as an identity rather than
+against a number, which is why it failed instead of agreeing with a
+number that was also wrong; the transfer is now applied on the 0..255
+scale, as Chromium's own lookup table effectively is.
+
+132 checks: 114 in `tests/unit/test_filter.f`, every one a Chromium
+answer rather than this engine's, and 18 pixels in
+`tests/render/filter.f`.
+
 ### A `<rect>` on a motion path has its corners rounded
 
 The one case the SVG-shape work left wrong rather than absent: a `<rect>`

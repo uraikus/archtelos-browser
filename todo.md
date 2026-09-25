@@ -281,9 +281,13 @@ selector drops its whole rule. What is left of CSS Cascade 4:
     shaping, which needs contextual forms the toy font API does not
     offer (FINDINGS.md, finding 31).
 
-### Filter Effects 1, and a block that was answering the wrong question
+### What is left of Filter Effects 1
 
-**The language limitation is real and it does not block this.** A
+The eight colour functions are in. What follows is the reason they were
+not, kept because the reasoning is the transferable part, and then what
+genuinely remains.
+
+**The language limitation is real and it did not block this.** A
 `color` does support equality and nothing else -- `c.r`, `c.red`,
 `c.toText()`, `c.hex()`, `c.value` and `c.rgba()` each give *cannot
 access field ... on color*, checked rather than recalled -- so
@@ -370,12 +374,31 @@ either rule alone misses eight or eleven of them by one.
 | `contrast(2)` | 255,72,0 | — | — |
 | `contrast(0.5)` | 163,113,88 | 191,63,63 | 63,127,191 |
 
-The instrument does not move for any of this. The `filter` row in
+The instrument did not move for any of this. The `filter` row in
 `tests/conformance/css-properties.txt` reads `blur(2px)`, which stays
 unimplemented, so the count is unchanged by a specification going from
-nothing to seven functions. Changing that row to one of the seven would
+nothing to eight functions. Changing that row to one of the eight would
 be choosing the sample after seeing the answer, which is the error the
-thirteen shorthand rows were, and it is not done.
+thirteen shorthand rows were, and it is not done. What was checked
+instead is that the instrument *could* see the property: with the row
+temporarily `grayscale(1)` the count reads 273 of 405 and `--fields`
+names `filter` itself as the field that moved.
+
+**What remains, in the order it is worth doing.**
+
+1. **A bitmap image inside a filtered subtree.** An `<img>` and a
+   background image reach the canvas through `drawImage` and never
+   through the fill, so neither is filtered. This one is the
+   pixel-reading block proper and waits on festina.md 3p. Two of the
+   eight could be done without it and are not, because doing half the
+   functions on images and not the other half would be worse than doing
+   none: `opacity(a)` is a global alpha, and `brightness(k)` for `k` at
+   most one is black composited over the image at `1 - k`, exactly.
+2. **`blur()`**, a convolution over pixels. Same block.
+   `drop-shadow()` wants the path API an image does not have as well.
+3. **`backdrop-filter`**, which filters what is behind the element.
+   That is pixels already on the canvas, so it is the block again, and
+   it also needs the backdrop isolated from the element's own paint.
 
 ### What is left of CSS Scroll Snap 1
 

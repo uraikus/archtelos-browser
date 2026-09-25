@@ -1527,6 +1527,7 @@ arr[text] supportedProperties = [
     'overscroll-behavior-inline', 'overscroll-behavior-block',
     'initial-letter',
     'offset-path', 'offset-distance', 'offset-rotate', 'offset-anchor', 'offset-position',
+    'filter',
     'anchor-name', 'anchor-scope', 'position-anchor', 'position-area', 'position-try-fallbacks', 'position-try-order', 'position-visibility',
     'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
     'corner-bottom-right-shape', 'corner-bottom-left-shape',
@@ -1647,6 +1648,13 @@ bool func cssValueEvaluable(val:ascii) {
     if asciiIndexOf(v, 'clamp(', 0) >= 0 { return false }
     if asciiIndexOf(v, 'attr(', 0) >= 0 { return false }
     if asciiIndexOf(v, 'env(', 0) >= 0 { return false }
+    // `filter` is supported for its colour functions and not for these
+    // two: a `blur()` is a convolution over pixels and a
+    // `drop-shadow()` wants a path API an image does not have, so a
+    // declaration naming either is dropped whole. Neither spelling
+    // appears in any other property's value.
+    if asciiIndexOf(v, 'blur(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'drop-shadow(', 0) >= 0 { return false }
     return true
 }
 

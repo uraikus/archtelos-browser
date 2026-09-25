@@ -627,6 +627,13 @@ bool anyOffsetPath = false
 // one; a document that never said the word answers with this instead.
 bool anySticky = false
 
+// Whether any element on the page carries a `filter`. A page without
+// one must not pay for the feature, and the painter's guard is written
+// at the call site rather than inside the fill so that an unfiltered
+// page does not even make the call (CLAUDE.md, "where a call is written
+// is itself a cost").
+bool anyFilter = false
+
 MotionInfo func motionInfoOf(idx:int) {
     if idx <= 0 || idx > motionInfos.length {
         MotionInfo none
@@ -733,6 +740,22 @@ struct ClipShape {
 struct InsetRadii {
     rx:arr[Len]
     ry:arr[Len]
+}
+
+// A `filter`'s function list: the kinds and their amounts, in source
+// order, in parallel arrays because Festina has no tuples. A Style
+// carries a 1-based index into this rather than the list itself, for
+// the same reason `inset()`'s radii and `corner-shape`'s exponents do.
+struct FilterSpec {
+    kinds:arr[int]
+    amounts:arr[float]
+}
+
+arr[FilterSpec] filterSpecs = []
+
+FilterSpec func filterSpecOf(idx:int) {
+    if idx <= 0 || idx > filterSpecs.length { return null }
+    return filterSpecs[idx - 1]
 }
 
 arr[InsetRadii] insetRadiiList = []
@@ -1469,6 +1492,8 @@ struct Style {
     // `border-radius` has always drawn, and codes past the keywords
     // index the exponents `superellipse()` named.
     cornerShapes:int
+    // `filter`, as a 1-based index into filterSpecs; 0 for `none`.
+    filterIdx:int
     anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool

@@ -265,6 +265,8 @@ void func cascadeReset() {
     minmaxPct = []
     anyOffsetPath = false
     anySticky = false
+    anyFilter = false
+    filterSpecs = []
     insetRadiiList = []
     motionInfos = []
     anyClipMargin = false
@@ -3545,6 +3547,86 @@ Len func clipRectEdge(t:ascii, fontSize:int, fromFarSide:bool) {
     if l.kind != LEN_PX { return lenPx(0.0) }
     if !fromFarSide { return l }
     return lenCalc(0.0 - l.v, 100.0)
+}
+
+// ---- CSS Filter Effects 1 §8: `filter` --------------------------------
+//
+// Parsed into a FilterSpec, applied to each source colour as it is
+// painted. The whole declaration is dropped when it names a function
+// this engine cannot apply -- `blur()`, `drop-shadow()`, `url()` -- so
+// that a page asking for one of those gets the unfiltered rendering
+// rather than a partially filtered one. That is also what keeps the
+// property instrument honest: its row is `blur(2px)`, and it must go on
+// failing.
+
+// The amount a filter function was given. A number or a percentage;
+// `hue-rotate` takes an angle instead and is read separately. An
+// omitted argument is the function's own identity-breaking default,
+// which the standard gives as 1 for every one of these.
+float func filterAmount(args:arr[ascii], dflt:float, ok:arr[bool]) {
+    ok[0] = true
+    if args.length == 0 { return dflt }
+    if args.length > 1 { ok[0] = false  return dflt }
+    ascii a = asciiTrim(args[0])
+    if a.length == 0 { return dflt }
+    parseNumberAt(a, 0)
+    if !numOk { ok[0] = false  return dflt }
+    ascii unit = a.slice(numEnd, a.length)
+    if unit == '%' { return numValue / 100.0 }
+    if unit == '' { return numValue }
+    ok[0] = false
+    return dflt
+}
+
+// A 1-based index into filterSpecs, or 0 for `none` and for any list
+// this engine cannot paint.
+int func parseFilterList(v:ascii) {
+    if v == null { return 0 }
+    ascii t = asciiTrim(v)
+    if t.length == 0 { return 0 }
+    if asciiLower(t) == 'none' { return 0 }
+    FilterSpec spec
+    spec.kinds = []
+    spec.amounts = []
+    arr[bool] ok = [true]
+    int i = 0
+    while i < t.length {
+        int open = asciiIndexOf(t, '('.toAscii(), i)
+        if open < 0 { break }
+        int close = asciiMatchingParen(t, open)
+        if close < 0 { return 0 }
+        text name = asciiLower(asciiTrim(t.slice(i, open))).toText()
+        arr[ascii] args = splitTopLevelCommas(t.slice(open + 1, close))
+        int kind = 0
+        float amt = 0.0
+        if name == 'grayscale' { kind = CFILTER_GRAYSCALE  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'sepia' { kind = CFILTER_SEPIA  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'saturate' { kind = CFILTER_SATURATE  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'invert' { kind = CFILTER_INVERT  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'brightness' { kind = CFILTER_BRIGHTNESS  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'contrast' { kind = CFILTER_CONTRAST  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'opacity' { kind = CFILTER_OPACITY  amt = filterAmount(args, 1.0, ok) }
+        else if name == 'hue-rotate' {
+            kind = CFILTER_HUEROTATE
+            if args.length == 0 { amt = 0.0 }
+            else if args.length > 1 { return 0 }
+            else { amt = parseAngleDegrees(args[0], ok) }
+        }
+        // blur(), drop-shadow(), url() and anything unrecognised.
+        else { return 0 }
+        if !ok[0] { return 0 }
+        // The four amounts the standard clamps below zero, and the four
+        // it clamps at one as well.
+        if amt < 0.0 && kind != CFILTER_HUEROTATE { amt = 0.0 }
+        if amt > 1.0 && (kind == CFILTER_GRAYSCALE || kind == CFILTER_SEPIA
+            || kind == CFILTER_INVERT || kind == CFILTER_OPACITY) { amt = 1.0 }
+        spec.kinds.push(kind)
+        spec.amounts.push(amt)
+        i = close + 1
+    }
+    if spec.kinds.length == 0 { return 0 }
+    filterSpecs.push(spec)
+    return filterSpecs.length
 }
 
 arr[Transform] func parseTransformList(v:ascii, fontSize:int) {
@@ -8121,6 +8203,14 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         s.anchorInfo = anchorInfos.length
         if aName != '' { anyAnchorName = true }
         if aScope != '' { anyAnchorScope = true }
+    }
+    // CSS Filter Effects 1. One index on the Style and a flag for the
+    // page, so a document with no `filter` reaches none of the painter's
+    // filtering at all.
+    ascii filterProp = styleProp(props, 'filter')
+    if filterProp != null {
+        s.filterIdx = parseFilterList(filterProp)
+        if s.filterIdx > 0 { anyFilter = true }
     }
     // CSS Motion Path 1, held the same way: five properties behind one
     // index, and no side table at all on a page that says none of them.

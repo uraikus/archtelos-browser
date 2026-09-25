@@ -37,6 +37,21 @@ arr[text] func blobLines(f:blob) {
 // contain whatever character the join would use -- `fontKey` holds a
 // pipe -- and splitting it back would then misalign every field after
 // it against its name.
+// `filter`'s function list, flattened. The instrument has to be able
+// to see it or the property could never register however complete the
+// implementation is (CLAUDE.md, "an instrument must be able to fail").
+// The row in css-properties.txt is `blur(2px)`, which this engine drops
+// whole, so the count does not move for this work and is not meant to.
+text func filterKey(s:Style) {
+    FilterSpec spec = filterSpecOf(s.filterIdx)
+    if spec == null { return 'none' }
+    text out = ''
+    for int i = 0, i < spec.kinds.length, i++ {
+        out = out + `${spec.kinds[i]}:${spec.amounts[i]};`
+    }
+    return out
+}
+
 arr[text] func styleDigestFields(s:Style) {
     return [`${s.display}`, `${s.color}`, `${s.background}`, `${s.fontSize}`, 
         `${s.fontBold}`, `${s.fontItalic}`, `${s.fontFamily}`, 
@@ -62,7 +77,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.borderLeftColor}`, `${s.borderStyle}`, `${s.borderRadius}`, `${lenKey(s.radiusTopLeftX)}`, `${lenKey(s.radiusTopLeftY)}`,
         `${lenKey(s.radiusTopRightX)}`, `${lenKey(s.radiusTopRightY)}`, `${lenKey(s.radiusBottomRightX)}`, `${lenKey(s.radiusBottomRightY)}`, `${lenKey(s.radiusBottomLeftX)}`, `${lenKey(s.radiusBottomLeftY)}`, 
         `${cornerKAt(s.cornerShapes, 0)}`, `${cornerKAt(s.cornerShapes, 1)}`, `${cornerKAt(s.cornerShapes, 2)}`, `${cornerKAt(s.cornerShapes, 3)}`, 
-        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, `${clipMarginPacked(s)}`, `${textBoxPacked(s)}`, `${decorationIsClone(s) ? 1 : 0}`, `${overscrollPacked(s)}`, 
+        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, `${clipMarginPacked(s)}`, `${textBoxPacked(s)}`, `${decorationIsClone(s) ? 1 : 0}`, `${overscrollPacked(s)}`, `${filterKey(s)}`, 
         `${s.borderSpacing}`, `${s.borderCollapse}`, `${s.borderTopStyle}`, 
         `${s.borderRightStyle}`, `${s.borderBottomStyle}`, 
         `${s.borderLeftStyle}`, `${s.textIndent}`, `${s.letterSpacing}`, 
@@ -173,7 +188,7 @@ arr[text] func styleDigestFieldNames() {
         'radiusBottomRightX', 'radiusBottomRightY', 'radiusBottomLeftX', 'radiusBottomLeftY',
         'cornerTopLeftShape', 'cornerTopRightShape', 'cornerBottomRightShape', 'cornerBottomLeftShape',
         'anchorName', 'positionAnchor', 'positionArea', 'positionTryFallbacks', 'positionTryOrder', 'positionVisibility', 'anchorScope',
-        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition', 'overflowClipMargin', 'textBox', 'boxDecorationBreak', 'overscrollBehavior',
+        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition', 'overflowClipMargin', 'textBox', 'boxDecorationBreak', 'overscrollBehavior', 'filter',
         'borderSpacing', 'borderCollapse', 
         'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 
         'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 
@@ -437,7 +452,12 @@ for int i = 0, i < lines.length, i++ {
         gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
     }
     text rowBaseline = rowBaseFields.join('\u0001')
-    bool known = cssKnownProperty(prop.toAscii())
+    // @supports takes a DECLARATION, not a property name, and for
+    // `filter` the difference is the whole answer: the eight colour
+    // functions are supported and `blur()` is not, so asking about the
+    // name alone gets one of them wrong whichever way it answers. This
+    // asks what @supports would actually answer for the row.
+    bool known = supportsDeclaration(`${prop}: ${own}`.toAscii())
     if gotFields.join('\u0001') == rowBaseline {
         inert.push(prop)
         if known {
