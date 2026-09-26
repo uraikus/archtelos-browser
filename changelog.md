@@ -39,6 +39,14 @@ than convenient. `--fields` then names `fontSize`, `marginTop`,
 `marginBottom`, `mathDepth` and `fontKey`: the property's own field and
 the four things that follow a font size.
 
+Paired on `generated.html`: **-7 forward and -6 reversed**, both
+directions favouring whichever binary ran second, with the parent's own
+total at **145 and 142** against 126 to 128 that morning. That is the
+day's drift outgrowing the thing being measured, and benchmarks.md now
+records the whole series -- the paired comparison has stopped resolving
+a per-feature difference on this machine, which is a fact about the
+machine and worth writing down rather than working around.
+
 ### The sweep: `view-transition-name` acts, and eight properties do not
 
 The reachable pool had thinned to where the honest first step was to ask

@@ -67,6 +67,35 @@ cancels. That is what `tests/bench.sh`'s absolute table is not and what
 the paired phase comparison is. A reading of this table's kind has to
 wait for a machine whose control lands.
 
+### And by the end of 2026-09-26 the paired reading went too
+
+Eight features were paired against their parents over one day on this
+machine, and the parent binary's own total on `generated.html` -- the
+same revision, recompiled, measured in the same way -- read:
+
+| when | the parent's own total |
+|---|---|
+| morning | 126, 127, 128 |
+| midday | 130, 129, 133, 132 |
+| afternoon | 135, 131, 132 |
+| evening | **145, 142** |
+
+**Fifteen per cent of drift in a day, on unchanged code.** A paired
+comparison survives a machine that is uniformly slow, because both
+binaries are slow together -- but not one that is drifting *during* the
+pairing, and not one whose order effect grows with it. The last two
+readings of the day were **-7 forward and -6 reversed**: both
+directions favoured whichever binary ran second, by more than any
+single property has ever moved here.
+
+So the honest statement is that this machine can no longer resolve a
+per-feature difference on this page at all, and the readings recorded
+in changelog.md for that day say so in those terms rather than claiming
+a cost or a saving. What the pairing still catches is a *large* one --
+the +3 of cascade that a `styleProp` lookup per element cost earlier in
+the same day was four times the noise and showed in every round -- and
+that is the size of thing worth taking to the code.
+
 ## The canvas has to match, or the number means nothing
 
 Headless Chromium's `--screenshot` captures the **viewport**. This
