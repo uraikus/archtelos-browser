@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `image-rendering: pixelated`, drawn rather than asked for
+
+This engine scales an image through `drawImage`, which filters, and the
+runtime does not say how -- so nearest-neighbour resampling had to be
+**drawn**: `img.getPixelColor` reads a source pixel and a rectangle
+fills the destination block it maps to, which is the pair the clip
+machinery already uses a row at a time. A destination pixel takes the
+source pixel at `floor(dx * sw / w)`, which is where Chromium puts its
+boundary, and consecutive destination pixels sharing a source pixel are
+one fill -- so the work is one rectangle per source pixel where the
+image is enlarged and one per destination pixel where it is reduced,
+the smaller of the two in each axis either way.
+
+`crisp-edges` is **`auto` in Chromium, pixel for pixel**, which the
+standard does not say and Chromium does anyway, so the two compute to
+the same value here rather than to a second non-smoothing keyword.
+That was measured, not assumed.
+
+The checks need no colour written down: a nearest-neighbour enlargement
+contains only colours the source contains, so the middle of each
+enlarged block must be exactly what the unscaled image paints at that
+pixel, and the boundary pixel either side must be the two source
+pixels it falls between with nothing in between them. The fixture's
+top edge varies across its own three columns, which is what makes nine
+samples nine different colours -- and is also what caught the boundary
+expectation being written from the region rather than read from the
+source.
+
+All three paths a replaced element's content can take go through it:
+the `fill` stretch, the direct blit and the clipped layer, the last
+drawing into the layer rather than the canvas.
+
+**284 → 285**, with `--fields` naming `imageRendering`.
+
 ### `font-synthesis-small-caps`, and three synthesis controls that cannot act here
 
 Small caps in this engine **are** a synthesis -- no face it can reach

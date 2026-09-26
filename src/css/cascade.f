@@ -230,6 +230,9 @@ bool cascadeSawFontCaps = false
 // that expands into it. A page that never refuses the synthesis never
 // asks.
 bool cascadeSawFontSynthesis = false
+// And for `image-rendering`. A page that never says it never asks,
+// and the painter never reads a source pixel for it.
+bool cascadeSawImageRendering = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -345,6 +348,7 @@ void func cascadeReset() {
     cascadeSawPrintColorAdjust = false
     cascadeSawFontCaps = false
     cascadeSawFontSynthesis = false
+    cascadeSawImageRendering = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -501,6 +505,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawFontSynthesis
                 && (dn == 'font-synthesis-small-caps' || dn == 'font-synthesis') {
                 cascadeSawFontSynthesis = true
+            }
+            if !cascadeSawImageRendering && dn == 'image-rendering' {
+                cascadeSawImageRendering = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1873,6 +1880,9 @@ arr[Match] func collectMatches(n:Node) {
                 && (decls[d].name == 'font-synthesis-small-caps'
                     || decls[d].name == 'font-synthesis') {
                 cascadeSawFontSynthesis = true
+            }
+            if !cascadeSawImageRendering && decls[d].name == 'image-rendering' {
+                cascadeSawImageRendering = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -7284,6 +7294,26 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// `image-rendering` inherits, and only `pixelated` does anything:
+// `crisp-edges` is `auto` in Chromium pixel for pixel, measured rather
+// than assumed, so the two compute to the same value here and the
+// third keyword `high-quality` is `auto` by definition.
+void func applyImageRendering(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    int v = isRoot ? IR_AUTO : imageRenderingOf(parent)
+    ascii decl = styleProp(props, 'image-rendering')
+    if decl != null {
+        ascii k = asciiLower(asciiTrim(decl))
+        if k == 'pixelated' { v = IR_PIXELATED }
+        else if k == 'auto' || k == 'crisp-edges' || k == 'smooth' || k == 'high-quality' {
+            v = IR_AUTO
+        }
+    }
+    if v != IR_AUTO {
+        imageRenderingOfSerial[`${s.serial}`] = v
+        anyPixelated = true
+    }
+}
+
 void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
     // `text-wrap` reaches here as its two longhands, which applyDecl
@@ -7801,6 +7831,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // would serve the plain run's advance to the small-caps one.
     if cascadeSawFontCaps { applyFontCaps(s, parent, isRoot, props) }
     if cascadeSawFontSynthesis { applyFontSynthesis(s, parent, isRoot, props) }
+    if cascadeSawImageRendering { applyImageRendering(s, parent, isRoot, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

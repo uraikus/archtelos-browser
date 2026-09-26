@@ -4614,6 +4614,10 @@ unimplemented for that reason rather than for want of a way.
 
 ### `image-rendering`, measured -- one of its three keywords acts
 
+**Landed.** `pixelated` is drawn by `drawPixelated` in the painter,
+which all three of a replaced element's paths go through, and
+`crisp-edges` is graded as `auto`. The measurement follows.
+
 A 2x2 red-and-blue checker drawn at 80x80, rasterised, reading the row
 through the middle of each copy across the boundary at x=40:
 

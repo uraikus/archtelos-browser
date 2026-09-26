@@ -980,6 +980,12 @@ const int CAPS_NORMAL = 0
 const int CAPS_SMALL = 1
 const int CAPS_ALL_SMALL = 2
 
+// `image-rendering` (CSS Images 3 §5.3). Only `pixelated` changes a
+// pixel: `crisp-edges` is `auto` in Chromium, measured rather than
+// assumed (todo.md), so the two share a value here.
+const int IR_AUTO = 0
+const int IR_PIXELATED = 1
+
 const int PCA_ECONOMY = 0
 const int PCA_EXACT = 1
 
@@ -1909,6 +1915,19 @@ int func fontCapsUsed(s:Style) {
     int v = fontCapsOf(s)
     if v == CAPS_NORMAL || fontSynthSmallCapsOf(s) { return v }
     return CAPS_NORMAL
+}
+
+// `image-rendering`, kept by the computed style's serial. It INHERITS.
+// The value is stored only when it is `pixelated`, so `anyPixelated`
+// means "some element on this document asks for nearest neighbour" --
+// and the painter reads nothing at all on a page that does not.
+map[int] imageRenderingOfSerial = {}
+bool anyPixelated = false
+
+int func imageRenderingOf(s:Style) {
+    if !anyPixelated || s == null { return IR_AUTO }
+    int v = imageRenderingOfSerial[`${s.serial}`]
+    return v == null ? IR_AUTO : v
 }
 
 map[int] printColorAdjustOfSerial = {}

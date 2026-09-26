@@ -95,6 +95,66 @@ void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
     else { paintLayer.drawImage(i, x, y, w, h) }
 }
 
+// `image-rendering: pixelated` (CSS Images 3 sec. 5.3): the image is
+// resampled by nearest neighbour rather than by the runtime's filter,
+// which this engine cannot choose -- `drawImage` filters and says
+// nothing about how. So the scale is DRAWN: `getPixelColor` reads a
+// source pixel and a rectangle fills the destination block it maps to,
+// which is the pair the clip machinery already uses a row at a time.
+//
+// A destination pixel takes the source pixel at `floor(dx * sw / w)`,
+// which is where Chromium puts its boundary (todo.md). Consecutive
+// destination pixels sharing a source pixel are one fill, so the work
+// is one rectangle per source pixel where the image is enlarged and
+// one per destination pixel where it is reduced -- the smaller of the
+// two in each axis, either way.
+//
+// `dst` is the surface to draw into: null means the canvas or whatever
+// layer the painter is inside, and an `img` means that image, which is
+// what the object-fit path needs for its clipped copy.
+void func drawPixelated(dst:img, i:img, x:int, y:int, w:int, h:int) {
+    int sw = i.width
+    int sh = i.height
+    if sw <= 0 || sh <= 0 || w <= 0 || h <= 0 { return }
+    arr[int] colAt = []
+    arr[int] colW = []
+    arr[int] colSrc = []
+    int dx = 0
+    while dx < w {
+        int sxi = Math.floorDiv(dx * sw, w)
+        int cend = dx + 1
+        while cend < w && Math.floorDiv(cend * sw, w) == sxi { cend++ }
+        colAt.push(dx)
+        colW.push(cend - dx)
+        colSrc.push(sxi)
+        dx = cend
+    }
+    int dy = 0
+    while dy < h {
+        int syi = Math.floorDiv(dy * sh, h)
+        int rend = dy + 1
+        while rend < h && Math.floorDiv(rend * sh, h) == syi { rend++ }
+        for int c = 0, c < colAt.length, c++ {
+            // `null` is a fully transparent pixel as well as one out of
+            // bounds, and either way there is nothing to paint: the
+            // destination keeps what is under it.
+            color px = i.getPixelColor(colSrc[c], syi)
+            if px == null { continue }
+            fillStyle(px)
+            if dst == null { pDrawRect(x + colAt[c], y + dy, colW[c], rend - dy) }
+            else { dst.drawRect(x + colAt[c], y + dy, colW[c], rend - dy) }
+        }
+        dy = rend
+    }
+}
+
+// Whether this box's content is resampled by nearest neighbour. The
+// global is read before the call, so a page that never says
+// `image-rendering` pays one boolean per image rather than a lookup.
+bool func imgPixelated(s:Style) {
+    return imageRenderingOf(s) == IR_PIXELATED
+}
+
 
 // A filled rounded rectangle. On the canvas this is a bezier path; on a
 // layer there is no path API, so the corners are square. The shape is
@@ -3442,7 +3502,9 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // clip has nothing to cut, and a direct blit avoids allocating and
     // compositing an image the size of the box.
     if ox >= 0 && oy >= 0 && ox + ow <= w && oy + oh <= h {
-        pDrawImageScaled(source, x + ox, y + oy, ow, oh)
+        if anyPixelated && imgPixelated(b.style) {
+            drawPixelated(null, source, x + ox, y + oy, ow, oh)
+        } else { pDrawImageScaled(source, x + ox, y + oy, ow, oh) }
         return
     }
     // The caller has already set the element's opacity for the direct
@@ -3451,7 +3513,9 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // layer's pixels and the blit.
     img layer = blankImage(w, h)
     fillAlpha(1.0)
-    layer.drawImage(source, ox, oy, ow, oh)
+    if anyPixelated && imgPixelated(b.style) {
+        drawPixelated(layer, source, ox, oy, ow, oh)
+    } else { layer.drawImage(source, ox, oy, ow, oh) }
     fillAlpha(b.style.opacity)
     pDrawImage(layer, x, y)
 }
@@ -3474,7 +3538,11 @@ void func paintImage(b:Box) {
         // stretched, so it takes the same path with the region cut out.
         if b.style.objectFit == OBJECTFIT_FILL {
             img filled = viewBoxSource(b)
-            if filled != null { pDrawImageScaled(filled, x, y, w, h) }
+            if filled != null {
+                if anyPixelated && imgPixelated(b.style) {
+                    drawPixelated(null, filled, x, y, w, h)
+                } else { pDrawImageScaled(filled, x, y, w, h) }
+            }
         } else { paintFittedImage(b, x, y, w, h) }
         fillAlpha(1.0)
         return
