@@ -647,11 +647,59 @@ declared.
    was the only way to know.
 
    **A second gap the same table shows**, and a harder one: Chromium
-   **fragments a fixed-height block across a column break**, so 20 and 30
-   balanced into columns of 25 leave the second block spanning both (its
-   rectangle is the union, `0,0 100x25`). This engine moves whole boxes
-   and never splits one, which is why `balance` with no height gives 30
-   where Chromium gives 25. That is its own piece of work.
+   **fragments a fixed-height block across a column break**, and this
+   engine moves whole boxes and never splits one. Measured with
+   `getClientRects`, which returns one rectangle per fragment where
+   `getBoundingClientRect` returns only their union -- 210 wide, two
+   columns of 100 with a 10 gap, a 20-tall block then a 30-tall one:
+
+   | | Chromium | this engine |
+   |---|---|---|
+   | the container, `balance`, no height | **25** | 30 |
+   | the tall block's fragments | **`0,20 100x5`** and **`110,0 100x25`** | `110,0 100x30`, whole |
+   | the same with `column-fill: auto; height: 25` | the same two | `110,0 100x30`, **overflowing the 25** |
+   | the same with `break-inside: avoid` | `110,0 100x30`, whole, container **30** | -- |
+
+   **This engine's answer is Chromium's answer for `break-inside:
+   avoid`**, on all three counts: the box moves whole, it goes to the
+   next column, and the balanced height grows to hold it. So the gap is
+   not a wrong number, it is a missing choice -- the engine behaves as
+   though every box carried `avoid`.
+
+   **The `column-fill: auto` row is the fixture worth writing first.**
+   The container's height is declared, so no balancing is involved and
+   there is nothing to work out: the break falls at 25 because that is
+   where the column ends, and the engine's present answer overflows its
+   own container by five pixels.
+
+   **The split is of the border box, and each fragment paints.** With
+   `border: 2px solid; box-sizing: border-box` the fragments are still 5
+   and 25, and the pixels say what the decorations do (`slice`, the
+   initial value, against `clone`):
+
+   | | `slice` | `clone` |
+   |---|---|---|
+   | the first fragment's top edge | border | border |
+   | the **break** edge, either side of it | **no border** -- content runs to the column's end | **border** |
+   | the last fragment's bottom edge | border | border |
+   | the sides, on both fragments | border | border |
+   | the background | painted in both | painted in both |
+
+   So `box-decoration-break` is the property that decides the break
+   edge, which this engine already implements for inline fragments and
+   would need to ask here as well.
+
+   **A block taller than a whole column splits as many times as it
+   needs.** Three columns of 63 with the container at `height: 20;
+   column-fill: auto`, holding one 50-tall block: `0,0 63x20`,
+   `73,0 63x20`, `147,0 63x10`. Two full columns and a remainder.
+
+   **A margin before the block is not repeated after the break.** The
+   same fixture with `margin-top: 6px` on the tall block balances to 28
+   ((20 + 6 + 30) / 2) and gives `0,26 100x2` and `110,0 100x28`: two
+   pixels at the bottom of the first column, then the remaining 28
+   filling the second from its very top. The margin belongs to the
+   first fragment only.
 
    **The table half, measured properly.** A 100px-wide `display:table`
    with rows whose content heights are given, and a declared height on
