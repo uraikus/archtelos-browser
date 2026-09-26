@@ -3387,6 +3387,25 @@ bool func columnUnitSplittable(u:ColumnUnit) {
     return u.box.h > 0
 }
 
+// The space `box-decoration-break: clone` adds to a part of a broken box:
+// the whole box goes on every part, so every part opens with the border
+// and padding above the content and closes with the ones below it. Under
+// `slice`, the initial value, only the first part opens and only the last
+// closes, and both are already in the flow.
+//
+// Only a child whose LINES are split asks this. A childless block cut by
+// `cutUnitIntoColumns` is cut in its border box, which carries its own
+// edges wherever the cut falls.
+int func cloneEdgeTop(u:ColumnUnit) {
+    if !u.hasLine || u.box == null || !decorationIsClone(u.box.style) { return 0 }
+    return u.box.bt + u.box.pt
+}
+
+int func cloneEdgeBottom(u:ColumnUnit) {
+    if !u.hasLine || u.box == null || !decorationIsClone(u.box.style) { return 0 }
+    return u.box.pb + u.box.bb
+}
+
 void func columnPlan(units:arr[ColumnUnit], target:int) {
     arr[int] pcol = []
     arr[int] ptop = []
@@ -3416,8 +3435,10 @@ void func columnPlan(units:arr[ColumnUnit], target:int) {
         ColumnUnit u = units[i]
         if i == pendingAt {
             col++
+            tallest = maxInt(tallest,
+                units[i - 1].bottom - colTop + cloneEdgeBottom(units[i - 1]))
             colStart = i
-            colTop = u.top
+            colTop = u.top - cloneEdgeTop(u)
             pendingAt = 0 - 1
         }
         bool fits = u.bottom - colTop <= target
@@ -3442,8 +3463,15 @@ void func columnPlan(units:arr[ColumnUnit], target:int) {
             } else {
                 if at > colStart {
                     col++
+                    // Under `clone` the column that ends here closes with
+                    // the box's lower edge and the one that starts opens
+                    // with its upper one, so both columns are that much
+                    // taller and the lines after the break sit below the
+                    // edge rather than at the column's very top.
+                    tallest = maxInt(tallest,
+                        units[at - 1].bottom - colTop + cloneEdgeBottom(units[at - 1]))
                     colStart = at
-                    colTop = units[at].top
+                    colTop = units[at].top - cloneEdgeTop(units[at])
                     i = at
                     continue
                 }

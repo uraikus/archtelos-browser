@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `box-decoration-break: clone` takes space in every column
+
+`clone` puts the whole box on every part of a broken one, so the repeated
+edges are *in* the columns and the columns have to be taller to hold them.
+Chromium on four lines of 20 in a paragraph with a 2px border, two columns
+of 100: **44 with `clone` against 42 with `slice`**, each part 44 rather
+than 42. This engine gave 42 either way and painted the cloned edge over
+the bottom of the last line's box -- the border was there, in the right
+colour, two pixels above where it belonged.
+
+The accounting goes in `columnPlan`, at the two places it takes a break:
+the column that ends there closes with the box's lower edge and the one
+that starts opens with its upper one, so the ending column's height gains
+the closing edge and the starting column's top moves up by the opening
+one -- which is what puts the lines after the break below the edge instead
+of at the column's very top. Both fall out of one number per side,
+`cloneEdgeTop` and `cloneEdgeBottom`, which are zero under `slice` because
+the first part's opening edge and the last part's closing edge are already
+in the flow.
+
+Only a child whose **lines** are split asks this. A childless block is cut
+in its border box, which carries its own edges wherever the cut falls.
+
+The pixel suite had an expectation that was stale in exactly the way the
+fix intends: it looked for the first part's closing border at 41, where it
+sat while the column height was worked out without it. It is at 42 and 43
+now, below the last line rather than over it, and the suite says both --
+that the border is there and that 41 is no longer part of it.
+
 ### A child whose lines are split gets a part per column
 
 Its lines were always moved into their columns; what it did not have was

@@ -582,22 +582,7 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **`box-decoration-break: clone` does not make a column taller.**
-   Measured: four lines of 20 in a paragraph with a 2px border, two
-   columns of 100. Under `slice` Chromium's container is 42 and each part
-   is 42; under `clone` the container is **44** and each part is 44,
-   because the repeated edges take space in every column. This engine
-   gives 42 either way, measured on the same fixture. The parts do carry
-   the cloned border -- the painter draws it and the pixel suite checks it
-   -- but the column height was worked out without it, so the edge is
-   drawn *over* the bottom of the last line's box instead of the column
-   growing to hold it. The fix is in `collectColumnUnits`: with `clone`
-   every part has both edges, so a unit that starts or ends a column has
-   to account for one whether or not it is the child's first or last
-   line -- and which units those are is not known until the breaks are
-   decided, so it is a second pass rather than a wider unit.
-
-2. **A block whose CHILDREN straddle a column break is not
+1. **A block whose CHILDREN straddle a column break is not
    fragmented.** Everything this item originally asked for has landed -- a
    definite table height reaches the rows, `column-fill: auto` fills each
    column to the container's own height, and a **childless** fixed-height
@@ -756,7 +741,7 @@ declared.
    the table comes out as tall as their sum, so the declared height
    changes nothing at all.
 
-3. **An absolutely positioned box in a vertical flow is turned, and
+2. **An absolutely positioned box in a vertical flow is turned, and
    should not be.** Found while probing `anchor()`, whose numbers it
    contaminates. A 200x160 `position: relative` container with a
    `writing-mode`, holding one box; Chromium beside this engine:

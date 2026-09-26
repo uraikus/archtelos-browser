@@ -427,4 +427,31 @@ check(!boxFrag(fourP, 0).openBottom, 'and closes at the paragraph\'s real bottom
 Box whole = splitP(`<p id="p" style="${pSty}">aa</p>`)
 checkEqInt(boxFragCount(findById(whole, 'p')), 0, 'a paragraph that fits one column has no parts')
 
+// ---- `box-decoration-break: clone` takes space in every column --------
+// `clone` puts the whole box -- margin, border, padding -- on every part
+// of a broken box, so the repeated edges are IN the columns and the
+// columns have to be taller to hold them. Chromium on the four-line
+// fixture: 42 with `slice`, and 44 with `clone`, each part 44 rather
+// than 42. The difference is one border edge, which is exactly what
+// `clone` adds per part.
+
+Box cloneL = splitP(`<p id="p" style="${pSty};box-decoration-break:clone">aa<br>bb<br>cc<br>dd</p>`)
+Box cloneP = findById(cloneL, 'p')
+checkEqInt(findById(cloneL, 'c').h, 44, '`clone` makes the container a border edge taller')
+checkEqInt(cloneP.h, 44, 'the first part holding its own two edges')
+checkEqInt(boxFragCount(cloneP), 1, 'and the second column holding a part')
+checkEqInt(boxFrag(cloneP, 0).h, 44, 'which holds two edges as well')
+checkEqInt(boxFrag(cloneP, 0).y, 0, 'at the top of its column')
+
+// The instrument: `slice` on the same fixture must still be 42, or these
+// would hold on an engine that added the edge to every box.
+checkEqInt(findById(fourL, 'c').h, 42, '`slice` on the same fixture is still 42')
+checkEqInt(boxFrag(fourP, 0).h, 42, 'with parts of 42')
+
+// And the lines move with the edge: under `clone` the part after the
+// break opens with a border, so its first line starts below it where
+// under `slice` it starts at the column's very top.
+check(cloneP.lines.length == fourP.lines.length,
+      'the two fixtures break into the same number of lines')
+
 finish('multicol')

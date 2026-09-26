@@ -136,6 +136,12 @@ check(getPixelColor(50, 41) == blue, 'and not closing with one, because the brea
 
 paintSplit('box-decoration-break:clone')
 check(getPixelColor(150, 0) == green, '`clone` puts a border across the break')
-check(getPixelColor(50, 41) == green, 'on the first part as well as the second')
+// `clone`'s repeated edges take space in the columns, so the column is 44
+// rather than 42 and the closing edge of the first part is at 42 and 43 --
+// BELOW its last line rather than drawn over the bottom of it, which is
+// where it landed while the column height was worked out without it.
+check(getPixelColor(50, 43) == green, 'on the first part as well as the second')
+check(getPixelColor(50, 41) != green,
+      'and the column is taller for it, rather than the edge sitting on the last line')
 
 finish('column fragments')
