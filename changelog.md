@@ -47,6 +47,14 @@ cache rather than the cascade was wrong.
 instrument's row carries `font-variant-caps: small-caps` as context
 because there is nothing to decline to synthesise without it.
 
+The change adds two string comparisons per declaration to the scan that
+raises the per-document flags, and a guarded block to `refreshFontKey`,
+so it was paired on `generated.html`: +1 total across two agreeing
+forward rounds, and **+2 reversed**. Both binaries read slower running
+second, which is the order and not a difference between them -- the
+mirror image is supposed to cancel the forward reading, and two of the
+same sign say the machine is measuring itself.
+
 ### `text-combine-upright: all`, the last property in Writing Modes 4
 
 An inline that asks for it is typeset horizontally inside **one square
