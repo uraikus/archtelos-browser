@@ -44,6 +44,14 @@ match declaring nothing at all.
 
 **285 → 286**, with `--fields` naming `willChange`.
 
+Paired on `generated.html`, three forward rounds read +1, +5 and −2 and
+the mirror −2: nothing that agrees with itself, so nothing to take to
+the code. The reason to believe that rather than chase the +5 is in the
+table's own last column -- **the parent's total moved 130, 129, 133,
+132 across the four runs**, which is a wider spread than the difference
+being looked for. A run whose control drifts by four milliseconds
+cannot answer a question about one.
+
 ### `image-rendering: pixelated`, drawn rather than asked for
 
 This engine scales an image through `drawImage`, which filters, and the
