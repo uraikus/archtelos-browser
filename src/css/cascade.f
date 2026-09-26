@@ -243,6 +243,9 @@ bool cascadeSawInitialTarget = false
 // And for `view-transition-name`, which the painter's stacking
 // predicate reads.
 bool cascadeSawViewTransition = false
+// And for `math-depth`, which the font size reads before anything else
+// on the element is computed.
+bool cascadeSawMathDepth = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -363,6 +366,7 @@ void func cascadeReset() {
     cascadeSawInteractivity = false
     cascadeSawInitialTarget = false
     cascadeSawViewTransition = false
+    cascadeSawMathDepth = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -534,6 +538,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawViewTransition && dn == 'view-transition-name' {
                 cascadeSawViewTransition = true
+            }
+            if !cascadeSawMathDepth && dn == 'math-depth' {
+                cascadeSawMathDepth = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1921,6 +1928,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawViewTransition && decls[d].name == 'view-transition-name' {
                 cascadeSawViewTransition = true
+            }
+            if !cascadeSawMathDepth && decls[d].name == 'math-depth' {
+                cascadeSawMathDepth = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -6239,9 +6249,27 @@ int func pxProp(props:map[text], name:text, fontSize:int, dflt:int) {
     return roundPx(l.v)
 }
 
-int func computeFontSize(v:ascii, parentSize:int) {
+int func computeFontSize(v:ascii, parentSize:int, mathSteps:int) {
     if v == null { return parentSize }
     ascii t = asciiLower(asciiTrim(v))
+    // `font-size: math` is the parent's size scaled by 0.71 per step of
+    // `math-depth` away from the parent's own depth -- so a child at its
+    // parent's depth keeps the parent's size, and a negative step grows
+    // it (todo.md has Chromium's table).
+    if t == 'math' {
+        if mathSteps == 0 { return parentSize }
+        float f = parentSize.toFloat()
+        int n = mathSteps
+        while n > 0 {
+            f = f * MATH_DEPTH_SCALE
+            n--
+        }
+        while n < 0 {
+            f = f / MATH_DEPTH_SCALE
+            n++
+        }
+        return maxInt(roundPx(f), 1)
+    }
     if t == 'xx-small' { return 9 }
     if t == 'x-small' { return 10 }
     if t == 'small' { return 13 }
@@ -7332,6 +7360,25 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// `math-depth`: an integer, `add(<integer>)` relative to the parent's
+// depth, or `auto-add`, which adds one only inside MathML and so adds
+// nothing here -- measured, since Chromium answers 0 for it on an
+// ordinary element (todo.md). `math-style` is a decline beside it: the
+// same fixture gives `compact` and `normal` the same size.
+int func computeMathDepth(props:map[text], parentDepth:int) {
+    ascii decl = styleProp(props, 'math-depth')
+    if decl == null { return parentDepth }
+    ascii k = asciiLower(asciiTrim(decl))
+    if k == 'auto-add' { return parentDepth }
+    if asciiStartsWithLower(k, 'add(', 0) {
+        ascii inner = asciiTrim(k.slice(4, k.length - 1))
+        int n = inner.toText().toInt()
+        return n == null ? parentDepth : parentDepth + n
+    }
+    int v = k.toText().toInt()
+    return v == null ? parentDepth : v
+}
+
 // `view-transition-name` does not inherit. Any name but `none` creates a
 // stacking context, which is what it does here; the name itself is not
 // kept, because nothing would read it (todo.md has the measurement).
@@ -7906,7 +7953,18 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     cascadeCustom = s.customProps
     // inherited
     int parentFont = isRoot ? ROOT_FONT_SIZE : parent.fontSize
-    s.fontSize = computeFontSize(styleProp(props, 'font-size'), parentFont)
+    // `math-depth` before the font size, because `font-size: math` reads
+    // the difference between this element's depth and its parent's. A
+    // page that never says it pays one boolean and one subtraction.
+    int parentDepth = isRoot ? 0 : mathDepthOf(parent)
+    int mathDepth = parentDepth
+    if cascadeSawMathDepth { mathDepth = computeMathDepth(props, parentDepth) }
+    s.fontSize = computeFontSize(styleProp(props, 'font-size'), parentFont,
+                                 mathDepth - parentDepth)
+    if mathDepth != 0 {
+        mathDepthOfSerial[`${s.serial}`] = mathDepth
+        anyMathDepth = true
+    }
     // `rem` multiplies this, and the root is computed before anything
     // that can refer to it.
     if isRoot { cssRootFontSize = s.fontSize }

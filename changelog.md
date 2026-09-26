@@ -5,6 +5,40 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `math-depth`, which acts only beside `font-size: math`
+
+The keyword `math` on `font-size` is the parent's size scaled by **0.71
+per step of `math-depth` away from the parent's own depth**. Chromium at
+32px: one step is 22.72, two 16.1312, three 11.4532, and minus one
+**45.0704** -- a negative depth grows the text. `add(2)` is the parent's
+depth plus two, and `auto-add` adds nothing outside MathML, which this
+engine does not render.
+
+**From the parent's depth, not from zero**, which two fixtures pin down:
+a child with `font-size: math` at depth 2 inside a parent already at
+depth 2 computes the parent's own size, and `add(1)` inside a parent one
+step down takes one more step rather than two from the root.
+`math-depth` inherits, which is what makes the parent's depth available
+to subtract.
+
+The reader sits **before the font size** rather than with the other
+appliers, because that is what the font size needs -- and `font-size:
+math` already computed to the parent's size before this change, since
+`parseLength` could not read the keyword and fell back to it. So the
+whole of the change is the factor, and the keyword that was silently
+doing the right thing at depth 0 now does the right thing everywhere.
+
+**`math-style` is a decline beside it**: the same fixture gives
+`compact` and `normal` the same size in Chromium, so the two must agree
+here rather than differ, and the suite asks them to.
+
+**289 → 290**, and the instrument's row carries `font-size: math` as
+context, because `math-depth` alone changes nothing -- in Chromium
+either, which is the measurement that says the context is honest rather
+than convenient. `--fields` then names `fontSize`, `marginTop`,
+`marginBottom`, `mathDepth` and `fontKey`: the property's own field and
+the four things that follow a font size.
+
 ### The sweep: `view-transition-name` acts, and eight properties do not
 
 The reachable pool had thinned to where the honest first step was to ask

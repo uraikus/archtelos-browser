@@ -429,4 +429,59 @@ checkEqInt(roundPx(parseAngleDegrees('0.25turn'.toAscii(), angOk)),
 checkEqInt(roundPx(parseAngleDegrees('1.5707963267948966rad'.toAscii(), angOk)),
     roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'and so is half of pi radians')
 
+// ---- math-depth, which acts only beside font-size: math ----------------
+// Chromium at 32px (todo.md): `math-depth` alone changes nothing, and
+// beside `font-size: math` the computed size is the PARENT's times 0.71
+// per step of depth from the parent's own depth. `math-depth` inherits,
+// which is what makes the parent's depth available to compare against.
+
+int func mathSize(outer:text, inner:text) {
+    cascadeReset()
+    Node doc = parseHtmlText('<html><body style="font-size:32px">'
+        + `<div style="${outer}"><span id="m" style="${inner}">M</span></div>`
+        + '</body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return valNodeById(doc, 'm').style.fontSize
+}
+
+checkEqInt(mathSize('', ''), 32, 'the fixture starts at 32px')
+checkEqInt(mathSize('', 'math-depth:3'), 32, 'math-depth on its own changes no size')
+checkEqInt(mathSize('', 'font-size:math'), 32,
+    'font-size: math at the parent depth is the parent size')
+
+// 0.71 per step: 22.72, 16.1312, 11.4532 in Chromium, which round to
+// 23, 16 and 11 in an engine that keeps the size in whole pixels.
+checkEqInt(mathSize('', 'font-size:math;math-depth:1'), 23, 'one step down is 0.71 of it')
+checkEqInt(mathSize('', 'font-size:math;math-depth:2'), 16, 'two steps is 0.71 squared')
+checkEqInt(mathSize('', 'font-size:math;math-depth:3'), 11, 'three steps is 0.71 cubed')
+
+// A negative depth grows it: 32 / 0.71 is 45.07.
+checkEqInt(mathSize('', 'font-size:math;math-depth:-1'), 45, 'a negative depth grows the text')
+
+// `add(n)` is the parent's depth plus n, which from a parent at zero is
+// the same as writing n.
+checkEqInt(mathSize('', 'font-size:math;math-depth:add(2)'),
+    mathSize('', 'font-size:math;math-depth:2'),
+    'add(2) from a parent at depth 0 is depth 2')
+
+// The difference is from the PARENT's depth, not from zero. Both of
+// these need the inherited depth to be right.
+checkEqInt(mathSize('math-depth:2', 'font-size:math;math-depth:2'), 32,
+    'a child at its parent depth keeps the parent size')
+checkEqInt(mathSize('font-size:math;math-depth:1', 'font-size:math;math-depth:add(1)'),
+    mathSize('', 'font-size:math;math-depth:2'),
+    'and one step from a parent already one step down is two from the root')
+
+// `auto-add` adds nothing outside MathML, which this engine does not
+// render, so it is the parent's depth.
+checkEqInt(mathSize('', 'font-size:math;math-depth:auto-add'), 32,
+    'auto-add adds nothing where there is no MathML')
+
+// `math-style` is a decline: Chromium gives `compact` and `normal` the
+// same size, so the two must agree here rather than differ.
+checkEqInt(mathSize('', 'font-size:math;math-depth:2;math-style:compact'),
+    mathSize('', 'font-size:math;math-depth:2;math-style:normal'),
+    'math-style changes nothing, as in Chromium')
+
 finish('values')

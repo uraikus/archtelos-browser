@@ -1917,6 +1917,28 @@ int func fontCapsUsed(s:Style) {
     return CAPS_NORMAL
 }
 
+// `math-depth`, kept by the computed style's serial. It INHERITS, and it
+// is read BEFORE the font size rather than after, because `font-size:
+// math` is the parent's size scaled by the difference between the two
+// depths -- so the applier for it cannot sit with the others.
+//
+// The default is 0 and only a non-zero depth is stored, which is what
+// makes `anyMathDepth` mean "some element on this document is at a
+// depth".
+map[int] mathDepthOfSerial = {}
+bool anyMathDepth = false
+
+// 0.71 per step, measured in Chromium: 32px becomes 22.72, 16.1312 and
+// 11.4532 at one, two and three steps, and 45.0704 at minus one
+// (todo.md).
+const float MATH_DEPTH_SCALE = 0.71
+
+int func mathDepthOf(s:Style) {
+    if !anyMathDepth || s == null { return 0 }
+    int v = mathDepthOfSerial[`${s.serial}`]
+    return v == null ? 0 : v
+}
+
 // `view-transition-name`, kept by the computed style's serial. It does
 // NOT inherit. Only whether a name was given is stored, not the name
 // itself: the transition it names needs a clock and a second document

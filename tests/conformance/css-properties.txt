@@ -307,7 +307,7 @@ mask-position	center
 mask-repeat	no-repeat
 mask-size	10px
 mask-type	alpha
-math-depth	2
+math-depth	2; font-size: math
 math-shift	compact
 math-style	compact
 max-block-size	10px

@@ -4788,9 +4788,11 @@ that way.
 
 ### The sweep of what is left, measured -- two act and eight do not
 
-**`view-transition-name` has landed**, as one line in
+**Both have landed**: `view-transition-name` as one line in
 `boxIsStackingContext`. The eight declines are recorded in css-2026.md
-where their specifications are. `math-depth` is next. The sweep follows.
+where their specifications are. and `math-depth` as a reader that runs before the font size, with the
+instrument's row carrying `font-size: math` as context because the
+property alone changes nothing in either engine. The sweep follows.
 
 The reachable pool had thinned to the point where the honest first step
 was to ask Chromium whether a property does anything at all in HTML
@@ -4861,6 +4863,21 @@ is what makes the parent's depth available to compare against.
 
 That one is a chunk of its own: it changes the used font size, which the
 cascade computes early because `em` depends on it.
+
+**`math-shift` was probed separately**, because a sentence about it had
+been written into css-2026.md from memory before anything measured it --
+the failure this file's own rules name. On an HTML element Chromium
+changes nothing for it: `compact` and `normal` leave `MMMM` at 77.06 and
+the computed size at 32px, and beside `font-size: math; math-depth: 2`
+both give 38.84 and 16.1312px. What it is defined to move is a
+superscript's position **inside MathML**, and this engine renders no
+MathML, so it cannot act here whatever Chromium does with it.
+
+The probe also turned up something the sweep had not asked for:
+**inside `<math>`, `math-style` computes to `compact`** rather than
+`normal`, from Chromium's own MathML user-agent stylesheet. Nothing
+follows from it here -- there is no MathML to style -- but it is the
+kind of thing that would have been guessed wrong.
 
 ### What the property instrument does not grade
 
