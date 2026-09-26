@@ -49,6 +49,15 @@ would have to be laid out again in the next column, and
 42, because the repeated edges take space in every column. Both are in
 todo.md with Chromium's rows.
 
+Clean under valgrind, counts unchanged: 290/405 properties, 122/122
+displays, 129/129 selectors, 1535/1652 conformance. Paired on both pages,
+each rendering byte-identically between the two binaries: `generated.html`
+runs none of the new code and read **-3 and -4** forward, `features.html`
+runs it and read **+4 and +2** forward against a mirror of +1. A control
+that finds a saving in lines it cannot execute is the instrument
+describing itself, so this is reported as nothing; benchmarks.md has the
+rounds. The binary grew 40 bytes.
+
 ### A childless fixed-height block is cut at a column break
 
 Chromium fragments a block whose height does not fit what is left of its

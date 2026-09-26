@@ -123,6 +123,33 @@ not four times the noise and does not show in every round. The one thing
 this change did move that can be measured at all is the **binary, by
 5,184 bytes** -- 3,266,896 to 3,272,080.
 
+### And the control read a saving from code it cannot run
+
+The next change was paired on both pages, because unlike the one above it
+has a page that reaches it: `features.html` declares `column-count: 3`
+over paragraphs, and `generated.html` declares no multi-column container
+at all. Both binaries were first checked to render both pages
+byte-identically. Two forward rounds and a mirror each:
+
+| | forward 1 | forward 2 | reversed | the first binary's own total |
+|---|---|---|---|---|
+| `generated.html` -- runs **none** of the new code | **-3** | **-4** | +0 | 139, 137, 134 |
+| `features.html` -- runs it | **+4** | **+2** | +1 | 168, 169, 171 |
+
+The control has two agreeing forward rounds, which this file's own rule
+calls the threshold for taking a reading to the code, and what they agree
+on is a **three to four millisecond saving from lines the page never
+executes**. Nothing was removed; the page cannot enter the diff. On the
+page that does run it the same two binaries read +4 and +2 with a mirror
+of +1 -- the same sign both ways, so the order rather than a difference.
+
+Seven milliseconds separate the two pages' readings of one diff, in
+opposite directions, on totals of 137 and 169. That is the instrument
+describing itself. The rule stands as the section above states it: a
+per-feature reading on this machine is reported as nothing, and only a
+cost several times this size and present in every round is worth a
+question to the code.
+
 ## The canvas has to match, or the number means nothing
 
 Headless Chromium's `--screenshot` captures the **viewport**. This
