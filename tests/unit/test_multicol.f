@@ -238,7 +238,10 @@ checkEqInt(findById(cfAuto, 'f4').y, 80, 'below the four before it')
 check(findById(cfAuto, 'c').h != findById(cfBalance, 'c').h,
       'which is not what balancing does')
 
-// Given a height to fill, the two agree.
+// Given a height to fill, the two agree *here* -- but only because this
+// fixture's balanced height happens to equal the container's: twelve 20px
+// blocks over three columns balance to exactly 80, which is the height
+// declared. They do not agree in general, which the checks below are for.
 Box cfAutoH = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0;column-fill:auto;height:80px">`
     + cfItems + '</div></body>', 400)
 Box cfBalanceH = layoutHtml(head + `<div id="c" style="width:300px;column-count:3;column-gap:0;height:80px">`
@@ -246,5 +249,44 @@ Box cfBalanceH = layoutHtml(head + `<div id="c" style="width:300px;column-count:
 checkEqInt(findById(cfAutoH, 'f4').x, findById(cfBalanceH, 'f4').x,
            'with a height to fill, `auto` and `balance` put the fifth block in one place')
 checkEqInt(findById(cfAutoH, 'f4').y, findById(cfBalanceH, 'f4').y, 'at one height')
+
+// `column-fill: auto` fills each column to the container's OWN block size
+// and starts the next only when that is full, so a container taller than
+// the balanced share keeps more in the first column. todo.md has
+// Chromium's rows; the check that earns its place is the agreement that
+// follows from the rule -- the blocks land where ONE column of the same
+// height puts them, for as long as they fit in it.
+text cfTwo = '<div id="a" style="height:20px"></div><div id="b" style="height:30px"></div>'
+text cfThree = '<div id="a" style="height:20px"></div><div id="b" style="height:20px"></div>'
+    + '<div id="d" style="height:20px"></div>'
+
+Box cfFill = layoutHtml(head
+    + '<div id="c" style="width:100px;column-count:2;column-gap:10px;column-fill:auto;height:60px">'
+    + cfTwo + '</div></body>', 400)
+Box cfOne = layoutHtml(head
+    + '<div id="c" style="width:100px;column-count:1;column-fill:auto;height:60px">'
+    + cfTwo + '</div></body>', 400)
+checkEqInt(findById(cfFill, 'a').y, findById(cfOne, 'a').y,
+           'filling to the container height puts the first block where one column would')
+checkEqInt(findById(cfFill, 'b').y, findById(cfOne, 'b').y, 'and the second below it')
+checkEqInt(findById(cfFill, 'b').x, findById(cfFill, 'a').x,
+           'both being in the first column, which had room for them')
+
+// It does break, once the column really is full: three 20s in 40 leave
+// the third for the second column.
+Box cfFull = layoutHtml(head
+    + '<div id="c" style="width:100px;column-count:2;column-gap:10px;column-fill:auto;height:40px">'
+    + cfThree + '</div></body>', 400)
+checkEqInt(findById(cfFull, 'b').x, findById(cfFull, 'a').x, 'two 20s fit a column of 40')
+check(findById(cfFull, 'd').x > findById(cfFull, 'a').x, 'and the third starts the next column')
+checkEqInt(findById(cfFull, 'd').y, findById(cfFull, 'a').y, 'at the top of it')
+
+// The instrument: `balance` at the same height must put them elsewhere,
+// or these checks would hold on an engine that ignored `column-fill`.
+Box cfBal = layoutHtml(head
+    + '<div id="c" style="width:100px;column-count:2;column-gap:10px;height:60px">'
+    + cfTwo + '</div></body>', 400)
+check(findById(cfBal, 'b').x != findById(cfFill, 'b').x,
+      'balancing at that height really does put the second block elsewhere')
 
 finish('multicol')

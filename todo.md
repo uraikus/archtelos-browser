@@ -582,7 +582,15 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **`column-fill: auto` breaks a column early.** The table half of this
+1. **A fixed-height block is not fragmented across a column break.**
+   Both halves of this item as originally written have landed -- a
+   definite table height reaches the rows, and `column-fill: auto` fills
+   each column to the container's own height -- and what the multicol
+   probe turned up beside them has not: Chromium splits a fixed-height
+   block across a column break and this engine moves whole boxes. The
+   original wording of the item follows.
+
+   **`column-fill: auto` breaks a column early.** The table half of this
    item has landed -- a definite height reaches the rows in proportion to
    their own heights, all seven of Chromium's fixtures agreeing -- and
    the multicol half has not. The original wording of both follows.

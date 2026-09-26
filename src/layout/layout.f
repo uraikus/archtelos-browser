@@ -3152,27 +3152,44 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     collectColumnUnits(b, units, from, to)
     if units.length == 0 { return flowH }
 
-    // `column-fill: auto` fills each column to the container's height
-    // before starting the next, so with no height to fill to there is
-    // nothing to break at: the content stays in the first column and
-    // the container grows to hold it (Multi-column 1 §3.3). Chromium
-    // 141 puts twelve 20px blocks in one 240px column that way, against
-    // three columns of 80 when balancing. Given a definite height the
-    // two agree, and the balancing below is what produces it.
+    // `column-fill: auto` fills each column to the container's own block
+    // size before starting the next, so with no height to fill to there
+    // is nothing to break at: the content stays in the first column and
+    // the container grows to hold it (Multi-column 1 §3.3). Chromium 141
+    // puts twelve 20px blocks in one 240px column that way, against
+    // three columns of 80 when balancing.
     if s.columnFillAuto && s.height.kind != LEN_PX { return flowH }
 
-    // Balance: aim for an equal share and grow the target until every
-    // unit fits in the columns there are. A unit taller than the target
-    // sets its own column's height, which is why this is a loop rather
-    // than one division.
-    int target = Math.floorDiv(flowH + count - 1, count)
-    int guard = 0
-    arr[int] breaks = columnBreaks(units, target)
-    while guard < 64 {
-        if breaks.length + 1 <= count { break }
-        target = target + maxInt(Math.floorDiv(target, 8), 1)
+    int target = 0
+    arr[int] breaks = []
+    if s.columnFillAuto {
+        // Given a definite height, each column fills to THAT -- which is
+        // the balanced share only by coincidence, and this line used to
+        // say the two agree. They do not: todo.md has Chromium's rows,
+        // where 20 and 30 in a container of 60 stay in one column while
+        // balancing puts them in two of 25. The twelve 20px blocks over
+        // three columns of 80 that the suite has always had are the
+        // coincidence -- 240 over three balances to exactly the 80
+        // declared -- which is why nothing noticed.
+        target = roundPx(s.height.v)
+        if s.boxSizing == BOX_BORDER {
+            target = target - b.pt - b.pb - b.bt - b.bb
+        }
+        breaks = columnBreaks(units, maxInt(target, 1))
+    } else {
+        // Balance: aim for an equal share and grow the target until every
+        // unit fits in the columns there are. A unit taller than the
+        // target sets its own column's height, which is why this is a
+        // loop rather than one division.
+        target = Math.floorDiv(flowH + count - 1, count)
         breaks = columnBreaks(units, target)
-        guard++
+        int guard = 0
+        while guard < 64 {
+            if breaks.length + 1 <= count { break }
+            target = target + maxInt(Math.floorDiv(target, 8), 1)
+            breaks = columnBreaks(units, target)
+            guard++
+        }
     }
 
     // Move each unit into its column. A unit's offset is the column's

@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `column-fill: auto` fills each column to the container's own height
+
+It was filling them to the **balanced** share instead, so 20 and 30 in a
+container of 60 went into two columns where Chromium puts both in one.
+All four of Chromium's `auto` fixtures now agree:
+
+| height | items | before | now, and Chromium |
+|---|---|---|---|
+| `60px` | 20, 30 | 0,0 / **55,0** | 0,0 / **0,20** |
+| `60px` | 20, 20, 20 | 0,0 / 0,20 / **55,0** | 0,0 / 0,20 / **0,40** |
+| `40px` | 20, 20, 20 | 0,0 / 0,20 / 55,0 | unchanged |
+| auto | 20, 30 | 0,0 / 0,20 | unchanged |
+
+**The comment above the line is the reason it went unnoticed**, and it
+was a claim about Chromium written from memory: "Given a definite height
+the two agree, and the balancing below is what produces it." They do not
+agree. `auto` fills to the height *declared* and `balance` to the height
+*computed*, and those coincide only by arithmetic accident -- which is
+exactly what the suite's own fixture was. Twelve 20px blocks over three
+columns balance to 80, and 80 is the height it declares, so the check
+that `auto` and `balance` put the fifth block in one place passed while
+saying nothing. That comment in the test now says which coincidence it
+rests on.
+
+### A fixed-height block is still not fragmented across a column break
+
+The same probe shows it and it is its own piece of work: Chromium splits
+a 30-tall block across two columns of 25, leaving its rectangle the union
+of the two halves, where this engine moves whole boxes and never splits
+one. So `column-fill: balance` with no height gives 30 here against
+Chromium's 25, and `auto` with a height of 25 keeps both blocks whole
+where Chromium fragments the second. todo.md records it with the rows.
+
 ### A definite height on a table reaches its rows (CSS2 17.5.3)
 
 `<table style="height: 60px">` over rows needing 50 left the rows at
