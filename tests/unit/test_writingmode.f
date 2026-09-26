@@ -504,4 +504,68 @@ sameRect(apRect('vertical-lr',
     apRect('vertical-lr', 'position:absolute;top:60px;left:50px;width:40px;height:30px'),
     'and in vertical-lr')
 
+// ---- a scroll container in a vertical flow -----------------------------
+// A scrollbar is a physical thing: `overflow-x` names the horizontal
+// axis and reserves a bar along the bottom in every writing mode, and
+// `overflow-y` names the vertical one. What follows the mode is the
+// LOGICAL pair -- `overflow-block` is `overflow-y` in a horizontal mode
+// and `overflow-x` in a vertical one, `overflow-inline` the other way
+// round. todo.md has Chromium's fifteen rows, and this engine agreed
+// with every one of them before these checks existed; they are here
+// because nothing asked, which is the rule CLAUDE.md gives for a claim
+// no instrument covers.
+//
+// The checks ask the two spellings that are synonyms in a given mode to
+// reserve the same bar, which needs no number from either engine.
+
+arr[int] func sbBars(mode:text, css:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.s{width:120px;height:80px}.big{width:400px;height:300px}` +
+        `</style></head><body><div class="s" style="writing-mode:${mode};${css}">` +
+        `<div class="big"></div></div></body></html>`, 'about:blank', 400)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    arr[int] out = []
+    out.push(all[0].sbW)
+    out.push(all[0].sbH)
+    return out
+}
+
+void func sameBars(a:arr[int], b:arr[int], label:text) {
+    checkEqInt(a[0], b[0], `${label}: the vertical bar`)
+    checkEqInt(a[1], b[1], `${label}: the horizontal one`)
+}
+
+text SBX = 'overflow-x:scroll;overflow-y:hidden'
+text SBY = 'overflow-x:hidden;overflow-y:scroll'
+text SBB = 'overflow-block:scroll;overflow-inline:hidden'
+text SBI = 'overflow-inline:scroll;overflow-block:hidden'
+
+// The physical pair does not move: the same declaration reserves the
+// same bar in all three modes.
+arr[int] sbXh = sbBars('horizontal-tb', SBX)
+arr[int] sbYh = sbBars('horizontal-tb', SBY)
+sameBars(sbBars('vertical-rl', SBX), sbXh, 'overflow-x reserves the same bar in vertical-rl')
+sameBars(sbBars('vertical-lr', SBX), sbXh, 'and in vertical-lr')
+sameBars(sbBars('vertical-rl', SBY), sbYh, 'overflow-y likewise in vertical-rl')
+sameBars(sbBars('vertical-lr', SBY), sbYh, 'and in vertical-lr')
+
+// The logical pair follows the mode, so in each mode it is a synonym
+// for one of the physical two.
+sameBars(sbBars('horizontal-tb', SBB), sbYh, 'overflow-block is overflow-y in a horizontal mode')
+sameBars(sbBars('horizontal-tb', SBI), sbXh, 'and overflow-inline is overflow-x')
+sameBars(sbBars('vertical-rl', SBB), sbXh, 'overflow-block is overflow-x in vertical-rl')
+sameBars(sbBars('vertical-rl', SBI), sbYh, 'and overflow-inline is overflow-y')
+sameBars(sbBars('vertical-lr', SBB), sbXh, 'the same in vertical-lr')
+sameBars(sbBars('vertical-lr', SBI), sbYh, 'both ways')
+
+// The instrument: the two physical bars must differ from each other, and
+// the logical one must really change axis with the mode, or every check
+// above would hold on an engine that reserved one bar for everything.
+check(sbXh[0] != sbYh[0] || sbXh[1] != sbYh[1],
+      'a horizontal bar and a vertical one really are different reservations')
+check(sbBars('horizontal-tb', SBB)[0] != sbBars('vertical-rl', SBB)[0],
+      'and overflow-block really does change axis with the mode')
+
 finish('writing-mode')

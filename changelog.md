@@ -5,6 +5,32 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The scroll box in a vertical flow was right, and now something asks
+
+The last item on CSS Writing Modes 4 read "a scroll container inside a
+vertical flow reserves its bar on the physical axis", written as though
+that were the bug. It is what Chromium does. A scrollbar is a physical
+thing and `overflow-x` and `overflow-y` name physical axes, so neither
+the bar nor the room it takes moves with the writing mode; what follows
+the mode is the **logical** pair, and this engine already had that right
+-- `overflow-block` is `overflow-x` in a vertical mode and `overflow-y`
+in a horizontal one, which `wmPhysicalName` has answered since the
+vertical modes landed.
+
+Fifteen rows of Chromium, and this engine agreed with every one before
+these checks existed. **That is the point of the change**: CLAUDE.md's
+rule is that a claim of this shape has no instrument behind it until one
+is written, and nothing here asked. The checks ask the two spellings that
+are synonyms in a given mode to reserve the same bar, which needs no
+number from either engine, and they were made to fail before being
+believed: reversing `wmPhysicalName`'s two `overflow` lines breaks eight
+of them.
+
+No engine code changed, so there is nothing for a benchmark to move.
+This is the fifth sentence in this stretch of work that was wrong for
+want of a probe, and the second whose correction is a test rather than a
+fix.
+
 ### `column-fill: auto` fills each column to the container's own height
 
 It was filling them to the **balanced** share instead, so 20 and 30 in a
