@@ -37,7 +37,11 @@ All three paths a replaced element's content can take go through it:
 the `fill` stretch, the direct blit and the clipped layer, the last
 drawing into the layer rather than the canvas.
 
-**284 → 285**, with `--fields` naming `imageRendering`.
+**284 → 285**, with `--fields` naming `imageRendering`. Paired on
+`generated.html`, which has no image on it and executes none of the new
+code: −2 total across two agreeing forward rounds and +0 reversed,
+which is the candidate reading a shade *faster* and so the compiler's
+placement rather than work either way.
 
 ### `font-synthesis-small-caps`, and three synthesis controls that cannot act here
 
