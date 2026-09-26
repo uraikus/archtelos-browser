@@ -541,6 +541,12 @@ def properties_audit(path):
     written into a style attribute, so a row may carry two declarations
     where one is not enough. A row with a third column declares itself
     ungradeable and says why; those are reported, not failed.
+
+    A row with a fourth column names a pseudo-element, and is asked of
+    that pseudo-element here exactly as the runner grades it there: the
+    declaration goes into a rule and the answer comes from
+    getComputedStyle's second argument. Two instruments asking different
+    questions of the same row can disagree without either one saying so.
     """
     chrome = find_chrome()
     if not chrome:
@@ -552,7 +558,8 @@ def properties_audit(path):
         if not line or line.startswith("#") or "\t" not in line:
             continue
         parts = line.split("\t")
-        rows.append([parts[0], parts[1]])
+        rows.append([parts[0], parts[1],
+                     parts[3] if len(parts) >= 4 and parts[3] else ""])
         # The value is delivered inside a double-quoted style attribute,
         # by this audit and by the runner alike, so one containing a
         # double quote never arrives. Chromium then computes the initial
@@ -569,7 +576,7 @@ def properties_audit(path):
 var PAYLOAD = "%s"; var data = %s;
 var host = document.getElementById('host'); var bad = [];
 for (var i = 0; i < data.rows.length; i++) {
-  var prop = data.rows[i][0], val = data.rows[i][1];
+  var prop = data.rows[i][0], val = data.rows[i][1], pseudo = data.rows[i][2];
   // A row may carry declarations beyond the property under test, because
   // some properties do nothing without one. Those are context: the row
   // must differ from an element that already has them, or it is the
@@ -577,10 +584,21 @@ for (var i = 0; i < data.rows.length; i++) {
   var semi = val.indexOf(';');
   var own = semi < 0 ? val : val.slice(0, semi);
   var context = semi < 0 ? '' : val.slice(semi + 1);
-  host.innerHTML = '<p id="a" style="' + context + '"></p>'
-                 + '<p id="b" style="' + prop + ': ' + own + ';' + context + '"></p>';
-  var before = getComputedStyle(document.getElementById('a')).getPropertyValue(prop);
-  var after  = getComputedStyle(document.getElementById('b')).getPropertyValue(prop);
+  var arg = null;
+  if (pseudo) {
+    // Graded on the pseudo-element, which means a rule rather than a
+    // style attribute, and text in the element so ::first-letter has
+    // something to be.
+    host.innerHTML = '<style>#a::' + pseudo + '{' + context + '}'
+                   + '#b::' + pseudo + '{' + prop + ':' + own + ';' + context + '}</style>'
+                   + '<p id="a">Hxy text</p><p id="b">Hxy text</p>';
+    arg = '::' + pseudo;
+  } else {
+    host.innerHTML = '<p id="a" style="' + context + '"></p>'
+                   + '<p id="b" style="' + prop + ': ' + own + ';' + context + '"></p>';
+  }
+  var before = getComputedStyle(document.getElementById('a'), arg).getPropertyValue(prop);
+  var after  = getComputedStyle(document.getElementById('b'), arg).getPropertyValue(prop);
   if (after === before) bad.push([prop, val]);
 }
 report(bad);

@@ -239,4 +239,42 @@ checkEq(parseAndDump('<!DOCTYPE html><p><template></template><frameset>'),
 '| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <p>\n|       <template>\n|         content',
 'a template in the body rules a later frameset out')
 
+// ---- an end tag that runs to the end of the input ---------------------
+// The standard's end tag name state emits the `</` and the name it had
+// buffered as CHARACTER tokens when what follows is not a matching `>`,
+// whitespace or `/`, and at the end of the input the same buffer has to
+// reach the text. So a script whose content ends in an unterminated end
+// tag keeps it as text rather than losing it: ten cases of tests16.dat,
+// each appearing once with a doctype and once without.
+
+checkEq(parseAndDump('<script></script'),
+'| <html>\n|   <head>\n|     <script>\n|       "</script"\n|   <body>',
+'an unterminated end tag at the end of a script is its text')
+
+checkEq(parseAndDump('<script></SCRIPT'),
+'| <html>\n|   <head>\n|     <script>\n|       "</SCRIPT"\n|   <body>',
+'and keeps the case it was written in, because it is text and not a name')
+
+checkEq(parseAndDump('<script><!--</script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--</script"\n|   <body>',
+'the escaped state does not change that')
+
+checkEq(parseAndDump('<script><!--<script </script </script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--<script </script </script"\n|   <body>',
+'nor does the double escaped state, which the first `</script ` leaves')
+
+checkEq(parseAndDump('<script><!--<script --></script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--<script --></script"\n|   <body>',
+'and an unterminated end tag after the escape closed is text as well')
+
+// The instrument: a TERMINATED end tag must still end the script, or every
+// check above would hold on an engine that never closed one.
+checkEq(parseAndDump('<script></script>x'),
+'| <html>\n|   <head>\n|     <script>\n|   <body>\n|     "x"',
+'a terminated end tag still closes the script and takes nothing with it')
+
+checkEq(parseAndDump('<title></title'),
+'| <html>\n|   <head>\n|     <title>\n|       "</title"\n|   <body>',
+'the same holds for RCDATA, where the text is decoded rather than raw')
+
 finish('html')

@@ -37,6 +37,50 @@ arr[text] func blobLines(f:blob) {
 // contain whatever character the join would use -- `fontKey` holds a
 // pipe -- and splitting it back would then misalign every field after
 // it against its name.
+// `filter`'s function list, flattened. The instrument has to be able
+// to see it or the property could never register however complete the
+// implementation is (CLAUDE.md, "an instrument must be able to fail").
+// The row in css-properties.txt is `blur(2px)`, which this engine drops
+// whole, so the count does not move for this work and is not meant to.
+text func filterKey(s:Style) {
+    FilterSpec spec = filterSpecOf(s.filterIdx)
+    if spec == null { return 'none' }
+    text out = ''
+    for int i = 0, i < spec.kinds.length, i++ {
+        out = out + `${spec.kinds[i]}:${spec.amounts[i]};`
+    }
+    return out
+}
+
+// The mask layer, flattened. The instrument has to be able to see it,
+// or no mask property could ever register however complete the
+// implementation is. The `mask-image` row is `url(a.png)`, which this
+// engine drops, so that row goes on failing; the geometry longhands are
+// a different question and todo.md records it rather than settling it
+// here.
+text func maskKey(s:Style) {
+    MaskSpec spec = maskSpecOf(s.maskIdx)
+    if spec == null { return 'none' }
+    if spec.layers.length == 0 { return 'none' }
+    BgLayer l = spec.layers[0]
+    // The image contributes only when it is one this engine paints. A
+    // `mask-image: url()` with nothing beside it makes no spec at all
+    // (src/css/cascade.f), so this only has to keep an unpaintable
+    // image from moving the key when a geometry longhand put the spec
+    // there -- otherwise the property would score on a value nothing
+    // reads, which is the trap `outline-style` was.
+    text imgKey = l.image.present ? `g${l.image.angle}:${l.image.stops.length}` : 'no'
+    text out = `${spec.layers.length}|${spec.modes[0]}|${spec.composites[0]}`
+        + `|${l.repeatX ? 1 : 0}${l.repeatY ? 1 : 0}`
+        + `|${lenKey(l.posX)}|${lenKey(l.posY)}`
+        + `|${l.sizeKind}|${lenKey(l.sizeW)}|${lenKey(l.sizeH)}`
+        + `|${l.clip}|${l.origin}|${imgKey}`
+    for int i = 1, i < spec.layers.length, i++ {
+        out = out + `;${spec.modes[i]}|${spec.composites[i]}`
+    }
+    return out
+}
+
 arr[text] func styleDigestFields(s:Style) {
     return [`${s.display}`, `${s.color}`, `${s.background}`, `${s.fontSize}`, 
         `${s.fontBold}`, `${s.fontItalic}`, `${s.fontFamily}`, 
@@ -44,7 +88,7 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.inheritedDecoration}`, `${s.decorationColor}`, 
         `${s.decorationStyle}`, `${s.decorationThickness}`, 
         `${s.underlineOffset}`, `${shadowKey(s.textShadows)}`, 
-        `${s.directionRtl}`, `${s.bidiOverride}`, `${s.emphasisMark}`, `${s.emphasisColor}`, `${s.emphasisUnder}`, 
+        `${s.directionRtl}`, `${s.unicodeBidi}`, `${s.emphasisMark}`, `${s.emphasisColor}`, `${s.emphasisUnder}`, 
         `${s.underlinePosUnder}`, `${s.textTransform}`, 
         `${s.whiteSpaceCollapse}`, `${s.textWrapMode}`, 
         `${s.textAlignLast}`, `${s.wordBreaking}`, 
@@ -61,6 +105,8 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.borderRightColor}`, `${s.borderBottomColor}`, 
         `${s.borderLeftColor}`, `${s.borderStyle}`, `${s.borderRadius}`, `${lenKey(s.radiusTopLeftX)}`, `${lenKey(s.radiusTopLeftY)}`,
         `${lenKey(s.radiusTopRightX)}`, `${lenKey(s.radiusTopRightY)}`, `${lenKey(s.radiusBottomRightX)}`, `${lenKey(s.radiusBottomRightY)}`, `${lenKey(s.radiusBottomLeftX)}`, `${lenKey(s.radiusBottomLeftY)}`, 
+        `${cornerKAt(s.cornerShapes, 0)}`, `${cornerKAt(s.cornerShapes, 1)}`, `${cornerKAt(s.cornerShapes, 2)}`, `${cornerKAt(s.cornerShapes, 3)}`, 
+        `${anchorInfoOf(s.anchorInfo).name}`, `${anchorInfoOf(s.anchorInfo).anchor}`, `${anchorInfoOf(s.anchorInfo).area}`, `${anchorInfoOf(s.anchorInfo).fallbacks}`, `${anchorInfoOf(s.anchorInfo).tryOrder}`, `${anchorInfoOf(s.anchorInfo).visibility}`, `${anchorInfoOf(s.anchorInfo).scope}`, `${motionKeyPath(motionInfoOf(motionIndexOf(s)))}`, `${lenKey(motionInfoOf(motionIndexOf(s)).distance)}`, `${motionInfoOf(motionIndexOf(s)).rotateMode}|${motionInfoOf(motionIndexOf(s)).rotateAngle}`, `${motionInfoOf(motionIndexOf(s)).anchorAuto ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorX)}|${lenKey(motionInfoOf(motionIndexOf(s)).anchorY)}`, `${motionInfoOf(motionIndexOf(s)).posNormal ? 1 : 0}|${lenKey(motionInfoOf(motionIndexOf(s)).posX)}|${lenKey(motionInfoOf(motionIndexOf(s)).posY)}`, `${clipMarginPacked(s)}`, `${textBoxPacked(s)}`, `${decorationIsClone(s) ? 1 : 0}`, `${overscrollPacked(s)}`, `${filterKey(s)}`, `${maskKey(s)}`, `${s.isolate}`, `${s.writingMode}`, `${s.textOrientation}`, `${s.textCombine ? 1 : 0}`, `${fontSynthSmallCapsOf(s) ? 1 : 0}`, `${imageRenderingOf(s)}`, `${willChangeOf(s)}`, `${interactivityInert(s) ? 1 : 0}`, `${scrollInitialTarget(s) ? 1 : 0}`, `${hasViewTransitionName(s) ? 1 : 0}`, `${mathDepthOf(s)}`, 
         `${s.borderSpacing}`, `${s.borderCollapse}`, `${s.borderTopStyle}`, 
         `${s.borderRightStyle}`, `${s.borderBottomStyle}`, 
         `${s.borderLeftStyle}`, `${s.textIndent}`, `${s.letterSpacing}`, 
@@ -81,6 +127,10 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.columnRuleWidth}`, `${s.columnRuleStyle}`, `${s.columnRuleColor}`, 
         `${s.columnSpanAll}`, `${s.columnFillAuto}`, 
         `${s.breakBefore}`, `${s.breakAfter}`, `${s.breakInsideAvoid}`, `${s.pageName}`, 
+        `${s.scrollbarWidth}`, `${s.scrollbarGutter}`, `${s.scrollbarThumb}`, `${s.scrollbarTrack}`, 
+        `${s.snapX}`, `${s.snapY}`, `${s.snapStrict}`, `${s.snapAlignBlock}`, `${s.snapAlignInline}`, `${s.snapStopAlways}`, 
+        `${lenKey(s.scrollPaddingTop)}`, `${lenKey(s.scrollPaddingRight)}`, `${lenKey(s.scrollPaddingBottom)}`, `${lenKey(s.scrollPaddingLeft)}`, 
+        `${lenKey(s.scrollMarginTop)}`, `${lenKey(s.scrollMarginRight)}`, `${lenKey(s.scrollMarginBottom)}`, `${lenKey(s.scrollMarginLeft)}`, 
         `${s.orphans}`, `${s.widows}`, 
         `${clipKey(s.clipShape)}`, `${clipKey(s.clipRect)}`, 
         `${clipKey(s.shapeOutside)}`, `${s.shapeMargin}`, 
@@ -111,7 +161,23 @@ arr[text] func styleDigestFields(s:Style) {
         `${s.objectViewBox.kind}:${lenKey(s.objectViewBox.t)}:${lenKey(s.objectViewBox.r)}:${lenKey(s.objectViewBox.b)}:${lenKey(s.objectViewBox.l)}`,
         `${shadowKey(s.shadows)}`,
         `${s.counterReset}`, `${s.counterIncrement}`, `${s.counterSet}`, `${s.quotes}`,
-        `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`]
+        `${s.colorSchemeDark}`, `${s.containerType}`, `${s.containerName}`,
+        `${initialLetterPacked(s)}`, `${baselineSourceOf(s)}`, `${resizeOf(s)}`, `${textWrapStyleOf(s)}`,
+        `${rubyPositionOf(s)}`, `${rubyAlignOf(s)}`, `${printColorAdjustOf(s)}`,
+        `${fontCapsOf(s)}`]
+}
+
+text func motionKeyPath(mi:MotionInfo) {
+    if mi.pathKind == MPATH_NONE { return '' }
+    if mi.pathKind == MPATH_RAY { return `ray ${mi.rayAngle} ${mi.raySize}` }
+    if mi.pathKind == MPATH_PATH { return `path ${mi.pathData}` }
+    ClipShape sh = mi.shape
+    text pts = ''
+    for int i = 0, i < sh.pointsX.length, i++ {
+        pts = pts + `${lenKey(sh.pointsX[i])},${lenKey(sh.pointsY[i])};`
+    }
+    return `shape ${sh.kind} ${lenKey(sh.centreX)} ${lenKey(sh.centreY)} `
+        + `${lenKey(sh.radiusX)} ${lenKey(sh.radiusY)} ${pts}`
 }
 
 text func styleDigest(s:Style) {
@@ -123,12 +189,20 @@ text func styleDigest(s:Style) {
 // against each other at startup rather than trusted: a field added to
 // one and not the other stops the instrument instead of silently
 // mislabelling every property after it.
+// The digest a pseudo-element row is graded on has one field more than
+// an element's, so the names do too.
+arr[text] func pseudoFieldNames() {
+    arr[text] names = styleDigestFieldNames()
+    names.push('content')
+    return names
+}
+
 arr[text] func styleDigestFieldNames() {
     return ['display', 'color', 'background', 'fontSize', 'fontBold', 
         'fontItalic', 'fontFamily', 'lineHeight', 'textAlign', 
         'textDecoration', 'inheritedDecoration', 'decorationColor', 
         'decorationStyle', 'decorationThickness', 'underlineOffset', 
-        'textShadows', 'directionRtl', 'bidiOverride', 'emphasisMark', 'emphasisColor', 
+        'textShadows', 'directionRtl', 'unicodeBidi', 'emphasisMark', 'emphasisColor', 
         'emphasisUnder', 'underlinePosUnder', 'textTransform', 
         'whiteSpaceCollapse', 'textWrapMode', 'textAlignLast', 
         'wordBreaking', 'tabSize', 'tabSizePx', 'hyphensNone', 'hyphenChar', 
@@ -141,6 +215,9 @@ arr[text] func styleDigestFieldNames() {
         'borderBottomColor', 'borderLeftColor', 'borderStyle', 
         'borderRadius', 'radiusTopLeftX', 'radiusTopLeftY', 'radiusTopRightX', 'radiusTopRightY',
         'radiusBottomRightX', 'radiusBottomRightY', 'radiusBottomLeftX', 'radiusBottomLeftY',
+        'cornerTopLeftShape', 'cornerTopRightShape', 'cornerBottomRightShape', 'cornerBottomLeftShape',
+        'anchorName', 'positionAnchor', 'positionArea', 'positionTryFallbacks', 'positionTryOrder', 'positionVisibility', 'anchorScope',
+        'offsetPath', 'offsetDistance', 'offsetRotate', 'offsetAnchor', 'offsetPosition', 'overflowClipMargin', 'textBox', 'boxDecorationBreak', 'overscrollBehavior', 'filter', 'mask', 'isolation', 'writingMode', 'textOrientation', 'textCombine', 'fontSynthSmallCaps', 'imageRendering', 'willChange', 'interactivity', 'scrollInitialTarget', 'viewTransitionName', 'mathDepth',
         'borderSpacing', 'borderCollapse', 
         'borderTopStyle', 'borderRightStyle', 'borderBottomStyle', 
         'borderLeftStyle', 'textIndent', 'letterSpacing', 'hidden', 
@@ -154,7 +231,12 @@ arr[text] func styleDigestFieldNames() {
         'borderImageWidthLeft', 'borderImageOutset', 'borderImageRepeat', 'borderImageRepeatY', 
         'columnCount', 'columnWidth', 'columnRuleWidth', 
         'columnRuleStyle', 'columnRuleColor', 'columnSpanAll', 'columnFillAuto', 
-        'breakBefore', 'breakAfter', 'breakInsideAvoid', 'pageName', 'orphans', 'widows', 
+        'breakBefore', 'breakAfter', 'breakInsideAvoid', 'pageName', 
+        'scrollbarWidth', 'scrollbarGutter', 'scrollbarThumb', 'scrollbarTrack', 
+        'snapX', 'snapY', 'snapStrict', 'snapAlignBlock', 'snapAlignInline', 'snapStopAlways', 
+        'scrollPaddingTop', 'scrollPaddingRight', 'scrollPaddingBottom', 'scrollPaddingLeft', 
+        'scrollMarginTop', 'scrollMarginRight', 'scrollMarginBottom', 'scrollMarginLeft', 
+        'orphans', 'widows', 
         'clipShape', 'clipRect', 'shapeOutside', 'shapeMargin', 
         'gridCols', 'gridRows', 'gridColsSubgrid', 'gridRowsSubgrid', 'gridAreas', 'gridAutoCols', 'gridAutoRows', 
         'gridAutoFlowColumn', 'gridColStart', 'gridColEnd', 
@@ -171,7 +253,9 @@ arr[text] func styleDigestFieldNames() {
         'backgroundSizeW', 'backgroundSizeH', 'backgroundClip', 
         'backgroundOrigin', 'objectFit', 'objectPosX', 'objectPosY', 'objectViewBox', 'shadows',
         'counterReset', 'counterIncrement', 'counterSet', 'quotes', 'colorSchemeDark',
-        'containerType', 'containerName']
+        'containerType', 'containerName', 'initialLetterPacked', 'baselineSource',
+        'resize', 'textWrapStyle', 'rubyPosition', 'rubyAlign', 'printColorAdjust',
+        'fontCaps']
 }
 
 text func trackKey(list:arr[Track]) {
@@ -243,6 +327,38 @@ arr[text] func digestFieldsFor(decl:text) {
     return styleDigestFields(ps[0].style)
 }
 
+// A property whose whole effect is on a pseudo-element cannot register
+// against an element's computed style, however complete it is: nothing
+// the declaration does reaches the element. `initial-letter` is of
+// that shape -- it restyles `::first-letter` and touches nothing on the
+// element -- and it sat in `supportsExempt`, which silenced the
+// @supports cross-check without making it measurable.
+//
+// So a row may name a pseudo-element, and then the declaration goes
+// into a rule rather than a style attribute and the digest is taken
+// from the pseudo's own computed style. The content is digested beside
+// it, because `content` lives outside `Style` here and the row would
+// otherwise be graded on fields it does not set.
+arr[text] func digestFieldsForPseudo(decl:text, pseudo:text) {
+    cascadeReset()
+    Node doc = parseHtmlText(`<html><head><style>#t::${pseudo}{${decl}}</style></head><body><table><tr><td><p id="t">Hxy text</p></td></tr></table></body></html>`)
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    arr[Node] ps = []
+    collectElements(doc, 'p', ps)
+    arr[text] missing = ['MISSING']
+    if ps.length == 0 { return missing }
+    Style s = pseudoStyleOf(ps[0].id, pseudo)
+    // No style at all means the engine did not compute this
+    // pseudo-element for the rule, which is an instrument fault rather
+    // than a reading of the property. The caller says so.
+    if s == null { return ['NOPSEUDO'] }
+    arr[text] fields = styleDigestFields(s)
+    text c = pseudoContentOf(ps[0].id, pseudo)
+    fields.push(c == null ? '' : c)
+    return fields
+}
+
 bool verbose = false
 bool showFields = false
 int minimum = -1
@@ -271,6 +387,8 @@ if baseFields.length != fieldNames.length {
         + `styleDigestFieldNames lists ${fieldNames.length}; they must agree`)
     close(1)
 }
+arr[text] pseudoNames = pseudoFieldNames()
+
 arr[text] lines = blobLines(f)
 int total = 0
 int gradeable = 0
@@ -291,7 +409,10 @@ arr[text] ungradeable = []
 // registers as changing nothing here: `content` works on `::before`
 // and `::after` and does nothing on a `<p>`. Each such property is
 // named here with its reason; every other disagreement fails the run.
-arr[text] supportsExempt = ['content']
+// Nothing needs exempting from the @supports cross-check: a property
+// this engine implements but the digest cannot see is a row that should
+// name its pseudo-element instead.
+arr[text] supportsExempt = []
 arr[text] supportsDenied = []
 arr[text] supportsOverclaimed = []
 
@@ -303,6 +424,10 @@ for int i = 0, i < lines.length, i++ {
     if parts.length < 2 { continue }
     text prop = parts[0]
     text val = parts[1]
+    // A fourth column names the pseudo-element the row is graded on.
+    // The third already means "ungradeable, and here is why", so it is
+    // left empty on a pseudo row rather than overloaded.
+    text pseudo = parts.length >= 4 && parts[3] != '' ? parts[3] : null
     total++
     // A row that cannot show a difference is not a measurement of this
     // engine at all; it is a gap in the instrument. Counted in the
@@ -337,10 +462,31 @@ for int i = 0, i < lines.length, i++ {
         context = context + halves[hi] + ';'
     }
     arr[text] rowBaseFields = baseFields
-    if context != '' { rowBaseFields = digestFieldsFor(context) }
+    arr[text] gotFields = []
+    arr[text] rowFieldNames = fieldNames
+    if pseudo != null {
+        rowBaseFields = digestFieldsForPseudo(context, pseudo)
+        gotFields = digestFieldsForPseudo(`${prop}: ${own};${context}`, pseudo)
+        rowFieldNames = pseudoNames
+        // Either side missing its pseudo-element means the fixture did
+        // not produce one to grade, which is the instrument failing
+        // rather than the property.
+        if rowBaseFields[0] == 'NOPSEUDO' || gotFields[0] == 'NOPSEUDO' {
+            gradeable--
+            ungradeable.push(`${prop} (the ::${pseudo} did not compute; the row needs a context declaration that creates it)`)
+            continue
+        }
+    } else {
+        if context != '' { rowBaseFields = digestFieldsFor(context) }
+        gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
+    }
     text rowBaseline = rowBaseFields.join('\u0001')
-    arr[text] gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
-    bool known = cssKnownProperty(prop.toAscii())
+    // @supports takes a DECLARATION, not a property name, and for
+    // `filter` the difference is the whole answer: the eight colour
+    // functions are supported and `blur()` is not, so asking about the
+    // name alone gets one of them wrong whichever way it answers. This
+    // asks what @supports would actually answer for the row.
+    bool known = supportsDeclaration(`${prop}: ${own}`.toAscii())
     if gotFields.join('\u0001') == rowBaseline {
         inert.push(prop)
         if known {
@@ -363,8 +509,8 @@ for int i = 0, i < lines.length, i++ {
         // instrument cannot judge which field means which property, so
         // it prints the mapping and leaves the reading to a person.
         arr[text] moved = []
-        for int k = 0, k < fieldNames.length && k < gotFields.length, k++ {
-            if gotFields[k] != rowBaseFields[k] { moved.push(fieldNames[k]) }
+        for int k = 0, k < rowFieldNames.length && k < gotFields.length, k++ {
+            if gotFields[k] != rowBaseFields[k] { moved.push(rowFieldNames[k]) }
         }
         log(`    ${prop} -> ${moved.join(', ')}`)
     }

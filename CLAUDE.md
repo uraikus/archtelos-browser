@@ -127,6 +127,21 @@ whether the feature occurs at all. Anything that adds a pass over the
 tree, or a test inside a loop over every box or every declaration, gets
 that flag before it lands, not after a benchmark notices.
 
+**And a call added to a hot function costs the pages that never reach
+it.** Giving `:is()` a complex selector list meant calling
+`matchSelector` from inside `matchCompound`'s loop over sub-selectors.
+That loop runs zero times on a page with no `:is()`, `:not()` or
+`:has()` on it, and such a page paid two milliseconds of cascade all the
+same: the call put `matchCompound` in a cycle --
+`matchCompound` → `matchSelector` → `matchFrom` → `matchCompound` --
+that the compiler would not inline through, so every one of 8,578
+selector tests paid for code none of them ran. The counts either side
+were identical, which is how it is told apart from work. So the flag
+above is not the only shape of this rule: **where a call is written is
+itself a cost**, and a call that the common case skips belongs in its
+own function, guarded at the call site, rather than in the loop it
+serves.
+
 **An instrument must be able to fail.** A property row reading `initial`
 computes to the initial value, so the property can never register as
 implemented however complete the implementation is. A selector that
@@ -146,6 +161,54 @@ fields by name and nobody had added the two new ones. The feature
 worked; the count did not move. So the check is end to end — set the
 property, run the instrument, watch the number go up — and it is done
 when the implementation lands, not once the suite is green.
+
+**A claim about a function, a unit or an at-rule has no instrument
+behind it.** The property instrument cross-checks every claim of the
+form "this engine implements `foo`" for a *property*: a row that says
+so and renders the same either way is caught on every run. Nothing
+does that for `attr()`, `min()`, `ex`, `@page` or a selector's
+behaviour, so a sentence about one of those in css-2026.md is an
+assertion until a suite asks. One had been wrong for months --
+"`attr()` is missing", of a function that has worked in `content`
+since generated content landed, in a file whose own preamble says the
+engine column is read from the code. The rule is not to read the code
+harder; it is that **every such claim needs a check in `tests/unit/`,
+because the thing that would otherwise notice does not exist**.
+
+**A sentence about what this engine does is a measurement, and writing
+one from memory gets it wrong.** The rule below is about audit lists,
+and the same failure arrives in prose. Five times in one stretch: a
+todo.md paragraph said six at-rules had no instrument, naming two this
+engine does not implement, when all seven it recognises already had
+suites; css-2026.md said `fit-content` was clamped to its container,
+where it is clamped only from above; css-2026.md said the intrinsic
+keywords do nothing on `height`, written without looking for a fixture
+that could tell them apart, and a grid item can; and twice a function
+was added that already existed under another name, caught by the
+compiler rather than by looking. **Before writing that this engine does
+or does not do something, run it and see** -- a scratch `.f` that
+prints the answer takes a minute, and `tests/chromium.py` or an
+`<iframe srcdoc>` probe gives the other engine's. A sentence in a
+document is as much an instrument as a row in a table, and an
+unmeasured one is the kind that cannot fail.
+
+**A list of things to audit, written from memory, has holes where the
+memory does.** The rule above says to audit the whole instrument. Doing
+that needs a list of what the whole is, and the obvious way to get one
+-- write down every shorthand you can think of -- was tried here and
+came up two short. Thirteen shorthands were being resolved by which
+reader ran first rather than by source order; eleven were found from a
+hand-written list, and `column-rule` and `contain-intrinsic-size` were
+not on it. `column-rule` is the same three-part shape as `border` and
+`outline`, both of which were on the list and both already fixed, which
+is exactly the hole a memory leaves: the third instance of a pattern
+you have already thought about twice. Asking the source instead --
+which property names does `computeStyleValues` read with a
+`...Prop(props, ...)` helper, and which of those is a prefix of another
+-- found both in one command. **Derive the list from the code, then
+audit it**; the derivation is usually one `grep` and a loop, and it is
+the difference between auditing the whole of something and auditing the
+part you remembered.
 
 **Audit the whole instrument, not one row at a time.** Checking the row
 in front of you leaves every other row unexamined, and they rot
@@ -196,6 +259,21 @@ that means the property. Where a property genuinely cannot act alone, its
 row carries the declarations it needs as context and is graded against an
 element that already has them, so the context cannot do the work for it.
 
+**A paired benchmark needs the two binaries to be doing the same work.**
+It compares code, not pages, and it stops comparing code the moment the
+change alters what the page lays out. A negative `margin-top` that had
+been dropped, once applied, made the candidate's `features.html` four
+hundred and fifty pixels shorter than the parent's -- and the forward
++1 of paint against a reversed 0 that came out of it is the shape this
+file calls real, while being nothing but two different documents timed
+against each other. This pulls against the rule above it: a page has to
+exercise a feature for the measurement to mean anything, and must not
+change shape between the binaries for a paired reading to mean
+anything. A feature that only adds work satisfies both; a feature that
+**fixes the layout** cannot. Measure that one on a page the fix does
+not touch, and keep the page that exercises it for `--verify` and the
+render suite, where the difference is the point.
+
 **Run the benchmarks on an idle machine, and check a number you did not
 change.** "Best of N" does not rescue a contended run, because every one
 of the N runs is contended: a benchmark run here beside a valgrind job
@@ -219,6 +297,69 @@ how much noise is acceptable: a band tight enough to fail honest runs is
 a band that gets ignored. A new reference browser is a new control, so
 raise `CONTROL_MS` and record the new spread; do not widen the
 tolerance to make a bad run pass.
+
+**One round is not a measurement, and the first round is the one that
+lies.** Two diffs in one day, each adding a function the benchmark page
+never calls, read two to three milliseconds on their first round and
+nothing on their second: `:nth-child()`'s `of` clause gave layout +2
+forward and then -2 forward, and the validity conditions gave cascade
++2 and layout +3 forward and then -1 and -1. Both first rounds had the
+shapes this file calls real -- a mirror image that flips sign, three
+quarters of the pairs agreeing with the median -- and both were
+contradicted by simply running them again. So a reading earns a
+question to the code only once **two forward rounds agree with each
+other**; a pair of rounds is the cheapest check there is and comes
+before the mirror image, the control and every explanation.
+
+**A cost that survives two rounds still has to survive its own
+mirror image.** Pair the two binaries the other way round as well: if
+the candidate reads a millisecond slower running second, and the
+parent reads a millisecond slower running second, neither number is a
+difference between them — both are measuring the order, and on this
+machine whichever binary runs second pays. `text-wrap-style` read +1
+of layout across two forward rounds, which this file's own rule calls
+real, and +1 to +2 reversed, which says it was nothing. The rule is
+that a reading and its mirror image must add to about zero; when they
+do not, the question goes to the code rather than to another round.
+That is also what caught the one real cost beside it — a forward +1
+against a reversed 0 is an order effect *plus* a millisecond, and a
+third binary then pinned the millisecond to one loop.
+
+**A cost that survives its mirror image may still be the compiler
+moving code.** `print-color-adjust` read +1 of layout forward and -1
+reversed -- the shape this file calls strongest for a real cost -- on a
+diff with no line in `src/layout/` at all, so the instruction to take
+the question to the code had nowhere to take it. The parent recompiled
+with the change's globals and reader function appended under different
+names, **called from nowhere**, read the same +1. Dead code cannot run,
+so the millisecond was where the compiler put the machine code, not
+work. The next feature then showed the reading is not
+even attached to a phase: its control moved a millisecond of *layout*
+where the candidate had moved one of *cascade*, and paired against each
+other the two came out below both. A quantity that does not add up
+across three binaries is not a property of any one diff.
+
+So the phase a reading lands on is not evidence about the code, and the
+control is what settles it: recompile the parent with the change's
+globals, constants and functions renamed and **called from nowhere**,
+check it comes out within a few bytes of the candidate, and pair the
+candidate against *that* rather than against the parent.
+
+**The cheapest control is a page the change cannot reach.** CSS2 §9.9's
+hoisting gave paint two agreeing forward rounds and a cancelling mirror
+against its parent -- every signal the rules above call real, on a phase
+that genuinely runs the diff -- and the same two binaries read the same
++1 of paint on `generated.html`, which declares no `position` at all and
+so executes not one line of the change. A millisecond out of a 17 ms
+phase, from code the page cannot enter, settles it without a recompile
+or a renaming, and it took two rounds rather than the six the dead-code
+control had already spent. So when one of the benchmark pages misses the
+feature entirely, pair on that page **first**: an equal reading there
+says placement, and only a reading that appears on the page exercising
+the feature and vanishes on the page that cannot is a cost. The
+dead-code control stays for changes both pages reach. Sum the five
+phases per sample either way, because the compiler moves milliseconds
+between phases and only the total says whether any work was added.
 
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
@@ -294,6 +435,25 @@ valgrind -q ./x
 whenever valgrind is involved and never otherwise — the generic build
 is slower, and the numbers in benchmarks.md are native builds.
 
+**A pipeline eats valgrind's exit status.** `valgrind -q
+--error-exitcode=9 ./x | tail -20; echo $?` reports *tail's* success,
+which is 0 whatever valgrind found. A use-after-free in
+`applyFontSizeAdjust` read as clean that way and was caught only
+because its stack trace happened to land inside the last twenty lines.
+Redirect to a file and check the status of valgrind itself:
+
+```bash
+valgrind -q --error-exitcode=9 ./x > vg.log 2>&1; echo "VGEXIT=$?"
+```
+
+The same applies to any command whose exit status is the result --
+`tests/run.sh`, the conformance runners. `$?` after a pipe is the last
+stage's, and the status of a `;` chain is the **last command's**: a run
+that ended `tests/run.sh > log; echo $?; grep -c FAIL log` reported
+failure on a suite that had passed, because `grep -c` exits 1 when it
+counts zero. Put the check first, or read the status the run itself
+printed rather than the one the shell hands back.
+
 **Valgrind is the tool that finds Festina's memory bugs, so use it.**
 Both memory-safety findings in FINDINGS.md were invisible in ordinary
 runs: the programs printed the right answers and exited 0, while
@@ -309,14 +469,14 @@ how a struct graph is shaped, gets a valgrind run.
 | `src/browser/page.f` | the page pipeline the shell and the tests share: fetch, parse, stylesheets, images, cascade, layout, paint |
 | `src/html/` | `decode.f` (bytes to an ASCII-safe form), `entities.f` (character references), `named_refs.f` (the standard's generated reference table), `tokenizer.f`, `parser.f` (tree construction) |
 | `src/dom/` | `node.f` (the node tree and its id registry), `serialize.f` (the standard's tree serialization, which the conformance suite compares against) |
-| `src/css/` | `parser.f` (rules, selectors, `@media`), `page.f` (`@page` and the page box), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values), `counterstyles.f` (`@counter-style` and the predefined list styles), `shapes.f` (a basic shape resolved against a box, which the painter and the layout engine both ask for) |
+| `src/css/` | `parser.f` (rules, selectors, `@media`), `page.f` (`@page` and the page box), `ua.f` (the user-agent stylesheet), `style.f` (the computed `Style` record), `cascade.f` (matching, specificity, shorthands, computed values), `counterstyles.f` (`@counter-style` and the predefined list styles), `motion.f` (a path, and the point a given distance along it), `shapes.f` (a basic shape resolved against a box, which the painter and the layout engine both ask for) |
 | `src/layout/layout.f` | the box tree, block and inline formatting, tables, intrinsic widths |
 | `src/layout/paginate.f` | the document broken into pages, which is the column algorithm over a different container |
 | `src/paint/paint.f` | painting and hit testing |
 | `src/net/` | `fetch.f` (URL resolution, HTTP(S) with redirects, local files), `preload.f` (the preload scanner and the worker threads that prefetch what it finds) |
 | `src/util/` | `text.f` (the string operations `text` lacks), `color.f`, `named_colors.f`, `bidi.f` (UAX #9) |
-| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, paged media, the preload scanner |
-| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, conic gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, borders, border images, text decoration, transforms, right-to-left text, box shadows, first lines, printed pages |
+| `tests/unit/` | unit suites: utilities, HTML, CSS parser, cascade, cascade rules, values, layout geometry, box properties, aspect ratio, positioning, grid areas, form controls, image loading, floats, flex, flex wrapping, iframes, pseudo-elements, counters, quotes, first letter, list markers, logical properties, text, containment, alignment, grid, columns, fragmentation, shapes, bidi, namespaces, counter styles, hyphens, colour spaces, colour schemes, nesting, container queries, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, text wrapping, ruby, vertical writing modes, the preload scanner |
+| `tests/render/` | the pipeline painting offscreen, checked with `getPixelColor`: general rendering, gradients, radial gradients, conic gradients, overflow clipping, clip paths, background images, generated content, object fitting, object view boxes, boxes a column break cut, borders, border images, text decoration, transforms, right-to-left text, box shadows, corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour, printed pages, vertical writing modes, the resize grabber, and the invariant that painting a page twice gives the same pixels |
 | `tests/conformance/` | the WPT tree-construction runner, and the three instruments that grade this engine against Chromium: CSS properties, default element displays, and selector matching |
 | `tests/chromium.py` | drives headless Chromium, so conformance, speed and painting have a yardstick; its `pixels` mode rasterizes a page and prints a row of it |
 | `tests/featurepage.py` | the second benchmark page, its control and the image both use, and the `--verify` mode that requires the page to still exercise every feature it claims to |

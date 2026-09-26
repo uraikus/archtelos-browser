@@ -263,4 +263,58 @@ checkEqInt(byId(prev.root, 'rve').y - colTop, 180,
            'column-reverse puts the first item against the bottom edge')
 checkEqInt(byId(prev.root, 'rvf').y - colTop, 150, 'and the second above it')
 
+// ---- a flex container's text becomes an anonymous item ---------------
+//
+// Flexbox 1 §4: each contiguous run of a flex container's text is
+// wrapped in an anonymous block flex item. Without that a text box is
+// an item with no layout, so a container holding nothing but text
+// collapses to nothing -- which is what this engine did, and what
+// `display: inline-flex` made visible.
+//
+// A `flex-direction: column` container counts the items, because it
+// stacks them: its height divided by the line height is how many there
+// are. Every number below is Chromium 141's, in todo.md.
+int func flexColHeight(inner:text) {
+    Page p = pageFromHtml(head
+        + '<div id="fc" style="display:flex;flex-direction:column;width:200px">'
+        + inner + '</div></body>', 'about:blank', 400)
+    Box c = byId(p.root, 'fc')
+    return c == null ? -1 : c.h
+}
+
+checkEqInt(flexColHeight('ABC'), 20, 'text alone is one item, one line tall')
+checkEqInt(flexColHeight('<span>A</span>'), 20, 'and an inline element alone is one item')
+checkEqInt(flexColHeight('<span>A</span><span>B</span>'), 40, 'two of them are two items')
+checkEqInt(flexColHeight('A<span>B</span>'), 40,
+           'an element child breaks the text run, so this is two items')
+checkEqInt(flexColHeight('A<span>B</span>C'), 60, 'and this is three')
+checkEqInt(flexColHeight('A<div>B</div>'), 40, 'a block child breaks it too')
+
+// Measured rather than derived: a forced line break does NOT break the
+// run. Three items would be 20 + 19 + 20; one item two lines tall is
+// 40, and 40 is what Chromium gives.
+checkEqInt(flexColHeight('A<br>B'), 40,
+           'a break stays inside the run, so this is one item two lines tall')
+
+// A run that is entirely whitespace produces no item at all, so the
+// container is empty rather than one line tall.
+checkEqInt(flexColHeight('   '), 0, 'whitespace alone makes no item')
+checkEqInt(flexColHeight('A <div>B</div>'), 40, 'and whitespace between two runs is dropped')
+
+// The check that needs no number: text and an element child laid out
+// as two items must come to what each of them comes to alone. It holds
+// at any line height and does not depend on either being known.
+checkEqInt(flexColHeight('A<span>B</span>'),
+           flexColHeight('ABC') + flexColHeight('<span>A</span>'),
+           'two items are the two heights, one above the other')
+
+// ---- and the row direction, which is where it was found -------------
+// An `inline-flex` span holding two lines is as tall as the two lines,
+// which is what a zero-height container was not.
+Page pif = pageFromHtml(head
+    + '<div id="ifcb" style="width:400px;line-height:20px">'
+    + '<span id="ifs" style="display:inline-flex;width:60px">A<br>B</span>'
+    + '</div></body>', 'about:blank', 400)
+checkEqInt(byId(pif.root, 'ifcb').h, 40, 'an inline-flex of two lines makes its line 40 tall')
+
 finish('flex')

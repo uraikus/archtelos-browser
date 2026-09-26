@@ -1,4 +1,5 @@
-import ../../src/css/parser.f
+import ../../src/css/cascade.f
+import ../../src/html/parser.f
 import ../assert.f
 
 Stylesheet s1 = parseStylesheet('/* c */ p, div.note > b { color: red; margin : 1px 2px !important }\n#x a[href^="http"]:first-child { display:none }')
@@ -13,7 +14,13 @@ Stylesheet s2 = parseStylesheet('a:hover { x: 1 } li:nth-child(odd) { y: 2 } p::
 //
 // `:nth-child(odd)` keeps its An+B form -- 2n+1 -- rather than the word
 // it was written as, because that is what the matcher works from.
-checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\np::before{2} { z: 3; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{0}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
+//
+// The `{1024}` inside `:not()` is the alternative's own specificity,
+// one class. It read `{0}` while an alternative was a bare compound the
+// dump wrapped in a `Selector` it never computed a specificity for; an
+// alternative is a whole selector now, so the number is the one the
+// cascade uses.
+checkEq(dumpStylesheet(s2), 'li:nth-child:2:1{1025} { y: 2; }\np::before{2} { z: 3; }\nh1 + p ~ em{3} { w: 4; }\ndiv:not(*.a{1024}){1025} { v: 5; }\n*#c.a.b{1050624} { u: 6; }\n', 'pseudo classes and combinators')
 
 cssViewportWidth = 500
 Stylesheet s3 = parseStylesheet('@charset "utf-8"; @import url(x.css); @media screen and (max-width: 600px) { p { a: 1 } } @media print { p { b: 2 } } @media (min-width: 900px), all { p { c: 3 } } @font-face { font-family: X; src: url(x) } @media not screen { p { d: 4 } } q { e: 5 }')
@@ -64,5 +71,137 @@ checkAnb('x', false, 0, 0, 'a letter that is not n')
 checkAnb('2n+', false, 0, 0, 'a sign with no integer after it')
 checkAnb('2n 1', false, 0, 0, 'a missing sign')
 checkAnb('2m+1', false, 0, 0, 'the wrong letter')
+
+// ---- CSS Syntax 3 §4.3: where a `/*` is not a comment ------------------
+// Comments are consumed by the tokenizer, so a `/*` inside a string or
+// inside an unquoted `url()` is ordinary characters. The scan that
+// strips them runs before anything else and has to know the same three
+// places the semicolon scan above already knows.
+//
+// The rule AFTER the one holding it is what these assert on: a comment
+// opened by mistake runs to the next `*/`, and where the sheet has none
+// it takes everything to the end -- so it is the second rule surviving
+// that says the scan stopped where it should.
+Stylesheet sq1 = parseStylesheet('p { font-family: "/*" } q { color: red }')
+checkEq(dumpStylesheet(sq1), 'p{1} { font-family: "/*"; }\nq{1} { color: red; }\n',
+        'a comment opener inside a double-quoted string is not a comment')
+Stylesheet sq2 = parseStylesheet("p { font-family: '/*' } q { color: red }")
+checkEq(dumpStylesheet(sq2), 'p{1} { font-family: \'/*\'; }\nq{1} { color: red; }\n',
+        'nor inside a single-quoted one')
+Stylesheet sq3 = parseStylesheet('p { background: url(a/*b.png) } q { color: red }')
+checkEq(dumpStylesheet(sq3), 'p{1} { background: url(a/*b.png); }\nq{1} { color: red; }\n',
+        'nor inside an unquoted url()')
+// The other direction, which is the one a fix can get wrong: a quote
+// inside a comment is ordinary text, and a comment ends at the FIRST
+// `*/` whatever follows it. So `/* " */` is a whole comment and the
+// rule after it survives...
+Stylesheet sq4 = parseStylesheet('p { a: 1 } /* " */ q { color: red }')
+checkEq(dumpStylesheet(sq4), 'p{1} { a: 1; }\nq{1} { color: red; }\n',
+        'a quote inside a comment is part of the comment')
+// ...while `/* "*/` ends at that `*/` and leaves a `"` open, which
+// swallows the rest of the sheet. Chromium loses the rule there too,
+// measured -- so this is what the scan must NOT fix.
+Stylesheet sq4b = parseStylesheet('p { a: 1 } /* "*/" */ q { color: red }')
+checkEq(dumpStylesheet(sq4b), 'p{1} { a: 1; }\n',
+        'and a comment ends at the first terminator, open quote or not')
+// A backslash escapes the next character, so the quote here does not
+// end the string and the `/*` after it is still inside one.
+Stylesheet sq5 = parseStylesheet('p { font-family: "a\\"/*" } q { color: red }')
+checkEq(dumpStylesheet(sq5), 'p{1} { font-family: "a\\"/*"; }\nq{1} { color: red; }\n',
+        'an escaped quote does not end the string the scan is in')
+// The ordinary case still works: a comment between two declarations is
+// removed, and one spanning a rule boundary takes what is between.
+Stylesheet sq6 = parseStylesheet('p { a: 1; /* gone */ b: 2 } /* r */ q { color: red }')
+checkEq(dumpStylesheet(sq6), 'p{1} { a: 1; b: 2; }\nq{1} { color: red; }\n',
+        'and a comment that is one is still stripped')
+
+// ---- CSS Syntax 3 §5.4.1: `<!--` and `-->` at the top level ------------
+// A CDO and a CDC are ignored where a rule is read. They are the
+// wrapper pages once put round a `<style>` element so a browser that
+// did not know the tag would not print its contents, and a sheet still
+// written that way has to parse as though they were not there.
+//
+// The rule BESIDE each one is what these assert on: unrecognised, the
+// token is swept into the selector next to it and that rule is lost.
+Stylesheet cdo1 = parseStylesheet('<!-- p { a: 1 } q { b: 2 } -->')
+checkEq(dumpStylesheet(cdo1), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'a sheet wrapped in an HTML comment parses as though it were not')
+Stylesheet cdo2 = parseStylesheet('p { a: 1 }\n--> q { b: 2 }')
+checkEq(dumpStylesheet(cdo2), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'and a stray CDC between two rules takes neither')
+Stylesheet cdo3 = parseStylesheet('p { a: 1 } <!-- q { b: 2 }')
+checkEq(dumpStylesheet(cdo3), 'p{1} { a: 1; }\nq{1} { b: 2; }\n',
+        'nor a stray CDO')
+// A `-->` that follows name characters is not a CDC at all: the ident
+// takes the two hyphens, because both are name code points, and the
+// `>` that is left is a child combinator. Chromium's `selectorText`
+// for `a-->b` is `a-- > b`, asked of it directly rather than inferred
+// from a render -- and this is the check that stops a CDC skip from
+// cutting such a selector in half.
+Stylesheet cdo4 = parseStylesheet('a-->b { c: 3 }')
+checkEq(dumpStylesheet(cdo4), 'a-- > b{2} { c: 3; }\n',
+        'a `-->` after name characters is a hyphen pair and a combinator')
+
+// ---- the at-rules this parser skips -----------------------------------
+// Derived from the source rather than from memory (CLAUDE.md): the
+// parser recognises exactly seven at-rules -- `@media`, `@supports`,
+// `@layer`, `@page`, `@counter-style`, `@container` and `@namespace` --
+// and each of those has a suite of its own. What had nothing was the
+// other half of the dispatch: `@font-face`, `@keyframes`, `@import`
+// and anything unknown are stepped over, and stepping over them is a
+// brace-counting problem that nothing was asking about.
+//
+// `@keyframes` is the one with teeth, because its body holds blocks of
+// its own: a skip that stopped at the first `}` would leave
+// `100% { color: red }` behind as a rule and `color: red` would reach
+// the page. Every expected colour is Chromium 141's, asked of the same
+// stylesheet. Blue is the rule *after* the skipped one, so blue means
+// the parser stepped over exactly the right span -- not too little,
+// which would leak, and not too much, which would swallow what follows.
+int apRed = packColor(255, 0, 0, 255)
+int apBlue = packColor(0, 0, 255, 255)
+int apBlack = packColor(0, 0, 0, 255)
+
+void func atSkipIs(css:text, want:int, label:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css
+        + '</style></head><body><p id="t">x</p></body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    int got = findElement(d, 'p').style.color
+    if got == want { checksPassed++ } else {
+        checksFailed++
+        log(`FAIL: ${label}: got rgb(${colorRed(got)}, ${colorGreen(got)}, ${colorBlue(got)})`)
+    }
+}
+
+// The rule that reveals a short skip has to be the *last* thing in the
+// sheet and has to match: a leaked rule followed by the real one loses
+// to it on source order, and a leaked keyframe selector like `100%`
+// matches nothing whatever. The first version of these checks had both
+// faults and passed against a `skipBlock` deliberately broken to stop
+// at the first `}`, which is how they came to be written this way.
+atSkipIs('@keyframes k { 0% { color: red } p { color: red } }', apBlack,
+         '`@keyframes` and its inner blocks are stepped over together')
+atSkipIs('@nonsense { x { y: 1 } p { color: red } }', apBlack,
+         'and so are an unknown at-rule and the blocks inside it')
+atSkipIs('@keyframes k { 0% { color: red } p { color: red } } p { color: blue }',
+         apBlue, 'while the rule after one is still reached')
+atSkipIs('@nonsense { content: "}" p { color: red } }', apBlack,
+         'a closing brace inside a string does not end the skip early')
+atSkipIs('@font-face { font-family: x; color: red } p { color: blue }',
+         apBlue, '`@font-face` is stepped over')
+atSkipIs('@import url(x.css); p { color: blue }', apBlue,
+         'and `@import`, which ends at its semicolon rather than a block')
+atSkipIs('@nonsense foo { color: red } p { color: blue }', apBlue,
+         'an at-rule this parser has never heard of is stepped over too')
+atSkipIs('@nonsense foo; p { color: blue }', apBlue,
+         'in its statement form as well')
+atSkipIs('@media all { @nonsense x { color: red } p { color: blue } }', apBlue,
+         'and inside a block at-rule that is not skipped')
+// An unclosed block swallows the rest of the sheet, in Chromium too:
+// there is no rule after it because the `{` never ended.
+atSkipIs('@nonsense foo { color: red', apBlack,
+         'an unclosed at-rule takes the rest of the stylesheet with it')
 
 finish('css parser')

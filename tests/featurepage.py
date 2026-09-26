@@ -87,6 +87,34 @@ def png(path, w, h):
 # document's own <style>, so `tests/chromium.py render` -- which adopts
 # the head's <style> elements along with the body -- gives both engines
 # the same cascade to do.
+NEGMARGIN_CSS = """
+.pull1{height:34px;background:#e8dcc8;padding:4px}
+.pull2{height:34px;background:#cfe3d4;padding:4px;margin-top:-18px;margin-left:24px}
+"""
+
+SMALLCAPS_CSS = """
+.caps{font-variant-caps:small-caps;letter-spacing:0}
+"""
+
+# CSS2 §9.9 paints a non-positioned float at step 4, between the in-flow
+# block-level descendants and the in-flow inline content, so a page with
+# a float on it walks its box tree once more than a page without one.
+# The float is given enough text beside it to be taller than it is, so
+# it stays inside its own container and nothing after it paints over
+# where it is -- the paint order moves, the pixels do not, which is what
+# a paired benchmark of this needs.
+FLOAT_CSS = """
+.flow{margin:8px 0}
+.flow .fl{float:left;width:90px;height:60px;background:#dfe6ee;
+          border:1px solid #ccd;margin:0 10px 6px 0}
+.flow p{margin:0 0 4px 0}
+"""
+
+ZSTACK_CSS = """
+.zstack{position:relative;width:220px;height:34px;background:#dde6f0;margin:6px 0}
+.zback{position:absolute;z-index:-1;left:0;top:0;width:220px;height:34px;background:#c0392b}
+"""
+
 FEATURES_CSS = """
 body{font-family:sans-serif;margin:20px;line-height:1.5;counter-reset:part}
 h2{color:#234;border-bottom:1px solid #ccd;counter-increment:part}
@@ -96,7 +124,8 @@ h2::before{content:"Part " counter(part) ". ";color:#667}
 .wide .pic{grid-area:pic}
 .wide .note{grid-area:note}
 .wide .meta{grid-area:meta;color:#667}
-figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc}
+figure{margin:0;border:1px solid #ccd;border-radius:6px;padding:6px;background:#f8f8fc;
+       outline:1px solid #c8cee0;box-shadow:inset 0 0 0 2px #e6ebf5, inset 0 0 6px 0 #d3dcee}
 img{width:96px;height:64px;object-fit:cover;object-position:center}
 .tall img{object-fit:contain}
 figcaption{font-size:12px;color:#556}
@@ -122,6 +151,8 @@ th{background:#dde}
 # generated counters become no generated content at all, `object-fit`
 # goes back to its initial value and the form controls stop being
 # painted as form controls.
+FEATURES_CSS = FEATURES_CSS + ZSTACK_CSS + NEGMARGIN_CSS + SMALLCAPS_CSS + FLOAT_CSS
+
 PLAIN_CSS = FEATURES_CSS + """
 h2::before{content:none}
 .cards{display:block}
@@ -133,6 +164,8 @@ img{object-fit:fill;object-position:0 0}
 .cols{column-count:1}
 .steps li::before{content:none}
 .controls input{appearance:none;field-sizing:fixed}
+.flow .fl{float:none}
+figure{outline:none;box-shadow:none}
 """
 
 # One rule per feature, each turning that feature off, and the whole
@@ -148,6 +181,43 @@ PROBES = (
     ('appearance', '.controls input{appearance:none}'),
     ('accent-color', '.controls input{accent-color:#000}'),
     ('field-sizing', '.controls input[type=text]{field-sizing:fixed}'),
+    # `::placeholder` paints the user agent's grey. Turning it to the
+    # input's own colour is what a page with no placeholder on it cannot
+    # tell apart -- which is why the page has one.
+    ('placeholder', '.controls input::placeholder{color:#000}'),
+    # CSS2 §9.9: the `z-index: -1` box belongs to the nearest ancestor
+    # stacking context, so it paints behind its parent's background.
+    # Making the parent a context puts it in front, which is the whole
+    # of the painting order in one pixel.
+    ('stacking-order', '.zstack{z-index:0}'),
+    # Synthesised small caps draws the lowercase letters of a run at 0.7
+    # of the font size. Turning the keyword off puts them back at the
+    # full size, which rewraps the paragraph -- a page with no
+    # `font-variant` on it cannot tell the two apart.
+    ('small-caps', '.caps{font-variant-caps:normal}'),
+    # A negative `margin-top` pulls the second box up over the first.
+    # Setting it to zero puts them back apart, which moves every box
+    # below them and so the whole page.
+    ('negative-margin', '.pull2{margin-top:0}'),
+    # Two inset shadows, one of each kind: the unblurred one is two runs
+    # a row between the padding box's curve and the hole's, and the
+    # blurred one is the strips plus a correction blit per corner. `figure` has a `border-radius`, so turning the shadow off
+    # takes that path away -- and nothing else on the page casts a
+    # shadow at all, so without this row the whole of `box-shadow` is
+    # unmeasured here.
+    ('inset-shadow', 'figure{box-shadow:none}'),
+    # An outline paints in a pass of its own, above the in-flow content
+    # and below anything positioned, so a page with one on it walks the
+    # marks the first pass left. `figure` is a plain in-flow block
+    # rather than the badge beside it, which has a `transform` and so
+    # paints whole and draws its own outline inside itself -- the pass
+    # this measures would never see it.
+    ('outline', 'figure{outline:none}'),
+    # A float paints at step 4, above the in-flow blocks and below the
+    # in-flow inline content, and a page with one on it walks its box
+    # tree a third time. Taking the float away reflows the text that
+    # was beside it, so a page without one cannot tell the two apart.
+    ('float', '.flow .fl{float:none}'),
     ('object-fit', 'img{object-fit:fill}'),
     ('object-position', 'img{object-position:0 0}'),
     ('images', 'img{display:none}'),
@@ -193,7 +263,16 @@ def body():
                     '<label><input type="radio" name="m%d" checked> best</label> '
                     '<label><input type="radio" name="m%d"> mean</label> '
                     '<input type="text" value="section %d"> '
-                    '<button type="button">run</button></form>' % (s, s, s))
+                    '<input type="text" placeholder="search section %d"> '
+                    '<button type="button">run</button></form>' % (s, s, s, s)),
+        rows.append('<p class="caps">small capitals drawn from capitals at '
+                    'seven tenths of the size</p>')
+        rows.append('<div class="zstack"><div class="zback"></div>'
+                    'behind and in front</div>')
+        rows.append('<div class="pull1">pulled</div>'
+                    '<div class="pull2">up over it</div>')
+        rows.append('<div class="flow"><div class="fl"></div><p>%s</p>'
+                    '<p>%s</p></div>' % (paragraph(s + 2, 20), paragraph(s + 5, 18)))
         rows.append('<table><tr><th>Name</th><th>Kind</th><th>Value</th></tr>')
         for i in range(6):
             rows.append('<tr><td>row %d.%d</td><td>kind %d</td><td>%d</td></tr>'

@@ -216,4 +216,187 @@ Box rBrPlain = layoutHtml('<body><div style="width:200px">aa<br>bb</div></body>'
 check(lineLeft(findBox(rBr, 'div'), 0) > lineLeft(findBox(rBrPlain, 'div'), 0),
       'the line before a forced break takes text-align-last')
 
+// ---- font-variant-caps, synthesised (CSS Fonts 4) ----------------------
+// No face here carries a small-caps feature, so a browser synthesises
+// it: a lowercase letter is drawn as its uppercase at 0.7 of the font
+// size, per character. Measured in Chromium first (todo.md).
+//
+// Every check is a relation rather than an advance worked out here: a
+// small-caps run must measure what the same letters uppercased measure
+// at the smaller size, which is the same statement as "drawn as
+// uppercase at 0.7" said in widths.
+
+int func runWidth(decl:text, body:text) {
+    Box r = layoutHtml(`<body style="margin:0;font:40px/60px monospace"><div id="t" style="float:left;${decl}">${body}</div></body>`, 800)
+    Box t = findBox(r, 'div')
+    return t == null ? 0 - 1 : t.w
+}
+
+int plainLower = runWidth('', 'abc')
+int plainUpper = runWidth('', 'ABC')
+int smallOfUpper = runWidth('font-size:28px', 'ABC')
+checkEqInt(plainUpper, plainLower, 'monospace gives upper and lower the same advance')
+check(smallOfUpper < plainUpper, 'and 0.7 of the size is narrower')
+
+checkEqInt(runWidth('font-variant-caps:small-caps', 'abc'), smallOfUpper,
+           'small-caps measures its lowercase as uppercase at 0.7 of the size')
+checkEqInt(runWidth('font-variant-caps:small-caps', 'ABC'), plainUpper,
+           'and leaves an uppercase letter at the full size')
+checkEqInt(runWidth('font-variant-caps:all-small-caps', 'ABC'), smallOfUpper,
+           'all-small-caps shrinks the uppercase too')
+checkEqInt(runWidth('font-variant-caps:all-small-caps', 'abc'), smallOfUpper,
+           'and its lowercase with it')
+
+// Per character rather than per run: one full-size letter and two small
+// ones, which is the sum of the two runs above over one letter each.
+checkEqInt(runWidth('font-variant-caps:small-caps', 'aBc'),
+           Math.floorDiv(plainUpper, 3) + Math.floorDiv(smallOfUpper, 3) * 2,
+           'the size is chosen letter by letter, not for the run')
+
+// The shorthand reaches the same value as the longhand.
+checkEqInt(runWidth('font-variant:small-caps', 'abc'),
+           runWidth('font-variant-caps:small-caps', 'abc'),
+           'the font-variant shorthand sets the same thing')
+
+// ---- font-synthesis-small-caps (CSS Fonts 4 §5.3) ----------------------
+// Small caps here ARE the synthesis -- no face this engine can reach
+// carries the feature -- so `font-synthesis-small-caps: none` has
+// something real to decline, and declining it must put the run back at
+// the width it has with no `font-variant-caps` at all. Chromium's
+// widths are in todo.md; every check below is that agreement rather
+// than a number.
+
+int func nestWidth(outer:text, inner:text, body:text) {
+    Box r = layoutHtml(`<body style="margin:0;font:40px/60px monospace">` +
+        `<div style="float:left;${outer}"><span id="t" style="${inner}">${body}</span></div></body>`, 800)
+    Box t = findBox(r, 'div')
+    return t == null ? 0 - 1 : t.w
+}
+
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none', 'abc'),
+           plainLower, 'declining the synthesis puts small caps back at full size')
+checkEqInt(runWidth('font-variant-caps:all-small-caps;font-synthesis-small-caps:none', 'ABC'),
+           plainUpper, 'and all-small-caps with it')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'auto is the initial value and leaves the synthesis on')
+
+// The shorthand names what MAY be synthesised, so the small-caps
+// component's absence is a refusal.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:none', 'abc'),
+           plainLower, 'font-synthesis: none declines it too')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:weight style', 'abc'),
+           plainLower, 'and so does a list that leaves small-caps out')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:weight style small-caps', 'abc'),
+           smallOfUpper, 'a list that names it leaves the synthesis on')
+
+// It inherits, and a child takes it back.
+checkEqInt(nestWidth('font-synthesis-small-caps:none', 'font-variant-caps:small-caps', 'abc'),
+           plainLower, 'the refusal inherits to a child that asks for small caps')
+checkEqInt(nestWidth('font-synthesis-small-caps:none',
+                     'font-variant-caps:small-caps;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'and the child can take it back')
+
+// The shorthand and the longhand compete on source order, as every
+// other pair in this engine does.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none;font-synthesis:weight style small-caps', 'abc'),
+           smallOfUpper, 'a later font-synthesis beats an earlier longhand')
+// `auto` is not one of the shorthand's values -- the grammar is `none`
+// or a list of the things that MAY be synthesised -- so this is an
+// invalid declaration dropped, and the longhand before it stands.
+// Chromium answers the same, which is what says the drop is right.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none;font-synthesis:auto', 'abc'),
+           plainLower, 'font-synthesis: auto is invalid and changes nothing')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:bogus', 'abc'),
+           smallOfUpper, 'and so is an unknown keyword, leaving the initial value')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:none;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'and a later longhand beats an earlier font-synthesis')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:auto;font-synthesis:none', 'abc'),
+           plainLower, 'the other way round for each')
+
+// The instrument: the two widths this section compares must differ, or
+// every check above holds on an engine that never synthesised at all.
+check(smallOfUpper != plainLower, 'a synthesised small cap and a full-size letter are different widths')
+
+// ---- a shorthand and its longhand must compete -------------------------
+// `white-space` is a shorthand for `white-space-collapse` and
+// `text-wrap-mode`, and `text-wrap` is a shorthand for
+// `text-wrap-mode` and `text-wrap-style`. Both were read beside their
+// longhands rather than expanded into them, with the shorthand read
+// first, so a longhand won whatever the source order was and the
+// cascade never decided. Each check below is one declaration block, so
+// the order within it is the whole question, and each is paired with
+// the other order: an engine that always prefers one of the two passes
+// half of them whichever it prefers. Every expectation is Chromium
+// 141's, read with getComputedStyle off the same block.
+checkEqInt(styleOf('white-space-collapse:preserve;white-space:normal').whiteSpaceCollapse,
+           WSC_COLLAPSE, 'a later `white-space` beats an earlier `white-space-collapse`')
+checkEqInt(styleOf('white-space:normal;white-space-collapse:preserve').whiteSpaceCollapse,
+           WSC_PRESERVE, 'and the other order gives the other answer')
+checkEqInt(styleOf('text-wrap-mode:nowrap;white-space:normal').textWrapMode,
+           WRAP_WRAP, 'a later `white-space` beats an earlier `text-wrap-mode`')
+checkEqInt(styleOf('white-space:pre;text-wrap-mode:wrap').textWrapMode,
+           WRAP_WRAP, 'and a later `text-wrap-mode` beats the shorthand')
+checkEqInt(styleOf('white-space:pre;text-wrap-mode:wrap').whiteSpaceCollapse,
+           WSC_PRESERVE, 'while leaving the half it does not name alone')
+
+// `text-wrap` sets the mode as well as the style. The mode half was not
+// implemented at all: the style keyword was read out of the shorthand
+// and nothing read the mode keyword, so `text-wrap: nowrap` did
+// nothing whatever.
+checkEqInt(styleOf('text-wrap:nowrap').textWrapMode, WRAP_NOWRAP,
+           '`text-wrap: nowrap` stops the line wrapping')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:nowrap')), TWS_AUTO,
+           'and leaves the style half at its initial value')
+checkEqInt(styleOf('text-wrap:balance').textWrapMode, WRAP_WRAP,
+           '`text-wrap: balance` leaves the mode half at its initial value')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:balance')), TWS_BALANCE,
+           'and sets the style half')
+checkEqInt(styleOf('text-wrap:wrap balance').textWrapMode, WRAP_WRAP,
+           'both halves named, the mode')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:wrap balance')), TWS_BALANCE,
+           'and the style')
+
+// A shorthand sets every longhand it has, including the ones it does
+// not name, which is the half a reader applying it first gets wrong in
+// the other direction.
+checkEqInt(textWrapStyleOf(styleOf('text-wrap-style:balance;text-wrap:wrap')),
+           TWS_AUTO, '`text-wrap` resets the style half it does not name')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap:balance;text-wrap-style:stable')),
+           TWS_STABLE, 'and a later longhand still replaces it')
+checkEqInt(styleOf('text-wrap-mode:nowrap;text-wrap:balance').textWrapMode,
+           WRAP_WRAP, 'and it resets the mode half it does not name')
+
+// The two shorthands share `text-wrap-mode`, so one written after the
+// other decides it. This is the pair that cannot be got right by
+// reading the shorthands in a fixed order.
+checkEqInt(styleOf('white-space:nowrap;text-wrap:wrap').textWrapMode,
+           WRAP_WRAP, '`text-wrap` after `white-space` decides the mode')
+checkEqInt(styleOf('text-wrap:wrap;white-space:nowrap').textWrapMode,
+           WRAP_NOWRAP, 'and `white-space` after `text-wrap` decides it the other way')
+checkEqInt(styleOf('white-space:pre;text-wrap:wrap').whiteSpaceCollapse,
+           WSC_PRESERVE, 'while `text-wrap` leaves the collapsing alone')
+
+// An invalid value drops the whole declaration rather than the half of
+// it that parsed, so what came before still stands.
+checkEqInt(styleOf('white-space-collapse:preserve;white-space:nonsense').whiteSpaceCollapse,
+           WSC_PRESERVE, 'an unknown `white-space` drops the whole declaration')
+checkEqInt(textWrapStyleOf(styleOf('text-wrap-style:balance;text-wrap:wrap nonsense')),
+           TWS_BALANCE, 'and an unknown half drops the whole `text-wrap`')
+
+// Every `white-space` keyword against the pair of longhands it stands
+// for, so the expansion is checked against the thing it must agree with
+// rather than against a remembered enum.
+checkSameWhiteSpace('white-space:normal', 'white-space-collapse:collapse;text-wrap-mode:wrap',
+                    '`normal` is collapse and wrap')
+checkSameWhiteSpace('white-space:pre', 'white-space-collapse:preserve;text-wrap-mode:nowrap',
+                    '`pre` is preserve and nowrap')
+checkSameWhiteSpace('white-space:nowrap', 'white-space-collapse:collapse;text-wrap-mode:nowrap',
+                    '`nowrap` is collapse and nowrap')
+checkSameWhiteSpace('white-space:pre-wrap', 'white-space-collapse:preserve;text-wrap-mode:wrap',
+                    '`pre-wrap` is preserve and wrap')
+checkSameWhiteSpace('white-space:pre-line', 'white-space-collapse:preserve-breaks;text-wrap-mode:wrap',
+                    '`pre-line` is preserve-breaks and wrap')
+checkSameWhiteSpace('white-space:break-spaces', 'white-space-collapse:break-spaces;text-wrap-mode:wrap',
+                    '`break-spaces` is break-spaces and wrap')
+
 finish('text')

@@ -45,7 +45,36 @@ const int SUBSEL_HAS = 3
 
 struct SubSelector {
     kind:int
-    alternatives:arr[Compound]
+    // Selectors 4 §3.1 gives `:is()`, `:where()`, `:not()` and `:has()`
+    // a <complex-selector-list>, not a list of compounds, so each
+    // alternative is a whole selector: `:is(div > p)` is one of them.
+    alternatives:arr[Selector]
+    // `:has()`'s argument is a *relative* selector list, so each
+    // alternative may open with a combinator naming how the match
+    // stands to the element being tested: COMB_CHILD for `:has(> p)`,
+    // COMB_ADJACENT for `:has(+ p)`, COMB_SIBLING for `:has(~ p)`, and
+    // COMB_DESCENDANT for the bare `:has(p)`. One per alternative,
+    // because `:has(> p, + div)` names two different relations and
+    // Chromium answers both.
+    leads:arr[int]
+}
+
+// `:nth-child( <An+B> of <complex-selector-list> )` and its
+// `:nth-last-child()` twin (Selectors 4 §6.6.5). The `of` clause filters
+// *which siblings are counted* before An+B is applied to the position,
+// so `:nth-child(2 of .lead)` is the second `.lead` among its siblings
+// rather than a `.lead` that happens to be second.
+//
+// It is a list of its own rather than another entry in `pseudos`,
+// because `pseudos` holds text and this needs whole selectors. A
+// compound with no `of` clause has an empty one, and the matcher is
+// guarded by its length -- the plain `:nth-child(2n+1)` still goes
+// through `pseudos` and costs exactly what it did.
+struct NthOf {
+    fromEnd:bool
+    stepA:int
+    offB:int
+    of:arr[Selector]
 }
 
 struct Compound {
@@ -67,6 +96,8 @@ struct Compound {
     // all four because they differ only in how a match is read, which
     // is what `kind` says.
     subs:arr[SubSelector]
+    // The `:nth-child()`s that carry an `of` clause; see NthOf.
+    nths:arr[NthOf]
     combinator:int          // relation to the compound on its LEFT
     unsupported:bool
 }
@@ -224,14 +255,91 @@ int cssCurrentLayer = CASCADE_NO_LAYER
 text cssCurrentLayerName = ''
 int cssAnonymousLayers = 0
 
+// The place each declared layer takes in the cascade, which is not the
+// order it was declared in: CSS Cascade 5 nests `a.b` inside `a`, so
+// the sub-layer takes `a`'s place in the outer order, and within `a`
+// the sub-layers come first and `a`'s own rules last. A rule is stamped
+// with the layer's declaration index, and this turns that into the rank
+// the weight is built from.
+arr[int] cssLayerRank = []
+
 void func cssResetLayers() {
     arr[text] emptyNames = []
     map[int] emptyIndex = {}
+    arr[int] emptyRank = []
     cssLayerNames = emptyNames
     cssLayerIndex = emptyIndex
+    cssLayerRank = emptyRank
     cssCurrentLayer = CASCADE_NO_LAYER
     cssCurrentLayerName = ''
     cssAnonymousLayers = 0
+}
+
+// The declaration indices of a layer and every layer it is nested in,
+// outermost first. `declareLayer` declares every ancestor before the
+// layer itself, so each of them is known here.
+arr[int] func cssLayerPath(at:int) {
+    arr[int] path = []
+    ascii full = cssLayerNames[at].toAscii()
+    for int i = 0, i < full.length, i++ {
+        if full.charCodeAt(i) != CH_DOT { continue }
+        int anc = cssLayerIndex[full.slice(0, i).toText()]
+        if anc != null { path.push(anc) }
+    }
+    path.push(at)
+    return path
+}
+
+// Which of two layers comes first. The paths are compared term by term,
+// and where one is a prefix of the other the **deeper** one comes
+// first, because a layer's own rules come after everything nested in
+// it.
+int func cssComparePaths(a:arr[int], b:arr[int]) {
+    int m = a.length < b.length ? a.length : b.length
+    for int i = 0, i < m, i++ {
+        if a[i] != b[i] { return a[i] < b[i] ? 0 - 1 : 1 }
+    }
+    if a.length == b.length { return 0 }
+    return a.length > b.length ? 0 - 1 : 1
+}
+
+// Computes `cssLayerRank`. Called once before a cascade pass rather
+// than as layers are declared, because a layer's place depends on
+// layers that may not have been named yet. A page with no `@layer` on
+// it returns on the first line.
+void func cssComputeLayerRanks() {
+    int n = cssLayerNames.length
+    arr[int] ranks = []
+    if n == 0 { cssLayerRank = ranks  return }
+    arr[arr[int]] paths = []
+    arr[int] order = []
+    for int i = 0, i < n, i++ {
+        paths.push(cssLayerPath(i))
+        order.push(i)
+        ranks.push(0)
+    }
+    // n is at most CASCADE_MAX_LAYERS, so an insertion sort is the
+    // right shape: it runs once per document and never on a page with
+    // no layers.
+    for int i = 1, i < n, i++ {
+        int cur = order[i]
+        int j = i - 1
+        while j >= 0 && cssComparePaths(paths[order[j]], paths[cur]) > 0 {
+            order[j + 1] = order[j]
+            j--
+        }
+        order[j + 1] = cur
+    }
+    for int i = 0, i < n, i++ { ranks[order[i]] = i }
+    cssLayerRank = ranks
+}
+
+// The rank of a layer, or the layer itself where no ranks have been
+// computed -- which is what `CASCADE_NO_LAYER` and a direct call to
+// `matchWeight` both want.
+int func cssLayerRankOf(layer:int) {
+    if layer < 0 || layer >= cssLayerRank.length { return layer }
+    return cssLayerRank[layer]
 }
 
 // The index of a layer, declaring it -- and every layer it is nested in
@@ -322,6 +430,26 @@ CounterStyle func parseCounterStyleBody(body:ascii) {
                 if w != null { c.padTo = w }
                 c.padSymbol = unquoteCssString(parts[1])
             }
+        } else if name == 'range' {
+            // `[ <integer> | infinite ]{2}` -- the multi-range form is
+            // not taken, because nothing measured says what this engine
+            // should do with a gap between two of them.
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if asciiLower(asciiTrim(value)) == 'auto' { c.hasRange = false }
+            else if parts.length >= 2 {
+                text lo = asciiLower(parts[0]).toText()
+                text hi = asciiLower(parts[1]).toText()
+                int a = lo == 'infinite' ? 0 - 1000000000 : lo.toInt()
+                int b = hi == 'infinite' ? 1000000000 : hi.toInt()
+                if a != null && b != null {
+                    c.rangeMin = a
+                    c.rangeMax = b
+                    c.hasRange = true
+                }
+            }
+        } else if name == 'fallback' {
+            arr[ascii] parts = namespacePreludeTokens(value)
+            if parts.length >= 1 { c.fallback = asciiLower(parts[0]).toText() }
         } else if name == 'negative' {
             arr[ascii] parts = namespacePreludeTokens(value)
             if parts.length >= 1 { c.negPrefix = unquoteCssString(parts[0]) }
@@ -453,14 +581,60 @@ void func setCssViewport(w:int, h:int) {
 
 // ---- comments and block skipping -----------------------------------
 
+// Comments are consumed by the tokenizer (CSS Syntax 3 §4.3), so a
+// `/*` is only a comment where a token can begin: not inside a string,
+// and not inside an unquoted `url()`. A scan that did not know that
+// turned `content: "/*"` into a comment running to the end of the
+// stylesheet and dropped every rule after it.
+//
+// The other direction matters as much and is the easier one to get
+// wrong: a comment ends at the FIRST `*/` whatever is inside it, so a
+// quote there is ordinary text and `/* "*/` really does leave a string
+// open. Chromium loses the rest of that sheet and so does this, which
+// the suite asserts.
+//
+// A page with no comment in it at all pays one `asciiIndexOf`, as it
+// did before.
 ascii func stripCssComments(src:ascii) {
     if asciiIndexOf(src, '/*', 0) < 0 { return src }
     text out = ''
     int n = src.length
     int runStart = 0
     int i = 0
+    // 0 outside anything, otherwise the character that ends the run:
+    // a quote for a string, ')' for an unquoted url().
+    int closer = 0
+    // Built once rather than per character: this loop visits every byte
+    // of every stylesheet, and an `ascii` allocated inside it would be
+    // one allocation per byte.
+    ascii urlOpen = 'url('.toAscii()
     while i < n {
-        if src.charCodeAt(i) == CH_SLASH && i + 1 < n && src.charCodeAt(i + 1) == CH_STAR {
+        int c = src.charCodeAt(i)
+        if closer != 0 {
+            // A backslash escapes the next character inside a string.
+            // An unquoted url() takes one too (§4.3.6), so both are
+            // handled the same way here.
+            if c == CH_BACKSLASH { i = i + 2  continue }
+            if c == closer { closer = 0 }
+            i++
+            continue
+        }
+        if c == CH_QUOTE || c == CH_APOS { closer = c  i++  continue }
+        // `url(` opens a run only when what follows is unquoted; a
+        // quoted one is an ordinary string and the branch above takes
+        // it at the quote.
+        // The letter is tested first so that the prefix compare runs
+        // only where it can match: `u` or `U` and nothing else.
+        if (c == 117 || c == 85) && asciiStartsWithLower(src, urlOpen, i) {
+            int j = i + 4
+            while j < n && isSpaceCode(src.charCodeAt(j)) { j++ }
+            if j < n && src.charCodeAt(j) != CH_QUOTE && src.charCodeAt(j) != CH_APOS {
+                closer = CH_RPAREN
+            }
+            i = j
+            continue
+        }
+        if c == CH_SLASH && i + 1 < n && src.charCodeAt(i + 1) == CH_STAR {
             if i > runStart {
                 text run = src.slice(runStart, i).toText()
                 out = out + run
@@ -576,6 +750,20 @@ Decl func parseOneDeclaration(piece:ascii) {
     // says one pays a single boolean instead. See cascadeReset, which
     // clears it with everything else the document put here.
     if asciiStartsWith(name, 'page-break', 0) { anyPageBreak = true }
+    if asciiStartsWith(name, 'place-', 0) { anyPlaceShorthand = true }
+    // Prefixes rather than the eight exact names: a longhand that
+    // matches one only sets a flag the page was going to pay for
+    // anyway, and this runs once per parsed declaration rather than
+    // once per matched one.
+    if asciiStartsWith(name, 'flex', 0) || asciiStartsWith(name, 'outline', 0)
+        || asciiStartsWith(name, 'gap', 0) || asciiStartsWith(name, 'text-box', 0)
+        || asciiStartsWith(name, 'overscroll', 0)
+        || asciiStartsWith(name, 'font-variant', 0)
+        || asciiStartsWith(name, 'border-radius', 0)
+        || asciiStartsWith(name, 'column-rule', 0)
+        || asciiStartsWith(name, 'contain-intrinsic', 0) {
+        anyLateShorthand = true
+    }
     d.value = value
     d.important = important
     d.serial = declSerialNext
@@ -594,6 +782,22 @@ Decl func parseOneDeclaration(piece:ascii) {
 // "one value out of a function".
 int anbA = 0
 int anbB = 0
+
+// The index of the `of` keyword in a `:nth-child()` argument, or -1.
+// It has to be a token of its own: `1of p` is one identifier and a
+// syntax error, and `.info` holds an `of` that is part of a class name.
+// The argument arrives lowercased.
+int func nthOfKeywordAt(a:ascii) {
+    int n = a.length
+    for int i = 0, i + 1 < n, i++ {
+        if a.charCodeAt(i) != 111 { continue }            // o
+        if a.charCodeAt(i + 1) != 102 { continue }        // f
+        if i == 0 || !isSpaceCode(a.charCodeAt(i - 1)) { continue }
+        if i + 2 >= n || !isSpaceCode(a.charCodeAt(i + 2)) { continue }
+        return i
+    }
+    return 0 - 1
+}
 
 bool func parseAnPlusB(argIn:ascii) {
     ascii a = asciiTrim(argIn)
@@ -648,15 +852,106 @@ Compound func newCompound() {
 int selPos = 0
 ascii selSrc = ''
 
+// The index just past the escape that begins at `at`, which must be a
+// backslash (CSS Syntax 3 §4.3.7). A backslash before hex digits takes
+// up to six of them and then one whitespace character, which is the
+// escape's terminator rather than part of what follows; before anything
+// else it takes that one character.
+int func cssEscapeEnd(s:ascii, at:int) {
+    int n = s.length
+    if at + 1 >= n { return at + 1 }
+    if !isHexCode(s.charCodeAt(at + 1)) { return at + 2 }
+    int i = at + 1
+    int last = minInt(at + 6, n - 1)
+    while i <= last && isHexCode(s.charCodeAt(i)) { i++ }
+    if i < n && isSpaceCode(s.charCodeAt(i)) { i++ }
+    return i
+}
+
+// An identifier with its escapes decoded. The answer is `text` rather
+// than `ascii` because a code point above 127 is a real character here:
+// the tokenizer expands the document's own escapes, so an element's
+// class attribute holds `café` and not the form `src/html/decode.f`
+// rewrites the bytes into. A selector has to spell it the same way or
+// the two can never meet -- which was measured before this was written,
+// by asking what the DOM actually stores.
+//
+// An identifier with no backslash in it is handed straight back, so an
+// ordinary page pays one search per name.
+text func cssDecodeIdent(a:ascii) {
+    if a == null { return null }
+    if asciiIndexOf(a, '\\', 0) < 0 { return a.toText() }
+    text out = ''
+    int n = a.length
+    int i = 0
+    while i < n {
+        int c = a.charCodeAt(i)
+        if c != CH_BACKSLASH { out = out + c.toChar()  i++  continue }
+        if i + 1 >= n { break }
+        int end = cssEscapeEnd(a, i)
+        if !isHexCode(a.charCodeAt(i + 1)) {
+            out = out + a.charCodeAt(i + 1).toChar()
+            i = end
+            continue
+        }
+        int cp = 0
+        int j = i + 1
+        while j < end && isHexCode(a.charCodeAt(j)) { cp = cp * 16 + hexValue(a.charCodeAt(j))  j++ }
+        // §4.3.7 replaces zero, a surrogate and anything past the last
+        // code point with U+FFFD. 55296..57343 are the surrogates and
+        // 1114111 is the last code point; Festina takes no hex literal,
+        // so they are written out.
+        if cp == 0 || (cp >= 55296 && cp <= 57343) || cp > 1114111 { cp = 65533 }
+        out = out + cp.toChar()
+        i = end
+    }
+    return out
+}
+
+// Whether the identifier `scanIdent` just walked held an escape. The
+// scan has already looked at every byte of it, so asking again would be
+// a second pass over every name on the page: one stylesheet of 6,000
+// selectors paid a millisecond for it. Read it immediately after the
+// call that set it -- `identAt` below is the only way in.
+bool scanIdentEscaped = false
+
 int func scanIdent(from:int) {
     int i = from
     int n = selSrc.length
+    scanIdentEscaped = false
     while i < n {
         int c = selSrc.charCodeAt(i)
-        if isNameCode(c) || c == CH_BACKSLASH { i++ }
-        else { break }
+        if c == CH_BACKSLASH { scanIdentEscaped = true  i = cssEscapeEnd(selSrc, i)  continue }
+        if isNameCode(c) { i++  continue }
+        break
     }
     return i
+}
+
+// The identifier between two indices the scan just produced, decoded
+// only where the scan saw a backslash.
+text func identAt(from:int, to:int) {
+    if !scanIdentEscaped { return selSrc.slice(from, to).toText() }
+    return cssDecodeIdent(selSrc.slice(from, to))
+}
+
+// The index of the `]` that closes the attribute selector opened at
+// `at`, or -1. Selectors 4 §6.1 takes a string for the value, and a
+// string takes any character, so the first `]` in the source is not
+// necessarily the selector's: `[data-x="a]b"]` cut there leaves `"]`
+// over, which marked the whole selector unsupported and dropped its
+// rule. An escape is stepped over for the same reason.
+int func attrSelEnd(s:ascii, at:int) {
+    int n = s.length
+    int i = at + 1
+    while i < n {
+        int c = s.charCodeAt(i)
+        if c == CH_BACKSLASH { i = cssEscapeEnd(s, i)  continue }
+        if c == CH_QUOTE || c == CH_APOS { i = skipQuoted(s, i)  continue }
+        if c == CH_RBRACKET { return i }
+        i++
+    }
+    return 0 - 1
 }
 
 // Parses one compound selector starting at selPos (which must not be
@@ -668,7 +963,9 @@ void func readTypeAfterNamespace(comp:Compound) {
     if selSrc.charCodeAt(selPos) == CH_STAR { selPos++  return }
     int end = scanIdent(selPos)
     if end > selPos {
-        comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
+        text tagIdent = identAt(selPos, end)
+        ascii tagAscii = tagIdent.toAscii()
+        comp.tag = tagAscii == null ? tagIdent : asciiLower(tagAscii).toText()
         selPos = end
     }
 }
@@ -713,16 +1010,16 @@ Compound func parseCompound() {
             any = true
         } else if c == CH_HASH {
             int end = scanIdent(selPos + 1)
-            comp.id = selSrc.slice(selPos + 1, end).toText()
+            comp.id = identAt(selPos + 1, end)
             selPos = end
             any = true
         } else if c == CH_DOT {
             int end = scanIdent(selPos + 1)
-            comp.classes.push(selSrc.slice(selPos + 1, end).toText())
+            comp.classes.push(identAt(selPos + 1, end))
             selPos = end
             any = true
         } else if c == CH_LBRACKET {
-            int end = asciiIndexOf(selSrc, ']', selPos)
+            int end = attrSelEnd(selSrc, selPos)
             if end < 0 { end = n }
             parseAttrSel(comp, selSrc.slice(selPos + 1, end))
             selPos = end + 1
@@ -746,6 +1043,7 @@ Compound func parseCompound() {
             bool isLegacyPseudo = name == 'before' || name == 'after'
                 || name == 'first-line' || name == 'first-letter'
             bool isElementPseudo = isLegacyPseudo || name == 'marker'
+                || name == 'placeholder'
             if doubleColon {
                 if isElementPseudo {
                     comp.pseudoElement = name.toText()
@@ -770,30 +1068,119 @@ Compound func parseCompound() {
                     sub.kind = name == 'not' ? SUBSEL_NOT
                              : (name == 'has' ? SUBSEL_HAS
                              : (name == 'where' ? SUBSEL_WHERE : SUBSEL_IS))
+                    // §3.1: `:is()` and `:where()` take a *forgiving*
+                    // selector list -- an alternative this engine
+                    // cannot read is dropped and the rest still work,
+                    // so `:is(p, &&&bogus)` matches every `p`.
+                    // `:not()` and `:has()` do not, and one bad
+                    // alternative makes the whole selector invalid.
+                    // Chromium was asked all four, and the answers are
+                    // in todo.md.
+                    bool forgiving = sub.kind == SUBSEL_IS || sub.kind == SUBSEL_WHERE
                     int savedPos = selPos
                     ascii savedSrc = dup(selSrc)
                     arr[ascii] alts = splitOnCommas(arg)
                     for int k = 0, k < alts.length, k++ {
                         ascii alt = asciiTrim(alts[k])
-                        // `:has(> p)` names a relation this engine does
-                        // not distinguish, so a leading combinator is
-                        // what makes the selector unsupported rather
-                        // than silently a descendant test.
-                        if alt.length == 0 { comp.unsupported = true  continue }
-                        selSrc = alt
-                        selPos = 0
-                        Compound inner = parseCompound()
-                        if selPos < alt.length { comp.unsupported = true }
-                        sub.alternatives.push(inner)
+                        if alt.length == 0 {
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        // `:has()` takes a *relative* selector, so it
+                        // may open with the combinator that says how
+                        // the match stands to this element. The other
+                        // three take an ordinary complex selector, and
+                        // a leading combinator in one of those is a
+                        // syntax error rather than a relation.
+                        int lead = COMB_DESCENDANT
+                        int at = 0
+                        int lc = alt.charCodeAt(0)
+                        if lc == CH_GT { lead = COMB_CHILD  at = 1 }
+                        else if lc == CH_PLUS { lead = COMB_ADJACENT  at = 1 }
+                        else if lc == CH_TILDE { lead = COMB_SIBLING  at = 1 }
+                        if at > 0 && sub.kind != SUBSEL_HAS {
+                            // A leading combinator is a relation, and
+                            // only `:has()` takes one. `:not(> p)` is a
+                            // syntax error; `:is(> p)` is a dropped
+                            // alternative, because the list forgives.
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        if at > 0 {
+                            alt = asciiTrim(alt.slice(at, alt.length))
+                            if alt.length == 0 { comp.unsupported = true  continue }
+                        }
+                        Selector innerSel = parseSelector(alt)
+                        if innerSel.unsupported || innerSel.parts.length == 0 {
+                            if !forgiving { comp.unsupported = true }
+                            continue
+                        }
+                        sub.alternatives.push(innerSel)
+                        sub.leads.push(lead)
                     }
-                    if sub.alternatives.length == 0 { comp.unsupported = true }
+                    // A forgiving list that forgave everything is still
+                    // a valid selector; it simply matches nothing,
+                    // which is what an empty alternative list already
+                    // means to `:is()` and `:where()` in the matcher.
+                    if sub.alternatives.length == 0 && !forgiving { comp.unsupported = true }
                     comp.subs.push(sub)
                     selSrc = savedSrc
                     selPos = savedPos
                 } else if name == 'nth-child' || name == 'nth-last-child'
                     || name == 'nth-of-type' || name == 'nth-last-of-type' {
-                    if parseAnPlusB(asciiLower(arg)) {
-                        comp.pseudos.push(`${name}:${anbA}:${anbB}`)
+                    // §6.6.5's `of <complex-selector-list>`, which only
+                    // `:nth-child()` and `:nth-last-child()` take --
+                    // `:nth-of-type(1 of p)` is a syntax error, asked of
+                    // Chromium. The keyword needs whitespace on both
+                    // sides, because `1of` is one token; it is matched
+                    // without regard to case, which is CSS's general
+                    // rule and where Chromium disagrees (todo.md).
+                    ascii lowered = asciiLower(arg)
+                    int ofAt = nthOfKeywordAt(lowered)
+                    if ofAt < 0 {
+                        if parseAnPlusB(lowered) {
+                            comp.pseudos.push(`${name}:${anbA}:${anbB}`)
+                        } else {
+                            comp.unsupported = true
+                        }
+                    } else if name != 'nth-child' && name != 'nth-last-child' {
+                        comp.unsupported = true
+                    } else {
+                        ascii head = asciiTrim(lowered.slice(0, ofAt))
+                        ascii tail = asciiTrim(arg.slice(ofAt + 2, arg.length))
+                        if !parseAnPlusB(head) || tail.length == 0 {
+                            comp.unsupported = true
+                        } else {
+                            NthOf nth
+                            nth.fromEnd = name == 'nth-last-child'
+                            nth.stepA = anbA
+                            nth.offB = anbB
+                            int savedNthPos = selPos
+                            ascii savedNthSrc = dup(selSrc)
+                            arr[ascii] ofAlts = splitOnCommas(tail)
+                            for int k = 0, k < ofAlts.length, k++ {
+                                ascii one = asciiTrim(ofAlts[k])
+                                if one.length == 0 { comp.unsupported = true  continue }
+                                Selector ofSel = parseSelector(one)
+                                if ofSel.unsupported || ofSel.parts.length == 0 {
+                                    comp.unsupported = true
+                                    continue
+                                }
+                                nth.of.push(ofSel)
+                            }
+                            selSrc = savedNthSrc
+                            selPos = savedNthPos
+                            if nth.of.length == 0 { comp.unsupported = true }
+                            comp.nths.push(nth)
+                        }
+                    }
+                } else if name == 'dir' {
+                    // `:dir(ltr)` and `:dir(rtl)` (Selectors 4 §14.2).
+                    // `auto` is a real value of the `dir` attribute but
+                    // not of this selector, so only the two are taken.
+                    ascii d = asciiLower(asciiTrim(arg))
+                    if d != null && (d == 'ltr' || d == 'rtl') {
+                        comp.pseudos.push(`dir:${d.toText()}`)
                     } else {
                         comp.unsupported = true
                     }
@@ -812,7 +1199,15 @@ Compound func parseCompound() {
                     || name == 'root' || name == 'link' || name == 'any-link'
                     || name == 'first-of-type' || name == 'last-of-type' || name == 'only-of-type'
                     || name == 'empty' || name == 'enabled' || name == 'disabled'
-                    || name == 'checked' || name == 'target' {
+                    || name == 'checked' || name == 'target'
+                    // HTML's form-state pseudo-classes (Selectors 4
+                    // §11), every one of which is a question about the
+                    // document's own attributes.
+                    || name == 'read-write' || name == 'read-only'
+                    || name == 'required' || name == 'optional'
+                    || name == 'placeholder-shown' || name == 'default'
+                    || name == 'indeterminate' || name == 'valid' || name == 'invalid'
+                    || name == 'in-range' || name == 'out-of-range' {
                     comp.pseudos.push(name.toText())
                 } else {
                     // :hover, :focus, :visited ... never match here
@@ -835,7 +1230,9 @@ Compound func parseCompound() {
                 any = true
                 continue
             }
-            comp.tag = asciiLower(selSrc.slice(selPos, end)).toText()
+            text tagIdent = identAt(selPos, end)
+        ascii tagAscii = tagIdent.toAscii()
+        comp.tag = tagAscii == null ? tagIdent : asciiLower(tagAscii).toText()
             selPos = end
             any = true
         } else {
@@ -860,14 +1257,26 @@ int func matchParen(s:ascii, open:int) {
     return n
 }
 
+// Both halves of `[name matcher value]` are CSS Syntax 3 tokens, so
+// both take escapes (§4.3.7): the name is an identifier, and the value
+// is an identifier or a string. Nothing here decoded one, so
+// `[data\-x=a\ b]` looked for an attribute called `data` holding the
+// value `a\` -- neither of which any document has.
 void func parseAttrSel(comp:Compound, inner:ascii) {
     AttrSel a
     a.op = ATTR_EXISTS
     a.value = ''
     int n = inner.length
     int i = 0
-    while i < n && isNameCode(inner.charCodeAt(i)) { i++ }
-    a.name = asciiLower(inner.slice(0, i)).toText()
+    bool nameEscaped = false
+    while i < n {
+        int nc = inner.charCodeAt(i)
+        if nc == CH_BACKSLASH { nameEscaped = true  i = cssEscapeEnd(inner, i)  continue }
+        if isNameCode(nc) { i++  continue }
+        break
+    }
+    a.name = nameEscaped ? textLower(cssDecodeIdent(inner.slice(0, i)))
+                         : asciiLower(inner.slice(0, i)).toText()
     while i < n && isSpaceCode(inner.charCodeAt(i)) { i++ }
     if i < n {
         int c = inner.charCodeAt(i)
@@ -885,8 +1294,16 @@ void func parseAttrSel(comp:Compound, inner:ascii) {
         if i < end && (inner.charCodeAt(i) == CH_QUOTE || inner.charCodeAt(i) == CH_APOS) {
             int q = inner.charCodeAt(i)
             int close = i + 1
-            while close < end && inner.charCodeAt(close) != q { close++ }
-            a.value = inner.slice(i + 1, close).toText()
+            // A backslash before the closing quote is that quote, not
+            // the end of the string, so `[a="x\"y"]` holds `x"y`.
+            while close < end {
+                int cc = inner.charCodeAt(close)
+                if cc == CH_BACKSLASH { close = cssEscapeEnd(inner, close)  continue }
+                if cc == q { break }
+                close++
+            }
+            if close > end { close = end }
+            a.value = cssDecodeIdent(inner.slice(i + 1, close))
             // A trailing `i` or `s` after the closing quote is the
             // case-sensitivity flag (Selectors 4 §6.3). It was parsed
             // and thrown away, which made `[a="X" i]` an ordinary
@@ -899,23 +1316,31 @@ void func parseAttrSel(comp:Compound, inner:ascii) {
                 if flag == 73 || flag == 105 { a.caseInsensitive = true }   // I or i
             }
         } else {
-            int valueEnd = end
-            // an unquoted value may carry the same flag, separated by
-            // whitespace
-            int sp = valueEnd
-            while sp > i && !isSpaceCode(inner.charCodeAt(sp - 1)) { sp-- }
-            if sp > i && sp < valueEnd && valueEnd - sp == 1 {
-                int flag = inner.charCodeAt(sp)
-                if flag == 73 || flag == 105 {
-                    a.caseInsensitive = true
-                    valueEnd = sp - 1
-                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
-                } else if flag == 83 || flag == 115 {
-                    valueEnd = sp - 1
-                    while valueEnd > i && isSpaceCode(inner.charCodeAt(valueEnd - 1)) { valueEnd-- }
-                }
+            // An unquoted value ends at the first whitespace that is
+            // not part of an escape, and may be followed by the same
+            // flag. Scanning backwards from the end for that whitespace
+            // read `a\ b` as the value `a\` and the flag `b`, and read
+            // the space that terminates `a\62 ` as the gap before one.
+            int valueEnd = i
+            while valueEnd < end {
+                int vc = inner.charCodeAt(valueEnd)
+                if vc == CH_BACKSLASH { valueEnd = cssEscapeEnd(inner, valueEnd)  continue }
+                if isSpaceCode(vc) { break }
+                valueEnd++
             }
-            a.value = inner.slice(i, valueEnd).toText()
+            if valueEnd > end { valueEnd = end }
+            int after = valueEnd
+            while after < end && isSpaceCode(inner.charCodeAt(after)) { after++ }
+            if after >= end {
+                // nothing follows the value
+            } else if end - after == 1 {
+                int flag = inner.charCodeAt(after)
+                if flag == 73 || flag == 105 { a.caseInsensitive = true }
+                else if flag != 83 && flag != 115 { valueEnd = end }
+            } else {
+                valueEnd = end
+            }
+            a.value = cssDecodeIdent(inner.slice(i, valueEnd))
         }
     }
     comp.attrs.push(a)
@@ -1004,7 +1429,9 @@ int func specAdd(a:int, b:int) {
 
 int func compoundSpecificity(c:Compound) {
     int ids = c.id != '' ? 1 : 0
-    int classes = c.classes.length + c.attrs.length + c.pseudos.length
+    // An `:nth-child()` with an `of` clause is in `nths` rather than
+    // `pseudos`, and still weighs a pseudo-class of its own.
+    int classes = c.classes.length + c.attrs.length + c.pseudos.length + c.nths.length
     // A pseudo-element counts as a type, not a pseudo-class
     // (Selectors 3 §9).
     int types = (c.tag != '' ? 1 : 0) + (c.pseudoElement != '' ? 1 : 0)
@@ -1015,7 +1442,18 @@ int func compoundSpecificity(c:Compound) {
         if c.subs[i].kind == SUBSEL_WHERE { continue }
         int best = 0
         for int k = 0, k < c.subs[i].alternatives.length, k++ {
-            int inner = compoundSpecificity(c.subs[i].alternatives[k])
+            int inner = computeSpecificity(c.subs[i].alternatives[k])
+            if inner > best { best = inner }
+        }
+        s = specAdd(s, best)
+    }
+    // And `:nth-child(An+B of S)` adds S's, the same way: measured in
+    // Chromium, where `:nth-child(1 of #s1)` beats `.lead.lead` written
+    // either side of it.
+    for int i = 0, i < c.nths.length, i++ {
+        int best = 0
+        for int k = 0, k < c.nths[i].of.length, k++ {
+            int inner = computeSpecificity(c.nths[i].of[k])
             if inner > best { best = inner }
         }
         s = specAdd(s, best)
@@ -1032,13 +1470,23 @@ int func computeSpecificity(sel:Selector) {
 }
 
 // Splits a selector list on top-level commas.
+//
+// A `[` inside a string is not a bracket. `[data-x="a[b"], #n` left the
+// depth at one when the list ended, so the comma was never top-level
+// and both selectors were run together into one that names nothing --
+// which is a rule dropped whole rather than a rule that fails to match.
+// A backslash is stepped over for the same reason, so `[a=x\[]` counts
+// no bracket either.
 arr[Selector] func parseSelectorList(prelude:ascii) {
     arr[Selector] out = []
     int n = prelude.length
     int depth = 0
     int start = 0
-    for int i = 0, i <= n, i++ {
+    int i = 0
+    while i <= n {
         int c = i < n ? prelude.charCodeAt(i) : CH_COMMA
+        if c == CH_BACKSLASH && i < n { i = cssEscapeEnd(prelude, i)  continue }
+        if (c == CH_QUOTE || c == CH_APOS) && i < n { i = skipQuoted(prelude, i)  continue }
         if c == CH_LPAREN || c == CH_LBRACKET { depth++ }
         else if c == CH_RPAREN || c == CH_RBRACKET { depth-- }
         else if c == CH_COMMA && depth <= 0 {
@@ -1046,6 +1494,7 @@ arr[Selector] func parseSelectorList(prelude:ascii) {
             if piece.length > 0 { out.push(parseSelector(piece)) }
             start = i + 1
         }
+        i++
     }
     return out
 }
@@ -1072,18 +1521,35 @@ arr[text] supportedProperties = [
     'border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style',
     'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
     'border-spacing', 'border-collapse',
-    'font', 'font-size', 'font-weight', 'font-style', 'font-family', 'line-height',
+    'overflow-clip-margin', 'text-box-trim', 'text-box-edge',
+    'box-decoration-break',
+    'overscroll-behavior', 'overscroll-behavior-x', 'overscroll-behavior-y',
+    'overscroll-behavior-inline', 'overscroll-behavior-block',
+    'initial-letter',
+    'offset-path', 'offset-distance', 'offset-rotate', 'offset-anchor', 'offset-position',
+    'filter',
+    'mask-image', 'mask-mode', 'mask-repeat', 'mask-position', 'mask-size',
+    'mask-origin', 'mask-clip', 'mask-composite', 'isolation', 'writing-mode', 'text-orientation', 'text-combine-upright',
+    'anchor-name', 'anchor-scope', 'position-anchor', 'position-area', 'position-try-fallbacks', 'position-try-order', 'position-visibility',
+    'corner-shape', 'corner-top-left-shape', 'corner-top-right-shape',
+    'corner-bottom-right-shape', 'corner-bottom-left-shape',
+    'corner-start-start-shape', 'corner-start-end-shape',
+    'corner-end-start-shape', 'corner-end-end-shape',
+    'font', 'font-size', 'font-size-adjust', 'font-weight', 'font-style', 'font-family',
+    'font-variant-caps', 'font-synthesis', 'font-synthesis-small-caps', 'image-rendering', 'will-change', 'interactivity', 'scroll-initial-target', 'view-transition-name', 'math-depth',
+    'line-height',
     'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
     'text-decoration-color', 'text-decoration-style',
     'text-decoration-thickness', 'text-underline-offset', 'text-shadow',
-    // `unicode-bidi` is deliberately absent: `bidi-override` is
-    // honoured but `embed`, `isolate` and `plaintext` are not, and
-    // `@supports` answers per property rather than per value, so the
-    // only answer it can give without overclaiming is no.
-    'direction',
+    'direction', 'unicode-bidi',
     'text-emphasis', 'text-emphasis-style', 'text-emphasis-color',
     'text-emphasis-position', 'text-underline-position',
-    'text-indent', 'letter-spacing', 'white-space', 'vertical-align',
+    'text-indent', 'letter-spacing', 'white-space', 'vertical-align', 'baseline-source',
+    'zoom',
+    'resize',
+    'text-wrap-style',
+    'print-color-adjust',
+    'ruby-position', 'ruby-align',
     'white-space-collapse', 'text-wrap-mode', 'text-align-last',
     'word-break', 'line-break', 'overflow-wrap', 'tab-size', 'all',
     'hyphens', 'hyphenate-character',
@@ -1096,6 +1562,10 @@ arr[text] supportedProperties = [
     'flex-wrap', 'flex-flow',
     'justify-content', 'align-items', 'align-self', 'align-content',
     'justify-items', 'justify-self', 'text-overflow', 'pointer-events',
+    'place-items', 'place-content', 'place-self',
+    'white-space', 'text-wrap',
+    'border-radius', 'outline', 'flex', 'flex-flow', 'gap', 'text-box',
+    'overscroll-behavior',
     'border-image', 'border-image-source', 'border-image-slice',
     'border-image-width', 'border-image-outset', 'border-image-repeat',
     'columns', 'column-count', 'column-width',
@@ -1103,6 +1573,14 @@ arr[text] supportedProperties = [
     'column-span', 'column-fill',
     'break-before', 'break-after', 'break-inside', 'orphans', 'widows',
     'page', 'page-break-before', 'page-break-after', 'page-break-inside',
+    'scrollbar-width', 'scrollbar-color', 'scrollbar-gutter',
+    'scroll-snap-type', 'scroll-snap-align', 'scroll-snap-stop', 'scroll-padding', 'scroll-margin',
+    'scroll-padding-top', 'scroll-padding-right', 'scroll-padding-bottom', 'scroll-padding-left',
+    'scroll-margin-top', 'scroll-margin-right', 'scroll-margin-bottom', 'scroll-margin-left',
+    'scroll-padding-block-start', 'scroll-padding-block-end',
+    'scroll-padding-inline-start', 'scroll-padding-inline-end',
+    'scroll-margin-block-start', 'scroll-margin-block-end',
+    'scroll-margin-inline-start', 'scroll-margin-inline-end',
     'clip-path', 'clip', 'shape-outside', 'shape-margin',
     'grid-template-columns', 'grid-template-rows', 'grid-template-areas',
     'grid-auto-columns', 'grid-auto-rows', 'grid-auto-flow',
@@ -1172,6 +1650,13 @@ bool func cssValueEvaluable(val:ascii) {
     if asciiIndexOf(v, 'clamp(', 0) >= 0 { return false }
     if asciiIndexOf(v, 'attr(', 0) >= 0 { return false }
     if asciiIndexOf(v, 'env(', 0) >= 0 { return false }
+    // `filter` is supported for its colour functions and not for these
+    // two: a `blur()` is a convolution over pixels and a
+    // `drop-shadow()` wants a path API an image does not have, so a
+    // declaration naming either is dropped whole. Neither spelling
+    // appears in any other property's value.
+    if asciiIndexOf(v, 'blur(', 0) >= 0 { return false }
+    if asciiIndexOf(v, 'drop-shadow(', 0) >= 0 { return false }
     return true
 }
 
@@ -1183,6 +1668,12 @@ bool func supportsDeclaration(decl:ascii) {
     if prop.length == 0 { return false }
     // A custom property or a vendor prefix is dropped at parse time.
     if prop.charCodeAt(0) == CH_MINUS { return false }
+    // `mask-image` is supported for a gradient and not for a bitmap,
+    // which needs the image's own alpha per pixel. The property name
+    // alone cannot say that, so it is asked here.
+    if prop == 'mask-image' && asciiIndexOf(asciiLower(val), 'url(', 0) >= 0 {
+        return false
+    }
     return cssKnownProperty(prop) && cssValueEvaluable(val)
 }
 
@@ -1811,7 +2302,16 @@ void func nestFlushDecls(sheet:Stylesheet, src:ascii, from:int, to:int,
 // holds that rule's selectors. The two productions differ in one thing:
 // inside a rule body a run of declarations belongs to the rule, and at
 // the top of a stylesheet there is nothing for one to belong to.
-void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentSpecs:arr[int]) {
+// The two tokens §5.4.1 ignores, built once rather than per rule.
+ascii cssCdo = '<!--'.toAscii()
+ascii cssCdc = '-->'.toAscii()
+
+// `topLevel` is CSS Syntax 3 §5.4.1's flag of the same name: a CDO
+// (`<!--`) and a CDC (`-->`) are ignored where a stylesheet's own rules
+// are read and nowhere else, so an at-rule's body and a nested rule's
+// body are parsed with it unset.
+void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentSpecs:arr[int],
+                         topLevel:bool) {
     int n = src.length
     int i = 0
     // Where the run of declarations being gathered began. Each run ends
@@ -1825,6 +2325,15 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
             i++
             continue
         }
+        // They are the wrapper an old page put round its `<style>` so
+        // that a browser which did not know the tag would not print the
+        // contents. Tested only here, where a rule or a declaration
+        // begins: a `-->` that follows name characters is not a CDC at
+        // all -- the identifier takes both hyphens and the `>` left
+        // over is a child combinator, which is what Chromium's
+        // `selectorText` for `a-->b` says, and a test asserts.
+        if topLevel && c == CH_LT && asciiStartsWith(src, cssCdo, i) { i = i + 4  continue }
+        if topLevel && c == CH_MINUS && asciiStartsWith(src, cssCdc, i) { i = i + 3  continue }
         if c == CH_AT {
             nestFlushDecls(sheet, src, declStart, i, parents, parentSpecs)
             int nameEnd = scanIdentAt(src, i + 1)
@@ -1863,13 +2372,13 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 if evaluateMediaQuery(query) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 }
             } else if atName == 'supports' {
                 if evaluateSupportsCondition(asciiTrim(src.slice(nameEnd, brace))) {
                     int close = blockEnd - 1
                     if close < brace + 1 { close = brace + 1 }
-                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                    parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 }
             } else if atName == 'counter-style' {
                 // The name is the prelude, and the body is an ordinary
@@ -1901,7 +2410,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 // are gated on the innermost query that did fit, which
                 // is written down rather than silently dropped.
                 if q != CQ_NONE { cssCurrentContainerQuery = q }
-                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 cssCurrentContainerQuery = outerQuery
             } else if atName == 'layer' {
                 int close = blockEnd - 1
@@ -1920,7 +2429,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 }
                 cssCurrentLayer = declareLayer(full)
                 cssCurrentLayerName = full
-                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs)
+                parseRulesInto(sheet, src.slice(brace + 1, close), parents, parentSpecs, false)
                 cssCurrentLayer = outerLayer
                 cssCurrentLayerName = outerName
             }
@@ -2004,7 +2513,7 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
             if r.decls.length > 0 { sheet.rules.push(r) }
             continue
         }
-        parseRulesInto(sheet, body, selTexts, selSpecs)
+        parseRulesInto(sheet, body, selTexts, selSpecs, false)
     }
     nestFlushDecls(sheet, src, declStart, n, parents, parentSpecs)
 }
@@ -2020,7 +2529,7 @@ Stylesheet func parseStylesheet(src:ascii) {
     if src == null { return sheet }
     arr[text] noParents = []
     arr[int] noSpecs = []
-    parseRulesInto(sheet, stripCssComments(src), noParents, noSpecs)
+    parseRulesInto(sheet, stripCssComments(src), noParents, noSpecs, true)
     return sheet
 }
 
@@ -2041,6 +2550,15 @@ text func dumpSelector(sel:Selector) {
             out = a.op == ATTR_EXISTS ? `${out}[${a.name}]` : `${out}[${a.name}${a.op}${a.value}]`
         }
         for int j = 0, j < c.pseudos.length, j++ { out = `${out}:${c.pseudos[j]}` }
+        for int j = 0, j < c.nths.length, j++ {
+            NthOf nth = c.nths[j]
+            text ofText = ''
+            for int k = 0, k < nth.of.length, k++ {
+                ofText = ofText + (k > 0 ? ',' : '') + dumpSelector(nth.of[k])
+            }
+            text nthName = nth.fromEnd ? 'nth-last-child' : 'nth-child'
+            out = `${out}:${nthName}:${nth.stepA}:${nth.offB} of ${ofText}`
+        }
         if c.pseudoElement != '' { out = `${out}::${c.pseudoElement}` }
         for int j = 0, j < c.subs.length, j++ {
             SubSelector sub = c.subs[j]
@@ -2049,9 +2567,11 @@ text func dumpSelector(sel:Selector) {
                        : (sub.kind == SUBSEL_WHERE ? 'where' : 'is'))
             text inner = ''
             for int k = 0, k < sub.alternatives.length, k++ {
-                Selector one
-                one.parts.push(sub.alternatives[k])
-                inner = inner + (k > 0 ? ',' : '') + dumpSelector(one)
+                int ld = k < sub.leads.length ? sub.leads[k] : COMB_DESCENDANT
+                text mark = ld == COMB_CHILD ? '> '
+                          : (ld == COMB_ADJACENT ? '+ '
+                          : (ld == COMB_SIBLING ? '~ ' : ''))
+                inner = inner + (k > 0 ? ',' : '') + mark + dumpSelector(sub.alternatives[k])
             }
             out = `${out}:${fname}(${inner})`
         }

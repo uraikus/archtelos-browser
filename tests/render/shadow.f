@@ -409,4 +409,156 @@ color sqHard = getPixelColor(88, 88)
 check(sqHard == black, 'an unblurred square shadow fills its own corner')
 check(!(rdHard == black), 'and an unblurred round one does not')
 
+// ---- an inset shadow follows the inner curve ---------------------------
+//
+// An inset shadow is the padding box minus that box offset and shrunk
+// by the spread, and both of those are rounded where the box is. A
+// 120x120 box with `border-radius: 40px` and `inset 0 0 0 12px`, read
+// off Chromium with `tests/chromium.py pixels` at 200x200 (todo.md):
+//
+//   row 6    green to 16, red 19-100, green from 103
+//   row 20   green to 4, red 5-18, white 21-98, red 101-113, green from 115
+//   row 40   red 0-11, white 12-107, red 108-119, green from 120
+//
+// Row 40 is below both corners and is the square case the engine
+// already drew; rows 6 and 20 are the curve. The spread shrinks the
+// hole's radius with it -- 40 less 12 is 28, which is what puts the
+// hole's edge at 20 on row 20 rather than at 28.
+
+color ringGreen = '#00ff00'
+color ringRed = '#ff0000'
+color ringWhite = '#ffffff'
+
+Page inset = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border-radius:40px;background:#ffffff;'
+    + 'box-shadow:inset 0 0 0 12px #ff0000}'
+    + '</style><body><div id="a"></div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(inset, 0, 0, 200)
+
+// The corner: the shadow must not be painted where the box is not.
+check(getPixelColor(5, 6) == ringGreen, 'an inset shadow stops at the rounded corner')
+check(getPixelColor(60, 6) == ringRed, 'and is painted across the top between the corners')
+check(getPixelColor(124, 6) == ringGreen, 'on the far corner as well')
+
+// Row 20 crosses both edges of the band, and both follow a curve: the
+// outer one the box's 40, the inner one the 28 the spread leaves.
+int ringOuter = -1
+int ringInner = -1
+for int x = 0, x < 60, x++ {
+    if ringOuter < 0 && getPixelColor(x, 20) == ringRed { ringOuter = x }
+    if ringOuter >= 0 && ringInner < 0 && getPixelColor(x, 20) == ringWhite { ringInner = x }
+}
+checkNear(ringOuter, 5, 1, "the band's outer edge follows the box's own radius")
+checkNear(ringInner, 21, 1, "and its inner edge the radius the spread leaves")
+
+// Below the corners it is the straight band it always was, which is
+// what says the change did not move the easy case.
+check(getPixelColor(5, 60) == ringRed, 'below the corners the band is unchanged')
+check(getPixelColor(60, 60) == ringWhite, 'with the hole still open in the middle')
+check(getPixelColor(112, 60) == ringRed, 'and the far side of the band still there')
+
+
+// The blurred one is cut back to the same curve. Its falloff is still
+// measured from the square hole -- what the curved one would take is in
+// todo.md -- but it no longer paints over the corner the box rounded
+// away. Chromium has the backdrop at x=0, 6 and 12 on row 6 and at x=0
+// on row 20, and the shadow from there inwards.
+Page insetBlur = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#00ff00}'
+    + '#a{width:120px;height:120px;border-radius:40px;background:#ffffff;'
+    + 'box-shadow:inset 0 0 20px 0 #ff0000}'
+    + '</style><body><div id="a"></div></body>', 'test.html', 200)
+clearCanvas()
+paintPage(insetBlur, 0, 0, 200)
+check(getPixelColor(12, 6) == ringGreen, 'a blurred inset shadow stops at the corner too')
+check(getPixelColor(0, 20) == ringGreen, 'and on the row below it')
+check(!(getPixelColor(30, 6) == ringGreen), 'while still being painted inside the curve')
+check(!(getPixelColor(30, 6) == ringWhite), 'over the box\'s own background')
+
+
+// And its falloff follows the curve, not just its edge. The two strip
+// passes leave the complement of the *square* hole's blurred coverage;
+// a rounded hole is inside the square one, so the shadow belongs darker
+// at a corner than the strips make it. Each corner takes one more blit
+// carrying `1 - round / (fx*fy)`, which is between zero and one because
+// the rounded coverage never exceeds the square one -- so it can be
+// painted over rather than subtracted, which matters, since the canvas
+// cannot subtract.
+//
+// The check needs no number from anywhere: the same box with no radius
+// paints exactly the square answer, so the two must **differ** where a
+// corner curves and **agree** where no corner reaches. A blur of 20
+// reaches 30 pixels, so the corner band is the top 70 rows and row 60
+// is outside it.
+void func insetShot(radius:text) {
+    Page p = pageFromHtml('<!doctype html><head><style>'
+        + 'body{margin:0;width:200px;background:#00ff00}'
+        + '#a{width:120px;height:120px;background:#ffffff;'
+        + 'box-shadow:inset 0 0 20px 0 #ff0000;' + radius + '}'
+        + '</style><body><div id="a"></div></body>', 'test.html', 200)
+    clearCanvas()
+    paintPage(p, 0, 0, 200)
+}
+
+insetShot('border-radius:0')
+color insetSqCorner = getPixelColor(6, 20)
+color insetSqEdge = getPixelColor(6, 60)
+color insetSqDeep = getPixelColor(16, 16)
+insetShot('border-radius:40px')
+check(!(getPixelColor(6, 20) == insetSqCorner),
+      "a blurred inset shadow's corner is not the square answer")
+check(!(getPixelColor(16, 16) == insetSqDeep),
+      'nor is the point on the corner\'s own diagonal')
+check(getPixelColor(6, 60) == insetSqEdge,
+      'and away from every corner the two agree exactly')
+
+// The four corners of a square box with equal radii must carry the
+// same alpha, which no asymmetry in the correction could survive.
+insetShot('border-radius:40px')
+color insetTL = getPixelColor(14, 24)
+check(getPixelColor(105, 24) == insetTL, 'the top-right corner matches the top-left')
+check(getPixelColor(14, 95) == insetTL, 'the bottom-left matches it too')
+check(getPixelColor(105, 95) == insetTL, 'and the bottom-right')
+
+
+// The corner correction is cached by the geometry it depends on, so the
+// second box asking for the same one gets a blit instead of a build. A
+// blit carries `fillAlpha`, and the two strip passes above it leave
+// `fillAlpha` wherever their last row put it -- so a corner that is
+// built paints at the alpha its own builder ends on and a corner served
+// from the cache paints at whatever the strips left. Two boxes asking
+// for the same shadow must land on the same pixel.
+//
+// Nothing above this would notice. Every check up to here grades a page
+// carrying one shadowed box, and the four-corner check renders the same
+// box a second time, so it compares four cached corners with each other
+// and they would be wrong together. The geometry is the one where the
+// correction is strong enough to survive the eight bits a pixel gets:
+// at a blur of 20 against a radius of 40 the correction is small enough
+// that halving it rounds to the same byte, and the check reads clean
+// however wrong the alpha is.
+Page insetPair = pageFromHtml('<!doctype html><head><style>'
+    + 'body{margin:0;width:200px;background:#ffffff}'
+    + '.p{width:100px;height:60px;border-radius:24px;background:#334488;'
+    + 'box-shadow:inset 0 0 8px 0 #ffffff}'
+    + '</style><body><div class="p"></div><div class="p"></div></body>',
+    'test.html', 200)
+clearCanvas()
+paintPage(insetPair, 0, 0, 200)
+int pairMoved = 0
+int pairInked = 0
+color pairWhite = '#ffffff'
+for int py = 0, py < 60, py++ {
+    for int px = 0, px < 100, px++ {
+        color topPx = getPixelColor(px, py)
+        if !(topPx == pairWhite) { pairInked++ }
+        if !(topPx == getPixelColor(px, py + 60)) { pairMoved++ }
+    }
+}
+checkEqInt(pairMoved, 0, 'a second box with the same inset shadow gets the same corner')
+check(pairInked > 2000, "and what the two agree on is the box, not the page behind it")
+
+
 finish('box shadow')

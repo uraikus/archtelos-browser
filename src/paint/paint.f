@@ -5,6 +5,7 @@
 // document coordinates land where they should on screen.
 
 import ../layout/layout.f
+import ../css/motion.f
 
 // Boxes entirely outside [paintTop, paintBottom) in document
 // coordinates are skipped -- long pages stay cheap to scroll.
@@ -94,6 +95,66 @@ void func pDrawImageScaled(i:img, x:int, y:int, w:int, h:int) {
     else { paintLayer.drawImage(i, x, y, w, h) }
 }
 
+// `image-rendering: pixelated` (CSS Images 3 sec. 5.3): the image is
+// resampled by nearest neighbour rather than by the runtime's filter,
+// which this engine cannot choose -- `drawImage` filters and says
+// nothing about how. So the scale is DRAWN: `getPixelColor` reads a
+// source pixel and a rectangle fills the destination block it maps to,
+// which is the pair the clip machinery already uses a row at a time.
+//
+// A destination pixel takes the source pixel at `floor(dx * sw / w)`,
+// which is where Chromium puts its boundary (todo.md). Consecutive
+// destination pixels sharing a source pixel are one fill, so the work
+// is one rectangle per source pixel where the image is enlarged and
+// one per destination pixel where it is reduced -- the smaller of the
+// two in each axis, either way.
+//
+// `dst` is the surface to draw into: null means the canvas or whatever
+// layer the painter is inside, and an `img` means that image, which is
+// what the object-fit path needs for its clipped copy.
+void func drawPixelated(dst:img, i:img, x:int, y:int, w:int, h:int) {
+    int sw = i.width
+    int sh = i.height
+    if sw <= 0 || sh <= 0 || w <= 0 || h <= 0 { return }
+    arr[int] colAt = []
+    arr[int] colW = []
+    arr[int] colSrc = []
+    int dx = 0
+    while dx < w {
+        int sxi = Math.floorDiv(dx * sw, w)
+        int cend = dx + 1
+        while cend < w && Math.floorDiv(cend * sw, w) == sxi { cend++ }
+        colAt.push(dx)
+        colW.push(cend - dx)
+        colSrc.push(sxi)
+        dx = cend
+    }
+    int dy = 0
+    while dy < h {
+        int syi = Math.floorDiv(dy * sh, h)
+        int rend = dy + 1
+        while rend < h && Math.floorDiv(rend * sh, h) == syi { rend++ }
+        for int c = 0, c < colAt.length, c++ {
+            // `null` is a fully transparent pixel as well as one out of
+            // bounds, and either way there is nothing to paint: the
+            // destination keeps what is under it.
+            color px = i.getPixelColor(colSrc[c], syi)
+            if px == null { continue }
+            fillStyle(px)
+            if dst == null { pDrawRect(x + colAt[c], y + dy, colW[c], rend - dy) }
+            else { dst.drawRect(x + colAt[c], y + dy, colW[c], rend - dy) }
+        }
+        dy = rend
+    }
+}
+
+// Whether this box's content is resampled by nearest neighbour. The
+// global is read before the call, so a page that never says
+// `image-rendering` pays one boolean per image rather than a lookup.
+bool func imgPixelated(s:Style) {
+    return imageRenderingOf(s) == IR_PIXELATED
+}
+
 
 // A filled rounded rectangle. On the canvas this is a bezier path; on a
 // layer there is no path API, so the corners are square. The shape is
@@ -119,12 +180,103 @@ int func radiusPx(l:Len, against:int) {
     return 0
 }
 
-float func radiusShrink(sum:int, side:int) {
-    if sum <= side || sum <= 0 { return 1.0 }
-    return side.toFloat() / sum.toFloat()
+// `radiusShrink` is in src/css/shapes.f, beside `cornerInset`.
+
+// The `corner-shape` exponent each corner of the next path is drawn
+// with, and whether any of them is not `round`. Globals rather than
+// four more arguments on a function that already takes twelve
+// (FINDINGS.md, "one value out of a function" is the same shape of
+// problem going the other way), set by `cornerShapesOf` and left at
+// `round` for every caller that does not have a shaped box.
+float pathKTL = CORNER_K_ROUND
+float pathKTR = CORNER_K_ROUND
+float pathKBR = CORNER_K_ROUND
+float pathKBL = CORNER_K_ROUND
+bool pathAnyShaped = false
+
+// How many straight segments a shaped corner is walked in. Sixteen is
+// what the render suite's comparison against Chromium's own corner
+// profile passes at, on a 40px radius across all six keywords; the
+// error is a pixel at the steepest part of a `bevel`, which is where
+// any polyline approximation is worst.
+const int CORNER_SLICES = 16
+
+const float HALF_PI = 1.5707963267948966
+
+// A point on one corner's superellipse, `i` of `CORNER_SLICES` of the
+// way round it. `cornerPA` is the distance travelled along the edge the
+// corner leaves and `cornerPB` the distance from the edge it meets, so
+// a caller places both without knowing which corner it is drawing. Two
+// values out of a function need globals (FINDINGS.md, "one value out of
+// a function").
+//
+// The angle, not either axis, is the parameter: at `i` of 0 the point
+// is where the first straight edge ended and at `i` of CORNER_SLICES it
+// is where the next begins, for every exponent. A positive exponent
+// gives the convex curve `border-radius` draws, a negative one its
+// concave reflection, which is what `scoop` and `notch` are.
+float cornerPA = 0.0
+float cornerPB = 0.0
+
+void func cornerPointAt(ra:int, rb:int, i:int, k:float) {
+    // The two ends are where the straight edges are, exactly. They are
+    // not computed, because an extreme exponent magnifies the error in
+    // them out of all proportion: `Math.cos` of half pi is 6e-17 rather
+    // than zero, and raising that to the 1/500 a `notch` asks for gives
+    // 0.93, which puts the end of the corner three pixels from the edge
+    // it is supposed to meet.
+    if i >= CORNER_SLICES { cornerPA = ra.toFloat()  cornerPB = rb.toFloat()  return }
+    if i <= 0 { cornerPA = 0.0  cornerPB = 0.0  return }
+    float th = HALF_PI * i.toFloat() / CORNER_SLICES.toFloat()
+    float c = Math.cos(th)
+    float sn = Math.sin(th)
+    if c < 0.0 { c = 0.0 }
+    if sn < 0.0 { sn = 0.0 }
+    if k < 0.0 {
+        float m = 0.0 - k
+        cornerPA = ra.toFloat() * (1.0 - Math.pow(c, 2.0 / m))
+        cornerPB = rb.toFloat() * Math.pow(sn, 2.0 / m)
+        return
+    }
+    cornerPA = ra.toFloat() * Math.pow(sn, 2.0 / k)
+    cornerPB = rb.toFloat() * (1.0 - Math.pow(c, 2.0 / k))
+}
+
+
+// Puts a box's four `corner-shape` exponents where the path builder
+// reads them. A box whose corners are all `round` -- which is every box
+// on a page that never says the property -- leaves the fast path in
+// `roundedRectPathEllipses` switched on.
+void func cornerShapesOf(s:Style) {
+    if s.cornerShapes == 0 {
+        if pathAnyShaped { cornerShapesRound() }
+        return
+    }
+    pathKTL = cornerKAt(s.cornerShapes, 0)
+    pathKTR = cornerKAt(s.cornerShapes, 1)
+    pathKBR = cornerKAt(s.cornerShapes, 2)
+    pathKBL = cornerKAt(s.cornerShapes, 3)
+    pathAnyShaped = true
+}
+
+void func cornerShapesRound() {
+    pathKTL = CORNER_K_ROUND
+    pathKTR = CORNER_K_ROUND
+    pathKBR = CORNER_K_ROUND
+    pathKBL = CORNER_K_ROUND
+    pathAnyShaped = false
 }
 
 void func resolveCornerRadii(s:Style, w:int, h:int) {
+    // The shape travels with the radii, because every place that needs
+    // one needs the other: one boolean on a page that never says
+    // `corner-shape`, and `shadowShapeRadii` reaches it through here
+    // too, so a shadow follows the same curve its box does.
+    // A page that says the property leaves the globals wherever the
+    // last box left them, so a later box with no shape has to put them
+    // back: the shapes are painter state, and stale state is what made
+    // an unshaped box come out bevelled.
+    if anyCornerShape { cornerShapesOf(s) } else if pathAnyShaped { cornerShapesRound() }
     radTLX = radiusPx(s.radiusTopLeftX, w)
     radTLY = radiusPx(s.radiusTopLeftY, h)
     radTRX = radiusPx(s.radiusTopRightX, w)
@@ -159,20 +311,58 @@ void func pFillRoundedEllipses(x:int, y:int, w:int, h:int,
     if paintLayer == null {
         roundedRectPathEllipses(x, y, w, h, tlx, tly, trx, trry, brx, bry, blx, bly)
         fillPath()
-    } else {
-        // no path API on a layer, so the corners come out square
-        // (FINDINGS.md, "an image is a drawable surface with a smaller
-        // API")
-        paintLayer.drawRect(x, y, w, h)
+        return
     }
+    // A layer has no path API (FINDINGS.md, "an image is a drawable
+    // surface with a smaller API"), so the shape is filled a row at a
+    // time from the same span function the shadows ask for. The corners
+    // come out where they belong and hard-edged, rather than square: a
+    // `border-radius` inside an `overflow: hidden` box used to be drawn
+    // as a rectangle, which is an ordinary thing for a page to ask for
+    // and a plain error on the screen.
+    fillRoundedOnLayer(x, y, w, h, tlx, tly, trx, trry, brx, bry, blx, bly)
 }
 
 void func pFillRounded(x:int, y:int, w:int, h:int, r:int) {
     pFillRoundedCorners(x, y, w, h, r, r, r, r)
 }
 
+// ---- CSS Filter Effects 1: the filters in force ----------------------
+//
+// A filter applies to the element and its descendants, and a filter
+// inside a filter composes, so the indices in force are a stack: entry
+// zero is the outermost. A colour is filtered by the innermost first,
+// because that is the order the raster would have been produced in.
+//
+// Nothing here is reached on a page with no `filter`. The guard is
+// written at each call site as `anyFilter && paintFilters.length > 0`,
+// which short-circuits, rather than inside the fill -- a call the
+// common case skips still costs the pages that never reach it
+// (CLAUDE.md).
+arr[int] paintFilters = []
+
+int func filteredColor(c:int) {
+    int out = c
+    for int i = paintFilters.length - 1, i >= 0, i-- {
+        FilterSpec spec = filterSpecOf(paintFilters[i])
+        if spec == null { continue }
+        for int k = 0, k < spec.kinds.length, k++ {
+            out = colorFilterOne(out, spec.kinds[k], spec.amounts[k])
+        }
+    }
+    return out
+}
+
+// The box whose filter is already on the stack, so that re-entering
+// paintBox for it does not push the same filter for ever. The same
+// device `position: sticky` uses.
+int filteredBoxId = 0
+
 void func paintFill(c:int, opacity:float) {
-    applyFillColor(colorWithOpacity(c, opacity))
+    int v = colorWithOpacity(c, opacity)
+    // See "the filters in force": the guard short-circuits, so a page
+    // with no `filter` on it does not make the call.
+    applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(v) : v)
 }
 
 // A rounded-rectangle path; the caller fills or strokes it.
@@ -211,13 +401,65 @@ void func roundedRectPathEllipses(x:int, y:int, w:int, h:int,
     beginPath()
     moveTo(x + ax, y)
     lineTo(x + w - bx, y)
-    curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    if !pathAnyShaped {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+        lineTo(x + w, y + h - cy)
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+        lineTo(x + dx, y + h)
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+        lineTo(x, y + ay)
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+        closePath()
+        return
+    }
+    // A `corner-shape` other than `round` is walked rather than curved:
+    // a bezier is not a superellipse and the canvas has no primitive
+    // that is. A corner that IS round keeps its bezier even when the box
+    // has a shaped corner elsewhere, so `round` is the same pixels
+    // whatever its neighbours are -- an invariant the suite checks, and
+    // one worth having structurally rather than by convergence.
+    //
+    // Each corner runs from where one straight edge ends to where the
+    // next begins, and is walked in the angle rather than in either
+    // axis: `square` and `notch` put everything they do in the last
+    // thousandth of an axis parameter and would come out as a diagonal
+    // across the corner, where in the angle every exponent is sampled
+    // evenly along its own curve.
+    if pathKTR == CORNER_K_ROUND {
+        curveTo(x + w - bx + kbx, y, x + w, y + by - kby, x + w, y + by)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(bx, by, i, pathKTR)
+            lineTo(x + w - bx + roundPx(cornerPA), y + roundPx(by.toFloat() - cornerPB))
+        }
+    }
     lineTo(x + w, y + h - cy)
-    curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    if pathKBR == CORNER_K_ROUND {
+        curveTo(x + w, y + h - cy + kcy, x + w - cx + kcx, y + h, x + w - cx, y + h)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(cy, cx, i, pathKBR)
+            lineTo(x + w - roundPx(cornerPB), y + h - cy + roundPx(cornerPA))
+        }
+    }
     lineTo(x + dx, y + h)
-    curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    if pathKBL == CORNER_K_ROUND {
+        curveTo(x + dx - kdx, y + h, x, y + h - dy + kdy, x, y + h - dy)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(dx, dy, i, pathKBL)
+            lineTo(x + dx - roundPx(cornerPA), y + h - roundPx(dy.toFloat() - cornerPB))
+        }
+    }
     lineTo(x, y + ay)
-    curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    if pathKTL == CORNER_K_ROUND {
+        curveTo(x, y + ay - kay, x + ax - kax, y, x + ax, y)
+    } else {
+        for int i = 1, i <= CORNER_SLICES, i++ {
+            cornerPointAt(ay, ax, i, pathKTL)
+            lineTo(x + roundPx(cornerPB), y + ay - roundPx(cornerPA))
+        }
+    }
     closePath()
 }
 
@@ -392,24 +634,74 @@ int SHADOW_SLICES = 8
 float shadowSpanLo = 0.0
 float shadowSpanHi = 0.0
 
-// How far a corner's ellipse holds the edge in, `dy` into its band:
-// nothing at the band's inner end, the whole radius past its outer one.
-float func cornerInset(rx:int, ry:int, dy:float) {
+// `cornerInset` is in src/css/shapes.f, because `inset()`'s `round`
+// radius asks it the same question and the CSS cannot call the painter.
+
+// The same question of a corner drawn with any `corner-shape`: the
+// superellipse `|x/rx|^k + |y/ry|^k = 1` for a positive exponent, and
+// its concave reflection for a negative one, which is what `scoop` and
+// `notch` are. `dy` is into the band as above -- nothing at the inner
+// end, the whole radius at the outer one.
+//
+// Every keyword is one exponent (CSS Borders 4 §5), so there is one
+// curve here and not six: 2 is `round`, 1 is `bevel` -- where the
+// formula collapses to `rx * t` and the corner is the straight cut it
+// should be -- 4 is `squircle`, -2 is `scoop`, and the two extremes are
+// `square` and `notch`. `round` keeps the square root, because it is
+// the value nearly every corner has and it is inside the shadow
+// painter's per-row loop.
+float func cornerInsetShaped(rx:int, ry:int, dy:float, k:float) {
+    if k == CORNER_K_ROUND { return cornerInset(rx, ry, dy) }
     if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
     float fry = ry.toFloat()
-    if dy >= fry { return rx.toFloat() }
-    float t = dy / fry
-    return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
+    float frx = rx.toFloat()
+    float t = dy >= fry ? 1.0 : dy / fry
+    if k < 0.0 {
+        float m = 0.0 - k
+        return frx * Math.pow(1.0 - Math.pow(1.0 - t, m), 1.0 / m)
+    }
+    return frx * (1.0 - Math.pow(1.0 - Math.pow(t, k), 1.0 / k))
 }
 
 void func shadowSpanAt(vc:float, w:int, h:int,
                        tlx:int, tly:int, trx:int, trys:int,
                        brx:int, brys:int, blx:int, blys:int) {
-    shadowSpanLo = maxFloat(cornerInset(tlx, tly, tly.toFloat() - vc),
-                            cornerInset(blx, blys, vc - (h - blys).toFloat()))
+    shadowSpanLo = maxFloat(cornerInsetShaped(tlx, tly, tly.toFloat() - vc, pathKTL),
+                            cornerInsetShaped(blx, blys, vc - (h - blys).toFloat(), pathKBL))
     shadowSpanHi = w.toFloat()
-        - maxFloat(cornerInset(trx, trys, trys.toFloat() - vc),
-                   cornerInset(brx, brys, vc - (h - brys).toFloat()))
+        - maxFloat(cornerInsetShaped(trx, trys, trys.toFloat() - vc, pathKTR),
+                   cornerInsetShaped(brx, brys, vc - (h - brys).toFloat(), pathKBR))
+}
+
+// A rounded rectangle filled into a layer, a row at a time, from the
+// span function above -- which is why it lives here rather than beside
+// `pFillRoundedEllipses`: a function is hoisted in Festina and a global
+// is not, and this reads `shadowSpanLo`.
+void func fillRoundedOnLayer(x:int, y:int, w:int, h:int,
+                             tlx:int, tly:int, trx:int, trry:int,
+                             brx:int, bry:int, blx:int, bly:int) {
+    int capX = Math.floorDiv(w, 2)
+    int capY = Math.floorDiv(h, 2)
+    int ax = minInt(tlx, capX)
+    int ay = minInt(tly, capY)
+    int bx = minInt(trx, capX)
+    int by = minInt(trry, capY)
+    int cx = minInt(brx, capX)
+    int cy = minInt(bry, capY)
+    int dx = minInt(blx, capX)
+    int dy = minInt(bly, capY)
+    if ax <= 0 && ay <= 0 && bx <= 0 && by <= 0
+        && cx <= 0 && cy <= 0 && dx <= 0 && dy <= 0 {
+        paintLayer.drawRect(x, y, w, h)
+        return
+    }
+    for int j = 0, j < h, j++ {
+        shadowSpanAt(j.toFloat() + 0.5, w, h, ax, ay, bx, by, cx, cy, dx, dy)
+        int lo = roundPx(shadowSpanLo)
+        int hi = roundPx(shadowSpanHi)
+        if hi <= lo { continue }
+        paintLayer.drawRect(x + lo, y + j, hi - lo, 1)
+    }
 }
 
 // One corner of a rounded shadow, as an image carrying the blurred
@@ -529,6 +821,143 @@ img func shadowCorner(key:text, x0:int, y0:int, cw:int, ch:int,
             a = a * own
             if a <= 0.002 { continue }
             fillAlpha(a > 1.0 ? 1.0 : a)
+            out.drawPixel(i, j)
+        }
+    }
+    fillAlpha(1.0)
+    return out
+}
+
+// The correction a blurred `inset` shadow's rounded corner needs.
+//
+// Its two strip passes leave `1 - fx*fy`, the complement of the
+// *square* hole's blurred coverage. What it wants is the complement of
+// the **rounded** hole's, and a rounded hole lies inside the square
+// one, so its coverage is the smaller and the shadow belongs darker at
+// a corner than the strips make it -- by as much as 59 units of 255 on
+// the fixture todo.md records.
+//
+// Painting over accumulates rather than adds: `a` then `d` gives
+// `a + d(1 - a)`. Setting that equal to `1 - round`, with `a` the
+// `1 - fx*fy` already there, solves to
+//
+//     d = 1 - round / (fx*fy)
+//
+// which is between zero and one precisely because the rounded coverage
+// never exceeds the square one. So the correction is paintable, and
+// that is what makes this possible at all: the canvas has no operator
+// that subtracts (FINDINGS.md, and CSS Compositing is blocked on it).
+//
+// The sum is the same outer integral `shadowCorner` takes, over the
+// hole's own shape; what differs is the pixel written at the end.
+map[img] insetCornerFixes = {}
+
+img func insetCornerFix(key:text, x0:int, y0:int, cw:int, ch:int,
+                        w:int, h:int, sigma:float, reach:int, shade:int,
+                        tlx:int, tly:int, trx:int, trys:int,
+                        brx:int, brys:int, blx:int, blys:int) {
+    img hit = insetCornerFixes[key]
+    if hit != null { return hit }
+    img out = blankImage(cw, ch)
+    insetCornerFixes[key] = out
+    int v0 = maxInt(y0 - reach, 0)
+    int v1 = minInt(y0 + ch + reach, h)
+    if v1 <= v0 { return out }
+
+    arr[float] segT0 = []
+    arr[float] segT1 = []
+    arr[float] segLo = []
+    arr[float] segHi = []
+    int topBand = maxInt(tly, trys)
+    int botBand = maxInt(brys, blys)
+    int runFrom = 0 - 1
+    float step = 1.0 / SHADOW_SLICES.toFloat()
+    for int v = v0, v < v1, v++ {
+        if v >= topBand && v + 1 <= h - botBand {
+            if runFrom < 0 { runFrom = v }
+            continue
+        }
+        if runFrom >= 0 {
+            shadowSpanAt((runFrom + v).toFloat() / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            segT0.push(runFrom.toFloat())
+            segT1.push(v.toFloat())
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+            runFrom = 0 - 1
+        }
+        for int k = 0, k < SHADOW_SLICES, k++ {
+            float t0 = v.toFloat() + step * k.toFloat()
+            float t1 = t0 + step
+            shadowSpanAt((t0 + t1) / 2.0, w, h,
+                         tlx, tly, trx, trys, brx, brys, blx, blys)
+            if shadowSpanLo >= shadowSpanHi { continue }
+            segT0.push(t0)
+            segT1.push(t1)
+            segLo.push(shadowSpanLo)
+            segHi.push(shadowSpanHi)
+        }
+    }
+    if runFrom >= 0 {
+        shadowSpanAt((runFrom + v1).toFloat() / 2.0, w, h,
+                     tlx, tly, trx, trys, brx, brys, blx, blys)
+        segT0.push(runFrom.toFloat())
+        segT1.push(v1.toFloat())
+        segLo.push(shadowSpanLo)
+        segHi.push(shadowSpanHi)
+    }
+    int nv = segT0.length
+    if nv == 0 { return out }
+
+    float fw = w.toFloat()
+    float fh = h.toFloat()
+    arr[float] hf = []
+    arr[float] sqx = []
+    for int i = 0, i < cw, i++ {
+        float px = (x0 + i).toFloat() + 0.5
+        sqx.push(blurAxis(px, 0.0, fw, sigma))
+        for int k = 0, k < nv, k++ {
+            hf.push(blurAxis(px, segLo[k], segHi[k], sigma))
+        }
+    }
+    arr[float] vw = []
+    arr[float] sqy = []
+    arr[int] kLo = []
+    arr[int] kHi = []
+    for int j = 0, j < ch, j++ {
+        float py = (y0 + j).toFloat() + 0.5
+        sqy.push(blurAxis(py, 0.0, fh, sigma))
+        int first = nv
+        int last = 0 - 1
+        for int k = 0, k < nv, k++ {
+            float a = blurAxis(py, segT0[k], segT1[k], sigma)
+            vw.push(a)
+            if a > 0.000001 {
+                if k < first { first = k }
+                last = k
+            }
+        }
+        kLo.push(first)
+        kHi.push(last)
+    }
+
+    fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
+    for int j = 0, j < ch, j++ {
+        int vb = j * nv
+        int k0 = kLo[j]
+        int k1 = kHi[j]
+        float vy = sqy[j]
+        for int i = 0, i < cw, i++ {
+            // Where the square hole barely covers the pixel there is
+            // nothing to correct: the strips already left it opaque.
+            float sq = sqx[i] * vy
+            if sq <= 0.0005 { continue }
+            int hb = i * nv
+            float a = 0.0
+            for int k = k0, k <= k1, k++ { a = a + hf[hb + k] * vw[vb + k] }
+            float d = 1.0 - a / sq
+            if d <= 0.002 { continue }
+            fillAlpha(d > 1.0 ? 1.0 : d)
             out.drawPixel(i, j)
         }
     }
@@ -728,6 +1157,90 @@ void func fillFrame(ox:int, oy:int, ow:int, oh:int, ix:int, iy:int, iw:int, ih:i
     if right < ox + ow { pDrawRect(right, top, ox + ow - right, bottom - top) }
 }
 
+// The padding box's own corners: the border box's, less the border on
+// each side and floored at zero, which is the inner curve (Backgrounds
+// and Borders 3 §5.2). Eight values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int inRadTLX = 0
+int inRadTLY = 0
+int inRadTRX = 0
+int inRadTRY = 0
+int inRadBRX = 0
+int inRadBRY = 0
+int inRadBLX = 0
+int inRadBLY = 0
+
+int func innerRadius(r:int, b:int) {
+    if r <= 0 { return 0 }
+    return maxInt(r - b, 0)
+}
+
+// Answers whether any of them is round, so a box whose borders have
+// eaten every corner takes the straight path below rather than the
+// per-row one.
+bool func insetShapeRadii(s:Style, w:int, h:int, bl:int, bt:int, br:int, bb:int) {
+    resolveCornerRadii(s, w, h)
+    inRadTLX = innerRadius(radTLX, bl)
+    inRadTLY = innerRadius(radTLY, bt)
+    inRadTRX = innerRadius(radTRX, br)
+    inRadTRY = innerRadius(radTRY, bt)
+    inRadBRX = innerRadius(radBRX, br)
+    inRadBRY = innerRadius(radBRY, bb)
+    inRadBLX = innerRadius(radBLX, bl)
+    inRadBLY = innerRadius(radBLY, bb)
+    return inRadTLX > 0 || inRadTLY > 0 || inRadTRX > 0 || inRadTRY > 0
+        || inRadBRX > 0 || inRadBRY > 0 || inRadBLX > 0 || inRadBLY > 0
+}
+
+// The span of the inner curve at one row of the padding box, as
+// absolute x. Two values out of a function need globals.
+int insetRowLo = 0
+int insetRowHi = 0
+
+void func insetRowSpan(px:int, py:int, pw:int, ph:int, row:int) {
+    shadowSpanAt((row - py).toFloat() + 0.5, pw, ph,
+                 inRadTLX, inRadTLY, inRadTRX, inRadTRY,
+                 inRadBRX, inRadBRY, inRadBLX, inRadBLY)
+    insetRowLo = px + roundPx(shadowSpanLo)
+    insetRowHi = px + roundPx(shadowSpanHi)
+}
+
+// The band between two rounded rectangles, a row at a time. An inset
+// shadow is the padding box minus the hole the offset and the spread
+// leave, and where the box is round both of those follow a curve, so
+// each row is two runs rather than the four strips a square box needs.
+// The hole's radii are the padding box's less the spread, which is what
+// Chromium does: 40 less a 12 spread puts the hole's edge where a 40
+// would not (todo.md).
+void func fillRoundedFrame(px:int, py:int, pw:int, ph:int,
+                           hx:int, hy:int, hw:int, hh:int, spread:int) {
+    int htlx = innerRadius(inRadTLX, spread)
+    int htly = innerRadius(inRadTLY, spread)
+    int htrx = innerRadius(inRadTRX, spread)
+    int htry = innerRadius(inRadTRY, spread)
+    int hbrx = innerRadius(inRadBRX, spread)
+    int hbry = innerRadius(inRadBRY, spread)
+    int hblx = innerRadius(inRadBLX, spread)
+    int hbly = innerRadius(inRadBLY, spread)
+    for int j = 0, j < ph, j++ {
+        int row = py + j
+        insetRowSpan(px, py, pw, ph, row)
+        int lo = insetRowLo
+        int hi = insetRowHi
+        if hi <= lo { continue }
+        int cutLo = hi
+        int cutHi = hi
+        if hw > 0 && hh > 0 && row >= hy && row < hy + hh {
+            shadowSpanAt((row - hy).toFloat() + 0.5, hw, hh,
+                         htlx, htly, htrx, htry, hbrx, hbry, hblx, hbly)
+            cutLo = clampInt(hx + roundPx(shadowSpanLo), lo, hi)
+            cutHi = clampInt(hx + roundPx(shadowSpanHi), lo, hi)
+        }
+        if cutLo > lo { pDrawRect(lo, row, cutLo - lo, 1) }
+        if hi > cutHi { pDrawRect(cutHi, row, hi - cutHi, 1) }
+    }
+}
+
 // `inset` shadows (Backgrounds and Borders 3 §6). The shadow is the
 // padding box minus that box offset by the shadow's lengths and shrunk
 // by its spread, so it reads as a band inside an edge rather than a
@@ -746,21 +1259,33 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
     int pw = w - bl - br
     int ph = h - bt - bb
     if pw <= 0 || ph <= 0 { return }
+    // The inner curve, worked out once for the box rather than once per
+    // shadow -- and not at all until an `inset` shadow is actually
+    // reached, because most boxes that carry a shadow carry an outer
+    // one and would otherwise pay for a curve nothing here draws.
+    bool round = false
+    bool askedRound = false
     for int i = s.shadows.length - 1, i >= 0, i-- {
         Shadow sh = s.shadows[i]
         if !sh.inset { continue }
         if !colorIsPaintable(sh.color) { continue }
+        if !askedRound {
+            askedRound = true
+            round = s.borderRadius > 0 && insetShapeRadii(s, w, h, bl, bt, br, bb)
+        }
         int ix = px + sh.dx + sh.spread
         int iy = py + sh.dy + sh.spread
         int iw = pw - sh.spread - sh.spread
         int ih = ph - sh.spread - sh.spread
         if sh.blur > 0 {
             paintInsetBlur(px, py, pw, ph, ix, iy, iw, ih,
-                           sh.color, s.effectiveOpacity, sh.blur)
+                           sh.color, s.effectiveOpacity, sh.blur, round,
+                           sh.spread)
             continue
         }
         paintFill(sh.color, s.effectiveOpacity)
-        fillFrame(px, py, pw, ph, ix, iy, iw, ih)
+        if round { fillRoundedFrame(px, py, pw, ph, ix, iy, iw, ih, sh.spread) }
+        else { fillFrame(px, py, pw, ph, ix, iy, iw, ih) }
         fillAlpha(1.0)
     }
 }
@@ -779,7 +1304,8 @@ void func paintInsetShadows(x:int, y:int, w:int, h:int,
 // how the strips are kept inside the padding box without a clip region.
 void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
                          hx:int, hy:int, hw:int, hh:int,
-                         c:int, opacity:float, blur:int) {
+                         c:int, opacity:float, blur:int, round:bool,
+                         spread:int) {
     if pw <= 0 || ph <= 0 { return }
     int shade = colorWithOpacity(c, opacity)
     if !colorIsPaintable(shade) { return }
@@ -787,7 +1313,13 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
     float sigma = blur.toFloat() / 2.0
     float fw = maxInt(hw, 0).toFloat()
     float fh = maxInt(hh, 0).toFloat()
-    img layer = own >= 0.999 ? null : blankImage(pw, ph)
+    // A round box needs the layer whatever its alpha, because the
+    // strips are square and the padding box is not: the layer is what
+    // the inner curve cuts them back to, one scanline at a time, the
+    // way a `clip-path` is cut. The band's own falloff is still
+    // measured from the square hole -- todo.md has what the curved one
+    // would take.
+    img layer = round || own < 0.999 ? blankImage(pw, ph) : null
     fillStyle(colorRed(shade), colorGreen(shade), colorBlue(shade))
     for int i = 0, i < pw, i++ {
         float a = 1.0 - blurAxis((px + i - hx).toFloat() + 0.5, 0.0, fw, sigma)
@@ -803,9 +1335,82 @@ void func paintInsetBlur(px:int, py:int, pw:int, ph:int,
         if layer == null { pDrawRect(px, py + j, pw, 1) }
         else { layer.drawRect(0, j, pw, 1) }
     }
+    // The corners, where the rounded hole and the square one part
+    // company. Everything above this is the square answer; each corner
+    // is one blit that turns it into the round one.
+    if round && layer != null {
+        // The strip passes above leave `fillAlpha` wherever their last
+        // row put it, and a blit carries it. A corner that has to be
+        // BUILT puts it back itself, so only a corner served from the
+        // cache would be scaled by it -- which makes the first painting
+        // of a shadow differ from every later one.
+        fillAlpha(1.0)
+        int htlx = innerRadius(inRadTLX, spread)
+        int htly = innerRadius(inRadTLY, spread)
+        int htrx = innerRadius(inRadTRX, spread)
+        int htry = innerRadius(inRadTRY, spread)
+        int hbrx = innerRadius(inRadBRX, spread)
+        int hbry = innerRadius(inRadBRY, spread)
+        int hblx = innerRadius(inRadBLX, spread)
+        int hbly = innerRadius(inRadBLY, spread)
+        int reach = maxInt(roundPx(sigma * 3.0), 1)
+        // Half the hole either way, so two corners' bands can never
+        // overlap and correct the same pixel twice.
+        int halfW = Math.floorDiv(hw + reach + reach + 1, 2)
+        int halfH = Math.floorDiv(hh + reach + reach + 1, 2)
+        int colsL = minInt(maxInt(htlx, hblx) + reach, halfW)
+        int colsR = minInt(maxInt(htrx, hbrx) + reach, halfW)
+        int rowsT = minInt(maxInt(htly, htry) + reach, halfH)
+        int rowsB = minInt(maxInt(hbry, hbly) + reach, halfH)
+        text ck = `${blur}|${shade}|${hw}|${hh}|${htlx},${htly},${htrx},${htry}`
+            + `|${hbrx},${hbry},${hblx},${hbly}|${colsL},${colsR},${rowsT},${rowsB}`
+            + `|${reach}`
+        int ox = hx - px
+        int oy = hy - py
+        if colsL > 0 && rowsT > 0 && (htlx > 0 || htly > 0) {
+            layer.drawImage(insetCornerFix(ck + '|tl', 0 - reach, 0 - reach,
+                                           colsL, rowsT, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox - reach, oy - reach)
+        }
+        if colsR > 0 && rowsT > 0 && (htrx > 0 || htry > 0) {
+            layer.drawImage(insetCornerFix(ck + '|tr', hw - colsR + reach, 0 - reach,
+                                           colsR, rowsT, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox + hw - colsR + reach, oy - reach)
+        }
+        if colsL > 0 && rowsB > 0 && (hblx > 0 || hbly > 0) {
+            layer.drawImage(insetCornerFix(ck + '|bl', 0 - reach, hh - rowsB + reach,
+                                           colsL, rowsB, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox - reach, oy + hh - rowsB + reach)
+        }
+        if colsR > 0 && rowsB > 0 && (hbrx > 0 || hbry > 0) {
+            layer.drawImage(insetCornerFix(ck + '|br', hw - colsR + reach, hh - rowsB + reach,
+                                           colsR, rowsB, hw, hh, sigma, reach, shade,
+                                           htlx, htly, htrx, htry,
+                                           hbrx, hbry, hblx, hbly),
+                            ox + hw - colsR + reach, oy + hh - rowsB + reach)
+        }
+    }
     if layer != null {
         fillAlpha(own)
-        pDrawImage(layer, px, py)
+        if !round {
+            pDrawImage(layer, px, py)
+        } else {
+            for int j = 0, j < ph, j++ {
+                int row = py + j
+                insetRowSpan(px, py, pw, ph, row)
+                int lo = insetRowLo
+                int hi = insetRowHi
+                if hi <= lo { continue }
+                img piece = cutRegion(layer, lo - px, j, hi - lo, 1)
+                if piece != null { pDrawImage(piece, lo, row) }
+            }
+        }
     }
     fillAlpha(1.0)
 }
@@ -820,6 +1425,104 @@ BgLayer bgPaint
 // How much of the layer's image shows. One for every layer that is not
 // the second image of a cross-fade, so nothing else pays for it.
 float bgFadeAlpha = 1.0
+
+// The curve of the painting area the current layer is clipped to
+// (Backgrounds and Borders 3 Sec 3.5). A box with no `border-radius`
+// leaves `bgClipRound` false and its image is blitted back whole, so a
+// page of square boxes pays one field read per layer painted.
+bool bgClipRound = false
+int bgClipRTLX = 0
+int bgClipRTLY = 0
+int bgClipRTRX = 0
+int bgClipRTRY = 0
+int bgClipRBRX = 0
+int bgClipRBRY = 0
+int bgClipRBLX = 0
+int bgClipRBLY = 0
+
+// The eight radii of the area `clip` names, and whether any of them
+// curves. The border box keeps its own; the padding and content boxes
+// reduce it by what lies outside them, which is the rule the colour
+// applies too -- `paintBackground` works the same two cases out inline,
+// and the render suite requires the two to land on the same pixel.
+bool func backgroundClipRadii(clip:int, s:Style, w:int, h:int,
+                              bl:int, bt:int, br:int, bb:int,
+                              pl:int, pt:int, pr:int, pb:int) {
+    if s.borderRadius <= 0 { return false }
+    if clip == BGCLIP_BORDER {
+        resolveCornerRadii(s, w, h)
+        bgClipRTLX = radTLX  bgClipRTLY = radTLY
+        bgClipRTRX = radTRX  bgClipRTRY = radTRY
+        bgClipRBRX = radBRX  bgClipRBRY = radBRY
+        bgClipRBLX = radBLX  bgClipRBLY = radBLY
+        return radTLX > 0 || radTLY > 0 || radTRX > 0 || radTRY > 0
+            || radBRX > 0 || radBRY > 0 || radBLX > 0 || radBLY > 0
+    }
+    int dl = bl
+    int dt = bt
+    int dr = br
+    int db = bb
+    if clip == BGCLIP_CONTENT {
+        dl = bl + pl
+        dt = bt + pt
+        dr = br + pr
+        db = bb + pb
+    }
+    if !insetShapeRadii(s, w, h, dl, dt, dr, db) { return false }
+    bgClipRTLX = inRadTLX  bgClipRTLY = inRadTLY
+    bgClipRTRX = inRadTRX  bgClipRTRY = inRadTRY
+    bgClipRBRX = inRadBRX  bgClipRBRY = inRadBRY
+    bgClipRBLX = inRadBLX  bgClipRBLY = inRadBLY
+    return true
+}
+
+// Blits a layer back cut to that curve, a row at a time, because the
+// canvas has no clip region (FINDINGS.md, "an image is a drawable
+// surface with a smaller API"). The span function is the one the
+// shadows and the clipped colour ask for, so a background image and a
+// background colour cannot disagree about where the corner is.
+void func pDrawImageRounded(layer:img, x:int, y:int, w:int, h:int) {
+    int capX = Math.floorDiv(w, 2)
+    int capY = Math.floorDiv(h, 2)
+    int ax = minInt(bgClipRTLX, capX)
+    int ay = minInt(bgClipRTLY, capY)
+    int bx = minInt(bgClipRTRX, capX)
+    int by = minInt(bgClipRTRY, capY)
+    int cx = minInt(bgClipRBRX, capX)
+    int cy = minInt(bgClipRBRY, capY)
+    int dx = minInt(bgClipRBLX, capX)
+    int dy = minInt(bgClipRBLY, capY)
+    // The rows a corner does not reach span the whole width, and they
+    // are most of a box: a 6px radius on a 200px card leaves twelve
+    // rows curved and 188 straight. Those go back as ONE region rather
+    // than 188. It is worth two of the nine milliseconds the cut cost
+    // before it and no pixel, and no more than that, because the price
+    // is the copying rather than the number of regions: a blit has no
+    // source rectangle here, so the box's pixels go through twice
+    // whatever shape they are cut into. benchmarks.md has the reading.
+    int runFrom = 0 - 1
+    for int j = 0, j < h, j++ {
+        shadowSpanAt(j.toFloat() + 0.5, w, h, ax, ay, bx, by, cx, cy, dx, dy)
+        int lo = roundPx(shadowSpanLo)
+        int hi = roundPx(shadowSpanHi)
+        if lo <= 0 && hi >= w {
+            if runFrom < 0 { runFrom = j }
+            continue
+        }
+        if runFrom >= 0 {
+            img band = cutRegion(layer, 0, runFrom, w, j - runFrom)
+            if band != null { pDrawImage(band, x, y + runFrom) }
+            runFrom = 0 - 1
+        }
+        if hi <= lo { continue }
+        img piece = cutRegion(layer, lo, j, hi - lo, 1)
+        if piece != null { pDrawImage(piece, x + lo, y + j) }
+    }
+    if runFrom >= 0 {
+        img band = cutRegion(layer, 0, runFrom, w, h - runFrom)
+        if band != null { pDrawImage(band, x, y + runFrom) }
+    }
+}
 
 void func bgLayerOfStyle(s:Style) {
     bgPaint.url = s.backgroundUrl
@@ -876,6 +1579,11 @@ void func paintBackgroundLayer(x:int, y:int, w:int, h:int,
         clipX = bgAreaX  clipY = bgAreaY  clipW = bgAreaW  clipH = bgAreaH
         if clipW <= 0 || clipH <= 0 { return }
     }
+    // The painting area curves when the box does, and the image is cut
+    // to it exactly as the colour under it is. A box with no radius
+    // stops at the field read.
+    bgClipRound = backgroundClipRadii(bgPaint.clip, s, w, h,
+                                      bl, bt, br, bb, pl, pt, pr, pb)
     backgroundArea(bgPaint.origin, BGORIGIN_BORDER, BGORIGIN_CONTENT,
                    x, y, w, h, bl, bt, br, bb, pl, pt, pr, pb)
     int origX = bgAreaX
@@ -940,16 +1648,41 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 
     if colorIsPaintable(s.background) {
         paintFill(s.background, s.effectiveOpacity)
-        if s.borderRadius > 0 {
-            // The radii are the border box's, and a percentage is of it:
-            // a clipped background keeps that curve rather than deriving
-            // the smaller inner one.
+        if s.borderRadius <= 0 {
+            pDrawRect(clipX, clipY, clipW, clipH)
+        } else if colourClip == BGCLIP_BORDER {
+            // A percentage radius is of the border box, so the border
+            // box's own curve needs no reduction.
             resolveCornerRadii(s, w, h)
             pFillRoundedEllipses(clipX, clipY, clipW, clipH,
                                  radTLX, radTLY, radTRX, radTRY,
                                  radBRX, radBRY, radBLX, radBLY)
         } else {
-            pDrawRect(clipX, clipY, clipW, clipH)
+            // The padding edge's curvature is the border box's less the
+            // border on each side, and the content edge's is that less
+            // the padding as well (§5.2). Keeping the border box's
+            // curve here cuts more away than the box does and leaves
+            // the page showing through between the border and the
+            // background: on an 80x80 box with a 20px border and a
+            // 40px radius it put the background's edge at 48 on row 22
+            // where Chromium puts it at 31.
+            int dl = bl
+            int dt = bt
+            int dr = br
+            int db = bb
+            if colourClip == BGCLIP_CONTENT {
+                dl = bl + pl
+                dt = bt + pt
+                dr = br + pr
+                db = bb + pb
+            }
+            if insetShapeRadii(s, w, h, dl, dt, dr, db) {
+                pFillRoundedEllipses(clipX, clipY, clipW, clipH,
+                                     inRadTLX, inRadTLY, inRadTRX, inRadTRY,
+                                     inRadBRX, inRadBRY, inRadBLX, inRadBLY)
+            } else {
+                pDrawRect(clipX, clipY, clipW, clipH)
+            }
         }
         fillAlpha(1.0)
     }
@@ -976,7 +1709,8 @@ void func paintBackground(x:int, y:int, w:int, h:int,
 // of the painting area, the clip region the canvas does not have.
 void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
                                origX:int, origY:int, origW:int, origH:int, s:Style) {
-    if origX == clipX && origY == clipY && origW == clipW && origH == clipH {
+    if !bgClipRound && origX == clipX && origY == clipY
+        && origW == clipW && origH == clipH {
         if bgPaint.image.conic {
             paintConicGradient(clipX, clipY, clipW, clipH, bgPaint.image, s.effectiveOpacity)
         } else if bgPaint.image.radial {
@@ -1001,7 +1735,8 @@ void func paintGradientClipped(clipX:int, clipY:int, clipW:int, clipH:int,
     }
     paintLayer = prev
     fillAlpha(s.effectiveOpacity)
-    pDrawImage(layer, clipX, clipY)
+    if bgClipRound { pDrawImageRounded(layer, clipX, clipY, clipW, clipH) }
+    else { pDrawImage(layer, clipX, clipY) }
     fillAlpha(1.0)
 }
 
@@ -1121,7 +1856,8 @@ void func paintBackgroundImage(clipX:int, clipY:int, clipW:int, clipH:int,
     // again as the layer is composited -- and leaving it unset paints a
     // fully opaque image on a half-transparent box.
     fillAlpha(bgFadeAlpha == 1.0 ? s.effectiveOpacity : s.effectiveOpacity * bgFadeAlpha)
-    pDrawImage(layer, clipX, clipY)
+    if bgClipRound { pDrawImageRounded(layer, clipX, clipY, clipW, clipH) }
+    else { pDrawImage(layer, clipX, clipY) }
     fillAlpha(1.0)
 }
 
@@ -1333,7 +2069,7 @@ void func paintConicGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:flo
     for int k = 0, k < wedges, k++ {
         int c = gradientColorAt(g, offsets, (k.toFloat() + 0.5) / wedges.toFloat())
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         for int row = y, row < y + h, row++ {
             float dy = row.toFloat() + 0.5 - cyf
             int want = dy < 0.0 ? 1 : 0 - 1
@@ -1397,7 +2133,7 @@ void func paintLinearGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         float t1 = (i + 1).toFloat() / steps.toFloat()
         int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         if horizontal || vertical {
             // the band is a rectangle, so no polygon is needed
             float a0 = x0 + dx * length * t0 + dy * 0.0
@@ -1552,7 +2288,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
             float t1 = tEnd * (i + 1).toFloat() / bands.toFloat()
             int c = gradientColorAt(g, mirrored, (t0 + t1) / 2.0)
             if colorAlpha(c) == 0 { continue }
-            applyFillColor(c)
+            applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
             int ra = maxInt(roundPx(cx + t0 * rx), x)
             int rb = minInt(roundPx(cx + t1 * rx), x + w)
             if rb > ra { pDrawRect(ra, y, rb - ra, h) }
@@ -1571,7 +2307,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         int last = g.stops[g.stops.length - 1]
         if colorAlpha(last) == 0 { return }
         fillAlpha(opacity)
-        applyFillColor(last)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(last) : last)
         pDrawRect(x, y, w, h)
         fillAlpha(1.0)
         return
@@ -1611,7 +2347,7 @@ void func paintRadialGradient(x:int, y:int, w:int, h:int, g:Gradient, opacity:fl
         float t1 = tMax * (i + 1).toFloat() / steps.toFloat()
         int c = gradientColorAt(g, offsets, (t0 + t1) / 2.0)
         if colorAlpha(c) == 0 { continue }
-        applyFillColor(c)
+        applyFillColor(anyFilter && paintFilters.length > 0 ? filteredColor(c) : c)
         // On each row the band is the pair of intervals where the
         // normalised distance falls between t0 and t1: solving
         // ((px-cx)/rx)^2 + ((row-cy)/ry)^2 = t^2 for px gives a half
@@ -1805,8 +2541,14 @@ void func paintBorders(b:Box) {
     fillAlpha(1.0)
 }
 
+// A box is worth painting when it meets the window. Both culls are
+// widened by the furthest any inline box on the document reaches
+// outside its line, because that ink belongs to the box and is not in
+// its rectangle; on a document with no padded or bordered inline the
+// number is zero and the test is the plain one.
 bool func boxVisible(b:Box) {
-    return b.y + b.h >= paintTop && b.y <= paintBottom
+    return b.y + b.h + inlineInkOverhang >= paintTop
+        && b.y - inlineInkOverhang <= paintBottom
 }
 
 // The first line box inside a list item, for placing its marker.
@@ -2252,7 +2994,150 @@ void func paintListMarker(b:Box) {
 }
 
 // The fragment's glyphs, at an offset from where the fragment sits.
+// Synthesised small caps, drawn in the same segments `measureSmallCaps`
+// measured. The two walk the run through one pair of functions on
+// purpose: a segment drawn where the measurer did not put one leaves
+// the ink somewhere the layout reserved no room for.
+void func drawSmallCaps(f:Fragment, s:Style, caps:int, dx:int, dy:int) {
+    drawSmallCapsAt(f.content, s, caps, f.x + dx, f.baseline + dy)
+}
+
+// The walk itself, from a starting point rather than from a fragment,
+// so that a vertical run can ask for it inside its own turned space --
+// where the run begins at the origin and advances along local +x.
+void func drawSmallCapsAt(content:text, s:Style, caps:int, startX:int, baseY:int) {
+    int small = smallCapsSize(s)
+    ascii a = content.toAscii()
+    int x = startX
+    int i = 0
+    while i < a.length {
+        int j = smallCapsRunAt(caps, content, i)
+        bool isSmall = smallCapsAt(caps, content, i)
+        if isSmall { setFontAt(s, small) } else { setFontFor(s) }
+        text seg = isSmall ? asciiUpper(a.slice(i, j)).toText() : a.slice(i, j).toText()
+        if s.letterSpacing == 0 {
+            pDrawText(seg, x, baseY)
+            x = x + measureTextWidth(seg)
+        } else {
+            arr[text] chars = seg.split('')
+            for int k = 0, k < chars.length, k++ {
+                pDrawText(chars[k], x, baseY)
+                x = x + measureTextWidth(chars[k]) + s.letterSpacing
+            }
+        }
+        i = j
+    }
+    // The canvas is left at a size that is not this style's, so the
+    // next thing to draw would believe the font was already right.
+    setFontFor(s)
+}
+
+// A vertical fragment's glyphs. The layout put the fragment's rectangle
+// where it belongs and turned its baseline into an absolute x; this
+// turns the canvas a quarter turn about that baseline, at the point the
+// run begins, and then draws the run exactly as a horizontal one --
+// local +x is the inline direction, which is down the page, and local
+// -y is up from the baseline, which is to the right of it.
+//
+// Clockwise in both vertical modes: Writing Modes 4 §5.1 keeps the
+// counter-clockwise turn for `sideways-lr`, which this engine does not
+// have.
+// `text-orientation: upright`: no turn at all. Each character stands up
+// in a cell of its own down the inline axis, centred across the line's
+// thickness, which is what the cell measured in layout.f reserved room
+// for. The measurer and the painter walk the run the same way, as the
+// small-caps pair do, or the ink lands where no room was kept.
+void func drawFragmentGlyphsUpright(f:Fragment, s:Style, dx:int, dy:int) {
+    int adv = uprightAdvance(s)
+    int asc = fontAscent(s)
+    bool up = wmInlineUp(s.writingMode)
+    arr[text] chars = f.content.split('')
+    setFontFor(s)
+    for int i = 0, i < chars.length, i++ {
+        int gw = measureTextWidth(chars[i])
+        int cellTop = up ? f.y + f.h - (i + 1) * adv : f.y + i * adv
+        pDrawText(chars[i], f.x + dx + Math.floorDiv(f.w - gw, 2), cellTop + dy + asc)
+    }
+}
+
+// `text-combine-upright: all` (Writing Modes 4 §9.1): the run is one
+// square of the element's own em along the inline axis, and inside it
+// the text is set horizontally, as it would be in a horizontal mode.
+// Layout reserved exactly that em, so anything wider than it is
+// condensed to fit rather than allowed out of the room it was given --
+// which is what the standard asks for and what Chromium does, by
+// choosing a condensed face where the family has one and scaling where
+// it does not. No face here has one, so this scales.
+//
+// Across the line the square is centred, as a single character is in
+// the upright cell beside it.
+void func drawFragmentGlyphsCombined(f:Fragment, s:Style, dx:int, dy:int) {
+    setFontFor(s)
+    int gw = measureTextWidth(f.content)
+    if gw <= 0 { return }
+    int em = maxInt(f.h, 1)
+    int asc = fontAscent(s)
+    if gw <= em {
+        pDrawText(f.content, f.x + dx + Math.floorDiv(f.w - gw, 2), f.y + dy + asc)
+        return
+    }
+    float k = em.toFloat() / gw.toFloat()
+    pSaveState()
+    pTranslate(f.x + dx + Math.floorDiv(f.w - em, 2), f.y + dy + asc)
+    pScale(k, 1.0)
+    pDrawText(f.content, 0, 0)
+    pRestoreState()
+}
+
+void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
+    if s.textCombine {
+        drawFragmentGlyphsCombined(f, s, dx, dy)
+        return
+    }
+    if s.textOrientation == TO_UPRIGHT {
+        drawFragmentGlyphsUpright(f, s, dx, dy)
+        return
+    }
+    // `sideways-lr` turns the other way and runs bottom to top, so its
+    // run starts at the far end of the fragment and local +x points up
+    // the page. Every line below is the same for both.
+    bool up = wmInlineUp(s.writingMode)
+    pSaveState()
+    pTranslate(f.baseline + dx, up ? f.y + f.h + dy : f.y + dy)
+    pRotate(up ? -90.0 : 90.0)
+    // Inside the turn, local +x is the inline direction, so everything
+    // below is the horizontal painter with the run starting at zero.
+    int caps = fontCapsUsed(s)
+    if caps != CAPS_NORMAL {
+        drawSmallCapsAt(f.content, s, caps, 0, 0)
+        pRestoreState()
+        setFontFor(s)
+        return
+    }
+    if s.letterSpacing == 0 {
+        pDrawText(f.content, 0, 0)
+        pRestoreState()
+        return
+    }
+    arr[text] chars = f.content.split('')
+    int x = 0
+    for int i = 0, i < chars.length, i++ {
+        pDrawText(chars[i], x, 0)
+        x = x + measureTextWidth(chars[i]) + s.letterSpacing
+    }
+    pRestoreState()
+}
+
 void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        drawFragmentGlyphsVertical(f, s, dx, dy)
+        return
+    }
+    int caps = fontCapsUsed(s)
+    if caps != CAPS_NORMAL {
+        drawSmallCaps(f, s, caps, dx, dy)
+        return
+    }
     if s.letterSpacing == 0 {
         pDrawText(f.content, f.x + dx, f.baseline + dy)
         return
@@ -2271,10 +3156,41 @@ void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
 // over the text by default and under it when asked. The mark is a
 // character of its own, so the standard's five shapes need no drawing
 // code and a `<string>` value needs no special case.
+// A vertical run's marks, which run DOWN the line beside it rather than
+// across it. In a vertical mode the standard's `left`/`right` half of
+// `text-emphasis-position` decides the side and the `over`/`under` half
+// is ignored, which is the other way round from a horizontal mode
+// (todo.md has Chromium's table). This engine's computed style carries
+// only the over/under half, so the default is the right-hand side and
+// `under` is the left -- the nearest thing it can say.
+void func paintEmphasisMarksVertical(f:Fragment, s:Style, markW:int) {
+    int gap = maxInt(roundPx(s.fontSize.toFloat() * 0.1), 1)
+    int x = s.emphasisUnder ? f.x - markW - gap : f.x + f.w + gap
+    int asc = fontAscent(s)
+    bool upright = s.textOrientation == TO_UPRIGHT
+    int cell = upright ? uprightAdvance(s) : 0
+    bool up = wmInlineUp(s.writingMode)
+    arr[text] chars = f.content.split('')
+    int y = up ? f.y + f.h : f.y
+    for int i = 0, i < chars.length, i++ {
+        int cw = upright ? cell : measureTextWidth(chars[i]) + s.letterSpacing
+        if up { y = y - cw }
+        if chars[i] != ' ' {
+            pDrawText(s.emphasisMark, x, y + Math.floorDiv(cw - asc, 2) + asc)
+        }
+        if !up { y = y + cw }
+    }
+}
+
 void func paintEmphasisMarks(f:Fragment, s:Style) {
     if s.emphasisMark == '' { return }
     int c = s.emphasisColor == COLOR_UNSET ? s.color : s.emphasisColor
     paintFill(c, s.effectiveOpacity)
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        paintEmphasisMarksVertical(f, s, measureTextWidth(s.emphasisMark))
+        paintFill(s.color, s.effectiveOpacity)
+        return
+    }
     int markW = measureTextWidth(s.emphasisMark)
     // over the ascender, or below the descender
     int y = s.emphasisUnder
@@ -2355,10 +3271,44 @@ void func paintTextFragment(f:Fragment) {
 // One decoration: whichever of the three lines it names, drawn in its
 // own colour and style. The line styles a border has are painted by the
 // border code; `wavy` has no border counterpart and is drawn here.
+// A vertical run's three lines. They do NOT follow the baseline the way
+// a horizontal run's do: Chromium puts the underline at the line box's
+// far block edge, the overline at the near one and the line-through
+// between them, at every size measured and in both vertical modes
+// (todo.md). So this is its own rule rather than the horizontal one
+// turned a quarter turn, which is what the glyphs get.
+void func paintDecorationLinesVertical(f:Fragment, s:Style, lines:int, c:int, style:int,
+                                       thickness:int, offset:int, dx:int, dy:int,
+                                       col:int, alpha:float) {
+    int y = f.y + dy
+    int x = f.x + dx
+    // The near and far block edges, which is what the two lines name:
+    // `sideways-lr` turns its glyphs the other way, so the side its
+    // overline belongs on is the other one.
+    bool up = wmInlineUp(s.writingMode)
+    int nearX = up ? x - 1 : x + f.w - 1
+    int farX = up ? x + f.w - 1 + offset : x - 1 - offset
+    if decoHas(lines, DECO_UNDERLINE) {
+        paintDecorationLineVertical(farX, y, f.h, thickness, style, col, alpha)
+    }
+    if decoHas(lines, DECO_OVERLINE) {
+        paintDecorationLineVertical(nearX, y, f.h, thickness, style, col, alpha)
+    }
+    if decoHas(lines, DECO_LINE_THROUGH) {
+        paintDecorationLineVertical(x + Math.floorDiv(f.w, 2) - Math.floorDiv(thickness, 2),
+                                    y, f.h, thickness, style, col, alpha)
+    }
+}
+
 void func paintDecorationLines(f:Fragment, s:Style, lines:int, c:int, style:int,
                                thicknessIn:int, offset:int, dx:int, dy:int, alpha:float) {
     int thickness = thicknessIn > 0 ? thicknessIn : maxInt(1, Math.floorDiv(s.fontSize, 16))
     int col = colorWithOpacity(c, s.effectiveOpacity)
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        paintDecorationLinesVertical(f, s, lines, c, style, thickness, offset,
+                                     dx, dy, col, alpha)
+        return
+    }
     if decoHas(lines, DECO_UNDERLINE) {
         // text-underline-position: under drops the line below the
         // descenders instead of sitting it on the baseline.
@@ -2388,6 +3338,38 @@ void func paintDecorationsAt(f:Fragment, s:Style, c:int, dx:int, dy:int, alpha:f
     if s.inheritedDecoration != DECO_NONE {
         paintDecorationLines(f, s, s.inheritedDecoration, c, s.inheritedDecoStyle,
                              s.inheritedDecoThickness, s.inheritedDecoOffset, dx, dy, alpha)
+    }
+}
+
+// The same line down the page instead of across it. `paintBorderSide`
+// already takes the axis as a flag, which is what makes the dotted,
+// dashed and double styles come out the same either way.
+void func paintDecorationLineVertical(x:int, y:int, h:int, thickness:int, style:int,
+                                      c:int, opacity:float) {
+    if h <= 0 || thickness <= 0 { return }
+    if style == DECOSTYLE_WAVY {
+        paintWavyLineVertical(x, y, h, thickness, c, opacity)
+        return
+    }
+    int border = BORDER_SOLID
+    if style == DECOSTYLE_DOUBLE { border = BORDER_DOUBLE }
+    else if style == DECOSTYLE_DOTTED { border = BORDER_DOTTED }
+    else if style == DECOSTYLE_DASHED { border = BORDER_DASHED }
+    int w = style == DECOSTYLE_DOUBLE ? thickness * 3 : thickness
+    paintBorderSide(x, y, w, h, false, true, border, c, opacity)
+}
+
+// The wave with its two axes exchanged: the steps run down the page and
+// the amplitude is across it.
+void func paintWavyLineVertical(x:int, y:int, h:int, thickness:int, c:int, opacity:float) {
+    paintFill(c, opacity)
+    int step = maxInt(2, thickness * 2)
+    int amp = maxInt(1, thickness)
+    bool out = true
+    for int py = y, py < y + h, py = py + step {
+        int seg = minInt(step, y + h - py)
+        pDrawRect(out ? x - amp : x + amp, py, thickness, seg)
+        out = !out
     }
 }
 
@@ -2425,24 +3407,44 @@ void func paintWavyLine(x:int, y:int, w:int, thickness:int, c:int, opacity:float
     }
 }
 
+// One line's worth of an inline box. The top and bottom edges are on
+// every fragment; the opening side is on the fragment that begins the
+// inline and the closing side on the one that ends it, so a fragment
+// in the middle of a broken inline has neither (CSS2 8.4). A margin
+// takes no paint, so the fragment's rectangle is cut back by it on
+// whichever sides the fragment carries.
 void func paintInlineBackground(f:Fragment) {
     Box ib = f.box
     Style s = ib.style
     if s.hidden || f.w <= 0 { return }
-    // an inline fragment carries no padding or border of its own, so
-    // its three background areas are all the fragment's own rectangle
-    paintBackground(f.x, f.y, f.w, f.h, 0, 0, 0, 0, 0, 0, 0, 0, s)
-    if s.borderStyle != BORDER_NONE {
-        if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
-            paintFill(s.borderTopColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y, f.w, ib.bt)
-        }
-        if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
-            paintFill(s.borderBottomColor, s.effectiveOpacity)
-            pDrawRect(f.x, f.y + f.h - ib.bb, f.w, ib.bb)
-        }
-        fillAlpha(1.0)
+    bool opens = fragOpens(f)
+    bool closes = fragCloses(f)
+    int lead = opens ? ib.ml : 0
+    int x = f.x + lead
+    int w = f.w - lead - (closes ? ib.mr : 0)
+    if w <= 0 { return }
+    int lw = opens ? ib.bl : 0
+    int rw = closes ? ib.br : 0
+    paintBackground(x, f.y, w, f.h, lw, ib.bt, rw, ib.bb,
+                    opens ? ib.pl : 0, ib.pt, closes ? ib.pr : 0, ib.pb, s)
+    if s.borderStyle == BORDER_NONE { return }
+    if ib.bt > 0 && colorIsPaintable(s.borderTopColor) {
+        paintBorderSide(x, f.y, w, ib.bt, true, true, s.borderTopStyle,
+                        s.borderTopColor, s.effectiveOpacity)
     }
+    if ib.bb > 0 && colorIsPaintable(s.borderBottomColor) {
+        paintBorderSide(x, f.y + f.h - ib.bb, w, ib.bb, true, false,
+                        s.borderBottomStyle, s.borderBottomColor, s.effectiveOpacity)
+    }
+    if lw > 0 && colorIsPaintable(s.borderLeftColor) {
+        paintBorderSide(x, f.y, lw, f.h, false, true, s.borderLeftStyle,
+                        s.borderLeftColor, s.effectiveOpacity)
+    }
+    if rw > 0 && colorIsPaintable(s.borderRightColor) {
+        paintBorderSide(x + w - rw, f.y, rw, f.h, false, false,
+                        s.borderRightStyle, s.borderRightColor, s.effectiveOpacity)
+    }
+    fillAlpha(1.0)
 }
 
 // The concrete size object-fit gives a replaced element's content,
@@ -2500,7 +3502,9 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // clip has nothing to cut, and a direct blit avoids allocating and
     // compositing an image the size of the box.
     if ox >= 0 && oy >= 0 && ox + ow <= w && oy + oh <= h {
-        pDrawImageScaled(source, x + ox, y + oy, ow, oh)
+        if anyPixelated && imgPixelated(b.style) {
+            drawPixelated(null, source, x + ox, y + oy, ow, oh)
+        } else { pDrawImageScaled(source, x + ox, y + oy, ow, oh) }
         return
     }
     // The caller has already set the element's opacity for the direct
@@ -2509,7 +3513,9 @@ void func paintFittedImage(b:Box, x:int, y:int, w:int, h:int) {
     // layer's pixels and the blit.
     img layer = blankImage(w, h)
     fillAlpha(1.0)
-    layer.drawImage(source, ox, oy, ow, oh)
+    if anyPixelated && imgPixelated(b.style) {
+        drawPixelated(layer, source, ox, oy, ow, oh)
+    } else { layer.drawImage(source, ox, oy, ow, oh) }
     fillAlpha(b.style.opacity)
     pDrawImage(layer, x, y)
 }
@@ -2532,7 +3538,11 @@ void func paintImage(b:Box) {
         // stretched, so it takes the same path with the region cut out.
         if b.style.objectFit == OBJECTFIT_FILL {
             img filled = viewBoxSource(b)
-            if filled != null { pDrawImageScaled(filled, x, y, w, h) }
+            if filled != null {
+                if anyPixelated && imgPixelated(b.style) {
+                    drawPixelated(null, filled, x, y, w, h)
+                } else { pDrawImageScaled(filled, x, y, w, h) }
+            }
         } else { paintFittedImage(b, x, y, w, h) }
         fillAlpha(1.0)
         return
@@ -2654,7 +3664,8 @@ void func paintFormControl(b:Box) {
 void func paintLines(b:Box) {
     for int i = 0, i < b.lines.length, i++ {
         Line ln = b.lines[i]
-        if ln.y + ln.h < paintTop || ln.y > paintBottom { continue }
+        if ln.y + ln.h + inlineInkOverhang < paintTop
+            || ln.y - inlineInkOverhang > paintBottom { continue }
         // inline backgrounds first, outermost first
         for int j = 0, j < ln.frags.length, j++ {
             Fragment f = ln.frags[j]
@@ -2724,8 +3735,11 @@ void func paintShaped(b:Box) {
     paintLayer = layer
     paintBoxInner(b)
     paintLayer = null
-    // A rectangle is one blit; a shape is one per scanline.
-    if g.kind == CLIPSHAPE_RECT {
+    // A rectangle is one blit; a shape is one per scanline. A rectangle
+    // that `inset()` gave a `round` radius is not a rectangle for this
+    // purpose -- its corners come off -- so it takes the scanline path,
+    // and every square one still takes the blit.
+    if g.kind == CLIPSHAPE_RECT && g.cornerRX.length == 0 {
         pDrawImage(layer, lx, ly)
         return
     }
@@ -2757,6 +3771,42 @@ void func paintClipped(b:Box) {
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
+    // `overflow-clip-margin` moves that edge outward, and only for
+    // `overflow: clip` -- a `hidden` box ignores it, which is what
+    // Chromium does (todo.md records the measurement). A page that
+    // never declares it pays one bool test here.
+    if anyClipMargin && (s.overflowX == OVERFLOW_CLIP || s.overflowY == OVERFLOW_CLIP) {
+        int packed = clipMarginPacked(s)
+        if packed >= 0 {
+            int mpx = Math.floorDiv(packed, 8)
+            int mbox = packed % 8
+            // Where the named box is, before the length pushes it out.
+            int cx = px
+            int cy = py
+            int cw = pw
+            int ch = ph
+            if mbox == GEOBOX_CONTENT {
+                cx = contentX(b)
+                cy = contentY(b)
+                cw = contentWidth(b)
+                ch = b.h - b.pt - b.pb - b.bt - b.bb
+            } else if mbox == GEOBOX_BORDER {
+                cx = b.x
+                cy = b.y
+                cw = b.w
+                ch = b.h
+            } else if mbox == GEOBOX_MARGIN {
+                cx = b.x - b.ml
+                cy = b.y - b.mt
+                cw = b.w + b.ml + b.mr
+                ch = b.h + b.mt + b.mb
+            }
+            px = cx - mpx
+            py = cy - mpx
+            pw = cw + mpx + mpx
+            ph = ch + mpx + mpx
+        }
+    }
     if pw <= 0 || ph <= 0 { return }
 
     img layer = blankImage(pw, ph)
@@ -2767,15 +3817,16 @@ void func paintClipped(b:Box) {
     // where they are.
     layer.translate(0 - px - boxScrollLeft(b), 0 - py - boxScrollTop(b))
     paintLayer = layer
-    paintLines(b)
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        paintBox(c)
-    }
+    // The layer holds this box's contents, which is §9.9's steps 3, 4
+    // and 5 and everything positioned after them -- the same three
+    // walks the document gets, over this subtree.
+    paintContents(b, false)
     paintLayer = null
     pDrawImage(layer, px, py)
     paintScrollbars(b)
+    // Its own outline goes on after the blit, outside the layer it
+    // would otherwise have been clipped out of.
+    if docHasOutline { paintOutlineFor(b) }
 }
 
 // The scrollbars a scroll container reserved room for, drawn inside its
@@ -2783,34 +3834,58 @@ void func paintClipped(b:Box) {
 // The thumb is as long a share of the track as the box is of the
 // content it scrolls, and never shorter than it can be seen at.
 
+// The two colours a scrollbar is drawn in: `scrollbar-color`'s pair
+// where a stylesheet gave one, and the browser's own otherwise (CSS
+// Scrollbars 1 §2). Two values out of a function need globals
+// (FINDINGS.md, "one value out of a function").
+int sbTrackR = 252
+int sbTrackG = 252
+int sbTrackB = 252
+int sbThumbR = 139
+int sbThumbG = 139
+int sbThumbB = 139
+
+void func scrollbarColors(s:Style) {
+    // Chromium's classic scrollbar, so that the pixels can be compared
+    // with its own: a #fcfcfc track and a #8b8b8b thumb.
+    sbTrackR = 252  sbTrackG = 252  sbTrackB = 252
+    sbThumbR = 139  sbThumbG = 139  sbThumbB = 139
+    if s.scrollbarThumb == 0 { return }
+    sbThumbR = colorRed(s.scrollbarThumb)
+    sbThumbG = colorGreen(s.scrollbarThumb)
+    sbThumbB = colorBlue(s.scrollbarThumb)
+    sbTrackR = colorRed(s.scrollbarTrack)
+    sbTrackG = colorGreen(s.scrollbarTrack)
+    sbTrackB = colorBlue(s.scrollbarTrack)
+}
+
 void func paintScrollbars(b:Box) {
     if b.sbW <= 0 && b.sbH <= 0 { return }
+    scrollbarColors(b.style)
     int px = b.x + b.bl
     int py = b.y + b.bt
     int pw = b.w - b.bl - b.br
     int ph = b.h - b.bt - b.bb
     if pw <= 0 || ph <= 0 { return }
-    // Chromium's classic scrollbar, so that the pixels can be compared
-    // with its own: a #fcfcfc track and a #8b8b8b thumb.
     if b.sbW > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px + pw - b.sbW, py, b.sbW, scrollTrackHeight(b))
         // The thumb is drawn from the same four functions the pointer is
         // tested against, so what it looks like and what can be taken
         // hold of are one rectangle (layout.f).
         if scrollThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollThumbLeft(b), scrollThumbTop(b),
                       scrollThumbWidth(b), scrollThumbHeight(b))
         }
     }
     if b.sbH > 0 {
         fillAlpha(1.0)
-        fillStyle(252, 252, 252)
+        fillStyle(sbTrackR, sbTrackG, sbTrackB)
         pDrawRect(px, scrollHTrackTop(b), scrollHTrackWidth(b), b.sbH)
         if scrollHThumbShown(b) {
-            fillStyle(139, 139, 139)
+            fillStyle(sbThumbR, sbThumbG, sbThumbB)
             pDrawRect(scrollHThumbLeft(b), scrollHThumbTop(b),
                       scrollHThumbWidth(b), scrollHThumbHeight(b))
         }
@@ -2823,14 +3898,466 @@ void func paintScrollbars(b:Box) {
 // is a matrix around the painting of the subtree and touches no
 // geometry. The question is asked once per document -- cascadeSawTransform
 // -- rather than of every box.
+// An anchored box `position-visibility: no-overflow` hid is laid out
+// like any other and simply not painted. The page-level flag is the one
+// test a document with no such box pays.
+bool func anchorHides(b:Box) {
+    return anyAnchorHidden && b.node != null && anchorHiddenIds[`${b.node.id}`] != null
+}
+
+// CSS Motion Path 1: the box is painted at a point on its own path
+// rather than where it was laid out. The whole effect is one
+// translation and one rotation:
+//
+//     painted top-left = laid-out top-left + P - offset-anchor
+//
+// with the turn taken about P itself. The path's percentages and a
+// ray's length want the containing block; the painter carries the
+// parent box rather than the containing block, so that is what they
+// resolve against, which is the same rectangle whenever the parent is
+// the containing block and is recorded where it is not (todo.md).
+bool func boxHasOffset(b:Box) {
+    return anyOffsetPath && b.style != null
+        && motionInfoOf(motionIndexOf(b.style)).pathKind != MPATH_NONE
+}
+
+// Leaves the offset's translation and turn on the canvas state. The
+// caller has saved it.
+void func applyBoxOffset(b:Box) {
+    MotionInfo mi = motionInfoOf(motionIndexOf(b.style))
+    Box up = parentBox(b)
+    int bw = up == null ? b.w : contentWidth(up)
+    int bh = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int ex = up == null ? 0 : b.x - contentX(up)
+    int ey = up == null ? 0 : b.y - contentY(up)
+    motionBuild(mi, ex, ey, bw, bh)
+    motionAt(motionDistance(mi))
+    // `offset-anchor: auto` is the transform origin, not the box's
+    // centre. The two coincide until a `transform-origin` says
+    // otherwise, and then they are 20 pixels apart: a box with
+    // `transform-origin: 0 0` moves the whole of `P`, where one with
+    // the default moves `P` less half its size.
+    int ax = resolveLen(b.style.transformOriginX, b.w, Math.floorDiv(b.w, 2))
+    int ay = resolveLen(b.style.transformOriginY, b.h, Math.floorDiv(b.h, 2))
+    if !mi.anchorAuto {
+        ax = resolveLen(mi.anchorX, b.w, 0)
+        ay = resolveLen(mi.anchorY, b.h, 0)
+    }
+    int px = roundPx(motionX)
+    int py = roundPx(motionY)
+    pTranslate(px - ax, py - ay)
+    float turn = motionRotation(mi)
+    if turn != 0.0 {
+        // The pivot is the anchor point where the box was laid out: the
+        // translation above carries it to P, so turning about it there
+        // is turning about P.
+        pTranslate(b.x + ax, b.y + ay)
+        pRotate(turn)
+        pTranslate(0 - (b.x + ax), 0 - (b.y + ay))
+    }
+}
+
+// ---- position: sticky (CSS Positioned Layout 3 §3.5) ------------------
+//
+// A sticky box keeps the place the flow gave it and is drawn somewhere
+// else: it is shifted so that it stays inside the scrollport, and no
+// further than its own containing block. Nothing about that shift
+// survives a scroll, which is why it is the painter's and not layout's
+// -- layout runs once per document and this changes on every wheel
+// event.
+//
+// The shift is worked out from `paintScrollY` and `paintViewHeight`,
+// which `paintPage` sets for `background-attachment: fixed` to undo,
+// and the rule is the one measured against Chromium in todo.md: a
+// `top` inset can only push the box down, a `bottom` inset can only
+// pull it up, and the total is clamped to the two distances the box
+// can travel before it leaves its containing block.
+//
+// Reached only through `anySticky`, so a document that never said the
+// word pays one boolean per box painted rather than these lookups.
+int func stickyOffsetY(b:Box) {
+    Style s = b.style
+    if s == null { return 0 }
+    // The containing block is the parent's content box -- measured with
+    // 30px of padding and 30px of border on the parent, which separates
+    // that rectangle from its padding box and its border box. It is
+    // both what a percentage inset is of and what the shift is clamped
+    // to.
+    Box up = parentBox(b)
+    int cbTop = up == null ? b.y : contentY(up)
+    int cbHeight = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int dy = 0
+    if !lenIsAuto(s.top) {
+        int want = paintScrollY + resolveLen(s.top, cbHeight, 0)
+        if want > b.y { dy = want - b.y }
+    }
+    if !lenIsAuto(s.bottom) {
+        int limit = paintScrollY + paintViewHeight - resolveLen(s.bottom, cbHeight, 0)
+        if b.y + b.h + dy > limit { dy = limit - b.y - b.h }
+    }
+    if dy == 0 || up == null { return dy }
+    int low = cbTop - b.y
+    int high = cbTop + cbHeight - b.y - b.h
+    if dy < low { dy = low }
+    if dy > high { dy = high }
+    return dy
+}
+
+// Set to the box `paintSticky` is re-entering `paintBox` for, so its
+// shift goes on once and the box then takes the ordinary path -- which
+// is what lets a sticky box also carry a transform or an offset path
+// without either of them being written out twice here.
+int stickyBoxId = 0
+
+void func paintSticky(b:Box) {
+    int dy = stickyOffsetY(b)
+    if dy == 0 {
+        int plain = stickyBoxId
+        stickyBoxId = b.id
+        paintBox(b)
+        stickyBoxId = plain
+        return
+    }
+    pSaveState()
+    pTranslate(0, dy)
+    // The cull is in document coordinates and this subtree is now drawn
+    // `dy` from where it was laid out, so the window moves with it --
+    // otherwise a box stuck at the top of the screen is culled for
+    // being far above it.
+    int savedTop = paintTop
+    int savedBottom = paintBottom
+    paintTop = paintTop - dy
+    paintBottom = paintBottom - dy
+    int saved = stickyBoxId
+    stickyBoxId = b.id
+    paintBox(b)
+    stickyBoxId = saved
+    paintTop = savedTop
+    paintBottom = savedBottom
+    pRestoreState()
+}
+
+// ---- CSS Masking 1: a mask ------------------------------------------
+//
+// A mask is per-pixel alpha, and this engine cannot read a pixel back
+// (FINDINGS.md, finding 35). It does not need to. `drawImage` honours
+// `fillAlpha` -- measured -- and the clip machinery already paints a
+// subtree into a layer and blits it back in pieces. A mask is that loop
+// with an alpha per piece instead of a span per row.
+//
+// The alpha is computed rather than sampled: this engine builds the
+// gradient's colours itself, so it knows every alpha in one without
+// reading a pixel. Every gradient shape is painted; a `url()` mask
+// would need the bitmap's own alpha, which is the block proper.
+
+const int MASKSHAPE_LINEAR = 0
+const int MASKSHAPE_RADIAL = 1
+const int MASKSHAPE_CONIC = 2
+
+// One layer, resolved against the box it masks. Prepared once per
+// masked box, then read per pixel.
+struct MaskPrep {
+    kind:int
+    mode:int
+    composite:int
+    grad:Gradient
+    offsets:arr[float]
+    tileX:int
+    tileY:int
+    tileW:float
+    tileH:float
+    repX:bool
+    repY:bool
+    dirX:float
+    dirY:float
+    lineLen:float
+    x0:float
+    y0:float
+    cx:float
+    cy:float
+    rx:float
+    ry:float
+    fromDeg:float
+}
+
+arr[MaskPrep] maskPreps = []
+int maskedBoxId = 0
+
+// CSS Masking 1 §7.1's luminanceToAlpha, in sRGB, which is what
+// Chromium's answer for a white-to-black gradient under
+// `mask-mode: luminance` matches (todo.md).
+float func maskLuminance(c:int) {
+    return (0.2125 * colorRed(c).toFloat()
+        + 0.7154 * colorGreen(c).toFloat()
+        + 0.0721 * colorBlue(c).toFloat()) / 255.0
+}
+
+// One layer's alpha at one document pixel, 0 to 1. Outside the tile of
+// a layer that does not repeat on that axis the answer is ZERO, not
+// full -- the semantic most easily got backwards, and measured.
+float func maskLayerAlphaAt(pr:MaskPrep, px:int, py:int) {
+    if pr.grad.stops.length < 2 { return 0.0 }
+    float lx = (px - pr.tileX).toFloat() + 0.5
+    float ly = (py - pr.tileY).toFloat() + 0.5
+    if pr.repX {
+        lx = lx - Math.floor(lx / pr.tileW) * pr.tileW
+    } else if lx < 0.0 || lx >= pr.tileW { return 0.0 }
+    if pr.repY {
+        ly = ly - Math.floor(ly / pr.tileH) * pr.tileH
+    } else if ly < 0.0 || ly >= pr.tileH { return 0.0 }
+    float t = 0.0
+    if pr.kind == MASKSHAPE_RADIAL {
+        // The ellipse's own coordinates: a point is at parameter 1 on
+        // the ending shape itself, whatever its two radii are.
+        if pr.rx <= 0.0 || pr.ry <= 0.0 { return 0.0 }
+        float ex = (lx - pr.cx) / pr.rx
+        float ey = (ly - pr.cy) / pr.ry
+        t = Math.sqrt(ex * ex + ey * ey)
+    } else if pr.kind == MASKSHAPE_CONIC {
+        // Clockwise from pointing up, which is `conicFrom`'s own
+        // convention in the background painter.
+        float deg = motionDegOf(lx - pr.cx, ly - pr.cy) + 90.0 - pr.fromDeg
+        deg = deg - Math.floor(deg / 360.0) * 360.0
+        t = deg / 360.0
+    } else {
+        t = ((lx - pr.x0) * pr.dirX + (ly - pr.y0) * pr.dirY) / pr.lineLen
+    }
+    if t < 0.0 { t = 0.0 }
+    if t > 1.0 { t = 1.0 }
+    int c = gradientColorAt(pr.grad, pr.offsets, t)
+    float a = colorAlpha(c).toFloat() / 255.0
+    if pr.mode == MASKMODE_LUMINANCE { return a * maskLuminance(c) }
+    return a
+}
+
+// The layers combined, bottom upwards, each with its own operator --
+// Porter-Duff on the alpha channel alone (§7.5), measured against
+// Chromium. Entry zero is the TOP layer, so the walk runs backwards.
+int func maskAlphaAt(px:int, py:int) {
+    float acc = 0.0
+    bool first = true
+    for int i = maskPreps.length - 1, i >= 0, i-- {
+        MaskPrep pr = maskPreps[i]
+        float src = maskLayerAlphaAt(pr, px, py)
+        if first {
+            acc = src
+            first = false
+            continue
+        }
+        if pr.composite == MASKOP_SUBTRACT { acc = src * (1.0 - acc) }
+        else if pr.composite == MASKOP_INTERSECT { acc = src * acc }
+        else if pr.composite == MASKOP_EXCLUDE { acc = src + acc - 2.0 * src * acc }
+        else { acc = src + acc - src * acc }
+    }
+    if acc <= 0.0 { return 0 }
+    if acc >= 1.0 { return 255 }
+    return roundPx(acc * 255.0)
+}
+
+// One axis of the tile. `auto` on a gradient is the positioning area,
+// because a gradient has no intrinsic size of its own.
+int func maskTileSide(kind:int, l:Len, area:int) {
+    if kind != BGSIZE_EXPLICIT { return area }
+    if l.kind == LEN_PERCENT { return roundPx(area.toFloat() * l.v / 100.0) }
+    if l.kind == LEN_PX { return roundPx(l.v) }
+    return area
+}
+
+// One layer resolved against the box. Returns false where the layer
+// cannot be painted at all, which leaves it contributing nothing.
+bool func maskPrepare(pr:MaskPrep, ml:BgLayer, mode:int, op:int, b:Box) {
+    pr.mode = mode
+    pr.composite = op
+    pr.grad = ml.image
+    pr.offsets = []
+    if !ml.image.present || ml.image.stops.length < 2 { return false }
+    // The positioning area `mask-origin` names. Its initial value is the
+    // BORDER box, where `background-origin`'s is the padding box --
+    // measured against Chromium, not assumed.
+    int mox = b.x
+    int moy = b.y
+    int mow = b.w
+    int moh = b.h
+    if ml.origin == BGORIGIN_PADDING || ml.origin == BGORIGIN_CONTENT {
+        mox = mox + b.bl
+        moy = moy + b.bt
+        mow = mow - b.bl - b.br
+        moh = moh - b.bt - b.bb
+    }
+    if ml.origin == BGORIGIN_CONTENT {
+        mox = mox + b.pl
+        moy = moy + b.pt
+        mow = mow - b.pl - b.pr
+        moh = moh - b.pt - b.pb
+    }
+    if mow <= 0 || moh <= 0 { return false }
+    int mtw = maskTileSide(ml.sizeKind, ml.sizeW, mow)
+    int mth = maskTileSide(ml.sizeKind, ml.sizeH, moh)
+    if mtw <= 0 || mth <= 0 { return false }
+    pr.tileX = mox + resolvePositionAxis(ml.posX, mow - mtw, b.style.fontSize)
+    pr.tileY = moy + resolvePositionAxis(ml.posY, moh - mth, b.style.fontSize)
+    pr.tileW = mtw.toFloat()
+    pr.tileH = mth.toFloat()
+    pr.repX = ml.repeatX
+    pr.repY = ml.repeatY
+    if ml.image.radial || ml.image.conic {
+        pr.kind = ml.image.radial ? MASKSHAPE_RADIAL : MASKSHAPE_CONIC
+        pr.cx = resolveGradientCenter(ml.image.radialPosX, mtw, b.style.fontSize)
+        pr.cy = resolveGradientCenter(ml.image.radialPosY, mth, b.style.fontSize)
+        pr.fromDeg = ml.image.conicFrom
+        if ml.image.radial {
+            radialRadii(ml.image, pr.cx, pr.cy, 0, 0, mtw, mth, b.style.fontSize)
+            pr.rx = radRx
+            pr.ry = radRy
+            if pr.rx <= 0.0 || pr.ry <= 0.0 { return false }
+            resolveGradientStops(ml.image, pr.rx)
+        } else {
+            resolveGradientStops(ml.image, 1.0)
+        }
+        pr.offsets = gradOffsets
+        return true
+    }
+    pr.kind = MASKSHAPE_LINEAR
+    // The gradient line inside one tile: the same construction
+    // `paintLinearGradient` makes over a box.
+    gradientDirection(ml.image.angle)
+    float mHalfW = pr.tileW / 2.0
+    float mHalfH = pr.tileH / 2.0
+    float mHalf = absFloat(mHalfW * gradDirX) + absFloat(mHalfH * gradDirY)
+    if mHalf <= 0.0 { return false }
+    pr.dirX = gradDirX
+    pr.dirY = gradDirY
+    pr.lineLen = mHalf + mHalf
+    pr.x0 = mHalfW - gradDirX * mHalf
+    pr.y0 = mHalfH - gradDirY * mHalf
+    resolveGradientStops(ml.image, pr.lineLen)
+    pr.offsets = gradOffsets
+    return true
+}
+
+void func paintMasked(b:Box) {
+    MaskSpec spec = maskSpecOf(b.style.maskIdx)
+    if spec == null || spec.layers.length == 0 { return }
+    // The clip box is what the layer covers, so `mask-clip` is done by
+    // not painting outside it at all. The topmost layer's clip decides
+    // it, which is the one an author writes when there is only one.
+    BgLayer top = spec.layers[0]
+    int mcx = b.x
+    int mcy = b.y
+    int mcw = b.w
+    int mch = b.h
+    if top.clip == BGCLIP_PADDING || top.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.bl
+        mcy = mcy + b.bt
+        mcw = mcw - b.bl - b.br
+        mch = mch - b.bt - b.bb
+    }
+    if top.clip == BGCLIP_CONTENT {
+        mcx = mcx + b.pl
+        mcy = mcy + b.pt
+        mcw = mcw - b.pl - b.pr
+        mch = mch - b.pt - b.pb
+    }
+    if mcw <= 0 || mch <= 0 { return }
+    maskPreps = []
+    for int i = 0, i < spec.layers.length, i++ {
+        MaskPrep pr
+        if maskPrepare(pr, spec.layers[i], spec.modes[i], spec.composites[i], b) {
+            maskPreps.push(pr)
+        }
+    }
+    if maskPreps.length == 0 { return }
+    maskBlit(b, mcx, mcy, mcw, mch)
+}
+
+// The subtree into one layer, and back in runs of one alpha. Shared by
+// every mask shape and layer count, because only the alpha differs.
+void func maskBlit(b:Box, mcx:int, mcy:int, mcw:int, mch:int) {
+    int maskWas = maskedBoxId
+    maskedBoxId = b.id
+    img maskPrev = paintLayer
+    img maskLayer = blankImage(mcw, mch)
+    maskLayer.translate(0 - mcx, 0 - mcy)
+    paintLayer = maskLayer
+    paintBox(b)
+    paintLayer = maskPrev
+    maskedBoxId = maskWas
+
+    for int mrow = 0, mrow < mch, mrow++ {
+        int my = mcy + mrow
+        int runFrom = 0
+        int runA = maskAlphaAt(mcx, my)
+        for int mi = 1, mi <= mcw, mi++ {
+            int ma = mi < mcw ? maskAlphaAt(mcx + mi, my) : 0 - 1
+            if ma == runA { continue }
+            if runA > 0 {
+                // `cutRegion` copies with `drawImage`, which honours
+                // `fillAlpha` -- so the alpha has to be back at one
+                // before the cut and reset after the blit, or each run
+                // is faded by the run before it. A uniform half-alpha
+                // mask came out at a quarter, which is what the
+                // agreement against `opacity: 0.5` caught.
+                img piece = cutRegion(maskLayer, runFrom, mrow, mi - runFrom, 1)
+                if piece != null {
+                    fillAlpha(runA.toFloat() / 255.0)
+                    pDrawImage(piece, mcx + runFrom, my)
+                    fillAlpha(1.0)
+                }
+            }
+            runFrom = mi
+            runA = ma
+        }
+    }
+    fillAlpha(1.0)
+}
+
+void func paintFiltered(b:Box) {
+    int was = filteredBoxId
+    filteredBoxId = b.id
+    paintFilters.push(b.style.filterIdx)
+    paintBox(b)
+    paintFilters.pop()
+    filteredBoxId = was
+}
+
 void func paintBox(b:Box) {
-    if !cascadeSawTransform || b.style.transforms.length == 0 {
+    if anyAnchorHidden && anchorHides(b) { return }
+    // The mask goes outside the filter: a filter applies to the
+    // element's own rendering, and the mask applies to the result.
+    if anyMask && b.style != null && b.style.maskIdx > 0
+        && b.id != maskedBoxId {
+        paintMasked(b)
+        return
+    }
+    if anyFilter && b.style != null && b.style.filterIdx > 0
+        && b.id != filteredBoxId {
+        paintFiltered(b)
+        return
+    }
+    if anySticky && b.id != stickyBoxId && b.style.position == POS_STICKY {
+        paintSticky(b)
+        return
+    }
+    bool offset = anyOffsetPath && boxHasOffset(b)
+    if !offset && (!cascadeSawTransform || b.style.transforms.length == 0) {
         paintBoxUntransformed(b)
         return
     }
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return }
     if !boxVisible(b) { return }
     Style s = b.style
+    if offset {
+        // The offset goes on first, so the element's own `transform`
+        // applies inside it: a rotated box still moves the full
+        // distance, which is what Chromium does.
+        pSaveState()
+        applyBoxOffset(b)
+        if !cascadeSawTransform || s.transforms.length == 0 {
+            paintBoxUntransformed(b)
+            pRestoreState()
+            return
+        }
+    }
     // Every function is about the transform origin, which is the box's
     // centre unless it says otherwise. Moving the origin to (0,0),
     // transforming and moving back is what makes that so.
@@ -2865,6 +4392,7 @@ void func paintBox(b:Box) {
     pTranslate(-ox, -oy)
     paintBoxUntransformed(b)
     pRestoreState()
+    if offset { pRestoreState() }
 }
 
 void func paintBoxUntransformed(b:Box) {
@@ -2879,6 +4407,530 @@ void func paintBoxUntransformed(b:Box) {
         return
     }
     paintBoxInner(b)
+    // The grabber goes over the box's own content, reserving nothing,
+    // which is what the measurement says it does. A page that never
+    // says `resize` pays one boolean here.
+    if anyResize { paintResizeGrabber(b) }
+}
+
+// `resize`'s grabber, drawn from the same three functions the pointer
+// is tested against in layout.f, so what it looks like and what can be
+// taken hold of are one square rather than two formulas that agree.
+// Its colour is Chromium's own, read off the rasterised corner.
+// Whether this render omits background graphics, the way a print
+// dialog's "background graphics" setting and `printToPDF`'s
+// `printBackground: false` do. `print-color-adjust: exact` overrides
+// it per element -- the property grants nothing on its own, it
+// withdraws this omission (CSS Color Adjustment 1 §3, and the table in
+// todo.md). Off by default, so an ordinary `--print` is unchanged.
+bool printOmitBackgrounds = false
+
+// Whether this box's background is printed at all. A render that is
+// not omitting them -- every ordinary one -- answers yes without
+// reading the property, so a page that never says `print-color-adjust`
+// pays one boolean here.
+bool func printsBackground(s:Style) {
+    if !printOmitBackgrounds { return true }
+    return printColorAdjustOf(s) == PCA_EXACT
+}
+
+const int RESIZE_GRAB_GREY = 102
+
+void func paintResizeGrabber(b:Box) {
+    if !resizeGrabberShown(b) { return }
+    int cx = resizeGrabberX(b)
+    int cy = resizeGrabberY(b)
+    fillAlpha(1.0)
+    fillStyle(RESIZE_GRAB_GREY, RESIZE_GRAB_GREY, RESIZE_GRAB_GREY)
+    int left = cx - RESIZE_GRAB_PX
+    int top = cy - RESIZE_GRAB_PX
+    for int k = 0, k < RESIZE_GRAB_PX, k++ {
+        // the long diagonal, and the short one four pixels nearer the
+        // corner, which the same inset cuts to three pixels
+        pDrawRect(cx - 1 - k, top + k, 1, 1)
+        int sx = cx - 1 - k + 4
+        if sx <= cx - 1 && sx > left { pDrawRect(sx, top + k, 1, 1) }
+    }
+}
+
+// Whether this box establishes a stacking context (CSS2 §9.9, and the
+// specifications that have added to the list since). Three of them are
+// reachable here and all three were measured to behave identically
+// (todo.md): a positioned box with a **declared** `z-index` -- `auto` is
+// not one -- a box with a `transform`, and a box with an `opacity` below
+// 1. The root is always one, which its caller answers for.
+bool func boxIsStackingContext(b:Box) {
+    Style s = b.style
+    if s.opacity < 1.0 { return true }
+    if cascadeSawTransform && s.transforms.length > 0 { return true }
+    // The standard gives each of these one, and each was implemented
+    // here without saying so: a filter and a mask got `boxPaintsWhole`,
+    // which gets the subtree into one layer, and that is a different
+    // question from who owns a `z-index`.
+    if s.isolate { return true }
+    if anyFilter && s.filterIdx > 0 { return true }
+    if anyMask && s.maskIdx > 0 { return true }
+    // `will-change` naming a property that would create one creates it
+    // before the property is ever set (Will Change 1 §3, and Chromium's
+    // seventeen names are in todo.md).
+    if anyWillChange && willChangeOf(s) != WC_NONE { return true }
+    // A named view transition creates one too, which is what that
+    // property does in a browser with no clock to transition with.
+    if anyViewTransition && hasViewTransitionName(s) { return true }
+    return boxIsPositioned(b) && zIndexIsExplicit(s)
+}
+
+// Whether a box confines its subtree to itself for a reason that is
+// not stacking: it clips, it is a replaced leaf, or it moves the whole
+// subtree somewhere the ancestor's walk could not follow.
+//
+// CSS2 §9.9 hoists a positioned descendant out of a positioned box that
+// is NOT a stacking context, so that its `z-index` competes in the
+// ancestor's context. That is right for an ordinary `position:
+// relative` box and wrong for one of these, where the content must stay
+// where it was painted whatever the stacking rules say -- a clipped
+// subtree hoisted out would escape its clip. `overflow: hidden` is the
+// case that matters: the standard does not give it a stacking context,
+// and this engine cannot hoist through it, so its positioned
+// descendants stay confined. That divergence is recorded in todo.md
+// rather than hidden behind the predicate.
+bool func boxConfinesSubtree(b:Box) {
+    if b.kind == BOX_IMAGE || b.kind == BOX_AUDIO || b.kind == BOX_IFRAME { return true }
+    if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
+    if anyOffsetPath && boxHasOffset(b) { return true }
+    if anyMask && b.style.maskIdx > 0 { return true }
+    if !docHasWholePaint { return false }
+    Style s = b.style
+    return s.contentHidden || s.overflowHidden || s.containPaint
+}
+
+// Whether the positioned descendants of `c` belong to the ancestor's
+// stacking context rather than to `c` itself.
+bool func boxHoistsPositioned(c:Box) {
+    return !boxIsStackingContext(c) && !boxConfinesSubtree(c)
+}
+
+// The negative-`z-index` boxes that belong to this stacking context:
+// its positioned descendants with a negative z, and those of every
+// descendant that is **not** itself a stacking context -- because a
+// negative child of a non-context box is painted by the nearest
+// ancestor that is one, which is what puts it behind that box's own
+// background.
+void func collectNegativeZ(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) && c.style.zIndex < 0 {
+            out.push(c)
+            continue
+        }
+        // A descendant that is a stacking context keeps its own
+        // negatives; anything else passes them up to here.
+        if boxIsStackingContext(c) { continue }
+        collectNegativeZ(c, out)
+    }
+}
+
+// Them, painted lowest first and in document order within a z.
+void func paintNegativeZ(b:Box) {
+    arr[Box] neg = []
+    collectNegativeZ(b, neg)
+    if neg.length == 0 { return }
+    int lowest = neg[0].style.zIndex
+    for int i = 1, i < neg.length, i++ {
+        if neg[i].style.zIndex < lowest { lowest = neg[i].style.zIndex }
+    }
+    for int z = lowest, z < 0, z++ {
+        for int i = 0, i < neg.length, i++ {
+            if neg[i].style.zIndex == z { paintBox(neg[i]) }
+        }
+    }
+}
+
+// ---- CSS2 §9.9's steps 3, 4 and 5 ----------------------------------
+//
+// The standard paints a box's in-flow content in three passes rather
+// than one walk in document order: the block-level descendants' own
+// decoration at step 3, the non-positioned floats at step 4, and every
+// box's inline content at step 5. So a float paints over a block
+// written after it, and a line paints over both.
+//
+// One walk in document order cannot produce that, and neither can
+// painting a box's own lines after its own children: step 5 is a
+// property of the whole subtree. An anonymous block holding nothing
+// but inline content is a block-level descendant, so it is step 3
+// while what is in it is step 5 -- which is the ordinary shape of text
+// beside a float or beside a block.
+//
+// The walk is one function run three times, with the phase passed
+// down rather than held in a global: a line can hold an atomic inline,
+// which is painted whole from inside the walk, and a global would come
+// back from that set to whatever the atomic's own subtree left it at.
+// A box that paints as one unit takes its whole subtree with it and
+// the walk does not descend into it: a float at step 4, a positioned
+// box at step 6 and after, a stacking context, a replaced element, and
+// anything that paints through a layer -- `overflow`, paint
+// containment, a `clip-path` -- because a layer is built and blitted
+// once rather than three times.
+const int PHASE_BLOCKS = 1
+const int PHASE_FLOATS = 2
+const int PHASE_INLINES = 3
+
+// What the step 3 walk records on each child it looks at, so that the
+// step 4 and step 5 walks read an int rather than asking the same
+// questions of the same boxes again. Asking them three times cost
+// 23 ms of a 33 ms paint on the feature page and 8 ms of a 19 ms paint
+// on generated.html, because `boxIsPositioned`, `boxIsFloated` and
+// `boxPaintsWhole` all read a `Style` and a `Style` read is not free.
+const int PSTEP_NONE = 0     // not painted from the walk at all
+const int PSTEP_SPLIT = 1    // step 3 decoration here, step 5 lines, descend
+const int PSTEP_FLOAT = 2    // step 4, painted whole
+const int PSTEP_WHOLE = 3    // painted whole at step 3
+const int PSTEP_POSITIONED = 4  // step 6 and after, painted whole
+
+// Whether this box is handed over whole rather than split across the
+// three phases. A float and a positioned box are whole as well, but
+// they are asked for by name because *which* phase paints them differs.
+bool func boxPaintsWhole(b:Box) {
+    if b.kind == BOX_IMAGE || b.kind == BOX_AUDIO || b.kind == BOX_IFRAME { return true }
+    // Every question below this line that is not behind a flag reads a
+    // `Style`, and the walk asks this of every box in every phase. The
+    // three walks cost **8 ms of a 19 ms paint** on generated.html
+    // while it read one unconditionally, and stubbing the predicate out
+    // gave back every millisecond of it with the pixels unchanged -- so
+    // a page that declares none of these pays six boolean tests.
+    if cascadeSawClip && boxClipShape(b).kind != CLIPSHAPE_NONE { return true }
+    if anyOffsetPath && boxHasOffset(b) { return true }
+    // A `filter` makes the element a stacking context, and this engine
+    // needs it to paint whole for a second reason: the filter has to be
+    // in force for the box's own background and for every descendant's
+    // colour, which is what going through `paintBox` gives it. An
+    // ordinary in-flow block never reaches `paintBox` otherwise.
+    if anyFilter && b.style.filterIdx > 0 { return true }
+    // A mask needs the box to paint whole for the same reason a filter
+    // does: the whole subtree has to reach one layer before it can be
+    // blitted back through the mask's alpha.
+    if anyMask && b.style.maskIdx > 0 { return true }
+    if cascadeSawTransform && b.style.transforms.length > 0 { return true }
+    // A positioned box is not asked about: every caller steps over one
+    // before it gets here, so the `z-index` half of
+    // `boxIsStackingContext` would be a `Style` read that can never
+    // answer yes.
+    if !docHasWholePaint { return false }
+    Style s = b.style
+    if s.contentHidden { return true }
+    return s.overflowHidden || s.containPaint || s.opacity < 1.0
+}
+
+// Everything a box paints of itself, before any of its contents: its
+// shadows, background, borders and border image, then its outline,
+// column rules, the negative stacking layer it owns, its list marker
+// and its form control. Answers whether its contents are to be walked
+// at all -- a replaced element has painted its own, an empty cell
+// hiding its decoration has none to show, and `content-visibility:
+// hidden` says there are none.
+// A box's own background, border, border image and shadows, at whatever
+// rectangle the box is carrying. Lifted out of `paintBoxSelf` so a part
+// of a box cut by a column break can be painted the same way the box
+// itself is, rather than by a second copy of these six calls.
+void func paintBoxDecoration(b:Box) {
+    Style s = b.style
+    // a shadow is cast by the border box and lies under it
+    paintShadows(b.x, b.y, b.w, b.h, s)
+    bool bg = printsBackground(s)
+    if b.kind == BOX_ROW {
+        if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
+    } else {
+        if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
+        // A border image replaces the border's own styles where it is
+        // drawn, so it goes over them (Backgrounds and Borders 3 §6.1).
+        paintBorders(b)
+        paintBorderImage(b)
+    }
+    paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
+}
+
+// The parts of a box after the first, painted where the column break put
+// them. Only a multi-column container's own children are ever cut, and
+// `anyColumnFrags` says whether any box on the document was, so the call
+// site tests a boolean and this function is not reached at all on a page
+// that has none (CLAUDE.md: where a call is written is itself a cost).
+//
+// The box is MOVED to each part, painted, and put back. Every painter
+// here reads `b.x`, `b.y`, `b.h` and the box's own border widths, so a
+// stand-in would have to copy a dozen fields and would still be the same
+// box to `paintBackground`'s eyes.
+//
+// `box-decoration-break` decides the break edge, measured both ways in
+// Chromium (todo.md has the pixels): `slice`, the initial value, paints
+// no border across a break and lets the background run to the column's
+// end, which is what zeroing that edge's width does; `clone` paints one.
+void func paintBoxFragments(b:Box) {
+    int sx = b.x
+    int sy = b.y
+    int sh = b.h
+    int sbt = b.bt
+    int sbb = b.bb
+    bool clone = decorationIsClone(b.style)
+    for int i = 0, i < b.frags.length, i++ {
+        ColumnFrag f = b.frags[i]
+        b.x = f.x
+        b.y = f.y
+        b.h = f.h
+        b.bt = !clone && f.openTop ? 0 : sbt
+        b.bb = !clone && f.openBottom ? 0 : sbb
+        paintBoxDecoration(b)
+    }
+    b.x = sx
+    b.y = sy
+    b.h = sh
+    b.bt = sbt
+    b.bb = sbb
+}
+
+bool func paintBoxSelf(b:Box) {
+    Style s = b.style
+    // empty-cells: hide -- a cell with nothing in it draws neither
+    // background nor border in the separated borders model (CSS2
+    // 17.6.1.1). The cell still takes its space; only its own
+    // decoration goes.
+    if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return false }
+    if b.kind != BOX_ANON && !s.hidden {
+        // A box a column break cut keeps its first part's rectangle, and
+        // under `slice` -- the initial value -- carries no border across
+        // the break, which is the bottom edge of that first part.
+        bool cut = anyColumnFrags && b.frags.length > 0
+        int keptBB = b.bb
+        if cut && !decorationIsClone(s) { b.bb = 0 }
+        paintBoxDecoration(b)
+        if cut {
+            b.bb = keptBB
+            paintBoxFragments(b)
+        }
+    }
+    if b.kind == BOX_IMAGE {
+        if !s.hidden { paintImage(b) }
+        return false
+    }
+    if b.kind == BOX_AUDIO {
+        paintAudioControls(b)
+        return false
+    }
+    if b.kind == BOX_IFRAME {
+        if !s.hidden { paintFrame(b) }
+        return false
+    }
+    // The outline is not drawn here. §9.9 puts it after the whole of
+    // this box's in-flow content and before its positioned descendants,
+    // measured against all four in todo.md, so it is a pass of its own
+    // below.
+    if s.columnRuleWidth > 0 && !s.hidden { paintColumnRules(b) }
+    // content-visibility: hidden skips the contents entirely
+    // (Containment 2 §4). The box's own background, border and outline
+    // are not contents, so they are already painted above; everything
+    // after this is.
+    if s.contentHidden { return false }
+    // CSS2 §9.9 step 3: the negative descendants of this stacking
+    // context, after its own background and border and before anything
+    // of its content. A document that declares no negative `z-index`
+    // does none of this.
+    if cascadeSawNegativeZ && boxIsStackingContext(b) { paintNegativeZ(b) }
+    if b.isListItem && !s.hidden { paintListMarker(b) }
+    if !s.hidden { paintFormControl(b) }
+    return true
+}
+
+// CSS2 §9.9 step 3 over a box's in-flow, non-positioned subtree: each
+// block-level descendant's own decoration, in tree order, and none of
+// their lines. It answers, for every child it looks at, which step
+// paints it, and writes that answer on the box for the two walks below.
+void func paintBlocksWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        c.paintStep = PSTEP_NONE
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // Positioned first, and before the inline-level test below it:
+        // an out-of-flow box is in no line, so a `position: absolute`
+        // inline-block that the inline-level test stepped over would be
+        // painted by nothing at all.
+        if docHasPositioned && boxIsPositioned(c) {
+            c.paintStep = PSTEP_POSITIONED
+            continue
+        }
+        // An in-flow inline-level child is step 5 content reached
+        // through the line that holds it, as the atomic it was placed
+        // as -- `paintLines` paints it from its own box. Walking into
+        // it here as well paints it twice, which is invisible until a
+        // `border-radius` blends its antialiased edge against itself.
+        // A flex or grid item is block-level however it was declared,
+        // so this does not take one of those away from its container.
+        if isInlineLevelBox(c) { continue }
+        if anyAnchorHidden && anchorHides(c) { continue }
+        if !boxVisible(c) { continue }
+        if docHasFloats && boxIsFloated(c) {
+            c.paintStep = PSTEP_FLOAT
+            continue
+        }
+        if boxPaintsWhole(c) {
+            // It takes its own floats and its own lines with it, and
+            // its `resize` grabber -- only a box whose `overflow` is
+            // not `visible` shows one, and such a box paints whole.
+            c.paintStep = PSTEP_WHOLE
+            paintBox(c)
+            continue
+        }
+        if !paintBoxSelf(c) { continue }
+        c.paintStep = PSTEP_SPLIT
+        paintBlocksWalk(c)
+    }
+}
+
+// Step 4: the non-positioned floats, each painted whole, in tree order.
+void func paintFloatsWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep == PSTEP_FLOAT { paintBox(c) }
+        else if c.paintStep == PSTEP_SPLIT { paintFloatsWalk(c) }
+    }
+}
+
+// §9.9's outline pass: this box's outline, if its caller wants it
+// drawn here, and then its in-flow descendants', in tree order. A box
+// that paints whole drew its own inside its own subtree.
+void func paintOutlineFor(b:Box) {
+    Style s = b.style
+    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
+}
+
+void func paintOutlineWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep != PSTEP_SPLIT { continue }
+        // Recording which boxes ask for an outline, so this pass never
+        // reads a `Style`, was tried and measured: paired against this
+        // on the feature page it read +1 ms of paint one way and 0 the
+        // other, so it bought nothing and is not here.
+        paintOutlineFor(c)
+        paintOutlineWalk(c)
+    }
+}
+
+// Step 5: every in-flow box's lines, in tree order.
+void func paintInlinesWalk(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep != PSTEP_SPLIT { continue }
+        paintLines(c)
+        paintInlinesWalk(c)
+    }
+}
+
+// The positioned descendants this box paints at steps 6 and after: its
+// own positioned children and those of every in-flow descendant the
+// three walks descend into, because the walks step over a positioned
+// box wherever they meet one. A box that paints whole keeps its own,
+// and so does a float.
+void func collectPositionedIn(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        if boxIsPositioned(c) {
+            out.push(c)
+            // The hit tester hoists exactly as the painter does, or a
+            // click lands on a box the paint put underneath another.
+            if boxHoistsPositioned(c) { collectPositionedIn(c, out) }
+            continue
+        }
+        if boxIsFloated(c) { continue }
+        if boxPaintsWhole(c) { continue }
+        collectPositionedIn(c, out)
+    }
+}
+
+// The same set, read off the marks the step 3 walk left rather than
+// asked again. This is the painter's; the one above is the hit
+// tester's, which cannot use the marks because a click can arrive on a
+// page that was laid out and never painted.
+void func collectPositionedPainted(b:Box, out:arr[Box]) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.paintStep == PSTEP_POSITIONED {
+            out.push(c)
+            // §9.9 again: a positioned box with `z-index: auto` is not a
+            // stacking context, so ITS positioned descendants compete
+            // here rather than inside it. They follow it in the list, in
+            // tree order, which is what the standard's "as if it created
+            // a stacking context, but its positioned descendants are
+            // part of the parent's" comes to.
+            // The STRUCTURAL collector, not this one: the paint marks
+            // are only set for the box being walked, so a mark-based
+            // descent into `c` would see nothing and the descendants
+            // would be suppressed from `c` without joining this list.
+            if boxHoistsPositioned(c) { collectPositionedIn(c, out) }
+        }
+        else if c.paintStep == PSTEP_SPLIT { collectPositionedPainted(c, out) }
+    }
+}
+
+// Them, lowest z first and in document order within a z. The negative
+// ones are not here: they belong to the nearest stacking context and
+// were painted before any of this box's content.
+// How deep inside a stacking context's step-8 list the painter is. A
+// box whose positioned descendants were hoisted into an ancestor's list
+// must not paint them again from inside itself, and this is what tells
+// it so: nonzero means "some ancestor owns the list you are in".
+int posHoistDepth = 0
+
+void func paintPositionedIn(b:Box) {
+    arr[Box] pos = []
+    collectPositionedPainted(b, pos)
+    if pos.length == 0 { return }
+    int highest = 0
+    for int i = 0, i < pos.length, i++ {
+        if pos[i].style.zIndex > highest { highest = pos[i].style.zIndex }
+    }
+    int prevHoist = posHoistDepth
+    posHoistDepth = prevHoist + 1
+    for int z = 0, z <= highest, z++ {
+        for int i = 0, i < pos.length, i++ {
+            if pos[i].style.zIndex != z { continue }
+            paintBox(pos[i])
+        }
+    }
+    posHoistDepth = prevHoist
+}
+
+// A box's contents, in §9.9's order. Run for every box that paints
+// whole, so a float and a clipped subtree get the same three passes
+// the document does.
+// `ownOutline` is false where the caller draws this box's outline
+// itself: a clipping box paints its contents into a layer the size of
+// its padding box, and an outline lies outside its border box, so an
+// outline drawn in there would fall outside the layer and vanish.
+void func paintContents(b:Box, ownOutline:bool) {
+    paintBlocksWalk(b)
+    // Step 4 is skipped outright on a document with no float in it.
+    if docHasFloats { paintFloatsWalk(b) }
+    paintLines(b)
+    paintInlinesWalk(b)
+    // The outlines, above everything in flow and below anything
+    // positioned. A document that declares none does not walk for them.
+    if docHasOutline {
+        if ownOutline { paintOutlineFor(b) }
+        paintOutlineWalk(b)
+    }
+    // A box whose positioned descendants were hoisted out does not
+    // paint them: the ancestor whose list they joined does, in its own
+    // z order. A stacking context, or a box that confines its subtree,
+    // was never hoisted through and still owns its own.
+    if docHasPositioned
+        && (posHoistDepth == 0 || boxIsStackingContext(b) || boxConfinesSubtree(b)) {
+        paintPositionedIn(b)
+    }
+}
+
+void func paintSubtree(b:Box) {
+    paintContents(b, true)
 }
 
 void func paintBoxInner(b:Box) {
@@ -2896,92 +4948,8 @@ void func paintBoxInner(b:Box) {
         paintClipped(b)
         return
     }
-    Style s = b.style
-    // empty-cells: hide -- a cell with nothing in it draws neither
-    // background nor border in the separated borders model (CSS2
-    // 17.6.1.1). The cell still takes its space; only its own
-    // decoration goes.
-    if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return }
-    if b.kind != BOX_ANON && !s.hidden {
-        // a shadow is cast by the border box and lies under it
-        paintShadows(b.x, b.y, b.w, b.h, s)
-        if b.kind == BOX_ROW {
-            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
-        } else {
-            paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s)
-            // A border image replaces the border's own styles where it
-            // is drawn, so it goes over them (Backgrounds and Borders 3
-            // §6.1).
-            paintBorders(b)
-            paintBorderImage(b)
-        }
-        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
-    }
-    if b.kind == BOX_IMAGE {
-        if !s.hidden { paintImage(b) }
-        return
-    }
-    if b.kind == BOX_AUDIO {
-        paintAudioControls(b)
-        return
-    }
-    if b.kind == BOX_IFRAME {
-        if !s.hidden { paintFrame(b) }
-        return
-    }
-    if s.outlineWidth > 0 && !s.hidden { paintOutline(b) }
-    if s.columnRuleWidth > 0 && !s.hidden { paintColumnRules(b) }
-    // content-visibility: hidden skips the contents entirely
-    // (Containment 2 §4). The box's own background, border and outline
-    // are not contents, so they are already painted above; everything
-    // below this line is.
-    if s.contentHidden { return }
-    if b.isListItem && !s.hidden { paintListMarker(b) }
-    if !s.hidden { paintFormControl(b) }
-    paintLines(b)
-    // In-flow children first, then the positioned ones in z-index order:
-    // a positioned box paints above its in-flow siblings whatever the
-    // document order (CSS2 §9.9). This is the painting order for the
-    // common case, not the full stacking-context algorithm -- there is
-    // no opacity or transform layer to sort against yet.
-    // A document with no positioned box anywhere needs neither the
-    // skip test nor the second pass: one loop in document order is the
-    // whole painting order.
-    if !docHasPositioned {
-        for int i = 0, i < b.children.length, i++ {
-            Box c = b.children[i]
-            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-            paintBox(c)
-        }
-        return
-    }
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if boxIsPositioned(c) { continue }
-        paintBox(c)
-    }
-    int lowest = 0
-    int highest = 0
-    bool anyPositioned = false
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if !boxIsPositioned(c) { continue }
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if !anyPositioned || c.style.zIndex < lowest { lowest = c.style.zIndex }
-        if !anyPositioned || c.style.zIndex > highest { highest = c.style.zIndex }
-        anyPositioned = true
-    }
-    if !anyPositioned { return }
-    for int z = lowest, z <= highest, z++ {
-        for int i = 0, i < b.children.length, i++ {
-            Box c = b.children[i]
-            if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-            if !boxIsPositioned(c) { continue }
-            if c.style.zIndex != z { continue }
-            paintBox(c)
-        }
-    }
+    if !paintBoxSelf(b) { return }
+    paintSubtree(b)
 }
 
 // A frame paints the document it loaded, translated into its content
@@ -2996,7 +4964,8 @@ void func paintFrame(b:Box) {
     int cw = b.w - b.bl - b.br - b.pl - b.pr
     int ch = b.h - b.bt - b.bb - b.pt - b.pb
     if cw <= 0 || ch <= 0 { return }
-    applyFillColor(COLOR_WHITE)
+    int fw = anyFilter && paintFilters.length > 0 ? filteredColor(COLOR_WHITE) : COLOR_WHITE
+    applyFillColor(fw)
     pDrawRect(cx, cy, cw, ch)
     fillAlpha(1.0)
     if b.frameKey == null { return }
@@ -3028,6 +4997,88 @@ int func canvasBackground(root:Box) {
     return COLOR_WHITE
 }
 
+// ---- a document's painting flags -------------------------------------
+//
+// The painter asks a set of per-document questions -- has this document
+// a float, a positioned box, a box that paints whole, an outline, a
+// transform, a clip, a corner shape, small caps -- and each is a global
+// raised while the box tree is **built** or the cascade runs, then read
+// while the document is **painted**. One document at a time makes the
+// two agree; two documents alive does not, and then a page is painted
+// with whichever document was laid out last.
+//
+// So a page carries its own answers and puts them back before it is
+// painted. The list below is bound to be incomplete one day, which is
+// why `tests/render/pagestate.f` asks the invariant rather than the
+// list: paint a page, build and paint another, paint the first again,
+// and require the same pixels. A flag added and forgotten fails that.
+struct DocFlags {
+    floats:bool
+    positioned:bool
+    wholePaint:bool
+    outline:bool
+    rtlText:bool
+    sawClip:bool
+    sawNegativeZ:bool
+    sawTransform:bool
+    anchorHidden:bool
+    clipMargin:bool
+    cornerShape:bool
+    crossFade:bool
+    offsetPath:bool
+    resize:bool
+    sticky:bool
+    smallCaps:bool
+    // Not every answer is a boolean. The values a property keeps by
+    // the computed style's serial live in maps that `cascadeReset`
+    // REPLACES rather than empties, so holding the old map here keeps
+    // this document's answers alive while the next document fills a
+    // new one.
+    fontCaps:map[int]
+}
+
+DocFlags func captureDocFlags() {
+    DocFlags f
+    f.floats = docHasFloats
+    f.positioned = docHasPositioned
+    f.wholePaint = docHasWholePaint
+    f.outline = docHasOutline
+    f.rtlText = anyRtlText
+    f.sawClip = cascadeSawClip
+    f.sawNegativeZ = cascadeSawNegativeZ
+    f.sawTransform = cascadeSawTransform
+    f.anchorHidden = anyAnchorHidden
+    f.clipMargin = anyClipMargin
+    f.cornerShape = anyCornerShape
+    f.crossFade = anyCrossFade
+    f.offsetPath = anyOffsetPath
+    f.resize = anyResize
+    f.sticky = anySticky
+    f.smallCaps = anySmallCaps
+    f.fontCaps = fontCapsOfSerial
+    return f
+}
+
+void func restoreDocFlags(f:DocFlags) {
+    docHasFloats = f.floats
+    docHasPositioned = f.positioned
+    docHasWholePaint = f.wholePaint
+    docHasOutline = f.outline
+    anyRtlText = f.rtlText
+    cascadeSawClip = f.sawClip
+    cascadeSawNegativeZ = f.sawNegativeZ
+    cascadeSawTransform = f.sawTransform
+    anyAnchorHidden = f.anchorHidden
+    anyClipMargin = f.clipMargin
+    anyCornerShape = f.cornerShape
+    anyCrossFade = f.crossFade
+    anyOffsetPath = f.offsetPath
+    anyResize = f.resize
+    anySticky = f.sticky
+    anySmallCaps = f.smallCaps
+    fontCapsOfSerial = f.fontCaps
+}
+
 // Paints the whole document; the caller sets any transform first.
 void func paintDocument(root:Box, viewTop:int, viewBottom:int) {
     paintTop = viewTop
@@ -3040,6 +5091,282 @@ void func paintDocument(root:Box, viewTop:int, viewBottom:int) {
 
 // The innermost box under a document point, preferring text runs so
 // links resolve to the element the text belongs to.
+// A point mapped out of the transformed space back into the box's own.
+//
+// The painter composes `translate(origin)`, then each function in the
+// order written, then `translate(-origin)`, so the inverse is the same
+// functions inverted and applied in the opposite order. Two answers out
+// of one function need globals (FINDINGS.md, "one value out of a
+// function").
+int untransformedX = 0
+int untransformedY = 0
+
+void func untransformPoint(b:Box, x:int, y:int) {
+    Style s = b.style
+    // The same reference box the painter takes its origin in, so the
+    // point is undone about exactly the origin it was done about.
+    int rx = b.x
+    int ry = b.y
+    int rw = b.w
+    int rh = b.h
+    if s.transformBoxContent {
+        rx = contentX(b)
+        ry = contentY(b)
+        rw = contentWidth(b)
+        rh = b.h - b.pt - b.pb - b.bt - b.bb
+    }
+    int ox = rx + resolveLen(s.transformOriginX, rw, Math.floorDiv(rw, 2))
+    int oy = ry + resolveLen(s.transformOriginY, rh, Math.floorDiv(rh, 2))
+    float px = (x - ox).toFloat()
+    float py = (y - oy).toFloat()
+    for int i = s.transforms.length - 1, i >= 0, i-- {
+        Transform t = s.transforms[i]
+        if t.kind == TX_TRANSLATE {
+            px = px - resolveLen(t.x, b.w, 0).toFloat()
+            py = py - resolveLen(t.y, b.h, 0).toFloat()
+        } else if t.kind == TX_ROTATE {
+            float rad = (0.0 - t.angle) * CSS_PI / 180.0
+            float c = Math.cos(rad)
+            float sn = Math.sin(rad)
+            float nx = px * c - py * sn
+            float ny = px * sn + py * c
+            px = nx
+            py = ny
+        } else if t.kind == TX_SCALE {
+            // A zero scale draws nothing, so nothing can be hit through
+            // it and the point is sent somewhere the box is not.
+            if t.sx == 0.0 || t.sy == 0.0 {
+                untransformedX = b.x - 1
+                untransformedY = b.y - 1
+                return
+            }
+            px = px / t.sx
+            py = py / t.sy
+        }
+    }
+    untransformedX = ox + roundPx(px)
+    untransformedY = oy + roundPx(py)
+}
+
+// The out-of-flow boxes, searched topmost first. This is what finds a
+// box laid out past every ancestor's rectangle, which the ordinary
+// descent cannot reach because it culls by the ancestor's box. Later in
+// document order is nearer the top, so the scan runs backwards.
+//
+// It is declared before `hitTest` and calls it, which is fine because
+// functions are hoisted here where globals are not.
+Box func hitOutOfFlow(x:int, y:int) {
+    if outOfFlowBoxes.length == 0 { return null }
+    // In reverse painting order, as the ordinary descent is: highest
+    // `z-index` first, and latest in document order within a z.
+    int hiZ = outOfFlowBoxes[0].style.zIndex
+    int loZ = hiZ
+    for int i = 1, i < outOfFlowBoxes.length, i++ {
+        int z = outOfFlowBoxes[i].style.zIndex
+        if z > hiZ { hiZ = z }
+        if z < loZ { loZ = z }
+    }
+    for int z = hiZ, z >= loZ, z-- {
+        for int i = outOfFlowBoxes.length - 1, i >= 0, i-- {
+            Box c = outOfFlowBoxes[i]
+            if c.style.zIndex != z { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
+// One child tested against the point, or null for "not this one".
+// Shared by the three passes below so the transform and
+// `pointer-events` rules cannot drift between them.
+// Whether the point is in one of the parts a column break cut off this
+// box. Only a childless block is ever cut (`columnUnitSplittable`), so a
+// part holds no content and there is nothing below it to search.
+bool func pointInBoxFragment(c:Box, x:int, y:int) {
+    for int i = 0, i < c.frags.length, i++ {
+        ColumnFrag f = c.frags[i]
+        if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h { return true }
+    }
+    return false
+}
+
+Box func hitChild(c:Box, x:int, y:int) {
+    if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { return null }
+    // A transformed box is drawn somewhere other than where it was laid
+    // out, so the pointer is tested against the drawn shape: the point
+    // comes back through the inverse transform and everything below it
+    // -- this box and its whole subtree -- is searched in that space. A
+    // document that never said `transform` pays one boolean here.
+    int hx = x
+    int hy = y
+    // A sticky box is drawn away from where it was laid out, so the
+    // pointer comes back the same distance before this box or anything
+    // under it is tested. The offset is worked out from the scroll
+    // position the painter last drew at, which is the one the click
+    // arrived on: a click is answered after a paint, not before one.
+    if anySticky && c.style.position == POS_STICKY { hy = hy - stickyOffsetY(c) }
+    if cascadeSawTransform && c.style.transforms.length > 0 {
+        untransformPoint(c, hx, hy)
+        hx = untransformedX
+        hy = untransformedY
+    }
+    if hx < c.x || hx >= c.x + c.w || hy < c.y || hy >= c.y + c.h {
+        // A box a column break cut is in more than one place, and its own
+        // rectangle is only the first. Chromium's `elementFromPoint` names
+        // it at every point in every part (todo.md), so the parts are
+        // tested too -- behind the boolean, so a page with none pays one
+        // test and never reaches the walk below.
+        if !anyColumnFrags || c.frags.length == 0 { return null }
+        if !pointInBoxFragment(c, hx, hy) { return null }
+    }
+    // `interactivity: inert` takes the box AND its subtree out of hit
+    // testing, and no descendant can undo it -- which is exactly where
+    // it parts from `pointer-events: none` below, whose descendants are
+    // searched on purpose (todo.md has Chromium's rows). So it returns
+    // before the subtree is walked rather than after.
+    if anyInert && interactivityInert(c.style) { return null }
+    // pointer-events: none takes a box out of hit testing so that what
+    // is behind it is found instead. Its descendants are still
+    // searched, because a child may ask for pointer events back.
+    Box inner = hitTest(c, hx, hy)
+    if inner != null { return inner }
+    if c.style.pointerEvents != PE_NONE { return c }
+    return null
+}
+
+// This box's own inline content, at the point. The fragments are in
+// paint order within a line and no two overlap, so the first one the
+// point falls in is the answer.
+Box func hitLines(b:Box, x:int, y:int) {
+    for int i = 0, i < b.lines.length, i++ {
+        Line ln = b.lines[i]
+        if y < ln.y || y >= ln.y + ln.h { continue }
+        for int j = 0, j < ln.frags.length, j++ {
+            Fragment f = ln.frags[j]
+            if f.kind == FRAG_INLINE_BG { continue }
+            // An atomic inline is painted from its own box rather
+            // than from the fragment, and a negative margin puts the
+            // two in different places: the fragment is the margin box,
+            // so `margin-left: -80px` on a 60-wide box gives it a
+            // width of -20 at the line's own x. So it is hit through
+            // `hitChild` like every other box, against the rectangle
+            // the painter drew it in.
+            if f.kind == FRAG_ATOMIC {
+                Box got = hitChild(f.box, x, y)
+                if got != null { return got }
+                continue
+            }
+            if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
+                // pointer-events: none takes a box out of hit testing so
+                // that what is behind it is found instead, and an inert
+                // inline is skipped the same way -- Chromium answers the
+                // box behind an inert span, as it does for
+                // `pointer-events`, and the two part company only over a
+                // descendant that asks to be hit again, which a run of
+                // text does not (todo.md).
+                if f.box.style.pointerEvents == PE_NONE { continue }
+                if anyInert && interactivityInert(f.box.style) { continue }
+                return f.box
+            }
+        }
+    }
+    return null
+}
+
+// One of the painter's three phases, read backwards: latest in document
+// order first, and a box's subtree before the box itself, because both
+// painted later. It is the painter's `paintPhaseWalk` with every
+// "paint" replaced by "answer if it is there", so the two cannot drift.
+Box func hitPhaseWalk(b:Box, x:int, y:int, phase:int) {
+    for int i = b.children.length - 1, i >= 0, i-- {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // An inert box is not hit and neither is anything inside it, so
+        // the walk stops here rather than at `hitChild`, which the two
+        // branches below do not always reach.
+        if anyInert && interactivityInert(c.style) { continue }
+        // Positioned first, as in the painter: an out-of-flow box is in
+        // no line, so the inline-level test must not reach one.
+        if docHasPositioned && boxIsPositioned(c) { continue }
+        // Reached through the line that holds it, exactly as the
+        // painter reaches it.
+        if isInlineLevelBox(c) { continue }
+        if docHasFloats && boxIsFloated(c) {
+            if phase != PHASE_FLOATS { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+            continue
+        }
+        if boxPaintsWhole(c) {
+            if phase != PHASE_BLOCKS { continue }
+            Box got = hitChild(c, x, y)
+            if got != null { return got }
+            continue
+        }
+        if x < c.x || x >= c.x + c.w || y < c.y || y >= c.y + c.h {
+            // A box a column break cut is in more than one place, and its
+            // own rectangle is only the first part. This cull is the third
+            // place the walk reaches content -- `hitChild` and `hitLines`
+            // are the others -- and a part of a cut box that painted and
+            // could not be clicked was how that was found out here too.
+            if !anyColumnFrags || c.frags.length == 0 { continue }
+            if !pointInBoxFragment(c, x, y) { continue }
+        }
+        Box deep = hitPhaseWalk(c, x, y, phase)
+        if deep != null { return deep }
+        if phase == PHASE_INLINES {
+            Box own = hitLines(c, x, y)
+            if own != null { return own }
+        } else if phase == PHASE_BLOCKS {
+            // pointer-events: none takes a box out of hit testing so
+            // that what is behind it is found instead.
+            if c.style.pointerEvents != PE_NONE { return c }
+        }
+    }
+    return null
+}
+
+// The positioned descendants this box paints at steps 6 and after,
+// topmost first: highest z, and latest in document order within a z.
+Box func hitPositionedIn(b:Box, x:int, y:int) {
+    arr[Box] pos = []
+    collectPositionedIn(b, pos)
+    if pos.length == 0 { return null }
+    int highest = 0
+    for int i = 0, i < pos.length, i++ {
+        if pos[i].style.zIndex > highest { highest = pos[i].style.zIndex }
+    }
+    for int z = highest, z >= 0, z-- {
+        for int i = pos.length - 1, i >= 0, i-- {
+            if pos[i].style.zIndex != z { continue }
+            Box got = hitChild(pos[i], x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
+// The negative ones, which this stacking context painted before any of
+// its own content, so they are the last thing a click can reach.
+Box func hitNegativeIn(b:Box, x:int, y:int) {
+    arr[Box] neg = []
+    collectNegativeZ(b, neg)
+    if neg.length == 0 { return null }
+    int lowest = neg[0].style.zIndex
+    for int i = 1, i < neg.length, i++ {
+        if neg[i].style.zIndex < lowest { lowest = neg[i].style.zIndex }
+    }
+    for int z = 0 - 1, z >= lowest, z-- {
+        for int i = neg.length - 1, i >= 0, i-- {
+            if neg[i].style.zIndex != z { continue }
+            Box got = hitChild(neg[i], x, y)
+            if got != null { return got }
+        }
+    }
+    return null
+}
+
 Box func hitTest(b:Box, x:int, y:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     // Inside a scrolled box the content is drawn that much higher than
@@ -3050,36 +5377,37 @@ Box func hitTest(b:Box, x:int, y:int) {
     if scrolled > 0 { y = y + scrolled }
     int across = boxScrollLeft(b)
     if across > 0 { x = x + across }
-    for int i = 0, i < b.lines.length, i++ {
-        Line ln = b.lines[i]
-        if y < ln.y || y >= ln.y + ln.h { continue }
-        for int j = 0, j < ln.frags.length, j++ {
-            Fragment f = ln.frags[j]
-            if f.kind == FRAG_INLINE_BG { continue }
-            if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
-                // pointer-events: none takes a box out of hit testing so
-                // that what is behind it is found instead. Its
-                // descendants are still searched, because a child may
-                // ask for pointer events back.
-                if f.kind == FRAG_ATOMIC {
-                    Box inner = hitTest(f.box, x, y)
-                    if inner != null { return inner }
-                    if f.box.style.pointerEvents != PE_NONE { return f.box }
-                    continue
-                }
-                if f.box.style.pointerEvents == PE_NONE { continue }
-                return f.box
-            }
-        }
+    // CSS2 §9.9 read backwards: the positioned descendants at zero and
+    // above, highest z first and latest first within a z; then step 5,
+    // the in-flow inline content, deepest and latest first; then step
+    // 4, the floats; then step 3, the block-level boxes; then the
+    // negative ones this stacking context owns.
+    if docHasPositioned {
+        Box over = hitPositionedIn(b, x, y)
+        if over != null { return over }
     }
-    for int i = 0, i < b.children.length, i++ {
-        Box c = b.children[i]
-        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
-        if x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h {
-            Box inner = hitTest(c, x, y)
-            if inner != null { return inner }
-            if c.style.pointerEvents != PE_NONE { return c }
-        }
+    Box deepLine = hitPhaseWalk(b, x, y, PHASE_INLINES)
+    if deepLine != null { return deepLine }
+    Box ownLine = hitLines(b, x, y)
+    if ownLine != null { return ownLine }
+    if docHasFloats {
+        Box floated = hitPhaseWalk(b, x, y, PHASE_FLOATS)
+        if floated != null { return floated }
+    }
+    Box blockLevel = hitPhaseWalk(b, x, y, PHASE_BLOCKS)
+    if blockLevel != null { return blockLevel }
+    if cascadeSawNegativeZ && boxIsStackingContext(b) {
+        Box behind = hitNegativeIn(b, x, y)
+        if behind != null { return behind }
+    }
+    // Nothing in the tree under this point. A box laid out past every
+    // ancestor's rectangle is unreachable by that descent, so the
+    // out-of-flow boxes are searched directly -- from the root only,
+    // and only once the ordinary answer has come back empty, so no
+    // answer this already gave can change.
+    if b.parentId == 0 && outOfFlowBoxes.length > 0 {
+        Box away = hitOutOfFlow(x, y)
+        if away != null { return away }
     }
     return null
 }
@@ -3087,6 +5415,25 @@ Box func hitTest(b:Box, x:int, y:int) {
 // The innermost scroll container under a point that has anything left
 // to scroll in the direction asked for, or null where there is none --
 // which is what hands the wheel back to the page.
+// Whether the wheel that `wheelTargetAt` could not place should go on
+// to the page. A scroll container that has reached its end normally
+// passes the wheel outward; `overscroll-behavior` stops it there and
+// sets this instead.
+bool wheelChainBlocked = false
+
+// The box a wheel at (x, y) scrolls, or null -- and then
+// `wheelChainBlocked` says whether the page may take what is left.
+Box func wheelTargetAt(root:Box, x:int, y:int, dy:int) {
+    wheelChainBlocked = false
+    return scrollContainerAt(root, x, y, dy)
+}
+
+// The same, across.
+Box func wheelTargetAcrossAt(root:Box, x:int, y:int, dx:int) {
+    wheelChainBlocked = false
+    return scrollContainerAcrossAt(root, x, y, dx)
+}
+
 Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
     if b.kind == BOX_TEXT || b.kind == BOX_BR { return null }
     int scrolled = boxScrollTop(b)
@@ -3097,13 +5444,23 @@ Box func scrollContainerAt(b:Box, x:int, y:int, dy:int) {
         if x >= c.x && x < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAt(c, x, inner, dy)
             if found != null { return found }
+            // a descendant contained the chain: this box does not get
+            // the wheel and neither does anything outside it
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbW <= 0 { return null }
     int range = boxScrollRange(b)
-    if range <= 0 { return null }
-    if dy > 0 && scrolled >= range { return null }
-    if dy < 0 && scrolled <= 0 { return null }
+    // This container cannot take the wheel -- it has nothing to scroll,
+    // or it has reached its end in the direction asked for -- so the
+    // wheel would pass outward. `overscroll-behavior` on the axis asked
+    // for stops it here instead (CSS Overscroll Behavior 1 §3). A box
+    // with nothing to scroll is at both of its ends at once, so it
+    // contains the chain exactly as one scrolled to its end does.
+    if range <= 0 || (dy > 0 && scrolled >= range) || (dy < 0 && scrolled <= 0) {
+        if overscrollY(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 
@@ -3161,14 +5518,16 @@ Box func scrollContainerAcrossAt(b:Box, x:int, y:int, dx:int) {
         if innerX >= c.x && innerX < c.x + c.w && inner >= c.y && inner < c.y + c.h {
             Box found = scrollContainerAcrossAt(c, innerX, inner, dx)
             if found != null { return found }
+            if wheelChainBlocked { return null }
         }
     }
     if b.sbH <= 0 { return null }
     int range = boxScrollLeftRange(b)
-    if range <= 0 { return null }
     int at = boxScrollLeft(b)
-    if dx > 0 && at >= range { return null }
-    if dx < 0 && at <= 0 { return null }
+    if range <= 0 || (dx > 0 && at >= range) || (dx < 0 && at <= 0) {
+        if overscrollX(b.style) != OSB_AUTO { wheelChainBlocked = true }
+        return null
+    }
     return b
 }
 

@@ -16,6 +16,16 @@ struct Page {
     height:int          // document height after layout
     error:text
     loaded:bool
+    // What the painter needs to know about this document, taken when
+    // its layout finished and put back before it is painted. See
+    // DocFlags in paint.f: the questions are globals, and a second
+    // document laid out afterwards would otherwise answer them.
+    flags:DocFlags
+    // Where the document starts scrolled to, which
+    // `scroll-initial-target` on an element in its own flow asks for.
+    // Layout works it out and the shell applies it, because the shell
+    // owns the page's scroll position (todo.md).
+    initialScrollY:int
 }
 
 int maxImagesPerPage = 60
@@ -193,6 +203,12 @@ Page func loadPage(url:text, width:int) {
     timing('fetch', t0)
     int t1 = now()
     nodeRegistryReset()
+    // A scroll offset belongs to the document it was scrolled in. The
+    // maps holding one outlive a box tree by being keyed on node id --
+    // which is what the line above starts again -- so an offset left
+    // behind would open whichever element of this page takes that id
+    // part-way down.
+    boxScrollReset()
     if !r.ok {
         page.error = r.error
         page.doc = errorDocument(url, r.error)
@@ -224,6 +240,7 @@ Page func pageFromHtml(html:text, baseUrl:text, width:int) {
     page.width = width
     page.error = ''
     nodeRegistryReset()
+    boxScrollReset()
     // No scan: there is no base to resolve against and nothing was
     // fetched. Clearing the cache keeps a resource fetched for an
     // earlier page from being served to this one unrevalidated.
@@ -339,6 +356,11 @@ void func layoutPage(page:Page, width:int) {
     page.width = width
     cssViewportWidth = width
     page.root = layoutDocument(page.doc, width)
+    // The painter's per-document questions are answered while the box
+    // tree is built, so they belong to this page and not to whichever
+    // page is laid out next. See DocFlags in paint.f.
+    page.flags = captureDocFlags()
+    page.initialScrollY = docInitialScrollY
     if page.root == null {
         page.height = 0
         return
@@ -360,8 +382,116 @@ void func layoutPage(page:Page, width:int) {
 // painter culls by box and not by pixel, so the margins are laid back
 // over it afterwards in the page's own colour. The page box's background
 // is the root element's, propagated to it (CSS2 §13.2).
-void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
+// ---- the page margin boxes --------------------------------------------
+//
+// Sixteen boxes in the page margin (CSS Paged Media 3 §5), each drawn
+// from its own `content`. Measured in todo.md against Chromium's own
+// print, read out of the PDF: the five along each of the top and
+// bottom edges are vertically centred in their band, the three down
+// each side are top-, middle- and bottom-aligned in the side region,
+// and the corners align INWARD, toward the page content.
+//
+// A margin box inherits from the ROOT element rather than from `body`,
+// which the measurement settles: `html { font: 16px monospace }`
+// reaches the box and `body { ... }` does not, because the page
+// context inherits from the root.
+
+// Where one box goes, as (x, y, w, h). Four values out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+int mbX = 0
+int mbY = 0
+int mbW = 0
+int mbH = 0
+
+void func marginBoxRect(box:PageBox, slot:int) {
+    int innerW = maxInt(box.width - box.marginLeft - box.marginRight, 0)
+    int innerH = maxInt(box.height - box.marginTop - box.marginBottom, 0)
+    int right = box.width - box.marginRight
+    int bottom = box.height - box.marginBottom
+    if slot == MB_TOP_LEFT_CORNER { mbX = 0  mbY = 0  mbW = box.marginLeft  mbH = box.marginTop  return }
+    if slot == MB_TOP_RIGHT_CORNER { mbX = right  mbY = 0  mbW = box.marginRight  mbH = box.marginTop  return }
+    if slot == MB_BOTTOM_LEFT_CORNER { mbX = 0  mbY = bottom  mbW = box.marginLeft  mbH = box.marginBottom  return }
+    if slot == MB_BOTTOM_RIGHT_CORNER { mbX = right  mbY = bottom  mbW = box.marginRight  mbH = box.marginBottom  return }
+    if slot == MB_TOP_LEFT || slot == MB_TOP_CENTER || slot == MB_TOP_RIGHT {
+        mbX = box.marginLeft  mbY = 0  mbW = innerW  mbH = box.marginTop  return
+    }
+    if slot == MB_BOTTOM_LEFT || slot == MB_BOTTOM_CENTER || slot == MB_BOTTOM_RIGHT {
+        mbX = box.marginLeft  mbY = bottom  mbW = innerW  mbH = box.marginBottom  return
+    }
+    if slot == MB_LEFT_TOP || slot == MB_LEFT_MIDDLE || slot == MB_LEFT_BOTTOM {
+        mbX = 0  mbY = box.marginTop  mbW = box.marginLeft  mbH = innerH  return
+    }
+    mbX = right  mbY = box.marginTop  mbW = box.marginRight  mbH = innerH
+}
+
+// The style a margin box draws in: the root element's, with whatever
+// the box itself declares on top. Only the handful of properties a
+// margin box is written for are read; the rest are recorded in todo.md
+// rather than half-applied.
+Style func marginBoxStyle(rootStyle:Style, decls:arr[PageDecl]) {
+    Style s = rootStyle
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name == 'color' {
+            int c = parseCssColor(decls[i].value, rootStyle.color)
+            if c != COLOR_UNSET { s.color = c }
+        } else if decls[i].name == 'font-size' {
+            int px = pageMarginPx(decls[i].value, rootStyle.fontSize)
+            if px > 0 {
+                s.fontSize = px
+                s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+            }
+        }
+    }
+    return s
+}
+
+int func marginBoxAlignOf(decls:arr[PageDecl], slot:int, vertical:bool) {
+    int a = vertical ? marginBoxDefaultVAlign(slot) : marginBoxDefaultAlign(slot)
+    text want = vertical ? 'vertical-align' : 'text-align'
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name != want { continue }
+        ascii v = asciiLower(asciiTrim(decls[i].value))
+        if v == 'left' || v == 'start' || v == 'top' { a = MBALIGN_START }
+        else if v == 'center' || v == 'middle' { a = MBALIGN_CENTER }
+        else if v == 'right' || v == 'end' || v == 'bottom' { a = MBALIGN_END }
+    }
+    return a
+}
+
+void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, rootStyle:Style, blank:bool) {
+    for int slot = 0, slot < MB_COUNT, slot++ {
+        arr[PageDecl] decls = marginBoxDecls(slot, name, index, blank)
+        if decls.length == 0 { continue }
+        text content = ''
+        for int i = 0, i < decls.length, i++ {
+            if decls[i].name == 'content' {
+                content = marginBoxContent(decls[i].value, index, total)
+            }
+        }
+        if content == '' { continue }
+        marginBoxRect(box, slot)
+        if mbW <= 0 || mbH <= 0 { continue }
+        Style s = marginBoxStyle(rootStyle, decls)
+        int w = measureWidth(s, content)
+        int lh = lineHeightOf(s)
+        int align = marginBoxAlignOf(decls, slot, false)
+        int valign = marginBoxAlignOf(decls, slot, true)
+        int x = mbX
+        if align == MBALIGN_CENTER { x = mbX + Math.floorDiv(mbW - w, 2) }
+        else if align == MBALIGN_END { x = mbX + mbW - w }
+        int top = mbY
+        if valign == MBALIGN_CENTER { top = mbY + Math.floorDiv(mbH - lh, 2) }
+        else if valign == MBALIGN_END { top = mbY + mbH - lh }
+        setFontFor(s)
+        applyFillColor(s.color)
+        drawText(content, x, top + fontAscent(s))
+    }
+    fillAlpha(1.0)
+}
+
+void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int, total:int) {
     if page.root == null { return }
+    restoreDocFlags(page.flags)
     int t0 = now()
     int areaW = pageAreaWidth(box)
     // How much of the sheet this page actually carries: a page that ends
@@ -384,11 +514,18 @@ void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
     drawRect(0, 0, box.marginLeft, box.height)
     drawRect(box.marginLeft + areaW, 0, box.width - box.marginLeft - areaW, box.height)
     fillAlpha(1.0)
+    // The boxes go on last, over the margins that were just laid back
+    // over the content -- which is what puts them in the margin rather
+    // than under it. A document that declares none pays one boolean.
+    if anyPageMarginBox {
+        paintPageMarginBoxes(box, pageNames[index], index + 1, total, page.root.style, pageBlanks[index])
+    }
     timing('paint', t0)
 }
 
 void func paintPage(page:Page, top:int, scrollY:int, viewHeight:int) {
     if page.root == null { return }
+    restoreDocFlags(page.flags)
     int t0 = now()
     int bg = canvasBackground(page.root)
     applyFillColor(bg)

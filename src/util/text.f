@@ -95,6 +95,30 @@ int func lowerCode(c:int) {
 // time. int.toChar() is the only way to turn a code back into a
 // character, and it yields a `text`, so the rebuild goes through a
 // text accumulator and converts at the end.
+// The uppercase of an ASCII string, which synthesised small caps needs
+// (CSS Fonts 4): a lowercase letter is drawn as its capital at a
+// smaller size, so the text handed to the canvas is this.
+ascii func asciiUpper(s:ascii) {
+    if s == null { return s }
+    int n = s.length
+    bool hasLower = false
+    for int i = 0, i < n, i++ {
+        int c = s.charCodeAt(i)
+        if c >= 97 && c <= 122 {
+            hasLower = true
+            break
+        }
+    }
+    if !hasLower { return s }
+    text out = ''
+    for int i = 0, i < n, i++ {
+        int c = s.charCodeAt(i)
+        if c >= 97 && c <= 122 { c = c - 32 }
+        out = out + c.toChar()
+    }
+    return out.toAscii()
+}
+
 ascii func asciiLower(s:ascii) {
     if s == null { return s }
     int n = s.length

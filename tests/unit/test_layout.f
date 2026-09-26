@@ -353,4 +353,227 @@ checkEqInt(longWord.sbH, 15, 'a word too long to break raises one as well')
 check(longWord.scrollW > 100, 'and the scrollable width is the word, not the box')
 checkEqInt(longWord.sbH, wideChild.sbH, 'the same bar, for the same reason')
 
+// ---- a negative margin collapses by CSS2 §8.3.1 ----------------------
+//
+// Collapsing margins take the **largest positive** and the **most
+// negative** and add them, which is not the maximum: the larger of 0
+// and -40 is 0, and that is what threw a negative `margin-top` away
+// here. Chromium's gap between two 100px blocks, measured (todo.md):
+//
+//   +50 / +20 -> 50     +50 / -20 -> 30     -30 / -50 -> -50
+//     0 / -40 -> -40    -40 / +10 -> -30
+
+int func gapBetween(mb:text, mt:text) {
+    Box root = layoutHtml('<!doctype html><body style="margin:0">'
+        + '<div id="a" style="height:100px;margin-bottom:' + mb + '"></div>'
+        + '<div id="b" style="height:100px;margin-top:' + mt + '"></div>'
+        + '</body>', 800)
+    arr[Box] all = []
+    collectBoxesForTag(root, 'div', all)
+    if all.length < 2 { return -9999 }
+    return all[1].y - (all[0].y + all[0].h)
+}
+
+checkEqInt(gapBetween('50px', '20px'), 50, 'two positive margins collapse to the larger')
+checkEqInt(gapBetween('50px', '-20px'), 30, 'a negative is added to the largest positive')
+checkEqInt(gapBetween('-30px', '-50px'), 0 - 50, 'two negatives collapse to the most negative')
+checkEqInt(gapBetween('0px', '-40px'), 0 - 40, 'a negative alone pulls the box up')
+checkEqInt(gapBetween('-40px', '10px'), 0 - 30, 'and it does from the other side too')
+
+// The boxes after it follow, which is what makes this visible at all:
+// four stacked 100px blocks with -40 on the second sit at 0, 60, 160,
+// 260 in Chromium.
+Box negRoot = layoutHtml('<!doctype html><body style="margin:0">'
+    + '<div style="height:100px"></div>'
+    + '<div style="height:100px;margin-top:-40px"></div>'
+    + '<div style="height:100px"></div>'
+    + '<div style="height:100px"></div></body>', 800)
+arr[Box] negAll = []
+collectBoxesForTag(negRoot, 'div', negAll)
+checkEqInt(negAll.length, 4, 'four blocks')
+checkEqInt(negAll[0].y, 0, 'the first is at the top')
+checkEqInt(negAll[1].y, 60, 'the second is pulled up by its negative margin')
+checkEqInt(negAll[2].y, 160, 'and the third follows it')
+checkEqInt(negAll[3].y, 260, 'and so does the fourth')
+
+// A negative `margin-left` already worked, and must still: the two
+// directions answering the same way is the check that does not depend
+// on either number being right on its own.
+Box sideRoot = layoutHtml('<!doctype html><body style="margin:0">'
+    + '<div style="height:100px;margin-left:-30px;width:200px"></div></body>', 800)
+arr[Box] sideAll = []
+collectBoxesForTag(sideRoot, 'div', sideAll)
+checkEqInt(sideAll[0].x, 0 - 30, 'a negative margin-left still moves the box out')
+
+// ---- the intrinsic sizing keywords (CSS Box Sizing 3) ------------------
+// `min-content`, `max-content` and `fit-content` as values of `width`.
+// css-2026.md recorded them as missing and they were: `parseLength` did
+// not know the keywords, so the declaration was invalid and dropped.
+//
+// Each is checked against another way of asking for the same number
+// rather than against a remembered one. Shrink-to-fit IS fit-content
+// under an older name, so a float of the same content is the yardstick
+// for both `fit-content` and -- while the content fits -- `max-content`;
+// and a float holding only the longest word is the yardstick for
+// `min-content`. Chromium 141 agrees with all four, measured on the
+// same fixture.
+text sizeHead = '<body style="margin:0;font:16px/20px monospace">'
+
+Box func sizeBox(css:text, content:text, wide:int) {
+    Box r = layoutHtml(sizeHead + '<div style="width:' + `${wide}` + 'px">'
+        + '<div id="s" style="' + css + '">' + content + '</div>'
+        + '</div></body>', 800)
+    return findBoxById(r, 's')
+}
+
+Box func findBoxById(b:Box, want:text) {
+    if b.kind != BOX_TEXT && b.kind != BOX_ANON && b.node != null
+        && attrOf(b.node.id, 'id') == want { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box f = findBoxById(b.children[i], want)
+        if f != null { return f }
+    }
+    return null
+}
+
+// Content that fits: `max-content` and `fit-content` are the same, and
+// both are what a float of the same content shrinks to.
+int floatABWidth = sizeBox('float:left', 'a b', 400).w
+checkEqInt(sizeBox('width:max-content', 'a b', 400).w, floatABWidth,
+    '`max-content` is what the same content shrink-to-fits to')
+checkEqInt(sizeBox('width:fit-content', 'a b', 400).w, floatABWidth,
+    'and `fit-content` agrees while the content fits')
+// `min-content` is the longest word, which is what a float holding only
+// that word shrinks to.
+checkEqInt(sizeBox('width:min-content', 'a b', 400).w,
+    sizeBox('float:left', 'a', 400).w,
+    '`min-content` is the widest word on its own')
+// The three are not all the same number, which is what stops the
+// agreements above passing on an engine that ignores the keywords and
+// leaves every box at its container's width.
+check(sizeBox('width:min-content', 'a b', 400).w
+        < sizeBox('width:max-content', 'a b', 400).w,
+    '`min-content` is narrower than `max-content` for content with a space in it')
+check(sizeBox('width:max-content', 'a b', 400).w < 400,
+    'and both are narrower than the container, which `auto` would have given')
+
+// Content that does NOT fit is where `fit-content` and `max-content`
+// separate. `fit-content` is
+// `min(max-content, max(min-content, available))`, so against a
+// container narrower than the longest word it comes out at
+// `min-content` and overflows -- it is clamped to what is available
+// only from above. This expectation was written as "clamped to 60,
+// the container" from intuition, the engine disagreed, and Chromium
+// sided with the engine: 67.4px, its own min-content, where the
+// container is 60.
+int narrowMax = sizeBox('width:max-content', 'alpha bravo charlie delta', 60).w
+int narrowFit = sizeBox('width:fit-content', 'alpha bravo charlie delta', 60).w
+int narrowMin = sizeBox('width:min-content', 'alpha bravo charlie delta', 60).w
+check(narrowMax > 60, '`max-content` overflows a container too narrow for it')
+checkEqInt(narrowFit, narrowMin,
+    '`fit-content` falls back to `min-content` against a container narrower than it')
+check(narrowFit > 60, 'and so it overflows too, rather than being clamped to the container')
+check(narrowFit < narrowMax, 'while staying narrower than `max-content`')
+
+// The same keywords on `height`, which css-2026.md was written up as
+// not supporting -- a sentence put there without measuring, and wrong.
+// A grid item is the fixture that can tell them apart from `auto`: a
+// stretched item fills its row, and any of the three intrinsic
+// keywords stops the stretch and leaves it at its content height.
+// Chromium 141 answers 200 and 60; so does this engine, because the
+// keyword makes the height non-auto and the stretch only applies to an
+// auto one. Before the keywords parsed at all the declaration was
+// dropped and every one of these was 200, which is what stops the
+// checks below passing on the engine that had no feature.
+Box func gridItemH(css:text) {
+    Box r = layoutHtml(sizeHead
+        + '<div style="display:grid;height:200px;width:80px">'
+        + '<div id="s" style="' + css + '">alpha bravo charlie</div>'
+        + '</div></body>', 800)
+    return findBoxById(r, 's')
+}
+int stretched = gridItemH('').h
+checkEqInt(stretched, 200, 'a grid item with an auto height fills its row')
+checkEqInt(gridItemH('height:min-content').h, 60,
+    '`height: min-content` leaves it at its content height instead')
+checkEqInt(gridItemH('height:max-content').h, 60, 'and `max-content`')
+checkEqInt(gridItemH('height:fit-content').h, 60, 'and `fit-content`')
+check(gridItemH('height:min-content').h < stretched,
+    'all three stop the stretch, which is the whole of what they do here')
+
+// ---- a definite table height reaches its rows (CSS2 17.5.3) --------------
+// A height on a table is a MINIMUM, and the surplus over what the rows
+// need is distributed among them in proportion to their own heights --
+// not equally, and not to the last row. todo.md has Chromium's seven
+// fixtures. This engine left the rows at their content heights, so the
+// declaration changed nothing at all.
+//
+// The checks are written as proportions rather than as the six numbers,
+// because a proportion holds whatever the rows' content heights turn out
+// to be: doubling the table doubles every row, and the ratio between two
+// rows survives. Only the two that pin the *shape* of the rule -- that it
+// is a minimum, and that it reaches the rows at all -- name a number, and
+// those two come from the table's own declaration rather than from a font
+// metric.
+
+arr[int] func tblRowHeights(tableCss:text, rows:text) {
+    Box root = layoutHtml(
+        `<body style="margin:0"><table style="border-spacing:0;width:100px;${tableCss}">` +
+        `${rows}</table></body>`, 400)
+    Box t = findBox(root, 'table')
+    arr[Box] cells = []
+    collectBoxesForTag(t, 'td', cells)
+    arr[int] out = []
+    out.push(t.h)
+    for int i = 0, i < cells.length, i++ { out.push(cells[i].h) }
+    return out
+}
+
+text THR2 = '<tr><td style="padding:0;height:20px"></td></tr>' +
+           '<tr><td style="padding:0;height:30px"></td></tr>'
+
+arr[int] thAuto = tblRowHeights('', THR2)
+arr[int] th60 = tblRowHeights('height:60px', THR2)
+arr[int] th100 = tblRowHeights('height:100px', THR2)
+arr[int] th40 = tblRowHeights('height:40px', THR2)
+
+// It reaches the rows at all: the table is as tall as it was told, and
+// the rows grew rather than one gap absorbing the difference.
+checkEqInt(th60[0], 60, 'a table takes the height it is given')
+checkEqInt(th60[1] + th60[2], 60, 'and its rows fill it')
+checkEqInt(th100[0], 100, 'at another height too')
+checkEqInt(th100[1] + th100[2], 100, 'whose rows fill it as well')
+
+// The proportion, which needs neither row's own height to be known:
+// doubling the surplus doubles each row's share of it.
+checkEqInt(th100[1], thAuto[1] * 2, 'twice the auto height gives the first row twice its own')
+checkEqInt(th100[2], thAuto[2] * 2, 'and the second row twice its own')
+checkEqInt(th60[1] * 5, thAuto[1] * 6, 'and six fifths of its own at six tenths the height')
+
+// A minimum, not a size: a height under what the rows need is ignored.
+checkEqInt(th40[0], thAuto[0], 'a height less than the rows need is ignored')
+checkEqInt(th40[1], thAuto[1], 'and leaves the first row alone')
+checkEqInt(th40[2], thAuto[2], 'and the second')
+
+// The instrument: if the auto table were already as tall as the declared
+// one, every check above would hold without the rows moving.
+check(thAuto[0] < 60, 'the auto table really is shorter than the declared one')
+check(thAuto[1] != thAuto[2], 'and its two rows really do differ, so a ratio means something')
+
+// A row's own declared height feeds the proportion rather than being
+// exempt from it.
+arr[int] thRow = tblRowHeights('height:100px',
+    '<tr style="height:50px"><td style="padding:0"></td></tr>' +
+    '<tr><td style="padding:0;height:30px"></td></tr>')
+checkEqInt(thRow[0], 100, 'a row asking for a height still lands in a table of 100')
+check(thRow[1] > 50, 'and is scaled up rather than left at what it asked for')
+// Each row is rounded on its own, which is what Chromium does, so 50 and
+// 30 scaled to 100 are 63 and 38 -- and those sum to 101 against a table
+// of 100, the last row overflowing by a pixel rather than being handed
+// the remainder. Numbers rather than a ratio here, because the rounding
+// is part of the answer and a ratio would be satisfied by neither.
+checkEqInt(thRow[1], 63, 'the first row is its own share of 100, rounded on its own')
+checkEqInt(thRow[2], 38, 'and the second is its own')
+check(thRow[1] + thRow[2] > thRow[0], 'so the two together overflow the table by a pixel')
+
 finish('layout')

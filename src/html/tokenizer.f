@@ -356,7 +356,19 @@ int func findRawTextEnd(from:int) {
             }
         }
         if c == CH_LT && peekCode(i + 1) == CH_SLASH && !doubleEscaped {
-            if asciiStartsWithLower(tokSrc, name, i + 2) && isTagTerminator(peekCode(i + 2 + name.length)) {
+            int afterName = i + 2 + name.length
+            // A real terminator, not the end of the input. The standard
+            // reaches an end tag through the end tag name state, which on
+            // whitespace, `/` or `>` goes on into the tag -- and on
+            // ANYTHING ELSE, the end of the input included, emits the `</`
+            // and the name it buffered as character tokens and returns to
+            // script data. So `</script` at the end of the input is text,
+            // where `</script ` is a tag whose EOF then drops it:
+            // tests16.dat has both, ten cases and seven, and treating EOF
+            // as a terminator answered the second correctly and the first
+            // not at all.
+            if afterName < tokLen && asciiStartsWithLower(tokSrc, name, i + 2)
+                    && isTagTerminator(peekCode(afterName)) {
                 return i
             }
         }

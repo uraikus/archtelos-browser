@@ -8,7 +8,75 @@
 
 import ../util/color.f
 
+// CSS Writing Modes 4 §3.1. `horizontal-tb` is the mode a box is in
+// unless it says otherwise; the two vertical ones run the inline axis
+// down the page and stack their lines along the horizontal axis, to the
+// left in `vertical-rl` and to the right in `vertical-lr`.
+const int WM_HORIZONTAL_TB = 0
+const int WM_VERTICAL_RL = 1
+const int WM_VERTICAL_LR = 2
+// The two sideways modes. `sideways-rl` is `vertical-rl` with the
+// sideways orientation, which this engine already draws the same way on
+// Latin; `sideways-lr` is `vertical-lr` with its inline axis running
+// bottom to top and its glyphs turned the other way, both measured
+// rather than assumed (todo.md).
+const int WM_SIDEWAYS_RL = 3
+const int WM_SIDEWAYS_LR = 4
+
+// CSS Writing Modes 4 §5.1. `mixed` turns a horizontal script sideways
+// and leaves an upright one upright; `upright` gives every character its
+// own em along the inline axis; `sideways` turns everything sideways.
+// With no Unicode database to say which script a character belongs to,
+// `mixed` and `sideways` agree here -- which is what they do on Latin in
+// Chromium too, measured rather than assumed (todo.md).
+// The cell an upright character takes along the inline axis, as a
+// fraction of the font size. It is the character's vertical advance,
+// which is a font metric Festina cannot be asked for, so it is measured
+// the way FONT_CAP is: Chromium, across 8 to 180px, in the family this
+// engine renders in, least-squares 1.116 with an intercept of -0.06.
+// Rounding that product lands on Chromium's own integer at 8 of the 13
+// sizes and within a pixel at the other five; todo.md has the table.
+// It does not follow `line-height`, which is what tells it apart from
+// the line box.
+const float FONT_UPRIGHT = 1.116
+
+const int TO_MIXED = 0
+const int TO_UPRIGHT = 1
+const int TO_SIDEWAYS = 2
+
 // display
+// DejaVu Sans metrics (the fonts fontconfig serves for the generic
+// families here), in em: ascent 0.93, descent 0.24. Festina exposes
+// no ascent/descent API, only the inked height of a string.
+const float FONT_ASCENT = 0.93
+const float FONT_DESCENT = 0.24
+// The other two edges `text-box-edge` can name. Both are measured
+// across a range of font sizes rather than at one, because a ratio read
+// off a single size is a ratio plus a rounding error of up to a pixel:
+// 5% at 20px and 0.5% at 180. Rasterising an `H` through this engine
+// and asking Chromium for the same family's cap height both give a
+// least-squares `0.733 x size` with an intercept of -0.4; todo.md has
+// both tables. That intercept is why the cap height is FLOORED below
+// rather than rounded -- 0.733 x 20 is 14.66 and Chromium answers 14 --
+// and it is why 0.70 looked right at 20px for as long as it did.
+const float FONT_CAP = 0.733
+// The x-height and the advance of a `0`, which are the `ex` and `ch`
+// units as well as two of `text-box-edge`'s keywords. Both are read
+// twice, across the same range and for the same reason.
+//
+// The x-height: rasterised ink through this engine gives 0.542 to
+// 0.550, and Chromium's `width: 10ex` at five sizes gives a
+// least-squares `0.5473 x size + 0.016`. The second is the sharper of
+// the two and sits inside the first, so it is what stands.
+//
+// The zero advance: this engine's own face measures a `0` at 12px at
+// 20, 60 at 100 and 108 at 180, which is exactly 0.6 of the size --
+// the face is monospaced, so every glyph has that advance -- and
+// Chromium's `width: 10ch` gives `0.6020 x size` with an intercept of
+// zero. Two readings a third of a percent apart.
+const float FONT_EX = 0.547
+const float FONT_CH = 0.6
+
 const int DISPLAY_NONE = 0
 const int DISPLAY_BLOCK = 1
 const int DISPLAY_INLINE = 2
@@ -254,6 +322,391 @@ const int OBJECTFIT_SCALE_DOWN = 4
 // is not, so `page` and its `left`/`right`/`recto`/`verso` variants ask
 // for something this engine never makes and change nothing -- which is
 // what Chromium does with them on screen too.
+// CSS Scrollbars 1 §3: how wide a scroll container's bars are. `auto`
+// is whatever the browser's own is, `thin` is narrower, and `none`
+// reserves nothing and paints nothing -- the box still scrolls, because
+// hiding the bar is not the same as taking the scrolling away.
+// Chromium 141 answers a 200x100 `overflow: scroll` box with a client
+// width of 185, 190 and 200 for the three, so `thin` is ten pixels.
+// CSS Scroll Snap 1 §5: how strictly a scroll container comes to rest on
+// one of its snap positions, and §4: which edge of a child a position
+// lines up with. `proximity` snaps only when a position is near enough,
+// and near enough is a third of the snapport -- measured against
+// Chromium rather than chosen (todo.md).
+const int SNAP_NONE = 0
+const int SNAP_MANDATORY = 1
+const int SNAP_PROXIMITY = 2
+
+const int SNAPALIGN_NONE = 0
+const int SNAPALIGN_START = 1
+const int SNAPALIGN_CENTER = 2
+const int SNAPALIGN_END = 3
+
+// `corner-shape`'s keywords, as the superellipse exponents they name
+// (CSS Borders 4 §5). The two extremes are large finite numbers rather
+// than an infinity the language has no literal for, and they are large
+// enough that the curve is flat to well inside a pixel at any radius a
+// page uses: at k = 1000 the corner is square to within a thousandth of
+// its radius.
+// Whether any element on this page asked for a corner that is not
+// `round`, so that a page which never says the property never leaves
+// the curve the canvas draws natively (CLAUDE.md, "a feature must not
+// cost anything to the pages that do not use it").
+bool anyCornerShape = false
+
+const float CORNER_K_ROUND = 2.0
+const float CORNER_K_SQUARE = 1000.0
+const float CORNER_K_NOTCH = -1000.0
+const float CORNER_K_BEVEL = 1.0
+const float CORNER_K_SCOOP = -2.0
+const float CORNER_K_SQUIRCLE = 4.0
+
+// The codes those exponents are packed as. `round` is zero so that a
+// `Style` nobody assigned to is every corner round, which is what a box
+// with only a `border-radius` has always been.
+const int CORNER_CODE_ROUND = 0
+const int CORNER_CODE_SQUARE = 1
+const int CORNER_CODE_BEVEL = 2
+const int CORNER_CODE_SCOOP = 3
+const int CORNER_CODE_NOTCH = 4
+const int CORNER_CODE_SQUIRCLE = 5
+// Six bits a corner, so four fit in one field with room for the
+// exponents `superellipse()` names beyond the keywords.
+const int CORNER_CODE_CUSTOM = 6
+const int CORNER_CODE_BASE = 64
+
+// The arbitrary exponents this page's `superellipse()` declarations
+// asked for, in the order they were first seen; a code of
+// CORNER_CODE_CUSTOM or more indexes this.
+arr[float] cornerCustomK = []
+
+float func cornerKOfCode(code:int) {
+    if code == CORNER_CODE_ROUND { return CORNER_K_ROUND }
+    if code == CORNER_CODE_SQUARE { return CORNER_K_SQUARE }
+    if code == CORNER_CODE_BEVEL { return CORNER_K_BEVEL }
+    if code == CORNER_CODE_SCOOP { return CORNER_K_SCOOP }
+    if code == CORNER_CODE_NOTCH { return CORNER_K_NOTCH }
+    if code == CORNER_CODE_SQUIRCLE { return CORNER_K_SQUIRCLE }
+    int i = code - CORNER_CODE_CUSTOM
+    if i < 0 || i >= cornerCustomK.length { return CORNER_K_ROUND }
+    return cornerCustomK[i]
+}
+
+// The code for an exponent, adding it to the page's list when it is one
+// no keyword names. A page that runs out of codes gets `round` for the
+// rest, which is the initial value rather than a wrong shape.
+int func cornerCodeOfK(k:float) {
+    if k == CORNER_K_ROUND { return CORNER_CODE_ROUND }
+    if k == CORNER_K_SQUARE { return CORNER_CODE_SQUARE }
+    if k == CORNER_K_BEVEL { return CORNER_CODE_BEVEL }
+    if k == CORNER_K_SCOOP { return CORNER_CODE_SCOOP }
+    if k == CORNER_K_NOTCH { return CORNER_CODE_NOTCH }
+    if k == CORNER_K_SQUIRCLE { return CORNER_CODE_SQUIRCLE }
+    for int i = 0, i < cornerCustomK.length, i++ {
+        if cornerCustomK[i] == k { return CORNER_CODE_CUSTOM + i }
+    }
+    if CORNER_CODE_CUSTOM + cornerCustomK.length >= CORNER_CODE_BASE {
+        return CORNER_CODE_ROUND
+    }
+    cornerCustomK.push(k)
+    return CORNER_CODE_CUSTOM + cornerCustomK.length - 1
+}
+
+// Corner 0 is the top left, then clockwise.
+int func cornerCodeAt(packed:int, which:int) {
+    if which == 0 { return packed % CORNER_CODE_BASE }
+    if which == 1 { return Math.floorDiv(packed, CORNER_CODE_BASE) % CORNER_CODE_BASE }
+    if which == 2 {
+        return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE) % CORNER_CODE_BASE
+    }
+    return Math.floorDiv(packed, CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE)
+        % CORNER_CODE_BASE
+}
+
+float func cornerKAt(packed:int, which:int) { return cornerKOfCode(cornerCodeAt(packed, which)) }
+
+int func cornerShapesPacked(tl:float, tr:float, br:float, bl:float) {
+    return cornerCodeOfK(tl)
+        + cornerCodeOfK(tr) * CORNER_CODE_BASE
+        + cornerCodeOfK(br) * CORNER_CODE_BASE * CORNER_CODE_BASE
+        + cornerCodeOfK(bl) * CORNER_CODE_BASE * CORNER_CODE_BASE * CORNER_CODE_BASE
+}
+
+// `position-try-order` sorts the candidates by the room the region
+// offers in one axis. It is not a tie-break inside the overflow retry:
+// the sort applies whether or not the original position overflows,
+// which Chromium shows by moving a box out of a `bottom` that fits
+// (todo.md records the measurement).
+// `position-visibility` decides whether an anchored box is painted at
+// all, not where it goes. `anchors-visible` is treated as `always`,
+// because telling them apart needs the anchor scrolled out of a
+// scrollport while the box stays visible and `position-area` ties the
+// two together -- a static render has no such state, which todo.md
+// records rather than guesses at.
+const int POSVIS_ALWAYS = 0
+const int POSVIS_NO_OVERFLOW = 1
+
+// The anchored boxes this page hides, by the element id of the box.
+// Kept here rather than as a field on `Box`, which is allocated per box
+// and pays for a field whether or not anything reads it.
+map[bool] anchorHiddenIds = {}
+bool anyAnchorHidden = false
+
+const int TRYORDER_NORMAL = 0
+const int TRYORDER_MOST_BLOCK = 1
+const int TRYORDER_MOST_INLINE = 2
+
+// CSS Anchor Positioning 1. Each axis of `position-area` is one of
+// three bands around the anchor, or a span of all three.
+const int PAREA_NONE = 0
+const int PAREA_BEFORE = 1
+const int PAREA_CENTER = 2
+const int PAREA_AFTER = 3
+const int PAREA_SPAN = 4
+// The two axes in one number, block first.
+const int PAREA_AXIS = 8
+
+// What the five anchor properties this engine acts on say about one
+// element. `anchor-scope` and `position-visibility` are not here: nothing would read them, and a
+// property the cascade computes but neither layout nor paint reads is
+// not implemented however faithfully it is stored (todo.md says what
+// each of them needs). It is
+// held off `Style` and indexed from it, because `Style` is read once
+// per box throughout layout and a field on it costs time whether or not
+// anything reads it -- four floats cost two milliseconds on a page
+// using none of them (benchmarks.md). Anchored boxes are rare, so the
+// rare data goes in a side table and `Style` carries one int.
+struct AnchorInfo {
+    name:text            // anchor-name
+    anchor:text          // position-anchor
+    area:int             // position-area, block * PAREA_AXIS + inline
+    fallbacks:text       // position-try-fallbacks, as written
+    tryOrder:int         // position-try-order, as a TRYORDER_ value
+    visibility:int       // position-visibility, as a POSVIS_ value
+    // anchor-scope, lowercased and as written: '' for `none`, 'all',
+    // or the comma-separated list of names this element scopes.
+    scope:text
+    // `anchor()` in the four inset properties, in the order left,
+    // right, top, bottom.
+    //
+    // Every side keyword the function takes is a position along the
+    // anchor's box on the property's own axis, so one number carries
+    // all of them: `left` and `top` and `start` and `self-start` are 0,
+    // `center` is 50, `right` and `bottom` and `end` are 100, and a
+    // percentage is itself. It is kept in hundredths of a percent, and
+    // -1 means this inset said nothing. An empty name means the one
+    // `position-anchor` gave, and a fallback of ANCHOR_NO_FALLBACK
+    // means there was none.
+    insetNames:arr[text]
+    insetPcts:arr[int]
+    insetFallbacks:arr[int]
+    // The inset's whole value, kept as written, where `anchor()`
+    // appears inside an expression rather than as the value itself.
+    // Empty where this side said nothing, or said the bare form.
+    insetExprs:arr[text]
+    // `anchor-size()` in the fourteen properties that take it, in the
+    // order `width`, `height`, `min-width`, `max-width`, `min-height`,
+    // `max-height`, the four margins and the four insets. `padding-*`
+    // refuses it, which is measured rather than assumed (todo.md).
+    //
+    // The dimension is the ANCHOR's rather than the property's --
+    // `width: anchor-size(--a height)` is the anchor's height -- so it
+    // is kept per slot rather than inferred from which property this
+    // is. -1 means the property said nothing. An empty name means the
+    // one `position-anchor` gave, and a fallback of ANCHOR_NO_FALLBACK
+    // means there was none, which resolves to zero rather than to no
+    // effect (todo.md records the measurement).
+    sizeNames:arr[text]
+    sizeDims:arr[int]
+    sizeFallbacks:arr[int]
+    // The property's whole value, kept as written, when the function
+    // appears inside an expression rather than as the value itself.
+    // Both functions resolve to a length, so what an expression needs
+    // is the length substituted in and the ordinary parser run over
+    // the result -- which is where `calc()`'s arithmetic, precedence
+    // and nesting come from rather than being written again here.
+    // Empty where this property said nothing, or said the bare form.
+    sizeExprs:arr[text]
+}
+
+const int ANCHOR_SIZE_WIDTH = 0
+const int ANCHOR_SIZE_HEIGHT = 1
+const int ANCHOR_SIZE_MINWIDTH = 2
+const int ANCHOR_SIZE_MAXWIDTH = 3
+const int ANCHOR_SIZE_MINHEIGHT = 4
+const int ANCHOR_SIZE_MAXHEIGHT = 5
+// The margins and insets take it too, which `anchor()` does not. They
+// need no second layout pass of their own -- a margin or an inset can
+// be resolved once the anchor's rectangle is known -- but they read the
+// same carry, so they are slots on the same list.
+const int ANCHOR_SIZE_MARGINLEFT = 6
+const int ANCHOR_SIZE_MARGINRIGHT = 7
+const int ANCHOR_SIZE_MARGINTOP = 8
+const int ANCHOR_SIZE_MARGINBOTTOM = 9
+const int ANCHOR_SIZE_LEFT = 10
+const int ANCHOR_SIZE_RIGHT = 11
+const int ANCHOR_SIZE_TOP = 12
+const int ANCHOR_SIZE_BOTTOM = 13
+const int ANCHOR_SIZE_SLOTS = 14
+const int ANCHOR_DIM_WIDTH = 0
+const int ANCHOR_DIM_HEIGHT = 1
+
+const int ANCHOR_INSET_LEFT = 0
+const int ANCHOR_INSET_RIGHT = 1
+const int ANCHOR_INSET_TOP = 2
+const int ANCHOR_INSET_BOTTOM = 3
+const int ANCHOR_NO_FALLBACK = -1000000
+
+// This page's anchor declarations; `Style.anchorInfo` is an index into
+// it, one past the entry, so that zero means the element said nothing.
+arr[AnchorInfo] anchorInfos = []
+
+// Whether any element on this page declared an anchor name at all, so
+// that a document with none skips both walks the feature would add.
+bool anyAnchorName = false
+
+// Whether any element put an `anchor()` in one of its insets. A page
+// with none does not grow the per-inset rectangles below and does not
+// test for them while it places its anchored boxes.
+bool anyAnchorInset = false
+// Whether any element on this document said `anchor-size()` in one of
+// the six sizing properties. It is what buys the second layout pass,
+// and every page that never says it pays one boolean.
+bool anyAnchorSize = false
+// The two maps an `anchor-size()` expression resolves into, keyed the
+// same way: an expression can carry a percentage of the containing
+// block beside the anchor's length, and the containing block is not
+// known where the anchor's rectangle is.
+map[int] anchorSizePct = {}
+
+// Whether any element scoped a name. A page with none resolves each
+// anchor under its bare name, as it did before the property existed,
+// and pays nothing for the scope stack -- one bool test per box.
+bool anyAnchorScope = false
+
+AnchorInfo func anchorInfoOf(idx:int) {
+    if idx <= 0 || idx > anchorInfos.length {
+        AnchorInfo none
+        none.area = PAREA_NONE
+        none.insetNames = ['', '', '', '']
+        none.insetPcts = [-1, -1, -1, -1]
+        none.insetExprs = ['', '', '', '']
+        none.insetFallbacks = [ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK,
+                               ANCHOR_NO_FALLBACK, ANCHOR_NO_FALLBACK]
+        return none
+    }
+    return anchorInfos[idx - 1]
+}
+
+// CSS Motion Path 1. `offset-path` gives a box a path; `offset-distance`
+// a point along it; `offset-rotate` which way the box faces there;
+// `offset-anchor` which point of the box sits on the path; and
+// `offset-position` where the path begins. None of it needs a clock --
+// the specification is grouped with the animations in css-2026.md and
+// this half of it renders in a still frame.
+const int MPATH_NONE = 0
+const int MPATH_RAY = 1
+const int MPATH_SHAPE = 2       // circle(), ellipse() or polygon()
+const int MPATH_PATH = 3        // path('M 0 0 L 100 0')
+
+// How long a ray is, which is what a percentage `offset-distance`
+// resolves against. Chromium answers these as though only the top and
+// left sides of the containing block existed, so they follow the
+// specification here rather than the browser (todo.md records both).
+const int RAYSIZE_CLOSEST_SIDE = 0
+const int RAYSIZE_CLOSEST_CORNER = 1
+const int RAYSIZE_FARTHEST_SIDE = 2
+const int RAYSIZE_FARTHEST_CORNER = 3
+const int RAYSIZE_SIDES = 4
+
+// offset-rotate. There is no `none`: the grammar is
+// `[ auto | reverse ] || <angle>`, so rotation is turned off by writing
+// `0deg`, and a declaration saying `none` is dropped.
+const int MROT_AUTO = 0
+const int MROT_REVERSE = 1
+const int MROT_ANGLE = 2
+
+struct MotionInfo {
+    pathKind:int
+    rayAngle:float          // degrees clockwise from up
+    raySize:int
+    shape:ClipShape         // MPATH_SHAPE
+    pathData:text           // MPATH_PATH, as written
+    distance:Len            // offset-distance
+    rotateMode:int
+    rotateAngle:float       // degrees, added to whatever the mode gives
+    anchorX:Len
+    anchorY:Len
+    anchorAuto:bool         // `auto`, which is the transform origin
+    posX:Len
+    posY:Len
+    posNormal:bool          // `normal`, which is the element's own place
+}
+
+// This page's offset declarations, found by the computed style's own
+// serial rather than by a field on `Style`. A field there is not free:
+// one `int` added to `Style` for this cost the benchmark page a
+// measured 1.08 ms of layout -- a page with no `offset-path` on it at
+// all -- against a parent-against-parent control of -0.16 ms. A
+// computed style is shared between every element that matched the same
+// declarations, which is exactly the right grain for this, and the map
+// is only ever read behind `anyOffsetPath`.
+arr[MotionInfo] motionInfos = []
+map[int] motionOfSerial = {}
+
+// Whether any element gave itself a path, so a document with none pays
+// one bool test rather than a walk.
+bool anyOffsetPath = false
+
+// Whether any element said `position: sticky`. A sticky box is shifted
+// at paint time, which means asking of every box painted whether it is
+// one; a document that never said the word answers with this instead.
+bool anySticky = false
+
+// Whether any element on the page carries a `filter`. A page without
+// one must not pay for the feature, and the painter's guard is written
+// at the call site rather than inside the fill so that an unfiltered
+// page does not even make the call (CLAUDE.md, "where a call is written
+// is itself a cost").
+bool anyFilter = false
+
+// Whether any element on the page carries a `mask-image` this engine
+// can paint. Same shape of flag as `anyFilter`, and for the same
+// reason: a page without one must not reach the masking code at all.
+bool anyMask = false
+
+// `mask-mode`. `match-source` reads a CSS image's ALPHA channel, which
+// is what makes a white-to-black gradient mask nothing at all -- both
+// ends are opaque. Only `luminance` reads the colour (todo.md).
+const int MASKMODE_MATCH = 0
+const int MASKMODE_ALPHA = 1
+const int MASKMODE_LUMINANCE = 2
+
+MotionInfo func motionInfoOf(idx:int) {
+    if idx <= 0 || idx > motionInfos.length {
+        MotionInfo none
+        none.pathKind = MPATH_NONE
+        none.rotateMode = MROT_AUTO
+        none.anchorAuto = true
+        none.posNormal = true
+        return none
+    }
+    return motionInfos[idx - 1]
+}
+
+const int SCROLLBAR_AUTO = 0
+const int SCROLLBAR_THIN = 1
+const int SCROLLBAR_NONE = 2
+
+// CSS Overflow 4 §3.3: whether the inline-end gutter is reserved even
+// where nothing overflows. `stable` reserves it and `both-edges`
+// reserves the inline-start side as well, which is the one value that
+// moves a box's content to the right: nothing else here insets a box
+// from that side.
+const int SCROLLBAR_GUTTER_AUTO = 0
+const int SCROLLBAR_GUTTER_STABLE = 1
+const int SCROLLBAR_GUTTER_BOTH = 2
+
 const int BRK_AUTO = 0
 const int BRK_COLUMN = 1
 const int BRK_AVOID = 2
@@ -261,6 +714,12 @@ const int BRK_AVOID = 2
 // page: the value is separate from BRK_COLUMN so a column context can
 // tell which it was asked for, and both force a column to end.
 const int BRK_PAGE = 3
+// The page-side keywords. They end a page as `page` does and then ask
+// for a side, which may take a generated blank page to reach (CSS2
+// §13.3.1). They sit above BRK_PAGE so that "ends a page" is one
+// comparison rather than three.
+const int BRK_LEFT = 4
+const int BRK_RIGHT = 5
 
 // CSS Masking 1's `clip-path`, and the CSS2 `clip` that preceded it.
 // A shape is kept as it was written -- lengths and percentages -- and
@@ -310,6 +769,91 @@ struct ClipShape {
     // Festina has no tuples.
     pointsX:arr[Len]
     pointsY:arr[Len]
+    // polygon()'s <fill-rule>. False is `nonzero`, which is the initial
+    // value; it only means anything for a polygon that crosses itself,
+    // which is what a star is.
+    fillEvenOdd:bool
+    // inset()'s `round` radii, as a 1-based index into insetRadiiList;
+    // 0 where the corners are square. A radius is eight lengths, and
+    // this struct is a BY-VALUE field of `Style` -- benchmarks.md
+    // records that thirty-two bytes of growth there cost two
+    // milliseconds of layout -- so they live in the list and the shape
+    // carries one int, which is what `corner-shape` does with its
+    // exponents.
+    insetRoundIdx:int
+}
+
+// The radii an `inset()` was given: four corners clockwise from the top
+// left, x and y in parallel arrays because Festina has no tuples.
+struct InsetRadii {
+    rx:arr[Len]
+    ry:arr[Len]
+}
+
+// A `filter`'s function list: the kinds and their amounts, in source
+// order, in parallel arrays because Festina has no tuples. A Style
+// carries a 1-based index into this rather than the list itself, for
+// the same reason `inset()`'s radii and `corner-shape`'s exponents do.
+struct FilterSpec {
+    kinds:arr[int]
+    amounts:arr[float]
+}
+
+arr[FilterSpec] filterSpecs = []
+
+// A mask layer. `mask-*` is `background-*` with the result used as
+// alpha, so the geometry is a BgLayer rather than a second copy of the
+// same five questions, and only the mode is new.
+// `mask-composite` (CSS Masking 1 §7.5), as Porter-Duff on the alpha
+// channel alone. Measured against Chromium rather than read off, with a
+// quarter below rather than a half -- `subtract` and `intersect` are
+// the same number when the lower alpha is a half (todo.md).
+const int MASKOP_ADD = 0
+const int MASKOP_SUBTRACT = 1
+const int MASKOP_INTERSECT = 2
+const int MASKOP_EXCLUDE = 3
+
+struct MaskSpec {
+    // One entry per comma-separated layer, first is the TOP one, in
+    // parallel arrays because Festina has no tuples. The geometry is a
+    // BgLayer for the same reason the single-layer version was: `mask-*`
+    // is `background-*` with the result used as alpha.
+    layers:arr[BgLayer]
+    modes:arr[int]
+    composites:arr[int]
+    // Whether any layer's image is one this engine paints. A `url()`
+    // bitmap is stored and not painted, so this is what the
+    // instrument's key must carry rather than the image itself: a
+    // mask-image the engine throws away must not move the computed
+    // style.
+    paintable:bool
+}
+
+arr[MaskSpec] maskSpecs = []
+
+// `maskIdx` is the 1-based index, NEGATED when the mask is declared but
+// not one this engine can paint -- a `url()` bitmap, a radial or conic
+// gradient, or geometry longhands with no image beside them. The
+// computed style carries it either way, because that is what a computed
+// style is and because the painter reads every one of those longhands
+// the moment a paintable image does appear; only painting asks whether
+// the index is positive.
+MaskSpec func maskSpecOf(idx:int) {
+    int at = idx < 0 ? 0 - idx : idx
+    if at <= 0 || at > maskSpecs.length { return null }
+    return maskSpecs[at - 1]
+}
+
+FilterSpec func filterSpecOf(idx:int) {
+    if idx <= 0 || idx > filterSpecs.length { return null }
+    return filterSpecs[idx - 1]
+}
+
+arr[InsetRadii] insetRadiiList = []
+
+InsetRadii func insetRadiiOf(idx:int) {
+    if idx <= 0 || idx > insetRadiiList.length { return null }
+    return insetRadiiList[idx - 1]
 }
 
 // box-sizing
@@ -365,12 +909,124 @@ const int LEN_PERCENT = 2
 // calc() can mix the two -- `calc(100% - 2em)` is the common case -- and
 // neither part can be resolved until the containing block is known.
 const int LEN_CALC = 3
+// `min()`, `max()` and `clamp()` over lengths that are not all
+// pixels. A comparison cannot be folded the way `calc()`'s arithmetic
+// can: `min(50%, 100px)` is 100 against a 400px base and 50 against a
+// 100px one, because the percentage is resolved BEFORE the comparison,
+// which is measured (todo.md). So the operands are kept and the answer
+// is worked out in `resolveLen`, where the base finally is. An
+// all-pixel comparison never reaches this kind -- it is folded at parse
+// time into an ordinary LEN_PX, which is what makes `min(10px, 20px)`
+// work in the places that take a length rather than only where
+// `resolveLen` is called.
+const int LEN_MINMAX = 4
+
+// CSS Box Sizing 3's three intrinsic keywords as a value of `width` or
+// `height`. The kind carries which one in `v`: 0 `min-content`,
+// 1 `max-content`, 2 `fit-content`. They cannot be resolved by
+// `resolveLen`, which is given a containing block and nothing else --
+// the answer is a property of the box's own content -- so every site
+// that only has the base gets `dflt` back, exactly as it does for
+// `auto`, and layout asks the box instead.
+const int LEN_INTRINSIC = 5
+const int INTRINSIC_MIN = 0
+const int INTRINSIC_MAX = 1
+const int INTRINSIC_FIT = 2
+
+// `baseline-source` (CSS Inline 3 §5.1): which of an atomic inline's
+// baselines the line it sits on aligns to. `auto` is not one answer --
+// an inline-block's is its LAST line and an inline-flex's its FIRST --
+// so the keywords only override a default that belongs to the display
+// type. Measured, in todo.md.
+const int BSRC_AUTO = 0
+const int BSRC_FIRST = 1
+const int BSRC_LAST = 2
+
+// `resize`'s six keywords. The two logical ones are kept apart from
+// the physical pair they resolve to, because the computed value is the
+// keyword that was declared.
+// CSS Ruby Annotation Layout 1. `ruby-position` says which side of the
+// base the annotation band goes; `ruby-align` how the narrower of the
+// two is placed against the wider. Measured in todo.md: Chromium
+// distinguishes `start` from the other three and nothing else, so the
+// three that centre are kept apart in the computed value and land in
+// the same place.
+const int RUBYPOS_OVER = 0
+const int RUBYPOS_UNDER = 1
+const int RUBYPOS_ALTERNATE = 2
+const int RUBYPOS_INTER_CHARACTER = 3
+
+const int RUBYALIGN_SPACE_AROUND = 0
+const int RUBYALIGN_START = 1
+const int RUBYALIGN_CENTER = 2
+const int RUBYALIGN_SPACE_BETWEEN = 3
+
+// `text-wrap-style` (CSS Text 4 §6.2): which of the breaks that fit
+// the line breaker chooses. Measured in todo.md.
+const int TWS_AUTO = 0
+const int TWS_BALANCE = 1
+const int TWS_PRETTY = 2
+const int TWS_STABLE = 3
+
+// `print-color-adjust` (CSS Color Adjustment 1 §3). `economy` is the
+// initial value and grants the user agent a permission it may not be
+// using, so it is indistinguishable from not declaring the property at
+// all; `exact` withdraws that permission. Measured in todo.md.
+// font-variant-caps. Every value but these three is parsed and dropped:
+// `petite-caps` and its `all-` form want a second synthesised size the
+// measurement did not pin, and `unicase` and `titling-caps` want a font
+// feature no face here carries.
+const int CAPS_NORMAL = 0
+const int CAPS_SMALL = 1
+const int CAPS_ALL_SMALL = 2
+
+// `image-rendering` (CSS Images 3 §5.3). Only `pixelated` changes a
+// pixel: `crisp-edges` is `auto` in Chromium, measured rather than
+// assumed (todo.md), so the two share a value here.
+const int IR_AUTO = 0
+const int IR_PIXELATED = 1
+
+const int PCA_ECONOMY = 0
+const int PCA_EXACT = 1
+
+const int RESIZE_NONE = 0
+const int RESIZE_BOTH = 1
+const int RESIZE_HORIZONTAL = 2
+const int RESIZE_VERTICAL = 3
+const int RESIZE_BLOCK = 4
+const int RESIZE_INLINE = 5
 
 struct Len {
     kind:int
-    v:float     // pixels, or the percentage for LEN_PERCENT
+    v:float     // pixels, the percentage for LEN_PERCENT, or the
+                // operand-list index for LEN_MINMAX
     pct:float   // LEN_CALC only: the percentage part, added to v
 }
+
+const int MM_MIN = 0
+const int MM_MAX = 1
+const int MM_CLAMP = 2
+
+// The operand lists of every unfolded comparison on this document,
+// flat: list `i` runs from `minmaxAt[i]` for `minmaxCount[i]` operands,
+// each of which is a whole `Len` in the three parallel arrays below --
+// so a comparison nested inside a comparison is one more operand
+// rather than a special case.
+//
+// A side table rather than fields on `Len`, because `Style` holds some
+// thirty of them and this file has twice measured what a field costs
+// the pages that never read it (benchmarks.md).
+arr[int] minmaxOp = []
+arr[int] minmaxAt = []
+arr[int] minmaxCount = []
+arr[int] minmaxKind = []
+arr[float] minmaxV = []
+arr[float] minmaxPct = []
+// Whether this document wrote one at all. Every length of every box
+// goes through `resolveLen`, so the kind it almost never is gets tested
+// behind a global that short-circuits rather than by reading the
+// struct.
+bool anyMinMax = false
 
 // A linear gradient, as CSS Images 3 defines it: a line through the box
 // at `angle` degrees clockwise from "up", and colour stops along it.
@@ -686,7 +1342,18 @@ struct Style {
     // each element's own direction, so they cannot be resolved once and
     // inherited; `left` and `right` can.
     textAlignExplicit:bool
-    bidiOverride:bool       // unicode-bidi: bidi-override
+    unicodeBidi:int         // unicode-bidi, as one of the UBIDI_ values
+    // writing-mode, as one of the WM_ values, and text-orientation as
+    // one of the TO_ values. Both inherit. A vertical mode exchanges the
+    // two layout axes rather than renaming a property, so it is read by
+    // the layout engine and not only by the cascade.
+    writingMode:int
+    textOrientation:int
+    // `text-combine-upright: all` (Writing Modes 4 §9.1): the element's
+    // text is one upright square of its own em along the inline axis,
+    // whatever it holds. It inherits, so a nested element is a combined
+    // run of its own rather than part of its parent's.
+    textCombine:bool
     width:Len
     height:Len
     minWidth:Len
@@ -746,6 +1413,35 @@ struct Style {
     // child of an element that named a page -- so a named page is the
     // elements that asked for it and the ones laid out between them.
     pageName:text
+    // CSS Scrollbars 1. The width and the gutter do not inherit and the
+    // colours do, which is what Chromium answers -- the standard makes
+    // the width inherited too, and this follows the browser it is
+    // measured against. A colour of zero is `auto`: no declared colour,
+    // so the painter uses its own.
+    // CSS Scroll Snap 1. The type and the padding belong to the scroll
+    // container; the align and the margin to the children it snaps to.
+    snapX:bool
+    snapY:bool
+    snapStrict:int
+    snapAlignBlock:int
+    snapAlignInline:int
+    // scroll-snap-stop: always. Measured against Chromium, it acts only
+    // where the container is `mandatory` -- under `proximity` it
+    // changes nothing at all, even where a snap does happen and the
+    // position lies in the gesture's path (todo.md).
+    snapStopAlways:bool
+    scrollPaddingTop:Len
+    scrollPaddingRight:Len
+    scrollPaddingBottom:Len
+    scrollPaddingLeft:Len
+    scrollMarginTop:Len
+    scrollMarginRight:Len
+    scrollMarginBottom:Len
+    scrollMarginLeft:Len
+    scrollbarWidth:int
+    scrollbarGutter:int
+    scrollbarThumb:int
+    scrollbarTrack:int
     orphans:int
     widows:int
     justifyItems:int
@@ -895,6 +1591,24 @@ struct Style {
     radiusBottomRightY:Len
     radiusBottomLeftX:Len
     radiusBottomLeftY:Len
+    // `corner-shape` (CSS Borders 4): the four corners' shapes packed
+    // into one field, six bits each, because `Style` is read once per
+    // box in layout and four more floats on it cost two milliseconds on
+    // a page with no corner shaped at all -- measured, and the reason
+    // this is a bitfield rather than four readable members
+    // (benchmarks.md). Code zero is `round`, so an unset field is what
+    // `border-radius` has always drawn, and codes past the keywords
+    // index the exponents `superellipse()` named.
+    cornerShapes:int
+    // `filter`, as a 1-based index into filterSpecs; 0 for `none`.
+    filterIdx:int
+    // `mask`, as a 1-based index into maskSpecs; 0 for no mask.
+    maskIdx:int
+    // `isolation: isolate`. It is a property about blending, which this
+    // engine cannot do, and it also creates a stacking context -- which
+    // it can, and which is what makes it change a pixel here.
+    isolate:bool
+    anchorInfo:int          // index into anchorInfos, one past the entry
     borderSpacing:int
     borderCollapse:bool
     textIndent:int
@@ -924,10 +1638,32 @@ int func decoUnion(a:int, b:int) {
     return out
 }
 
+// The effective `zoom` of the element whose declarations are being
+// computed right now, or 1.0 outside the cascade. Every pixel length
+// is multiplied by it as it is built, which is the whole of `zoom` for
+// lengths: a percentage keeps its own kind and needs nothing, because
+// the containing block it resolves against is already in device
+// pixels, and `em`, `rem` and `vw` have already become pixels by the
+// time they reach here, so each zooms exactly once. Measured, in
+// todo.md.
+//
+// It is NOT applied to the font size. A child's `em` resolves against
+// its parent's computed `fontSize`, so zooming that would zoom the
+// child's `em` twice -- Chromium keeps the computed font size unzoomed
+// for the same reason. The font is zoomed where it is selected and
+// measured instead.
+float cascadeZoomScale = 1.0
+
 Len func lenPx(px:float) {
     Len l
     l.kind = LEN_PX
-    l.v = px
+    // Multiplied unconditionally rather than behind `!= 1.0`: the
+    // scale is 1.0 on every page that never says `zoom`, so the
+    // multiply is a no-op there, and one predictable multiply is
+    // cheaper than a compare and a branch. The branch version cost a
+    // millisecond of cascade on both benchmark pages, which a third
+    // binary attributed to exactly this line (benchmarks.md).
+    l.v = px * cascadeZoomScale
     return l
 }
 
@@ -945,11 +1681,441 @@ Len func lenPercent(pct:float) {
 }
 
 // Resolves a length against a containing size; `auto` answers `dflt`.
+// CSS Inline 3. A line box is taller than its text by the leading, half
+// above and half below. `text-box-trim` says which of those halves to
+// drop, and `text-box-edge` which two of the font's edges the height
+// then runs between. Measured: `trim-both` leaves ascent plus descent
+// whatever the line height is, so it removes all the leading rather
+// than a fixed amount (todo.md).
+const int TBTRIM_NONE = 0
+const int TBTRIM_START = 1
+const int TBTRIM_END = 2
+const int TBTRIM_BOTH = 3
+
+// The over edge, and the under edge. A single keyword is not a value of
+// `text-box-edge` -- Chromium computes `cap` alone back to `auto` --
+// so only `auto`, `text` and a pair are taken.
+const int TBOVER_TEXT = 0
+const int TBOVER_CAP = 1
+const int TBOVER_EX = 2
+const int TBUNDER_TEXT = 0
+const int TBUNDER_ALPHABETIC = 1
+
+// Packed as trim * 16 + over * 4 + under, in a map keyed by the
+// computed style's serial rather than a field on `Style`, for the
+// reason benchmarks.md records.
+map[int] textBoxOf = {}
+bool anyTextBoxTrim = false
+
+// CSS Overflow 4 §3.3. The edge an `overflow: clip` box clips to is its
+// padding box, and `overflow-clip-margin` moves that edge outward: by a
+// length, or by naming the box to start from. Held in a page-level map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records -- one `int` there cost the
+// benchmark page 1.08 ms of layout, on a page that used none of it.
+//
+// The value is the pixel length times eight plus the `GEOBOX_` code, so
+// one map carries both and a page that never says it carries nothing.
+map[int] clipMarginOf = {}
+bool anyClipMargin = false
+
+// The packed value, or -1 when this style said nothing.
+int func clipMarginPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if clipMarginOf[k] == null { return -1 }
+    return clipMarginOf[k]
+}
+
+// CSS Fragmentation 3 §4.2. `box-decoration-break: clone` puts the
+// whole box -- margin, border, padding and background -- on every
+// fragment of a broken box, where the initial `slice` puts the opening
+// edge on the first fragment and the closing one on the last. Kept in a
+// map keyed by the computed style's serial rather than a field on
+// `Style`, for the reason benchmarks.md records.
+map[int] decoCloneOf = {}
+bool anyDecorationClone = false
+
+// Whether this style asked for `clone`. The flag is false on every
+// document that never says the property, and `&&` short-circuits, so
+// such a document never reaches the map.
+bool func decorationIsClone(s:Style) {
+    if !anyDecorationClone || s == null { return false }
+    return decoCloneOf[`${s.serial}`] != null
+}
+
+// CSS Inline 3 §5. `initial-letter: <size> <sink>?` on ::first-letter.
+// The size is where the letter's baseline sits -- its cap top is the
+// cap top of the first line and its baseline is the baseline of line
+// `size` -- so the cap height grows by one line-height for each line
+// the letter spans. The sink defaults to the size rounded down, and it
+// is the sink that says how many lines are shortened; what is left over
+// goes above the text, making the block `size - sink` lines taller.
+// Every number of that is measured, in todo.md.
+//
+// Packed as the size in hundredths times 64 plus the sink, in a map
+// keyed by the computed style's serial rather than a field on `Style`,
+// for the reason benchmarks.md records.
+map[int] initialLetterOf = {}
+bool anyInitialLetter = false
+
+int func initialLetterPacked(s:Style) {
+    if !anyInitialLetter || s == null { return 0 }
+    text k = `${s.serial}`
+    if initialLetterOf[k] == null { return 0 }
+    return initialLetterOf[k]
+}
+
+// The size in hundredths of a line, or 0 where this style said nothing.
+int func initialLetterSize100(s:Style) {
+    return Math.floorDiv(initialLetterPacked(s), 64)
+}
+
+int func initialLetterSink(s:Style) { return initialLetterPacked(s) % 64 }
+
+// CSS Overscroll Behavior 1. A scroll container that has reached its
+// end normally passes the scroll outward, to the nearest ancestor that
+// can still take it and then to the page. `contain` and `none` stop
+// that chain at the box that declares them; they differ only in that
+// `none` also suppresses the overscroll affordance, and this browser
+// has none to suppress.
+const int OSB_AUTO = 0
+const int OSB_CONTAIN = 1
+const int OSB_NONE = 2
+
+// Packed as x * 4 + y, in a map keyed by the computed style's serial
+// rather than a field on `Style`, for the reason benchmarks.md records.
+map[int] overscrollOf = {}
+bool anyOverscrollBehavior = false
+
+int func overscrollPacked(s:Style) {
+    if !anyOverscrollBehavior || s == null { return 0 }
+    text k = `${s.serial}`
+    if overscrollOf[k] == null { return 0 }
+    return overscrollOf[k]
+}
+
+int func overscrollX(s:Style) { return Math.floorDiv(overscrollPacked(s), 4) }
+
+int func overscrollY(s:Style) { return overscrollPacked(s) % 4 }
+
+// The packed `text-box` value, or -1 when this style said nothing.
+int func textBoxPacked(s:Style) {
+    if s == null { return -1 }
+    text k = `${s.serial}`
+    if textBoxOf[k] == null { return -1 }
+    return textBoxOf[k]
+}
+
+// The effective zoom a computed style was built under, by its serial.
+// A page that never says `zoom` keeps the map empty and every read
+// short-circuits on the flag.
+map[int] zoomOfSerial = {}
+bool anyZoom = false
+
+float func zoomOf(s:Style) {
+    if s == null { return 1.0 }
+    int v = zoomOfSerial[`${s.serial}`]
+    if v == null { return 1.0 }
+    // Kept in ten-thousandths, because the map holds ints.
+    return v.toFloat() / 10000.0
+}
+
+int func motionIndexOf(s:Style) {
+    if s == null { return 0 }
+    text k = `${s.serial}`
+    if motionOfSerial[k] == null { return 0 }
+    return motionOfSerial[k]
+}
+
+// `baseline-source`, kept by the computed style's serial rather than as
+// a field on `Style`, for the reason benchmarks.md has measured twice.
+// It lives HERE rather than beside its constants at the top of this
+// file because a global is not hoisted in Festina and `Style` is
+// declared between the two.
+map[int] baselineSourceOfSerial = {}
+bool anyBaselineSource = false
+
+int func baselineSourceOf(s:Style) {
+    if s == null { return BSRC_AUTO }
+    int v = baselineSourceOfSerial[`${s.serial}`]
+    return v == null ? BSRC_AUTO : v
+}
+
+// `resize` (CSS Basic User Interface 3 §5.1, with Level 4's two
+// logical keywords), kept by the computed
+// style's serial for the reason above. The keyword is stored as
+// declared rather than resolved, because the computed value IS the
+// keyword: Chromium reports `block` for `resize: block` and does not
+// turn it into `vertical` (todo.md). The two logical values are
+// resolved where the drag is constrained instead.
+map[int] resizeOfSerial = {}
+bool anyResize = false
+
+int func resizeOf(s:Style) {
+    if !anyResize || s == null { return RESIZE_NONE }
+    int v = resizeOfSerial[`${s.serial}`]
+    return v == null ? RESIZE_NONE : v
+}
+
+// `text-wrap-style`, kept by the computed style's serial for the
+// reason above. Unlike everything else here it INHERITS, so the
+// applier reads the parent's value out of this same map before it
+// looks at the element's own declaration.
+map[int] textWrapStyleOfSerial = {}
+bool anyTextWrapStyle = false
+
+int func textWrapStyleOf(s:Style) {
+    if !anyTextWrapStyle || s == null { return TWS_AUTO }
+    int v = textWrapStyleOfSerial[`${s.serial}`]
+    return v == null ? TWS_AUTO : v
+}
+
+// `print-color-adjust`, kept by the computed style's serial. It
+// INHERITS -- measured: `exact` on a parent reaches an undeclared
+// child, and the child takes it back with `economy` -- so the applier
+// reads the parent's value out of this same map first.
+// font-variant-caps, kept by the computed style's serial rather than as
+// a field on `Style`, like everything else this engine has added since
+// one `int` there was measured at a millisecond of layout. It INHERITS,
+// so the applier reads the parent's value out of this map first.
+map[int] fontCapsOfSerial = {}
+bool anySmallCaps = false
+
+int func fontCapsOf(s:Style) {
+    if !anySmallCaps || s == null { return CAPS_NORMAL }
+    int v = fontCapsOfSerial[`${s.serial}`]
+    return v == null ? CAPS_NORMAL : v
+}
+
+// `font-synthesis-small-caps`, kept the same way and for the same
+// reason. It INHERITS. The value is stored only when it is `none`,
+// which is what makes `anyFontSynthSmallCaps` mean "some element on
+// this document refuses the synthesis".
+//
+// It is read at the two places that ASK FOR the synthesis -- the
+// measurer and the painter, through `fontCapsUsed` -- and never where
+// `font-variant-caps` is inherited, because the two properties
+// inherit separately: a child of an element that refuses the synthesis
+// still inherits `small-caps`, and can take the refusal back.
+map[bool] fontSynthSmallCapsOfSerial = {}
+bool anyFontSynthSmallCaps = false
+
+bool func fontSynthSmallCapsOf(s:Style) {
+    if !anyFontSynthSmallCaps || s == null { return true }
+    bool v = fontSynthSmallCapsOfSerial[`${s.serial}`]
+    return v == null ? true : v
+}
+
+// The caps the measurer and the painter act on, which is the computed
+// value unless this element refuses to have it synthesised. No face
+// here carries the feature, so a refusal leaves nothing at all.
+int func fontCapsUsed(s:Style) {
+    if !anySmallCaps { return CAPS_NORMAL }
+    int v = fontCapsOf(s)
+    if v == CAPS_NORMAL || fontSynthSmallCapsOf(s) { return v }
+    return CAPS_NORMAL
+}
+
+// `math-depth`, kept by the computed style's serial. It INHERITS, and it
+// is read BEFORE the font size rather than after, because `font-size:
+// math` is the parent's size scaled by the difference between the two
+// depths -- so the applier for it cannot sit with the others.
+//
+// The default is 0 and only a non-zero depth is stored, which is what
+// makes `anyMathDepth` mean "some element on this document is at a
+// depth".
+map[int] mathDepthOfSerial = {}
+bool anyMathDepth = false
+
+// 0.71 per step, measured in Chromium: 32px becomes 22.72, 16.1312 and
+// 11.4532 at one, two and three steps, and 45.0704 at minus one
+// (todo.md).
+const float MATH_DEPTH_SCALE = 0.71
+
+int func mathDepthOf(s:Style) {
+    if !anyMathDepth || s == null { return 0 }
+    int v = mathDepthOfSerial[`${s.serial}`]
+    return v == null ? 0 : v
+}
+
+// `view-transition-name`, kept by the computed style's serial. It does
+// NOT inherit. Only whether a name was given is stored, not the name
+// itself: the transition it names needs a clock and a second document
+// to transition to, and what the property does without one is create a
+// stacking context -- the same shape as `isolation`, where the value is
+// a boolean because the behaviour is.
+map[bool] viewTransitionOfSerial = {}
+bool anyViewTransition = false
+
+bool func hasViewTransitionName(s:Style) {
+    if !anyViewTransition || s == null { return false }
+    bool v = viewTransitionOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
+// `scroll-initial-target`, kept by the computed style's serial. It does
+// NOT inherit. Only `nearest` asks for anything, and what it asks for is
+// one scroll offset set after layout rather than anything during it.
+map[bool] initialTargetOfSerial = {}
+bool anyInitialTarget = false
+
+bool func scrollInitialTarget(s:Style) {
+    if !anyInitialTarget || s == null { return false }
+    bool v = initialTargetOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
+// `interactivity: inert`, kept by the computed style's serial. It does
+// NOT inherit -- the child of an inert element computes to `auto`, which
+// is measured -- because what reaches the subtree is the inertness
+// rather than the property: the hit tester stops at an inert box and
+// never asks its descendants, which is the whole difference from
+// `pointer-events: none`.
+map[bool] inertOfSerial = {}
+bool anyInert = false
+
+bool func interactivityInert(s:Style) {
+    if !anyInert || s == null { return false }
+    bool v = inertOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
+// `will-change` (CSS Will Change 1), kept by the computed style's
+// serial. It does NOT inherit. Two effects, with two different lists of
+// names behind them (todo.md has Chromium's tables), and the second
+// list is a subset of the first -- every name that makes a containing
+// block also makes a stacking context -- so one ordered value says
+// both.
+const int WC_NONE = 0
+const int WC_STACKING = 1
+const int WC_CONTAINING = 2
+
+map[int] willChangeOfSerial = {}
+bool anyWillChange = false
+
+int func willChangeOf(s:Style) {
+    if !anyWillChange || s == null { return WC_NONE }
+    int v = willChangeOfSerial[`${s.serial}`]
+    return v == null ? WC_NONE : v
+}
+
+// `image-rendering`, kept by the computed style's serial. It INHERITS.
+// The value is stored only when it is `pixelated`, so `anyPixelated`
+// means "some element on this document asks for nearest neighbour" --
+// and the painter reads nothing at all on a page that does not.
+map[int] imageRenderingOfSerial = {}
+bool anyPixelated = false
+
+int func imageRenderingOf(s:Style) {
+    if !anyPixelated || s == null { return IR_AUTO }
+    int v = imageRenderingOfSerial[`${s.serial}`]
+    return v == null ? IR_AUTO : v
+}
+
+map[int] printColorAdjustOfSerial = {}
+bool anyPrintColorAdjust = false
+
+int func printColorAdjustOf(s:Style) {
+    if !anyPrintColorAdjust || s == null { return PCA_ECONOMY }
+    int v = printColorAdjustOfSerial[`${s.serial}`]
+    return v == null ? PCA_ECONOMY : v
+}
+
+// The two ruby properties, kept by the computed style's serial. Both
+// inherit, so each applier reads the parent's value out of its own map
+// before it looks at the element's declaration.
+map[int] rubyPositionOfSerial = {}
+map[int] rubyAlignOfSerial = {}
+bool anyRuby = false
+
+int func rubyPositionOf(s:Style) {
+    if !anyRuby || s == null { return RUBYPOS_OVER }
+    int v = rubyPositionOfSerial[`${s.serial}`]
+    return v == null ? RUBYPOS_OVER : v
+}
+
+int func rubyAlignOf(s:Style) {
+    if !anyRuby || s == null { return RUBYALIGN_SPACE_AROUND }
+    int v = rubyAlignOfSerial[`${s.serial}`]
+    return v == null ? RUBYALIGN_SPACE_AROUND : v
+}
+
+// Whether this box may be resized across and down, in that order, in
+// the one writing mode this engine has. Two values out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+bool resizeAcross = false
+bool resizeDown = false
+
+void func resizeAxes(v:int) {
+    resizeAcross = v == RESIZE_BOTH || v == RESIZE_HORIZONTAL || v == RESIZE_INLINE
+    resizeDown = v == RESIZE_BOTH || v == RESIZE_VERTICAL || v == RESIZE_BLOCK
+}
+
 int func resolveLen(l:Len, base:int, dflt:int) {
     if l == null || l.kind == LEN_AUTO { return dflt }
+    // LEN_PX returns here rather than falling through the chain, so that
+    // the intrinsic keyword's test below costs nothing to the common
+    // case. Put beside `auto` instead, it read a millisecond of layout
+    // across two forward rounds against a mirror image that flipped
+    // sign -- this function is called for every length of every box,
+    // which is the shape CLAUDE.md names: a test added to a hot
+    // function costs the pages that never reach it.
+    if l.kind == LEN_PX { return roundPx(l.v) }
     if l.kind == LEN_PERCENT { return roundPx(base.toFloat() * l.v / 100.0) }
     if l.kind == LEN_CALC { return roundPx(l.v + base.toFloat() * l.pct / 100.0) }
+    if anyMinMax && l.kind == LEN_MINMAX { return roundPx(resolveMinMax(l, base.toFloat())) }
+    // An intrinsic keyword answers `dflt` for the reason given beside
+    // LEN_INTRINSIC: this function has the containing block and not the
+    // box, and the keyword is about the box's own content.
+    if l.kind == LEN_INTRINSIC { return dflt }
     return roundPx(l.v)
+}
+
+// The same, as a float and without the `auto` default, so a comparison
+// nested inside one resolves through the same arithmetic as the
+// outermost rather than through a copy of it.
+float func resolveLenFloat(l:Len, base:float) {
+    if l == null { return 0.0 }
+    if l.kind == LEN_PERCENT { return base * l.v / 100.0 }
+    if l.kind == LEN_CALC { return l.v + base * l.pct / 100.0 }
+    if l.kind == LEN_MINMAX { return resolveMinMax(l, base) }
+    return l.v
+}
+
+// `min()` and `max()` take the extreme of their operands; `clamp(a, b,
+// c)` is `max(a, min(b, c))`, which is why a minimum above the maximum
+// wins -- measured in Chromium rather than derived from the grammar
+// (todo.md).
+float func resolveMinMax(l:Len, base:float) {
+    int idx = Math.round(l.v)
+    if idx < 0 || idx >= minmaxOp.length { return 0.0 }
+    int op = minmaxOp[idx]
+    int at = minmaxAt[idx]
+    int n = minmaxCount[idx]
+    if n == 0 { return 0.0 }
+    if op == MM_CLAMP {
+        float lo = resolveMinMaxArg(at, base)
+        float mid = resolveMinMaxArg(at + 1, base)
+        float hi = resolveMinMaxArg(at + 2, base)
+        if mid > hi { mid = hi }
+        if mid < lo { mid = lo }
+        return mid
+    }
+    float best = resolveMinMaxArg(at, base)
+    for int i = 1, i < n, i++ {
+        float v = resolveMinMaxArg(at + i, base)
+        if op == MM_MIN ? v < best : v > best { best = v }
+    }
+    return best
+}
+
+float func resolveMinMaxArg(at:int, base:float) {
+    Len a
+    a.kind = minmaxKind[at]
+    a.v = minmaxV[at]
+    a.pct = minmaxPct[at]
+    return resolveLenFloat(a, base)
 }
 
 Len func lenCalc(px:float, pct:float) {

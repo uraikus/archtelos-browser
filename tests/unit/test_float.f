@@ -174,4 +174,49 @@ check(boxById(besidePage.root, 'fb').w < 100, 'the float hugs its three characte
 checkEqInt(boxById(besidePage.root, 'tb').y, boxById(besidePage.root, 'fb').y,
            'so the paragraph beside it starts on the same line, not below')
 
+// A float's own content must not change the block the text beside it
+// wraps in. The two pages below differ only in whether the float has a
+// letter inside it, and every line box outside the float has to land in
+// the same place either way -- an agreement that does not depend on
+// knowing what that place is, which is what makes it catch the case
+// nobody thought of. It caught this one: laying out the float's inline
+// content left the outer formatting context with the FLOAT's
+// containing block, so every line after it was 64px wide instead of
+// 300 and a four-line paragraph came out thirteen lines long.
+text wrapPage = '<!doctype html><html><head><style>'
+    + 'body{margin:0;font:20px/30px monospace}'
+    + 'p{width:300px;margin:0}'
+    + '.f{float:left;width:64px;height:90px}'
+    + '</style></head><body><p id="p">'
+
+text wrapWords = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike'
+
+Box func wrapped(inside:text) {
+    Page pg = pageFromHtml(wrapPage + '<span class="f">' + inside + '</span>'
+                           + wrapWords + '</p></body></html>', 'about:blank', 600)
+    return boxById(pg.root, 'p')
+}
+
+Box emptyFloat = wrapped('')
+Box fullFloat = wrapped('A')
+
+checkEqInt(fullFloat.lines.length, emptyFloat.lines.length,
+           'a letter inside the float does not change how many lines the text takes')
+checkEqInt(fullFloat.h, emptyFloat.h, 'nor how tall the paragraph is')
+for int li = 0, li < emptyFloat.lines.length && li < fullFloat.lines.length, li++ {
+    checkEqInt(fullFloat.lines[li].x, emptyFloat.lines[li].x,
+               `line ${li} starts in the same place either way`)
+    checkEqInt(fullFloat.lines[li].w, emptyFloat.lines[li].w,
+               `line ${li} is the same width either way`)
+}
+
+// The absolute numbers, so that both sides being wrong together could
+// not pass the agreement above: three lines beside a 90px float, each
+// shortened by its 64px, and the fourth in the full 300.
+checkEqInt(emptyFloat.lines.length, 4, 'the words take four lines')
+checkEqInt(emptyFloat.lines[0].x, 64, 'the first line starts past the float')
+checkEqInt(emptyFloat.lines[0].w, 236, 'and is the paragraph less the float')
+checkEqInt(emptyFloat.lines[3].x, 0, 'the fourth line clears the float')
+checkEqInt(emptyFloat.lines[3].w, 300, 'and has the whole paragraph')
+
 finish('float')

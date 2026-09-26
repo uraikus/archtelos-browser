@@ -148,6 +148,13 @@ pointer where a string was meant. As a local it produces invalid LLVM
 IR and the compile fails with `global variable reference must have
 pointer type`, naming neither the variable nor the line.
 
+It is functions specifically, which narrows where the fix belongs: a
+local named like a global **variable** is shadowed correctly and both
+keep their values. So the resolver already does the right thing for one
+kind of top-level binding and not the other. Twelve lines in two modules
+reproduce it -- a `bool flagX` local in an imported file, and a
+`void func flagX()` declared in the file that imports it, is enough.
+
 **Proposal.** Resolve names innermost-first, as every other block-scoped
 language does. If shadowing a global function is meant to be forbidden,
 reject it at the declaration with a real diagnostic — which the compiler
@@ -664,6 +671,15 @@ non-ASCII constant that cannot survive a terminal that mangles it or a
 patch applied with the wrong encoding, and the language offers no way to
 spell it that does.
 
+The nine directional formatting characters of UAX #9 are the case where
+literal bytes are not an option at all, because they render as nothing:
+a literal holding one is a blank space in the source, and a test whose
+subject is an RLE would read as a test of an empty string. `bidi.f`
+names their code points as decimal constants and turns one into text
+with `cp.toChar()`, through a `bidiControl` function whose only purpose
+is to give the character a name a reader can see. `\u202b` would be
+that name.
+
 ---
 
 ## 3p Let a program read a pixel's channels
@@ -807,3 +823,44 @@ dragged by its thumb but not scrolled by the wheel, and shift-wheel —
 the gesture every browser offers for exactly this — cannot be read at
 all. Beyond that: shift-click to extend a selection, control-click to
 open in a new tab, alt-drag to pan. A browser is made of these.
+
+## 3t Let a list observe a node without owning its subtree
+
+FINDINGS.md, finding 41.
+
+`out.push(node)` costs a walk of everything under `node`. Ten
+traversals of a ternary tree, collecting every node into an `arr`, go
+1 ms at 40 nodes, 4 at 121, 34 at 364 and **306 at 1093** — three times
+the nodes for nine times the time. Collecting the same nodes' `id`
+fields into an `arr[int]` is 0 ms at every size, and ten rounds of four
+thousand pushes into an `arr[int]`, an `arr[text]` or an `arr` of a
+two-field struct are 0, 2 and 5 ms, so neither `push` nor the array's
+growth is the cost. It is the ownership the push takes.
+
+It is the same cost findings 1 and 40 record, reached a third way, and
+it has the same consequence: a program that works on a graph cannot
+gather part of it into a list. This browser wanted the boxes CSS2
+§9.9's later steps paint, collected once during its first pass rather
+than found again by two more walks of the tree. Written that way it
+turned a 20 ms paint into 543. It now writes an integer on each box
+instead and has the later passes read it, which works but is a
+hand-rolled second index into a structure the language already has.
+
+**Proposal.** An element type that observes rather than owns:
+
+```festina
+arr[weak Box] later = []
+later.push(c)            // no retain of c's subtree
+Box b = later[i]         // null if it has gone
+```
+
+`weak` is one spelling; a `borrowed` qualifier scoped to a block would
+do as well, and would compose with the borrowed read finding 40 asks
+for — the two are the same missing idea, one for a variable and one for
+a container. What matters is that a program can name a part of a graph
+it is walking without paying for the whole of it, because the walk
+already holds it alive.
+
+The alternative Festina leaves is a list of ids and a registry to
+resolve them, which is finding 40's cost paid on the way back out.
+

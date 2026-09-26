@@ -14,15 +14,15 @@ Festina should gain as a result is in [festina.md](festina.md).
 
 **HTML parsing follows the
 [WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
-the standard's own tree-construction corpus it passes **1,535 of 1,652**
-cases — the same number Chromium 141 passes on the same corpus, and 84
-of the 117 each fails are the same cases. **CSS selectors match the same
-elements Chromium matches in all 61 cases** the instrument asks. CSS
+the standard's own tree-construction corpus it passes **1,546 of 1,652**
+cases, against Chromium 141's 1,535 on the same corpus in the same
+minutes — ahead on 29 cases and behind on 18, with 88 that both fail, 84
+of them the one file whose expected output no HTML parser produces. **CSS selectors match the same
+elements Chromium matches in all 129 cases** the instrument asks. CSS
 targets the [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose
 official definition of CSS is 24 specifications; the engine implements
-part of 22 and no part of 2 — Compositing and Blending, which needs a
-compositing operator Festina does not expose, and Easing, which needs
-the animation clock nothing here has. Where it stands on each is in
+part of 23 and no part of 1 — Easing, which needs the animation clock
+nothing here has. Where it stands on each is in
 [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)
@@ -167,9 +167,24 @@ box `@page` declares — one of ten named sheet sizes or a pair of
 lengths, turned by `landscape`, with margins, and a box of its own for
 the first page, the left-hand pages, the right-hand ones or any page a
 `page` property names — and writes `out-1.png`, `out-2.png` and so on,
-one to a sheet. A page is a fragmentation container like a column, so
+one to a sheet. All sixteen margin boxes draw: `@top-center` and its
+fifteen siblings each generate their content in their band of the page
+margin, aligned the way the standard's table says — a corner toward the
+page content, an edge box left, centred or right between the corners —
+with `counter(page)` and `counter(pages)` reading the page number and
+the count, and a `color` or `font-size` of their own over what they
+inherit from the root element.
+`--no-background-graphics` omits background colours and images from the
+print, the way a print dialog's setting of that name does, and
+`print-color-adjust: exact` is what puts one back on the page — it
+inherits, so it can be declared once on a wrapper; only backgrounds go,
+and the text over them still prints. A page is a fragmentation container like a column, so
 `break-before: page` and the `page-break-*` properties CSS2 spells them
-with put a break where a document asks for one. `linear-gradient()` and
+with put a break where a document asks for one. `left`, `right`, `recto`
+and `verso` ask for a side as well: the first page is a right page, so
+each of them ends the page and then generates a blank one where the next
+would otherwise land on the wrong side, and `@page :blank` selects the
+page that generates. `linear-gradient()` and
 `repeating-linear-gradient()` paint as background images, at any angle
 and with any number of colour stops; `radial-gradient()` and
 `repeating-radial-gradient()` do the same out from a centre, as a circle
@@ -198,6 +213,15 @@ of the box, and may be an ellipse rather than a quarter circle — the
 after. Two radii that would overlap on one edge are scaled back
 together, so the shape keeps its proportions.
 
+**`corner-shape`** decides what curve that corner is drawn with, per
+corner or in one shorthand. A corner is the region the radius already
+resolves, and each value is that region under a different superellipse
+exponent, so `square` fills the corner, `notch` cuts it out, `bevel` is
+a straight cut, `scoop` bows away from the box and `squircle` hugs it;
+`superellipse()` takes any exponent, and the keywords are the exponents
+it names rather than a separate set of shapes. A shadow follows the
+shape its box has.
+
 `border-image` cuts an image into nine regions and lays them round the
 border: the corners at their own size, the edges between them, and the
 middle only if `fill` asks. Each edge image is scaled to the thickness
@@ -211,7 +235,19 @@ tiles with the leftover shared out around them.
 `scroll` and `auto` reserve fifteen pixels inside the padding box for a
 scrollbar and paint one there — always for `scroll`, and for `auto` only
 where the content overflows, the thumb being as long a share of the
-track as the box is of what it scrolls. **The wheel over such a box
+track as the box is of what it scrolls. `scrollbar-width` makes that ten
+pixels with `thin` and none at all with `none`, which hides the bar and
+leaves the box scrolling; `scrollbar-color` paints the thumb and the
+track in two colours of the page's choosing; and `scrollbar-gutter:
+stable` takes the room before there is anything to scroll, so a box's
+content does not change width the moment there is. A container that
+declares `scroll-snap-type` comes to rest on one of the positions its
+children's `scroll-snap-align` asks for rather than wherever the scroll
+left it, with `scroll-padding` and `scroll-margin` moving those
+positions and `proximity` snapping only what is already near.
+`scroll-snap-stop: always` holds a scroll at the first such position it
+would pass, a gesture here being one wheel event; it acts under
+`mandatory` only, which is what Chromium does. **The wheel over such a box
 scrolls it down**, and the page only once it has reached its end; a
 wheel tilted sideways scrolls it across, where the window system says
 one was tilted — X11 does, and Windows does not (FINDINGS.md, finding
@@ -232,7 +268,15 @@ paragraph's base level, `text-align`'s `start` and `end` follow it, and
 the bidirectional algorithm puts each finished line into the order it is
 read on the screen rather than the order it is stored — so a Hebrew or
 Arabic run comes out reversed while Latin or digits inside it keep their
-own order.
+own order. A document that needs to say what the implicit rules would
+get wrong says it with the nine directional formatting characters — the
+embeddings, the overrides and the isolates — which the explicit half of
+UAX #9 carries: a directional status stack with its depth limit, and the
+isolating run sequences the implicit rules then resolve one at a time.
+`unicode-bidi` is those same characters under a stylesheet's names, and
+is implemented as such: each of its six values is the pair the standard
+defines it to be, wrapped around the element's text and put through the
+one algorithm.
 
 **Columns** break one flow into several. `column-count` and
 `column-width` say how many and how wide, the content is laid out once
@@ -243,7 +287,15 @@ the breaks fall is under `break-before`, `break-after` and
 `orphans` and `widows`, which say how few lines of a paragraph may be
 left at the foot of a column or carried to the head of the next. A child
 with `column-span: all` is in no column: it splits the container into
-the run before it, itself across the full width, and the run after.
+the run before it, itself across the full width, and the run after. A box
+broken between columns gets a rectangle in each of them, and breaking is
+recursive: a wrapper is broken by breaking its children, a childless
+block whose fixed height does not fit what is left of its column is cut
+at the break wherever in the tree it sits, and a child whose lines are
+split gets a part per column its lines are in. The box keeps the part in the column it started in and
+carries the rest, which paint and answer the pointer where the break put
+them, with `box-decoration-break` deciding whether a border crosses the
+break.
 
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and
@@ -265,11 +317,84 @@ shares, each freezing as it arrives; then the `fr` tracks take what is
 left; then, if nothing flexible took it, the tracks whose maximum is
 `auto` are stretched into the rest.
 
+A **subgrid** takes the lines it spans from the grid above it instead
+of sizing tracks of its own, and it may name those lines —
+`subgrid [a] [b] [c]` — counting from its own first line rather than
+the parent's. Its items are placed on the parent's tracks and each
+sizes the one it sits in, in both axes, so a subgrid is not a spanning
+item whose own width is split between the tracks it covers.
+
+A line name that the template does not declare is not an error and
+does not leave the placement to the flow: every implicit line counts as
+carrying every name, so the name lands on the first line past the
+explicit grid and the tracks around it come into being. A name may be
+asked for by count — `grid-column: a 2` is the second line called `a` —
+and a count the template cannot meet takes the shortfall the same way.
+
+An item spanning several tracks gives them whatever it needs beyond
+what they already hold, the gutters between them counting towards it,
+shared equally among the tracks that can grow. A fixed track takes
+none of it, a track with a length for a maximum stops there and hands
+the rest on, and a track outside the span is untouched. Where two
+spans overlap a track, each plans its share against the sizes they
+both started from and the track takes the larger, so neither span's
+answer depends on which was written first.
+
+That last stretch is what `justify-content` and `align-content` govern:
+they hold for `normal` and `stretch`, and under `start`, `center`,
+`end`, `space-between`, `space-around` and `space-evenly` the tracks
+keep their content size and are positioned in the leftover space
+instead. The block axis has space to share only where the container's
+own height is definite.
+
 **Containment** lets a box promise what cannot escape it. `contain:
 size` lays it out as if it were empty — its content is never measured,
 and `contain-intrinsic-size` supplies what an automatic size resolves to
 instead; `contain: paint` clips its descendants; and
 `content-visibility: hidden` paints the box and nothing inside it.
+
+**Clicks** land on the topmost box: the search runs the painting order
+backwards, pass by pass — the positioned descendants, then the inline
+content, then the floats, then the block-level boxes — so a positioned
+box takes the click from an in-flow one underneath it, a float takes it
+from a block written after it, and the higher `z-index` wins whatever
+the document order.
+It finds a box wherever it was laid out, including past every
+ancestor's edge — an absolutely positioned box in an empty body is
+clickable — and goes through any transform on it, so a rotated box is
+clickable along the shape it is drawn as.
+
+**Painting order** is CSS2 §9.9's: inside a stacking context a box's
+own background and border come first, then its negative-`z-index`
+descendants, then its in-flow content in the standard's three separate
+steps, then the positioned descendants at zero and above. The three
+steps are three walks of the subtree rather than one walk in document
+order — the in-flow block-level descendants' own decoration, then the
+non-positioned floats, then every box's lines — so a float paints over
+a block written after it and a line of text paints over both. A box
+that paints as one unit is handed over whole and the walk does not
+descend into it: a positioned box, a nested stacking context, a
+replaced element, and anything that paints through a layer. Then the outlines,
+in a pass of their own above all of that and below anything positioned
+— which is where Chromium draws them rather than at the very end. A
+negative descendant of a box that is *not* a stacking context is
+painted by the nearest ancestor that is, which is what puts it behind
+that box's background. A declared `z-index` on a positioned box makes a context,
+and so do a `transform` and an `opacity` below 1; `z-index: auto` does
+not.
+
+**`position: sticky`** keeps the box where the flow put it and draws it
+somewhere else. A `top` inset holds it that far below the top of the
+window while the page scrolls under it, a `bottom` inset that far above
+the bottom, and it travels no further than its containing block's
+content box — so a stuck heading leaves with its own section rather
+than sitting over the next one. The shift belongs to the painter
+because the scroll position changes on every wheel event and the
+document is laid out once, and clicks come back through it, so a stuck
+box is clickable where it is drawn rather than where it was laid out.
+The two insets that act are the vertical ones: the painter is given the
+document's scroll offset down the page, and the document does not
+scroll across.
 
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and
@@ -278,6 +403,13 @@ says what they are about, and the individual `translate`, `rotate` and
 `scale` properties say the same things separately. `skew()` and
 `matrix()` are dropped, because the canvas composes its matrix from
 translate, rotate and scale and has no call that takes one.
+
+A transformed box establishes a **stacking context** and is the
+**containing block** for its positioned descendants, `absolute` and
+`fixed` alike, and an *identity* transform still counts — `rotate(0deg)` and `translateX(0px)` compute to the same
+matrix and make one, where `none` does not. **Clicks go through the
+inverse transform**, so a box rotated ninety degrees is clickable along
+the shape it is drawn as rather than the rectangle it was laid out as.
 
 **`::before` and `::after`** generate boxes from `content`, which takes
 quoted strings, `attr()`, `counter()`, `counters()`, the four quote
@@ -299,6 +431,17 @@ block on its own, taking any punctuation in front of it along, skipping
 leading whitespace, and finding the letter inside a nested inline. Only
 the first of the block, not the first of every descendant.
 
+**`initial-letter`** on that pseudo-element makes it a drop cap. The
+size is where the letter's baseline sits: its cap top is the cap top of
+the block's first line and its baseline is the baseline of line `size`,
+so its cap height grows by one line-height for each line it spans. The
+sink is a second number, defaulting to the size rounded down, and it
+alone says how many lines are shortened; what is left over goes above
+the text, so the block grows by `size - sink` lines and its text begins
+that many lines down. The letter is a floating atomic inline, which is
+what lets the lines beside it shorten without an anonymous box coming
+between them.
+
 **`::first-line`** styles whichever characters end up on the first line,
 which is not known until the line has been broken. The standard
 describes it as a fictional element wrapped around them, and that is
@@ -317,6 +460,13 @@ own string — which is where `content: counter(list-item)` belongs. It
 has only the two-colon spelling the standard gives it; `:marker` with
 one colon is not a pseudo-element and matches nothing. A counter always
 renders in decimal.
+
+**`::placeholder`** styles the text an `<input>` shows for its
+`placeholder` attribute. The grey is `#757575`, declared on the
+pseudo-element by the user-agent stylesheet, so the input's own `color`
+does not reach it — an inherited value loses to any declaration — while
+the font properties do inherit and a rule on `::placeholder` wins over
+both. A `value` is not a placeholder and takes the input's colour.
 
 **Flex containers** wrap: `flex-direction`, `flex-wrap` and the
 `flex-flow` shorthand, `order`, `flex-grow`, `flex-shrink`,
@@ -343,8 +493,13 @@ box itself as well as its contents, which is what separates it from
 `overflow`. The same offscreen image does the work, but a shape is not a
 rectangle, so it is blitted back one scanline at a time with the span
 the shape covers at that row; a pixel belongs to the shape when its
-centre does. CSS2's `clip` reaches the same rectangle from the other
-side, on an absolutely positioned box.
+centre does. `inset()` takes a `round` radius in `border-radius`'s own
+grammar, and a rounded rectangle is cut scanline by scanline where a
+square one is a single blit. `polygon()` takes a fill rule, which says nothing about a
+polygon that does not cross itself and everything about one that does:
+`nonzero`, the initial value, keeps the middle of a five-pointed star,
+where `evenodd` cuts it out. CSS2's `clip` reaches the same rectangle
+from the other side, on an absolutely positioned box.
 
 **`shape-outside`** does the opposite: instead of cutting a box to a
 shape it lets text follow one. A float's exclusion edge follows the
@@ -384,7 +539,7 @@ what is deliberately not.
 | `.github/workflows/tests.yml` | CI: the same suite, natively and under valgrind |
 | `tools/festina-generic` | a Festina wrapper targeting a generic CPU, so valgrind can run the result |
 
-28,348 lines of Festina in `src/` and `browser.f`.
+31,794 lines of Festina in `src/` and `browser.f`.
 
 ## Tests
 
@@ -394,7 +549,7 @@ FESTINA_HOME=/path/to/festina tests/run.sh --valgrind  # the same, under valgrin
 FESTINA_HOME=/path/to/festina tests/bench.sh           # benchmarks, incl. Chromium
 ```
 
-The runner covers forty-six unit suites (utilities, HTML, CSS parser,
+The runner covers fifty-eight unit suites (utilities, HTML, CSS parser,
 cascade, cascade rules, values, layout geometry, box properties,
 aspect ratio, grid areas, form controls, image loading,
 positioning, floats, flex, flex wrapping, iframes, pseudo-elements,
@@ -402,12 +557,13 @@ counters, quotes, first letter, list markers, logical properties, text,
 containment, alignment, grid, columns, bidi, namespaces, counter
 styles, hyphens, color spaces, fragmentation, shapes, box generation,
 media queries, container queries, cascade layers, colour mixing, relative
-colours, colour schemes, style rule nesting, audio, paged media, the preload scanner), eighteen offscreen render suites that check
+colours, colour schemes, style rule nesting, audio, paged media, scrollbars, scroll snapping, anchor positioning, text boxes, drop caps, font size adjustment, baseline source, zoom, text wrapping, ruby, vertical writing modes, the preload scanner), thirty-one offscreen render suites that check
 real pixels with `getPixelColor` — general rendering, linear gradients,
 radial gradients, overflow clipping, clip paths, background images,
 conic gradients, generated content, object fitting, object view boxes, borders, border
 images, text decoration, transforms, right-to-left text, box shadows,
-first lines and printed pages — three conformance
+corner shapes, anchor visibility, motion paths, first lines, inline boxes, overscroll behaviour, printed pages, stacking contexts, vertical writing modes, the resize grabber and the invariant that
+painting a page twice gives the same pixels — three conformance
 runners that measure the engine against
 Chromium — CSS properties, default element displays, and which elements
 a selector matches — a check that every row of the property instrument

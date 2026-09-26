@@ -37,6 +37,140 @@ Node p1 = findElement(d1, 'p')
 checkEqInt(resolveLen(p1.style.width, 400, -1), 360, 'calc() in a width declaration')
 checkEqInt(resolveLen(p1.style.marginLeft, 0, -1), 32, 'calc() in a margin declaration')
 
+Node func valNodeById(n:Node, id:text) {
+    if n.kind == NODE_ELEMENT && attrOf(n.id, 'id') == id { return n }
+    for int i = 0, i < n.children.length, i++ {
+        Node f = valNodeById(n.children[i], id)
+        if f != null { return f }
+    }
+    return null
+}
+
+// ---- min(), max() and clamp() -----------------------------------------
+//
+// Values and Units 4 §10. Every number here is Chromium 141's, on a
+// block in a containing block 400 wide and 300 tall (todo.md). The
+// checks that earn their place are the ones that need no number: a
+// comparison of two lengths must land where the length it picks lands.
+
+// All lengths, which fold at parse time -- and folding is the point,
+// because a folded value is an ordinary LEN_PX and works in the places
+// that take one rather than only where `resolveLen` is called.
+Len m1 = parseLength('min(100px, 200px)'.toAscii(), 16)
+checkEqInt(m1.kind, LEN_PX, 'a comparison of two lengths folds to a length')
+checkEqInt(resolveLen(m1, 400, -1), 100, 'and it is the smaller')
+checkEqInt(resolveLen(parseLength('max(100px, 200px)'.toAscii(), 16), 400, -1), 200,
+    'max() takes the larger')
+checkEqInt(resolveLen(parseLength('min(200px, 100px, 150px)'.toAscii(), 16), 400, -1), 100,
+    'min() of three')
+checkEqInt(resolveLen(parseLength('max(100px, 200px, 150px)'.toAscii(), 16), 400, -1), 200,
+    'max() of three')
+
+checkEqInt(resolveLen(parseLength('clamp(50px, 100px, 200px)'.toAscii(), 16), 400, -1), 100,
+    'clamp() leaves a value between its bounds alone')
+checkEqInt(resolveLen(parseLength('clamp(150px, 100px, 200px)'.toAscii(), 16), 400, -1), 150,
+    'and raises one below the minimum')
+checkEqInt(resolveLen(parseLength('clamp(50px, 300px, 200px)'.toAscii(), 16), 400, -1), 200,
+    'and lowers one above the maximum')
+// Measured rather than derived: the minimum wins where the two bounds
+// cross, so this is 200 and not 50.
+checkEqInt(resolveLen(parseLength('clamp(200px, 100px, 50px)'.toAscii(), 16), 400, -1), 200,
+    'a minimum above the maximum wins')
+
+checkEqInt(resolveLen(parseLength('min(10em, 100px)'.toAscii(), 16), 400, -1), 100,
+    'em resolves before the comparison')
+checkEqInt(resolveLen(parseLength('max(10em, 100px)'.toAscii(), 16), 400, -1), 160,
+    'and the em is the larger of the two')
+
+checkEqInt(resolveLen(parseLength('min(100px)'.toAscii(), 16), 400, -1), 100,
+    'min() takes a single argument')
+checkEqInt(resolveLen(parseLength('max(100px)'.toAscii(), 16), 400, -1), 100,
+    'and so does max()')
+checkEqInt(resolveLen(parseLength('min( 100px , 200px )'.toAscii(), 16), 400, -1), 100,
+    'whitespace around the arguments is allowed')
+checkEqInt(resolveLen(parseLength('min(-100px, 100px)'.toAscii(), 16), 400, -1), -100,
+    'a negative is smaller than a positive, and the function says so')
+
+// Nesting, in both directions.
+checkEqInt(resolveLen(parseLength('calc(min(100px, 200px) + 10px)'.toAscii(), 16), 400, -1), 110,
+    'a comparison inside a calc()')
+checkEqInt(resolveLen(parseLength('min(calc(50px + 50px), 200px)'.toAscii(), 16), 400, -1), 100,
+    'a calc() inside a comparison')
+checkEqInt(resolveLen(parseLength('min(min(100px, 200px), 150px)'.toAscii(), 16), 400, -1), 100,
+    'a comparison inside a comparison')
+checkEqInt(resolveLen(parseLength('calc(2 * min(50px, 200px))'.toAscii(), 16), 400, -1), 100,
+    'a comparison multiplied')
+checkEqInt(resolveLen(parseLength('min(100px, 200px, max(10px, 300px))'.toAscii(), 16), 400, -1), 100,
+    'the other function nested inside this one')
+
+// A percentage cannot fold, because the answer depends on the base:
+// the comparison happens AFTER the percentage is resolved, which is
+// measured. Asking the same value against two bases is what shows it
+// is deferred rather than decided at parse time.
+Len mp = parseLength('min(50%, 100px)'.toAscii(), 16)
+checkEqInt(resolveLen(mp, 400, -1), 100, 'against a 400 base the length wins')
+checkEqInt(resolveLen(mp, 100, -1), 50, 'and against a 100 base the percentage does')
+checkEqInt(resolveLen(parseLength('max(50%, 100px)'.toAscii(), 16), 400, -1), 200,
+    'max() of the same pair takes the percentage')
+checkEqInt(resolveLen(parseLength('min(10%, 20%)'.toAscii(), 16), 400, -1), 40,
+    'two percentages against a 400 base')
+checkEqInt(resolveLen(parseLength('min(10%, 20%)'.toAscii(), 16), 200, -1), 20,
+    'and against a 200 base, which a folded value could not do')
+checkEqInt(resolveLen(parseLength('max(10%, 20%)'.toAscii(), 16), 400, -1), 80,
+    'and max() of them')
+checkEqInt(resolveLen(parseLength('clamp(10%, 100px, 90%)'.toAscii(), 16), 400, -1), 100,
+    'clamp() between two percentages')
+
+// The checks that need no number of their own.
+checkEqInt(resolveLen(parseLength('min(10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('10px'.toAscii(), 16), 400, -1),
+           'min() of two lengths is the smaller, written out')
+checkEqInt(resolveLen(parseLength('max(10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('20px'.toAscii(), 16), 400, -1),
+           'and max() is the larger')
+checkEqInt(resolveLen(parseLength('clamp(5px, 10px, 20px)'.toAscii(), 16), 400, -1),
+           resolveLen(parseLength('10px'.toAscii(), 16), 400, -1),
+           'and a clamp() inside its bounds is the value')
+checkEqInt(resolveLen(parseLength('min(50%, 100%)'.toAscii(), 16), 370, -1),
+           resolveLen(parseLength('50%'.toAscii(), 16), 370, -1),
+           'and a percentage comparison is the percentage it picks')
+
+// The standard's invalid cases, all measured in Chromium.
+checkEqInt(parseLength('min(100px, 5)'.toAscii(), 16).kind, LEN_INVALID,
+    'a bare number is not a length here, where calc() takes one as a multiplier')
+checkEqInt(parseLength('min(100, 200)'.toAscii(), 16).kind, LEN_INVALID,
+    'and neither argument may be one')
+checkEqInt(parseLength('max(0, 100px)'.toAscii(), 16).kind, LEN_INVALID,
+    'and zero is not exempt')
+checkEqInt(parseLength('clamp(100px)'.toAscii(), 16).kind, LEN_INVALID,
+    'clamp() takes exactly three arguments')
+checkEqInt(parseLength('clamp(10px, 20px)'.toAscii(), 16).kind, LEN_INVALID,
+    'two of them is not enough')
+checkEqInt(parseLength('min()'.toAscii(), 16).kind, LEN_INVALID, 'an empty argument list is invalid')
+checkEqInt(parseLength('min(100px,)'.toAscii(), 16).kind, LEN_INVALID, 'and so is a trailing comma')
+checkEqInt(parseLength('min(100px'.toAscii(), 16).kind, LEN_INVALID, 'and an unclosed one')
+
+// And it reaches a real declaration, in each of the four kinds of
+// property Chromium was asked about.
+cascadeReset()
+Node dm = parseHtmlText('<html><body><div style="width:400px;height:300px">'
+    + '<p id="a" style="width: min(100px, 200px)">x</p>'
+    + '<p id="b" style="height: min(10%, 100px)">x</p>'
+    + '<p id="c" style="margin-left: min(30px, 60px)">x</p>'
+    + '<p id="d" style="font-size: min(30px, 60px); width: 10em">x</p>'
+    + '</div></body></html>')
+cascadeAddDocumentStyles(dm)
+computeStyles(dm)
+checkEqInt(resolveLen(valNodeById(dm, 'a').style.width, 400, -1), 100,
+    'min() in a width declaration')
+checkEqInt(resolveLen(valNodeById(dm, 'b').style.height, 300, -1), 30,
+    'min() in a height, against the containing block\'s height')
+checkEqInt(resolveLen(valNodeById(dm, 'c').style.marginLeft, 400, -1), 30,
+    'min() in a margin')
+checkEqInt(valNodeById(dm, 'd').style.fontSize, 30, 'min() in a font size')
+checkEqInt(resolveLen(valNodeById(dm, 'd').style.width, 400, -1), 300,
+    'which the em beside it then multiplies')
+
 // ---- custom properties and var() --------------------------------------
 cascadeReset()
 Node d2 = parseHtmlText('<html><head><style>:root { --gap: 12px; --brand: #112233 } .a { --gap: 4px } p { margin-top: var(--gap); color: var(--brand); padding-top: var(--missing, 7px); padding-left: var(--nope) }</style></head><body><p id="one">x</p><div class="a"><p id="two">y</p></div></body></html>')
@@ -93,8 +227,69 @@ checkEqInt(resolveLen(parseLength('50vb'.toAscii(), 16), 0, -1), halfTall,
 checkEqInt(resolveLen(parseLength('10ic'.toAscii(), 16), 0, -1),
            resolveLen(parseLength('10em'.toAscii(), 16), 0, -1),
            'an ideograph advance is an em')
-checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 16), 0, -1), 120,
-           'and a cap height three quarters of one, which is what Chromium measures here')
+// ---- the font-relative units, measured rather than assumed ----------
+//
+// `ex`, `ch` and `cap` were each half an em, half an em and three
+// quarters of one, because the runtime reports no x-height, no zero
+// advance and no cap height. Chromium 141 on the same monospace face,
+// `width: 10<unit>` at 16, 20, 48, 100 and 180px, least squares:
+//
+//   ex    0.5473 * size + 0.016
+//   ch    0.6020 * size - 0.000
+//   cap   0.7310 * size - 0.144
+//   ic    1.0000 * size            (an em, which is what it already was)
+//
+// `ch` has a second, independent reading: this engine's own face
+// measures a '0' at 12px at 20, 60 at 100 and 108 at 180, which is
+// exactly 0.6 of the size, and Chromium's 0.6020 agrees to a third of
+// a percent. `ex`'s 0.5473 agrees with the 0.542 to 0.550 the cap-ratio
+// work read off rasterised ink. So the constants are what two
+// measurements say rather than what one does.
+//
+// `cap` takes FONT_CAP, which is the same physical quantity the engine
+// already measured twice for `text-box-edge` -- and the two Chromium
+// surfaces agree: `0.733 * size - 0.41` and `0.7310 * size - 0.144`
+// are within a tenth of a pixel of each other across the whole range.
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 16), 0, -1), 88,
+           'ten ex at 16px, where Chromium measures 90')
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 180), 0, -1), 985,
+           'and 985 at 180px, where Chromium measures 986')
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 20), 0, -1), 120,
+           'ten ch at 20px is exactly what this engine measures ten zeroes at')
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 180), 0, -1), 1080,
+           'and at 180px, where Chromium measures 1084')
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 180), 0, -1), 1319,
+           'ten cap at 180px, where Chromium measures 1315')
+// Where the old three-quarters was right, and the only place it was:
+// Chromium's metric is hinted per size, so a single ratio cannot
+// reproduce it at the small sizes where the hinting departs most.
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 16), 0, -1), 117,
+           'and 117 at 16px, where Chromium measures 120')
+
+// The check that needs no number: a unit that is a ratio of the font
+// size is linear in it, so ten of it at one size must be the same as
+// one of it at ten times the size. That holds for each of the four and
+// fails for anything that quantises per size -- which is exactly how
+// Chromium's own answers differ from these.
+checkEqInt(resolveLen(parseLength('10ch'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1ch'.toAscii(), 180), 0, -1),
+           'ten ch at 18px is one ch at 180px')
+checkEqInt(resolveLen(parseLength('10ex'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1ex'.toAscii(), 180), 0, -1),
+           'and the same of ex')
+checkEqInt(resolveLen(parseLength('10cap'.toAscii(), 18), 0, -1),
+           resolveLen(parseLength('1cap'.toAscii(), 180), 0, -1),
+           'and of cap')
+
+// And they are four different ratios, which the half-an-em pair were
+// not: `ex` and `ch` gave the same answer under the old constants and
+// must not now.
+check(resolveLen(parseLength('10ex'.toAscii(), 100), 0, -1)
+      != resolveLen(parseLength('10ch'.toAscii(), 100), 0, -1),
+      'an x-height is not a zero advance')
+check(resolveLen(parseLength('10cap'.toAscii(), 100), 0, -1)
+      != resolveLen(parseLength('10ic'.toAscii(), 100), 0, -1),
+      'and a cap height is not an em')
 
 // ---- lh and rlh (Values and Units 4 §6.1) -----------------------------
 // `lh` is the element's own computed line height and `rlh` the root
@@ -160,5 +355,133 @@ Style lhN = lhStyleOf('line-height: normal; width: 1lh', 'n')
 checkEqInt(resolveLen(lhN.width, 0, -1), lineHeightOf(lhN),
     '`lh` under `line-height: normal` is the line height a line gets')
 checkEqInt(resolveLen(lhN.width, 0, -1), 19, 'which is 19px at 16px, as Chromium measures it')
+
+// ---- the absolute units, which nothing was checking -------------------
+// Derived from the source rather than from memory (CLAUDE.md): of the
+// units the length parser knows, `cm`, `pc`, `grad`, `dpcm`, `dvh`,
+// `lvh`, `vmin` and `vmax` appeared in no suite at all, so css-2026.md
+// claimed eight units that nothing could have caught going wrong.
+//
+// `cm`, `mm` and `q` are one length written three ways -- CSS defines
+// all three off the inch -- so the test that earns its place asserts
+// they agree, at a size the pixel rounding cannot hide. It fails on
+// three constants that were meant to be one: `q` carried 96/2.54/40
+// exactly while `cm` carried 37.8 and `mm` 3.78, which is the hazard
+// the comment beside FONT_EX in this same function already names.
+int cmBig = resolveLen(parseLength('1000cm'.toAscii(), 16), 0, 0 - 1)
+checkEqInt(resolveLen(parseLength('10000mm'.toAscii(), 16), 0, 0 - 1), cmBig,
+    'a thousand centimetres is ten thousand millimetres')
+checkEqInt(resolveLen(parseLength('40000q'.toAscii(), 16), 0, 0 - 1), cmBig,
+    'and forty thousand quarter-millimetres')
+// And against the inch the standard defines them all off, which is
+// what stops the three agreeing on a wrong number.
+checkEqInt(cmBig, roundPx(1000.0 * 96.0 / 2.54),
+    'all three are the inch divided by 2.54, as Chromium computes them')
+checkEqInt(resolveLen(parseLength('1in'.toAscii(), 16), 0, 0 - 1), 96, 'an inch is 96px')
+checkEqInt(resolveLen(parseLength('1pc'.toAscii(), 16), 0, 0 - 1), 16, 'a pica is 16px')
+checkEqInt(resolveLen(parseLength('1pc'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('12pt'.toAscii(), 16), 0, 0 - 1),
+    'and a pica is twelve points')
+
+// The viewport family. `vmin` and `vmax` are the smaller and larger of
+// the two axes, which is asked of them rather than of a remembered
+// number by putting them against the axis each has to equal.
+cssViewportWidth = 300
+cssViewportHeight = 150
+checkEqInt(resolveLen(parseLength('50vmin'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1),
+    '`vmin` is the shorter axis when the viewport is wider than it is tall')
+checkEqInt(resolveLen(parseLength('50vmax'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vw'.toAscii(), 16), 0, 0 - 1),
+    'and `vmax` the longer one')
+cssViewportWidth = 150
+cssViewportHeight = 300
+checkEqInt(resolveLen(parseLength('50vmin'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vw'.toAscii(), 16), 0, 0 - 1),
+    'and they swap with the viewport, which a remembered number would not')
+checkEqInt(resolveLen(parseLength('50vmax'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1),
+    'both of them')
+// The small, large and dynamic viewport units are three names for this
+// viewport, because nothing here slides away to tell them apart. That
+// is a claim css-2026.md makes and nothing was checking.
+checkEqInt(resolveLen(parseLength('50dvh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), '`dvh` is `vh` here')
+checkEqInt(resolveLen(parseLength('50lvh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), 'and so is `lvh`')
+checkEqInt(resolveLen(parseLength('50svh'.toAscii(), 16), 0, 0 - 1),
+    resolveLen(parseLength('50vh'.toAscii(), 16), 0, 0 - 1), 'and `svh`')
+cssViewportWidth = 800
+cssViewportHeight = 600
+
+// The four angle units, which are one angle written four ways, so they
+// are asked against each other rather than against four numbers. `grad`
+// was the one no suite had ever named.
+arr[bool] angOk = [false]
+checkEqInt(roundPx(parseAngleDegrees('100grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'a hundred gradians is ninety degrees')
+checkEqInt(roundPx(parseAngleDegrees('50grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('45deg'.toAscii(), angOk)), 'and fifty is forty-five')
+checkEqInt(roundPx(parseAngleDegrees('400grad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('1turn'.toAscii(), angOk)), 'four hundred gradians is a full turn')
+checkEqInt(roundPx(parseAngleDegrees('0.25turn'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'a quarter turn is ninety degrees')
+checkEqInt(roundPx(parseAngleDegrees('1.5707963267948966rad'.toAscii(), angOk)),
+    roundPx(parseAngleDegrees('90deg'.toAscii(), angOk)), 'and so is half of pi radians')
+
+// ---- math-depth, which acts only beside font-size: math ----------------
+// Chromium at 32px (todo.md): `math-depth` alone changes nothing, and
+// beside `font-size: math` the computed size is the PARENT's times 0.71
+// per step of depth from the parent's own depth. `math-depth` inherits,
+// which is what makes the parent's depth available to compare against.
+
+int func mathSize(outer:text, inner:text) {
+    cascadeReset()
+    Node doc = parseHtmlText('<html><body style="font-size:32px">'
+        + `<div style="${outer}"><span id="m" style="${inner}">M</span></div>`
+        + '</body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return valNodeById(doc, 'm').style.fontSize
+}
+
+checkEqInt(mathSize('', ''), 32, 'the fixture starts at 32px')
+checkEqInt(mathSize('', 'math-depth:3'), 32, 'math-depth on its own changes no size')
+checkEqInt(mathSize('', 'font-size:math'), 32,
+    'font-size: math at the parent depth is the parent size')
+
+// 0.71 per step: 22.72, 16.1312, 11.4532 in Chromium, which round to
+// 23, 16 and 11 in an engine that keeps the size in whole pixels.
+checkEqInt(mathSize('', 'font-size:math;math-depth:1'), 23, 'one step down is 0.71 of it')
+checkEqInt(mathSize('', 'font-size:math;math-depth:2'), 16, 'two steps is 0.71 squared')
+checkEqInt(mathSize('', 'font-size:math;math-depth:3'), 11, 'three steps is 0.71 cubed')
+
+// A negative depth grows it: 32 / 0.71 is 45.07.
+checkEqInt(mathSize('', 'font-size:math;math-depth:-1'), 45, 'a negative depth grows the text')
+
+// `add(n)` is the parent's depth plus n, which from a parent at zero is
+// the same as writing n.
+checkEqInt(mathSize('', 'font-size:math;math-depth:add(2)'),
+    mathSize('', 'font-size:math;math-depth:2'),
+    'add(2) from a parent at depth 0 is depth 2')
+
+// The difference is from the PARENT's depth, not from zero. Both of
+// these need the inherited depth to be right.
+checkEqInt(mathSize('math-depth:2', 'font-size:math;math-depth:2'), 32,
+    'a child at its parent depth keeps the parent size')
+checkEqInt(mathSize('font-size:math;math-depth:1', 'font-size:math;math-depth:add(1)'),
+    mathSize('', 'font-size:math;math-depth:2'),
+    'and one step from a parent already one step down is two from the root')
+
+// `auto-add` adds nothing outside MathML, which this engine does not
+// render, so it is the parent's depth.
+checkEqInt(mathSize('', 'font-size:math;math-depth:auto-add'), 32,
+    'auto-add adds nothing where there is no MathML')
+
+// `math-style` is a decline: Chromium gives `compact` and `normal` the
+// same size, so the two must agree here rather than differ.
+checkEqInt(mathSize('', 'font-size:math;math-depth:2;math-style:compact'),
+    mathSize('', 'font-size:math;math-depth:2;math-style:normal'),
+    'math-style changes nothing, as in Chromium')
 
 finish('values')

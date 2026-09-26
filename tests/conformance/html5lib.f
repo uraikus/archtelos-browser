@@ -6,7 +6,14 @@
 // compares it with the `#document` section.
 //
 //   WPT_HTML_TESTS=/path/to/wpt/html/syntax/parsing/resources \
-//       festina run tests/conformance/html5lib.f [--min N] [--verbose] [--file NAME]
+//       festina run tests/conformance/html5lib.f \
+//           [--min N] [--verbose] [--ids] [--file NAME]
+//
+// `--ids` prints every failing case as `file #index`, which is what makes
+// the useful question askable: `tests/chromium.py detail` prints the same
+// form for Chromium, and the cases in this list and not in that one are
+// the ones this engine fails alone. `--verbose` names only the first
+// twelve, which is enough to read and not enough to subtract.
 //
 // `--min N` fails the run when fewer than N tests pass, which is how
 // tests/run.sh keeps the conformance number from regressing.
@@ -29,6 +36,12 @@ int skipNul = 0
 arr[text] failureReports = []
 bool verbose = false
 int maxReports = 12
+// Every failure as `file #index`, uncapped, so the set can be subtracted
+// from the set Chromium fails (`tests/chromium.py detail`). Without it the
+// run says 117 failures and names twelve of them, and the question that
+// matters -- which of them are this engine's ALONE -- cannot be asked.
+arr[text] failureIds = []
+bool idsOnly = false
 // `/\n/` matches the letter n, not a newline (FINDINGS.md, "regex
 // escapes"), so the pattern is built from the character itself.
 regex newlineRe = regex(10.toChar(), 'g')
@@ -108,6 +121,7 @@ void func runCase(fileName:text, index:int, data:text, expected:text, isFragment
         return
     }
     casesFailed++
+    failureIds.push(`${fileName} #${index}`)
     if failureReports.length < maxReports {
         failureReports.push(`${fileName} #${index}\n  input:    ${truncate(data, 90)}\n  expected: ${truncate(expected.replace(newlineRe, ' / '), 200)}\n  actual:   ${truncate(actual.replace(newlineRe, ' / '), 200)}`)
     }
@@ -203,6 +217,7 @@ int minimum = -1
 for int i = 1, i < argv.length, i++ {
     text arg = argv[i]
     if arg == '--verbose' { verbose = true }
+    if arg == '--ids' { idsOnly = true }
     else if arg == '--min' && i + 1 < argv.length {
         int m = argv[i + 1].toInt()
         if m != null { minimum = m }
@@ -246,6 +261,10 @@ if verbose {
     for int i = 0, i < failureReports.length, i++ {
         log(failureReports[i])
     }
+}
+
+if idsOnly {
+    for int i = 0, i < failureIds.length, i++ { log(failureIds[i]) }
 }
 
 int skippedTotal = skipFragment + skipScript + skipNul

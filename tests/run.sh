@@ -38,7 +38,7 @@ run() {
 }
 # The conformance floor: tests/conformance must not pass fewer than this.
 # Raise it when the parser improves; never lower it (CLAUDE.md).
-CONFORMANCE_MIN=1535
+CONFORMANCE_MIN=1546
 
 failed=0
 for src in tests/unit/*.f tests/render/*.f; do
@@ -68,7 +68,11 @@ fi
 # computed style, which omits 120 properties it computes perfectly well,
 # and 33 of those are ordinary longhands. Seven were already
 # implemented here and had never been counted.
-PROPERTIES_MIN=210
+#
+# Otherwise it only ever goes up, and it is raised with the count: a
+# floor left where it was cannot catch the regression it exists to
+# catch.
+PROPERTIES_MIN=290
 if compile tests/conformance/properties.f "$BUILD/properties" >/dev/null; then
     if ! run "$BUILD/properties" --min "$PROPERTIES_MIN"; then
         echo "FAILED: tests/conformance/properties.f"; failed=1
@@ -91,7 +95,7 @@ fi
 # fixture document. The expectations are checked in; when Chromium is
 # present they are regenerated first, so a selector whose meaning this
 # project got wrong cannot be frozen into the file it is graded against.
-SELECTORS_MIN=61
+SELECTORS_MIN=129
 if [ -n "$(python3 tests/chromium.py which 2>/dev/null)" ]; then
     python3 tests/chromium.py selectors tests/fixtures/selectors.html \
         tests/conformance/css-selectors.txt > "$BUILD/chromium-selectors.txt" 2>/dev/null \

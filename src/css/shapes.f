@@ -28,11 +28,41 @@ struct ShapeGeom {
     radiusY:float
     pointsX:arr[float]
     pointsY:arr[float]
+    fillEvenOdd:bool
+    // inset()'s `round` radii, in pixels, four corners clockwise from
+    // the top left. Empty on a rectangle with square corners, which is
+    // the test `shapeSpansAt` makes before it looks at a corner at all.
+    cornerRX:arr[int]
+    cornerRY:arr[int]
     // shape-margin, which grows the shape on every side. For a
     // rectangle, a circle and an ellipse it is folded into the geometry
     // above; a polygon carries it here, because the true outset of a
     // polygon is not a polygon.
     margin:int
+}
+
+// How far a corner's ellipse holds the edge in, `dy` into its band:
+// nothing at the band's inner end, the whole radius past its outer one.
+//
+// This lives here rather than in the painter because two callers ask it
+// the same question and the CSS cannot call the painter: the box-shadow
+// and border code asks it of a `border-radius`, and `shapeSpansAt` asks
+// it of `inset()`'s `round` radius, which is the same quarter ellipse
+// on a different rectangle.
+float func cornerInset(rx:int, ry:int, dy:float) {
+    if rx <= 0 || ry <= 0 || dy <= 0.0 { return 0.0 }
+    float fry = ry.toFloat()
+    if dy >= fry { return rx.toFloat() }
+    float t = dy / fry
+    return rx.toFloat() * (1.0 - Math.sqrt(1.0 - t * t))
+}
+
+// Backgrounds and Borders 3 §5.5: where two radii on one edge would
+// overlap, every radius is divided by the same factor, so the shape
+// keeps its proportions. Shared with the painter for the same reason.
+float func radiusShrink(sum:int, side:int) {
+    if sum <= side || sum <= 0 { return 1.0 }
+    return side.toFloat() / sum.toFloat()
 }
 
 float func shapeMin(a:float, b:float) {
@@ -62,6 +92,7 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
         g.y0 = ry + resolveLen(sh.insetTop, rh, 0) - margin
         g.x1 = rx + rw - resolveLen(sh.insetRight, rw, 0) + margin
         g.y1 = ry + rh - resolveLen(sh.insetBottom, rh, 0) + margin
+        if sh.insetRoundIdx > 0 { resolveInsetRadii(g, sh.insetRoundIdx) }
         return g
     }
     if sh.kind == CLIPSHAPE_CIRCLE || sh.kind == CLIPSHAPE_ELLIPSE {
@@ -104,6 +135,7 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
         }
         g.pointsX = xs
         g.pointsY = ys
+        g.fillEvenOdd = sh.fillEvenOdd
         g.margin = margin
         float lox = xs[0]
         float hix = xs[0]
@@ -135,13 +167,73 @@ ShapeGeom func resolveShape(sh:ClipShape, rx:int, ry:int, rw:int, rh:int, margin
 arr[int] shapeSpanStart = []
 arr[int] shapeSpanEnd = []
 
+// `inset()`'s `round` radii against the rectangle the inset left, which
+// is the rectangle the standard measures them against -- so `50%` of a
+// 200px box that was not inset is 100, and the shape is a circle.
+//
+// Called only where `insetRoundIdx` says there are radii, so a plain
+// `inset()` pays one integer test rather than this.
+void func resolveInsetRadii(g:ShapeGeom, idx:int) {
+    InsetRadii r = insetRadiiOf(idx)
+    if r == null { return }
+    int w = g.x1 - g.x0
+    int h = g.y1 - g.y0
+    if w <= 0 || h <= 0 { return }
+    arr[int] xs = []
+    arr[int] ys = []
+    for int i = 0, i < 4, i++ {
+        xs.push(maxInt(resolveLen(r.rx[i], w, 0), 0))
+        ys.push(maxInt(resolveLen(r.ry[i], h, 0), 0))
+    }
+    // §5.5's single factor, so two radii on one edge cannot overlap.
+    float f = shapeMin(shapeMin(radiusShrink(xs[0] + xs[1], w),
+                                radiusShrink(xs[3] + xs[2], w)),
+                       shapeMin(radiusShrink(ys[0] + ys[3], h),
+                                radiusShrink(ys[1] + ys[2], h)))
+    if f < 1.0 {
+        for int i = 0, i < 4, i++ {
+            xs[i] = Math.round(xs[i].toFloat() * f)
+            ys[i] = Math.round(ys[i].toFloat() * f)
+        }
+    }
+    if xs[0] + xs[1] + xs[2] + xs[3] + ys[0] + ys[1] + ys[2] + ys[3] == 0 { return }
+    g.cornerRX = xs
+    g.cornerRY = ys
+}
+
+// One row of a rounded rectangle: the corners hold the left edge in and
+// the right edge back, and everywhere between them the row is the
+// rectangle's own. Both halves take the larger of the two corners that
+// reach the row, which is what lets a tall corner and a short one share
+// an edge.
+void func shapeRectRow(g:ShapeGeom, y:int) {
+    float vc = y.toFloat() + 0.5 - g.y0.toFloat()
+    float h = (g.y1 - g.y0).toFloat()
+    float lo = shapeMax(cornerInset(g.cornerRX[0], g.cornerRY[0], g.cornerRY[0].toFloat() - vc),
+                        cornerInset(g.cornerRX[3], g.cornerRY[3], vc - (h - g.cornerRY[3].toFloat())))
+    float hi = shapeMax(cornerInset(g.cornerRX[1], g.cornerRY[1], g.cornerRY[1].toFloat() - vc),
+                        cornerInset(g.cornerRX[2], g.cornerRY[2], vc - (h - g.cornerRY[2].toFloat())))
+    // A pixel belongs to the shape when its centre does, which is the
+    // same rule the circle and the polygon answer by.
+    int x0 = Math.ceil(g.x0.toFloat() + lo - 0.5)
+    int x1 = Math.ceil(g.x1.toFloat() - hi - 0.5)
+    if x1 > x0 {
+        shapeSpanStart.push(x0)
+        shapeSpanEnd.push(x1)
+    }
+}
+
 void func shapeSpansAt(g:ShapeGeom, y:int) {
     shapeSpanStart = []
     shapeSpanEnd = []
     if g.kind == CLIPSHAPE_RECT {
         if y < g.y0 || y >= g.y1 { return }
-        shapeSpanStart.push(g.x0)
-        shapeSpanEnd.push(g.x1)
+        if g.cornerRX.length == 0 {
+            shapeSpanStart.push(g.x0)
+            shapeSpanEnd.push(g.x1)
+            return
+        }
+        shapeRectRow(g, y)
         return
     }
     float cy = y.toFloat() + 0.5
@@ -156,10 +248,15 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
     }
     if g.kind != CLIPSHAPE_POLYGON { return }
     float row = cy
-    // Where the row crosses each edge, sorted, and filled between the
-    // pairs. For a polygon that does not cross itself this is what both
-    // fill rules say.
+    // Where the row crosses each edge, sorted, with the direction the
+    // edge was travelling in beside it. The crossings alone answer
+    // `evenodd` -- fill between the pairs -- and the directions answer
+    // `nonzero`, which is the initial value: fill wherever the running
+    // sum of the directions crossed so far is not zero. The two agree
+    // on every polygon that does not cross itself, and a star is the
+    // figure that separates them (todo.md).
     arr[float] hits = []
+    arr[int] dirs = []
     int n = g.pointsX.length
     for int i = 0, i < n, i++ {
         int j = i + 1 < n ? i + 1 : 0
@@ -171,25 +268,47 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
         if row < lo || row >= hi { continue }
         float t = (row - ay) / (by - ay)
         hits.push(g.pointsX[i] + t * (g.pointsX[j] - g.pointsX[i]))
+        dirs.push(by > ay ? 1 : -1)
     }
     if hits.length < 2 { return }
     for int i = 1, i < hits.length, i++ {
         float v = hits[i]
+        int d = dirs[i]
         int k = i - 1
         while k >= 0 && hits[k] > v {
             hits[k + 1] = hits[k]
+            dirs[k + 1] = dirs[k]
             k--
         }
         hits[k + 1] = v
+        dirs[k + 1] = d
     }
-    for int i = 0, i + 1 < hits.length, i = i + 2 {
-        int lo = Math.ceil(hits[i] - 0.5)
-        int hi = Math.floor(hits[i + 1] - 0.5) + 1
-        if hi > lo {
-            shapeSpanStart.push(lo)
-            shapeSpanEnd.push(hi)
+    if g.fillEvenOdd {
+        for int i = 0, i + 1 < hits.length, i = i + 2 {
+            shapePushSpan(hits[i], hits[i + 1])
+        }
+        return
+    }
+    // Nonzero. The span from one crossing to the next is inside when
+    // the winding number there is not zero, and neighbouring inside
+    // spans are joined rather than pushed separately, so a star comes
+    // out as one span a row rather than three.
+    int wind = 0
+    float spanFrom = 0.0
+    bool open = false
+    for int i = 0, i + 1 < hits.length, i++ {
+        wind = wind + dirs[i]
+        if wind != 0 {
+            if !open {
+                spanFrom = hits[i]
+                open = true
+            }
+        } else if open {
+            shapePushSpan(spanFrom, hits[i])
+            open = false
         }
     }
+    if open { shapePushSpan(spanFrom, hits[hits.length - 1]) }
 }
 
 // ---- the exclusion edge of a float ----------------------------------
@@ -199,6 +318,18 @@ void func shapeSpansAt(g:ShapeGeom, y:int) {
 // than a run of pixel centres: a line box from y to y+h is excluded by
 // the shape's extreme anywhere in [y, y+h], endpoints included, which
 // is what Chromium's own line starts show.
+
+// One span of a row, rounded to the pixel centres it covers. Both fill
+// rules push through here, so a pixel on the boundary is decided the
+// same way whichever rule asked.
+void func shapePushSpan(fromX:float, toX:float) {
+    int lo = Math.ceil(fromX - 0.5)
+    int hi = Math.floor(toX - 0.5) + 1
+    if hi > lo {
+        shapeSpanStart.push(lo)
+        shapeSpanEnd.push(hi)
+    }
+}
 
 // The furthest left and right the polygon reaches at one row.
 bool polyRowHit = false

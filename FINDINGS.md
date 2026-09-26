@@ -1040,6 +1040,18 @@ itself rather than an escape, which works — `'…'` has a length of 1 —
 but it means a non-ASCII constant cannot be written in the form that
 survives a copy through a terminal, a patch, or a code review.
 
+Where the character is invisible the workaround stops being merely
+inconvenient. The nine directional formatting characters of UAX #9
+render as nothing at all, so `src/util/bidi.f` cannot name one in a
+literal without putting a character no reader can see into the source,
+and a test asserting that an RLE opened an embedding would be a line
+whose subject was blank. It names the code points instead —
+`BIDI_CP_RLE = 8235`, decimal because there is no hexadecimal literal
+either (finding 13) — and turns one into text with `cp.toChar()`,
+through a `bidiControl` function that exists only to give the character
+a name. An escape the lexer understood would be one expression rather
+than a constant, a function and a comment saying why.
+
 ---
 
 ## 35 A painted pixel can be compared but never read
@@ -1225,3 +1237,137 @@ shift-wheel at all because no event says whether shift was down.
 wheel notch, and name this finding beside it.
 
 **Proposal.** See festina.md §3s.
+
+## 39 A map cannot hold an array
+
+A `map` value lives in one fixed-size slot, so an `arr` does not fit in
+one. The compiler says so plainly:
+
+```
+error: map values cannot be arr[Box] -- a map value is stored in a
+single fixed-size slot, which an array or another map doesn't fit in
+```
+
+That rules out the shape a grouping wants — "these boxes belong to that
+one" — and the way round it is two parallel arrays, one of the values
+and one of the keys, scanned together. It costs a linear scan where a
+lookup would do, which is fine while the list is short and is the reason
+CSS2 §9.9's negative-`z-index` boxes are kept that way here
+(`src/paint/paint.f`).
+
+A minimal reproduction:
+
+```festina
+struct Thing { n:int }
+map[arr[Thing]] byOwner = {}     // refused
+```
+
+**What would close it.** Either a map value that can be a handle to a
+heap object of any size, or a standard multimap. The first is the
+smaller change and would also allow `map[map[...]]`, which is refused
+for the same reason.
+
+## 40 Reading a struct out of a registry costs a walk of everything it reaches
+
+Finding 1 records that a back-pointer makes every release of a live
+alias walk the whole document. The same cost arrives without any
+back-pointer, through an ordinary indexed read: `boxRegistry[id]`
+returns a retained temporary, and releasing it after the expression
+walks everything reachable from it.
+
+It is easy to pay by accident and hard to see. Marking twenty-five boxes
+through the registry —
+
+```festina
+Box ob = boxRegistry[owner]
+if ob != null { ob.ownsNegativeZ = true }
+```
+
+— measured **a hundred milliseconds of layout** on a page whose layout
+is seventy (benchmarks.md, "What CSS2 §9.9's painting order cost"). The
+same twenty-five marks, written on a box the code already held, cost
+nothing measurable. Twenty-five reads, each releasing a temporary that
+walks a box graph of thousands.
+
+So a registry read is not the cheap array index it looks like, and a
+loop that does one per iteration is the shape to watch for.
+
+**What would close it.** A borrowed read — an indexing form that hands
+back a reference without retaining it, as the existing "the bucket
+travels as a borrowed parameter" comment in `src/css/cascade.f` already
+works around by hand.
+
+## 41 Putting a node in a second place costs a walk of everything under it
+
+Finding 1 records that a back-pointer makes every release of a live
+alias walk the whole document, and finding 40 that an indexed read out
+of a registry does the same. The third face of it needs neither: an
+ordinary `push` of a node into an ordinary array costs a walk of that
+node's subtree, and a traversal that collects a tree is therefore
+quadratic in the size of the tree.
+
+```festina
+struct Node {
+    id:int
+    kids:arr[Node]
+}
+
+void func collectNodes(n:Node, out:arr[Node]) {
+    out.push(n)
+    for int i = 0, i < n.kids.length, i++ { collectNodes(n.kids[i], out) }
+}
+
+void func collectIds(n:Node, out:arr[int]) {
+    out.push(n.id)
+    for int i = 0, i < n.kids.length, i++ { collectIds(n.kids[i], out) }
+}
+```
+
+Ten traversals of a ternary tree, the same walk and the same number of
+pushes, differing only in what is pushed:
+
+| nodes | `push(node)` | `push(node.id)` |
+|---|---|---|
+| 40 | 1 ms | 0 ms |
+| 121 | 4 ms | 0 ms |
+| 364 | 34 ms | 0 ms |
+| 1093 | **306 ms** | 0 ms |
+
+Three times the nodes is nine times the time, which is the signature of
+a per-push cost proportional to the subtree. Pushing values rather than
+nodes is flat: ten rounds of four thousand pushes into an `arr[int]`,
+an `arr[text]` or an `arr` of a two-field struct are 0, 2 and 5 ms, so
+`push` itself is not the problem and neither is the array's growth.
+
+It cost this browser 523 ms of paint. CSS2 §9.9's steps 3, 4 and 5 want
+three passes over one subtree, and collecting the boxes the later two
+want during the first pass is the obvious way to avoid walking the tree
+three times. A couple of thousand boxes collected that way turned
+generated.html's 20 ms paint into 543. What works instead is to write an int on each
+box as the first pass goes and have the later passes read it, which is
+the same shape finding 1 forces on the box tree's parents.
+
+**Binding an element to a local is the same cost in miniature.**
+`walk(n.kids[i])` and `Node c = n.kids[i]` followed by `walk(c)` do the
+same work, and the second is not free: twenty walks of a 1,093-node
+tree are 0 ms passing the element straight to the call and **3 ms**
+binding it first, which is about 0.14 microseconds a bind. Unlike the
+push it is a flat cost rather than a walk -- a struct of 52 fields, ten
+of them arrays and ten `text`, binds in exactly the same 3 ms as one of
+two. So it is a retain and a release rather than a traversal, and it is
+worth knowing where a loop over a tree binds a child it uses once.
+
+And it is worth saying what this is *not*: reading a struct-valued
+field is free. A `Style` here has 244 fields, 16 of them `text` and 14
+of them arrays, and forty thousand reads of one that size --
+`Big s = n.big`, the shape `Style s = b.style` takes all over this
+engine -- do not register at millisecond resolution. The cost is in
+holding the node, not in looking at it.
+
+**What would close it.** The same borrowed reference finding 40 asks
+for, extended to a container: a way to put a node in a list that
+observes it without taking ownership of everything under it. An
+explicit weak or borrowed element type would do, since the alternative
+-- a list of ids and a registry to resolve them -- is finding 40's cost
+paid on the way back out.
+

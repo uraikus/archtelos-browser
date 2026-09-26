@@ -178,4 +178,93 @@ check(directHalf != directOpaque, 'opacity changes that pixel on the direct path
 check(layerHalf != layerOpaque, 'and on the layer path')
 check(directHalf == layerHalf, 'and changes it by exactly as much -- the layer applies it once')
 
+// ---- image-rendering: pixelated (CSS Images 3 §5.3) --------------------
+// The scale this engine draws goes through `drawImage`, which filters,
+// and the runtime does not say how. `pixelated` asks for nearest
+// neighbour instead, and the check that earns its place needs no
+// colour written down here: a nearest-neighbour enlargement contains
+// ONLY colours the source contains, so the middle of each enlarged
+// block must be exactly what the unscaled image paints at that pixel.
+// `nine.png` is nine 3x3 regions, and its top edge varies across its
+// own three columns -- lime, white, lime -- so the nine pixels this
+// samples are nine different colours and the boundary below has to be
+// read from the source rather than assumed from the region.
+//
+// Chromium's rows are in todo.md: `pixelated` gives a hard boundary
+// where `floor(dx * sw / w)` changes, and `crisp-edges` is `auto`
+// pixel for pixel, which is why it is graded the same here.
+
+Page func ninth(style:text) {
+    Page p = pageFromHtml(head + '<img src="nine.png" style="display:block;' + style + '"></body>',
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    return p
+}
+
+// The source, unscaled: one pixel per region, read at the region's own
+// middle. Nothing about these colours is written down.
+Page pNat = ninth('')
+arr[color] nineSrc = []
+for int gy = 0, gy < 3, gy++ {
+    for int gx = 0, gx < 3, gx++ { nineSrc.push(getPixelColor(gx * 3 + 1, gy * 3 + 1)) }
+}
+// The two source pixels the boundary at x=30 falls between: a
+// destination pixel takes source `floor(dx * 9 / 90)`, so x=29 takes
+// column 2 and x=30 column 3.
+color srcCol2 = getPixelColor(2, 1)
+color srcCol3 = getPixelColor(3, 1)
+
+// 9x9 to 90x90 is ten destination pixels per source pixel, so the
+// middle of the region that came from source pixel (3gx+1, 3gy+1) is
+// at (30gx + 15, 30gy + 15).
+Page pPix = ninth('width:90px;height:90px;image-rendering:pixelated')
+arr[color] ninePix = []
+for int gy = 0, gy < 3, gy++ {
+    for int gx = 0, gx < 3, gx++ { ninePix.push(getPixelColor(gx * 30 + 15, gy * 30 + 15)) }
+}
+// Read while that render is still on the canvas: every later `ninth`
+// paints over it.
+color pixLeft = getPixelColor(29, 15)
+color pixRight = getPixelColor(30, 15)
+
+Page pSmooth = ninth('width:90px;height:90px')
+arr[color] nineSm = []
+for int gy = 0, gy < 3, gy++ {
+    for int gx = 0, gx < 3, gx++ { nineSm.push(getPixelColor(gx * 30 + 15, gy * 30 + 15)) }
+}
+color smLeft = getPixelColor(29, 15)
+color smRight = getPixelColor(30, 15)
+
+// The instrument: the nine regions have to be nine different colours,
+// or every comparison below holds on an image that is all one colour.
+int nineDistinct = 0
+for int i = 0, i < nineSrc.length, i++ {
+    bool seen = false
+    for int j = 0, j < i, j++ { if nineSrc[i] == nineSrc[j] { seen = true } }
+    if !seen { nineDistinct++ }
+}
+checkEqInt(nineDistinct, 9, 'the fixture has nine different colours in it')
+
+for int i = 0, i < nineSrc.length, i++ {
+    check(ninePix[i] == nineSrc[i],
+          `a pixelated enlargement keeps the source colour, region ${i}`)
+}
+
+// And the boundary is hard: the last pixel of a block and the first of
+// the next are the two source colours, with nothing between them.
+check(pixLeft == srcCol2, 'the block runs up to its own edge')
+check(pixRight == srcCol3, 'and the next block starts at the pixel after it')
+
+// The instrument again, the other way: the smoothed scale has to
+// differ there, or `pixelated` is being compared with itself.
+check(pixLeft != pixRight, 'the two blocks differ at all')
+check(smLeft != srcCol2 || smRight != srcCol3,
+      'the smoothed scale blends the boundary, which is what pixelated removes')
+
+// `crisp-edges` is `auto` in Chromium, pixel for pixel, so it is here.
+Page pCrisp = ninth('width:90px;height:90px;image-rendering:crisp-edges')
+color crispLeft = getPixelColor(29, 15)
+check(crispLeft == smLeft, 'crisp-edges paints what auto paints')
+
 finish('object fit')
