@@ -14,9 +14,10 @@ Festina should gain as a result is in [festina.md](festina.md).
 
 **HTML parsing follows the
 [WHATWG HTML Living Standard](https://html.spec.whatwg.org/).** Against
-the standard's own tree-construction corpus it passes **1,535 of 1,652**
-cases — the same number Chromium 141 passes on the same corpus, and 84
-of the 117 each fails are the same cases. **CSS selectors match the same
+the standard's own tree-construction corpus it passes **1,546 of 1,652**
+cases, against Chromium 141's 1,535 on the same corpus in the same
+minutes — ahead on 29 cases and behind on 18, with 88 that both fail, 84
+of them the one file whose expected output no HTML parser produces. **CSS selectors match the same
 elements Chromium matches in all 129 cases** the instrument asks. CSS
 targets the [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose
 official definition of CSS is 24 specifications; the engine implements

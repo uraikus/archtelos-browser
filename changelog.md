@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The end of the input is not a tag terminator: 1535 → 1546
+
+The standard reaches an end tag through the **end tag name state**, which
+goes on into the tag on whitespace, `/` or `>` -- and on *anything else*
+emits the `</` and the name it had buffered **as character tokens** and
+returns to the raw-text state it came from. The end of the input is one
+such "anything else". So `<script></script` gives the script the text
+`</script`, while `<script></script ` is a real tag whose EOF then drops
+it silently.
+
+This engine treated the end of the input as a tag terminator, which
+answered the second correctly and the first not at all: it lost the text.
+Ten cases of `tests16.dat` were that, five shapes each appearing once with
+a doctype and once without, and an eleventh came free in `tests2.dat`
+because RCDATA reaches the same code -- `<title></title` keeps its text
+too.
+
+**The first fix was the wrong one and the corpus said so.** Flushing the
+buffer from inside the end-tag branch gained those ten and lost thirteen,
+1535 to 1532, because it flushed for `</script ` as well -- where the
+standard has a tag, and an EOF inside a tag drops it. The narrow fix is
+one condition in `findRawTextEnd`: an end tag needs a *real* terminator
+after its name, not the end of the input. The two cases then separate by
+themselves.
+
+**1535 → 1546, and Chromium is 1535**, measured in the same minutes on the
+same corpus. This engine is ahead on 29 cases and behind on 18; 88 are
+failed by both, 84 of them the whole of `processing-instructions.dat`,
+whose expected output is a processing-instruction node that the
+bogus-comment state cannot produce. `CONFORMANCE_MIN` is 1546.
+
+Seven checks in `tests/unit/test_html.f` say it directly, one per shape
+plus the instrument that a *terminated* end tag still closes the script
+and takes nothing with it -- without which every other check would hold on
+an engine that never closed one.
+
 ### Fragmentation is recursive
 
 A wrapper holding two 30-tall blocks, 210 wide in two columns of 100,

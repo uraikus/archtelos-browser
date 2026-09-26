@@ -4825,7 +4825,9 @@ itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
-**1535 of 1652, and 29 of the 117 failures are this engine's alone.** The
+**1546 of 1652, and 18 of the 106 failures are this engine's alone** --
+against Chromium's 1535, which it is now ahead of on this corpus by
+eleven: ahead on 29 cases and behind on 18. The
 runner's `--ids` flag prints every failure as `file #index` and
 `tests/chromium.py detail` prints the same form for Chromium, so the
 subtraction is one command rather than an opinion. Chromium fails **88**
@@ -4840,7 +4842,7 @@ CDATA in MathML text (`<![CDATA[x]]>` expected as text, both engines make
 a comment) and `noscript` content expected as markup, which is the
 scripting-disabled tree that neither engine builds.
 
-**Where the 29 are:**
+**Where the 18 are:**
 
 | file | this engine's alone |
 |---|---|
@@ -4851,26 +4853,25 @@ scripting-disabled tree that neither engine builds.
 | `tests19.dat` | 2 |
 | `adoption01.dat`, `adoption02.dat`, `html5test-com.dat`, `namespace-sensitivity.dat`, `tables01.dat`, `tests6.dat` | 1 each |
 
-**Ten of `tests16.dat`'s eleven are one bug**: a `<script>` whose content
-ends in an unterminated end tag at EOF. The standard's script-data end tag
-name state, on anything that is not a matching `>`/whitespace/`/`, emits
-the buffered `</` and name **as character tokens** and returns to script
-data; at EOF the same buffer has to reach the text. This engine drops it:
+**`tests16.dat`'s ten script cases have landed.** The standard reaches an
+end tag through the end tag name state, which goes on into the tag on
+whitespace, `/` or `>` and on **anything else** -- the end of the input
+included -- emits the `</` and the name it buffered as character tokens.
+So `<script></script` is text and `<script></script ` is a tag whose EOF
+then drops it, and this engine had been treating the end of the input as a
+tag terminator, which answered the second correctly and the first not at
+all. One condition in `findRawTextEnd`; eleven cases, the tenth being
+`<title></title` in `tests2.dat`, because RCDATA reaches the same code.
 
-| input | expected text | this engine |
-|---|---|---|
-| `<script></SCRIPT` | `</SCRIPT` | nothing |
-| `<script></script` | `</script` | nothing |
-| `<script><!--</script` | `<!--</script` | `<!--` |
-| `<script><!--<script </script </script` | the whole run | the final `</script` dropped |
-| `<script><!--<script --></script` | the whole run | the final `</script` dropped |
+The eleventh `tests16.dat` case is what is left there: `<!doctype
+html><table>` with the corpus's trailing newline, where the newline belongs
+to the table as a text child and this engine drops it.
 
-Each appears twice, once with a doctype and once without, which is what
-makes ten of one.
-
-The eleventh is `<!doctype html><table>` with the corpus's trailing
-newline: the newline belongs to the table as a text child, and this engine
-drops it.
+**The remaining 18, by file**: five in `tests26.dat`, three in
+`tests2.dat`, two each in `tests19.dat` and `tests1.dat`, and one each in
+`adoption01.dat`, `adoption02.dat`, `namespace-sensitivity.dat`,
+`tables01.dat`, `tests6.dat` and `tests16.dat`. No cluster left as large
+as the one that closed, so each is its own reading.
 
 
 1,535 of 1,652 tree-construction cases pass, which is what Chromium

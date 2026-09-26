@@ -433,17 +433,39 @@ result in the corpus's format.
 
 | | Passed | Rate |
 |---|---|---|
-| This browser | 1535 / 1652 | 92.9% |
+| This browser | **1546 / 1652** | 93.6% |
 | Chromium 141 | 1535 / 1652 | 92.9% |
 
-The two are level, and not by passing the same cases: this browser is
-ahead on 23 and behind on 23.
+Both numbers were taken in the same minutes on the same corpus. This
+browser is **ahead on 29 cases and behind on 18**, so the eleven it leads
+by is a difference of two much larger sets rather than a lead in general.
 
-**84 of the 117 cases each engine fails are the same cases** — the whole
-of `processing-instructions.dat`, where the corpus expects `<?x>` to
-build a processing-instruction node and both build a comment, which is
-what the tokenizer's bogus-comment state produces. Setting that file
-aside, both pass 1,495 of 1,528.
+**88 of the cases are failed by both** — 84 of them the whole of
+`processing-instructions.dat`, where the corpus expects `<?x>` to build a
+processing-instruction node and both engines build a comment, which is
+what the tokenizer's bogus-comment state produces; three more in
+`tests1.dat`, which are the same thing in another file, and one in
+`html5test-com.dat`. Setting `processing-instructions.dat` aside, this
+browser passes 1,506 of 1,528 and Chromium 1,495.
+
+The subtraction is a command rather than an opinion: the runner's `--ids`
+prints every failure as `file #index` and `tests/chromium.py detail`
+prints the same form for Chromium, so the three sets -- shared, ours
+alone, theirs alone -- come out of `comm`.
+
+Where each engine is alone, in cases:
+
+| | This browser alone | Chromium alone |
+|---|---|---|
+| `noscript01.dat` | | 15 |
+| `tests16.dat` | 1 | 6 |
+| `tests26.dat` | 5 | |
+| `html5test-com.dat` | | 3 |
+| `tests2.dat` | 3 | |
+| `tests19.dat`, `tests1.dat` | 2 each | |
+| `webkit02.dat` | | 2 |
+| `adoption01`, `adoption02`, `namespace-sensitivity`, `tables01`, `tests6` | 1 each | |
+| `tests5.dat`, `tests18.dat`, `tests25.dat` | | 1 each |
 
 Where the two differ, in cases:
 
