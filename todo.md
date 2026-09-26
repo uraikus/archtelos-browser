@@ -4555,6 +4555,58 @@ goes through. It is not made here because the suite scrolls boxes
 across pages deliberately in places and each of those would want
 reading first, which is a task rather than a line.
 
+### The four synthesis controls, measured -- one of them acts here
+
+CSS Fonts 4 §2.2 lets a browser synthesise what a face does not carry,
+and §5.3's `font-synthesis-*` say when it may not. This engine
+synthesises exactly one of the four things: small caps, because no face
+it can reach has the feature. So the question is which of the four
+properties can be told apart here at all.
+
+Chromium at `font: 32px/40px monospace`, the width of a text node read
+through a `Range`:
+
+| declared on the span | text | width |
+|---|---|---|
+| nothing | `abcQ` | 77.06 |
+| `font-variant-caps: small-caps` | `abcQ` | **59.02** |
+| and `font-synthesis-small-caps: none` beside it | `abcQ` | **77.06** |
+| and `font-synthesis: none` instead | `abcQ` | **77.06** |
+| `font-weight: bold` | `abcQ` | 77.06 |
+| and `font-synthesis-weight: none` beside it | `abcQ` | 77.06 |
+| `font-style: italic` | `abcQ` | 77.06 |
+| and `font-synthesis-style: none` beside it | `abcQ` | 77.06 |
+| nothing | `Hxg123` | 115.59 |
+| `font-variant-position: sub` | `Hxg123` | **115.59** |
+| `font-variant-position: super` | `Hxg123` | **115.59** |
+
+Three things come out of it.
+
+**`font-synthesis-small-caps` acts, and it is this engine's own
+synthesis it turns off.** 59.02 is three lowercase letters drawn at
+0.688 of their advance beside one capital at full size, which is the
+0.7 this engine already uses; `none` puts all four back at full width.
+The `font-synthesis` shorthand does the same through its small-caps
+component. This is the one of the four that can be implemented here,
+and the instrument's row needs `font-variant-caps: small-caps` as
+context, because there is nothing to decline to synthesise without it.
+
+**`font-synthesis-weight` and `font-synthesis-style` cannot be told
+apart on this family**, which carries real bold and italic faces, so
+neither Chromium nor this engine has anything to synthesise. This
+engine could not honour them anyway: it hands `bold` or `italic` to
+`changeFont` and the runtime chooses or synthesises a face without
+saying which, so there is no synthesis here to decline.
+
+**`font-variant-position` synthesises nothing in Chromium**, which is
+the interesting one: `sub` and `super` leave the advance at exactly
+normal's, because the family has no `subs` or `sups` feature and
+Chromium does not fall back to drawing a smaller glyph on a shifted
+baseline. Synthesising it here -- which the small-caps machinery would
+make easy -- would **disagree with the yardstick**, and a property
+graded against Chromium is not one to implement past it. It stays
+unimplemented for that reason rather than for want of a way.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
