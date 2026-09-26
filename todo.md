@@ -4689,6 +4689,55 @@ is not a hint here, because a hint with no compositor to hint at is
 exactly the kind of property this project counts as unimplemented, and
 these two effects are what the standard says are observable.
 
+### `interactivity: inert`, measured -- and it is not `pointer-events`
+
+`elementFromPoint` over a 100x40 box at the same place in each case,
+each box holding a child of its own size:
+
+| the box | the child | what is hit |
+|---|---|---|
+| nothing | nothing | the **child** |
+| `pointer-events: none` | `pointer-events: auto` | the **child** -- a descendant can opt back in |
+| `pointer-events: none` | nothing | nothing |
+| `interactivity: inert` | `interactivity: auto` | **nothing** -- the descendant cannot |
+| `interactivity: inert` | nothing | nothing |
+| `interactivity: inert; pointer-events: auto` | | nothing -- inert beats it |
+| `interactivity: auto` | | the box |
+
+So `inert` takes the element **and its whole subtree** out of hit
+testing and nothing inside can undo it, which is exactly the
+difference from `pointer-events: none`: this engine's hit tester
+searches an untouchable box's descendants for that reason, and must
+not search an inert one's. And the computed value does **not**
+inherit -- the child of an inert parent computes to `auto`, so what
+propagates is the inertness rather than the property.
+
+The rest of what `inert` means -- no focus, no text selection, no
+`:hover` -- has nothing here to act on, and hit testing is what this
+engine has.
+
+### The three baseline properties, measured and declined
+
+`dominant-baseline`, `alignment-baseline` and `baseline-shift` have
+rows in the property instrument and are defined for CSS as well as SVG,
+so they look implementable. They are not, because Chromium does not
+apply them to an HTML inline box at all. The span's own text against
+the line's, and the line box's height beside it:
+
+| declared on the span | the span's text moves | the line box |
+|---|---|---|
+| `vertical-align: 10px` | **-10** | **50** -- the control, which works |
+| `dominant-baseline: hanging` | 0 | 40 |
+| `alignment-baseline: hanging` | 0 | 40 |
+| `baseline-shift: 10px` | 0 | 40 |
+| nothing | 0 | 40 |
+
+The control is the point: `vertical-align` moves the same span by ten
+pixels and grows the line to hold it, so the fixture can see a
+baseline shift when there is one. The other three do nothing, and an
+engine graded against Chromium has nothing to copy. They are declines
+with a measurement behind them rather than gaps.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
