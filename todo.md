@@ -4612,6 +4612,34 @@ make easy -- would **disagree with the yardstick**, and a property
 graded against Chromium is not one to implement past it. It stays
 unimplemented for that reason rather than for want of a way.
 
+### `image-rendering`, measured -- one of its three keywords acts
+
+A 2x2 red-and-blue checker drawn at 80x80, rasterised, reading the row
+through the middle of each copy across the boundary at x=40:
+
+| declared | x=30..39 | x=40..49 |
+|---|---|---|
+| nothing | `bf003f` fading to `8f006f` | `7f007f` fading to `4f00af` |
+| `image-rendering: pixelated` | **`ff0000`, every pixel** | **`0000ff`, every pixel** |
+| `image-rendering: crisp-edges` | `bf003f` fading to `8f006f` | `7f007f` fading to `4f00af` |
+
+**`pixelated` is nearest-neighbour exactly**, with the boundary landing
+on the pixel the source's own edge maps to and no blend anywhere.
+**`crisp-edges` is `auto`, pixel for pixel**, which the standard does
+not say and Chromium does anyway -- so implementing it as a second
+non-smoothing keyword would disagree with the yardstick this project
+grades itself against, and it is graded the same as `auto` here.
+
+This engine scales through `drawImage`, whose filtering is the
+runtime's, so `pixelated` has to be drawn rather than asked for:
+`img.getPixelColor` reads a source pixel and `pDrawRect` fills the
+destination block it maps to, which is the same pair the clip
+machinery already uses a row at a time. The work is one fill per
+source pixel when the image is enlarged and one per destination pixel
+when it is reduced -- bounded by the smaller of the two in each axis --
+and it belongs behind a per-document flag, because a page that never
+says the word must not walk a single pixel for it.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
