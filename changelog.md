@@ -36,7 +36,12 @@ scales the font beside `font-size: math`, by 0.71 per step of depth
 depth 2 inside a parent at depth 2 computes the parent's own size.
 todo.md has the table.
 
-**288 → 289**, with `--fields` naming `viewTransitionName`.
+**288 → 289**, with `--fields` naming `viewTransitionName`. Paired on
+`generated.html`: **+3 forward and +3 reversed**, so whichever binary
+runs second pays three milliseconds and neither number is a difference
+between them -- the mirror image is supposed to cancel the forward
+reading, and two of the same sign say the machine is measuring the
+order.
 
 ### `scroll-initial-target`, which is the start edge and not the nearest one
 
