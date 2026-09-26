@@ -32,6 +32,14 @@ which is the honest form of the same statement -- and one of them failed
 first as `none` against `anon`, which is how the distinction was
 noticed.
 
+An **inert inline** is skipped too, and the box behind it answered --
+which is the one case where `inert` and `pointer-events` agree, because
+a run of text cannot ask to be hit again. That one was found by asking
+the engine rather than reading it: the block-level cases passed while a
+`<span>` with `interactivity: inert` was still being hit, because the
+inline path in `hitLines` is the third place the walk can reach content
+and the first two are where the obvious guards go.
+
 **286 → 287**, with `--fields` naming `interactivity`.
 
 ### The three baseline properties, declined with a control behind it

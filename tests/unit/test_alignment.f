@@ -169,6 +169,25 @@ check(hitOutsideInert('interactivity:inert;pointer-events:auto', ''),
 checkEq(hitIdAt('interactivity:auto', '', 50, 20), 'k',
         'interactivity: auto is the initial value and changes nothing')
 
+// An inert INLINE is skipped too, and the box behind it answered --
+// which is what Chromium does, and the one case where inert and
+// pointer-events agree, because a run of text cannot ask to be hit
+// again.
+text func hitInlineAt(css:text) {
+    Box r = layoutHtml(head
+        + `<div id="u" style="width:200px"><span id="s" style="${css}">xx</span></div>`
+        + '</body>', 400)
+    Box h = hitTest(r, 5, 5)
+    if h == null { return 'none' }
+    text id = attrOf(h.node.id, 'id')
+    return id == null ? 'anon' : id
+}
+
+check(hitInlineAt('') != 'u', 'a plain inline is hit rather than the block behind it')
+checkEq(hitInlineAt('pointer-events:none'), 'u',
+        'the block behind a pointer-events:none inline is hit instead')
+checkEq(hitInlineAt('interactivity:inert'), 'u', 'and behind an inert one')
+
 // The instrument: the two properties have to disagree on the same
 // fixture, or this section is testing one of them twice.
 check(hitIdAt('pointer-events:none', 'pointer-events:auto', 50, 20)

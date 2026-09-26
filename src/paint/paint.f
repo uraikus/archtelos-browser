@@ -5182,8 +5182,14 @@ Box func hitLines(b:Box, x:int, y:int) {
             }
             if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h {
                 // pointer-events: none takes a box out of hit testing so
-                // that what is behind it is found instead.
+                // that what is behind it is found instead, and an inert
+                // inline is skipped the same way -- Chromium answers the
+                // box behind an inert span, as it does for
+                // `pointer-events`, and the two part company only over a
+                // descendant that asks to be hit again, which a run of
+                // text does not (todo.md).
                 if f.box.style.pointerEvents == PE_NONE { continue }
+                if anyInert && interactivityInert(f.box.style) { continue }
                 return f.box
             }
         }

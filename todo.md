@@ -4692,8 +4692,13 @@ these two effects are what the standard says are observable.
 ### `interactivity: inert`, measured -- and it is not `pointer-events`
 
 **Landed.** The hit tester returns above an inert box rather than below
-it, in both of the two places its walk can reach a child. The
-measurement follows.
+it, in all three places its walk can reach content: `hitChild`, which
+the float, whole-paint and positioned paths go through; the top of
+`hitPhaseWalk`'s loop, which the plain in-flow descent does not; and
+`hitLines`, for an inert inline, where Chromium answers the box behind
+it exactly as it does for `pointer-events`. The third was found by
+asking the engine rather than by reading it -- the block cases passed
+while an inert `<span>` was still being hit. The measurement follows.
 
 `elementFromPoint` over a 100x40 box at the same place in each case,
 each box holding a child of its own size:
