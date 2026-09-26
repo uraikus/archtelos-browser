@@ -605,6 +605,46 @@ declared.
    and also its one blind spot, which is why the horizontal numbers
    above are written down beside Chromium's.
 
+   **The multicol half, measured properly.** `columns:2; column-gap:10px`
+   in a 100px-wide container, so its columns are 45 wide; two blocks of
+   20 and 30, or three of 20. Chromium beside this engine, each item's
+   offset from the container:
+
+   | `column-fill` | height | items | Chromium | this engine |
+   |---|---|---|---|---|
+   | `balance` | `60px` | 20, 30 | 0,0 45x20 / **0,0 100x25** | 0,0 / 55,0 |
+   | `auto` | `60px` | 20, 30 | 0,0 / **0,20** | 0,0 / **55,0** |
+   | `auto` | `60px` | 20, 20, 20 | 0,0 / 0,20 / **0,40** | 0,0 / 0,20 / **55,0** |
+   | `auto` | `40px` | 20, 20, 20 | 0,0 / 0,20 / 55,0 | same |
+   | `auto` | `25px` | 20, 30 | 0,0 45x20 / **0,0 100x25** | 0,0 / 55,0 |
+   | `auto` | auto | 20, 30 | 0,0 / 0,20, box 100x50 | same |
+   | `balance` | auto | 20, 30 | box 100x**25** | box 100x**30** |
+
+   **`column-fill: auto` fills each column to the container's own block
+   size** and starts the next only when that is full: 50 of content in
+   60 stays in one column, and three 20s in 60 do too, while the same
+   three in 40 break after the second. This engine breaks earlier than
+   that, and the tell is the first two rows: **`balance` and `auto` give
+   the same answer at the same height**, so whatever `column-fill` does
+   here it does not decide where these blocks go.
+
+   The cause is one line and the comment above it.
+   `layoutColumnRun` returns early for `column-fill: auto` only when the
+   height is *indefinite*, and its comment says "given a definite height
+   the two agree, and the balancing below is what produces it". The rows
+   above are what that sentence needed and did not have: they do not
+   agree, and the balanced target is not the container's height. It is
+   the failure CLAUDE.md names -- a sentence about what an engine does,
+   written from memory -- and this one was about Chromium, where a probe
+   was the only way to know.
+
+   **A second gap the same table shows**, and a harder one: Chromium
+   **fragments a fixed-height block across a column break**, so 20 and 30
+   balanced into columns of 25 leave the second block spanning both (its
+   rectangle is the union, `0,0 100x25`). This engine moves whole boxes
+   and never splits one, which is why `balance` with no height gives 30
+   where Chromium gives 25. That is its own piece of work.
+
    **The table half, measured properly.** A 100px-wide `display:table`
    with rows whose content heights are given, and a declared height on
    the table; Chromium:
