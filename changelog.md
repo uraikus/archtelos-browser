@@ -36,7 +36,11 @@ inside it and set 0. Every property kept by a style's serial has that
 shape, and this is the first one where a text box's own *position*
 mattered; the pass asks for an element's box now.
 
-**287 → 288**, with `--fields` naming `scrollInitialTarget`.
+**287 → 288**, with `--fields` naming `scrollInitialTarget`. Paired on
+`generated.html`: −1 and +4 forward and −2 reversed, with the parent's
+own total at 135, 130 and 131 across the three runs. Two forward rounds
+that disagree by five milliseconds on a control that moved by five are
+not a reading of anything.
 
 ### `interactivity: inert`, which is not `pointer-events: none`
 
