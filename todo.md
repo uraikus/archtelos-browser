@@ -582,18 +582,59 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **A block with content in it is not fragmented across a column
-   break.** Everything this item asked for has landed -- a definite table
-   height reaches the rows, `column-fill: auto` fills each column to the
-   container's own height, and a **childless** fixed-height block is now
-   cut at a column break, keeping the first part as its own rectangle and
-   carrying the rest as parts that paint and answer the pointer. What is
-   left is the case a cut has to re-place something: a block holding
-   lines or children, where the content after the break would have to be
-   laid out again in the next column. Such a block still moves whole,
-   which is Chromium's own answer for `break-inside: avoid` -- so the
-   remaining gap is the same shape as the one that closed, one level
-   deeper. The measurements the work was done from follow.
+1. **A child whose lines are split gets one rectangle, and the wrong
+   one.** Measured, 210 wide, two columns of 100, a `<p>` with
+   `border: 2px; box-sizing: border-box` and `margin: 0`, relative to
+   each container's own top:
+
+   | | Chromium | this engine |
+   |---|---|---|
+   | four lines: container | 42 | 42 |
+   | four lines: the paragraph | `0,0 100x42` **and** `110,0 100x42` | one box, `2,0 100x40` |
+   | three lines: container | 42 | **40** |
+   | three lines: the paragraph | `0,0 100x42` and `110,0 100x`**`22`** | one box, `2,0 100x40` |
+   | five lines + `padding-bottom: 30` | `0,0 100x72` (its content is 62) and `110,0 100x72` | -- |
+   | four lines under a 14-tall block | `0,`**`14`**` 100x42` and `110,0 100x42` | -- |
+   | four lines with `box-decoration-break: clone` | container **44**, two of `100x44` | -- |
+
+   **Earlier parts fill to the column's end and the last part is its own
+   content's extent**, which the three-line row says (22 against 42) and
+   the five-line row says the other way (the first part is 72 where its
+   content is 62). That is the rule `cutUnitIntoColumns` already
+   implements for a childless block, so the parts a line-bearing child
+   needs are the same shape as the ones it already has.
+
+   Three separate defects, not one:
+
+   - **The parts do not exist.** `refitFragmentedChild` cuts the box back
+     to its first column so the background does not smear across the gap,
+     and the lines in every other column have nothing painted behind
+     them.
+   - **The refitted rectangle is wrong.** Its `x` is the first line's `x`,
+     which is *inside* the box's own left border -- 2 where the border box
+     starts at 0 -- and its `h` is the lines' extent rather than the
+     column's.
+   - **The column height misses the box's own edges.** A per-line unit's
+     top is the line's top, and the last line's bottom is stretched to
+     cover the box, so nothing carries the *opening* border: three lines
+     come out 40 here against Chromium's 42.
+
+   And a fourth, in layout rather than painting: **`clone` makes the
+   container taller**, 44 against 42, because the repeated edges take
+   space in every column. This engine's balancing does not know that.
+
+2. **A block whose CHILDREN straddle a column break is not
+   fragmented.** Everything this item originally asked for has landed -- a
+   definite table height reaches the rows, `column-fill: auto` fills each
+   column to the container's own height, and a **childless** fixed-height
+   block is cut at a column break, keeping the first part as its own
+   rectangle and carrying the rest as parts that paint and answer the
+   pointer. A child whose *lines* are split is the item above. What is
+   left here is the case a cut has to re-place a box rather than a line: a
+   block whose own children fall either side of the break, where those
+   children would have to be laid out again in the next column. Such a
+   block moves whole, which is Chromium's own answer for `break-inside:
+   avoid`. The measurements the work was done from follow.
 
    **`column-fill: auto` breaks a column early.** The table half of this
    item has landed -- a definite height reaches the rows in proportion to
@@ -741,7 +782,7 @@ declared.
    the table comes out as tall as their sum, so the declared height
    changes nothing at all.
 
-2. **An absolutely positioned box in a vertical flow is turned, and
+3. **An absolutely positioned box in a vertical flow is turned, and
    should not be.** Found while probing `anchor()`, whose numbers it
    contaminates. A 200x160 `position: relative` container with a
    `writing-mode`, holding one box; Chromium beside this engine:
