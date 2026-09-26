@@ -413,11 +413,23 @@ int func uprightAdvance(s:Style) {
     return maxInt(roundPx(s.fontSize.toFloat() * FONT_UPRIGHT), 1)
 }
 
+// Whether this style combines its text into one upright square along a
+// vertical inline axis (Writing Modes 4 §9.1). Like `wmIsUpright`, this
+// is a different measurement rather than a different drawing.
+bool func wmIsCombined(s:Style) {
+    return anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB && s.textCombine
+}
+
 int func measureWidth(s:Style, t:text) {
-    // An upright run is a row of equal cells, so it is counted rather
-    // than measured -- and counted before the cache, which is keyed by
-    // the font and the string and knows nothing of the orientation.
-    if wmIsUpright(s) { return t.length * uprightAdvance(s) }
+    // Two vertical-only measurements, behind the one global a page with
+    // no vertical text pays for: an upright run is a row of equal cells,
+    // so it is counted rather than measured, and a combined run is one
+    // em whatever it holds. Both are answered before the cache, which is
+    // keyed by the font and the string and knows nothing of either.
+    if anyVerticalWM && s.writingMode != WM_HORIZONTAL_TB {
+        if s.textCombine { return t == '' ? 0 : usedFontSize(s) }
+        if s.textOrientation == TO_UPRIGHT { return t.length * uprightAdvance(s) }
+    }
     int t0 = archtelosTiming ? now() : 0
     profMeasureCalls++
     text key = `${s.fontKey}|${t}`
@@ -1428,6 +1440,19 @@ void func computeIntrinsicUncounted(b:Box) {
         return
     }
     if b.kind == BOX_TEXT {
+        // A combined run is one square whatever it holds, so it is
+        // neither broken into words nor added up (§9.1): both its
+        // intrinsic sizes are that square, and its own text is what
+        // decides whether there is one at all.
+        // Guarded at the call site, not inside the function: the call
+        // itself is a cost to every text box on a page with no vertical
+        // text (CLAUDE.md).
+        if anyVerticalWM && wmIsCombined(b.style) {
+            int cw = measureWidth(b.style, asciiTrim(b.content.toAscii()).toText())
+            b.minContent = cw
+            b.maxContent = cw
+            return
+        }
         arr[text] words = wordsOf(b)
         int sw = spaceWidth(b.style)
         bool pre = wsKeepsBreaks(b.style)
@@ -4192,6 +4217,9 @@ void func placeTextUncounted(b:Box) {
     Style s = firstLineStyleFor(b)
     text t = b.content
     if t == null || t == '' { return }
+    // A combined run is one square whatever it holds, so it neither
+    // wraps nor breaks into words (Writing Modes 4 §9.1).
+    if anyVerticalWM && wmIsCombined(s) { placeCombined(b, s)  return }
     bool keepBreaks = wsKeepsBreaks(s)
     bool nowrap = wsNoWrap(s)
     arr[text] words = wordsOf(b)
@@ -4251,6 +4279,44 @@ void func placeTextUncounted(b:Box) {
         }
     }
     // trailing whitespace
+    if words.length > 1 && words[words.length - 1] == '' {
+        ifcPendingSpace = true
+        ifcPendingSpaceWidth = sw
+    }
+}
+
+// `text-combine-upright: all`: the whole run is one atomic square of
+// the element's own em along the inline axis. Its words are joined back
+// with the single spaces whitespace collapsing leaves, because the
+// square is the element's text rather than its words, and it is placed
+// like any other unbreakable thing -- the leading and trailing
+// whitespace `wordsOf` marks with an empty element still separates it
+// from its neighbours.
+void func placeCombined(b:Box, s:Style) {
+    arr[text] words = wordsOf(b)
+    int sw = spaceWidth(s)
+    text joined = ''
+    for int i = 0, i < words.length, i++ {
+        if words[i] == '' { continue }
+        joined = joined == '' ? words[i] : `${joined} ${words[i]}`
+    }
+    if words.length > 0 && words[0] == '' && ifcLineHasContent {
+        ifcPendingSpace = true
+        ifcPendingSpaceWidth = sw
+    }
+    if joined != '' {
+        int ww = measureWidth(s, joined)
+        int needed = ww
+        bool spaceBefore = ifcPendingSpace && ifcLineHasContent
+        if spaceBefore { needed = needed + ifcPendingSpaceWidth }
+        if ifcLineHasContent && ifcX + needed > ifcLineRight && !wsNoWrap(s) {
+            breakLine()
+            spaceBefore = false
+        }
+        if spaceBefore { ifcX = ifcX + ifcPendingSpaceWidth }
+        ifcPendingSpace = false
+        appendWord(b, joined, ww)
+    }
     if words.length > 1 && words[words.length - 1] == '' {
         ifcPendingSpace = true
         ifcPendingSpaceWidth = sw

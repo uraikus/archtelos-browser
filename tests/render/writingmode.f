@@ -416,4 +416,64 @@ arr[int] rsr = wmTwoLs('sideways-rl')
 checkEqInt(rsr[0], rrl[0], 'sideways-rl starts its run where vertical-rl does')
 checkEqInt(rsr[2], rrl[2], 'and puts the second glyph in the same place')
 
+// ---- text-combine-upright, in pixels ----------------------------------
+// §9.1 says the run is typeset HORIZONTALLY inside one square of the
+// inline axis. Both halves of that show in the ink, and neither needs a
+// number: against the same text left uncombined in the same mode, the
+// combined run's ink is shorter down the line and wider across it. And
+// the ink stays inside the room the layout reserved, which is the
+// engine's own reservation rather than a figure written down here --
+// the same invariant the upright cell has.
+
+// The ink's bounds and the advance the layout gave it: y0, y1, x0, x1
+// and the div's own inline extent.
+arr[int] func tcInk(css:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><body style="margin:0;background:#ffffff;font-size:16px">` +
+        `<div style="display:inline-block;writing-mode:vertical-rl;color:#000000">` +
+        `<span style="${css}">MMM</span></div></body>`,
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 400)
+    int y0 = -1
+    int y1 = -1
+    int x0 = -1
+    int x1 = -1
+    for int y = 0, y < 200, y++ {
+        for int x = 0, x < 80, x++ {
+            if !wmInk(getPixelColor(x, y)) { continue }
+            if y0 < 0 { y0 = y }
+            y1 = y
+            if x0 < 0 || x < x0 { x0 = x }
+            if x > x1 { x1 = x }
+        }
+    }
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    arr[int] out = []
+    out.push(y0)
+    out.push(y1)
+    out.push(x0)
+    out.push(x1)
+    out.push(all[0].h)
+    return out
+}
+
+arr[int] tcC = tcInk('text-combine-upright:all')
+arr[int] tcP = tcInk('')
+
+// The instrument: both have to have painted something, or the
+// comparisons below are between sentinels.
+check(tcC[0] >= 0 && tcC[1] > tcC[0], 'a combined run paints ink')
+check(tcP[0] >= 0 && tcP[1] > tcP[0], 'and so does the same text uncombined')
+
+// Down the line the combined run is the shorter, and across it the
+// wider: three glyphs in a row rather than three down the page.
+check(tcC[1] - tcC[0] < tcP[1] - tcP[0],
+      'a combined run takes less of the inline axis than the same text uncombined')
+check(tcC[3] - tcC[2] > tcP[3] - tcP[2], 'and more of the block axis')
+
+// And its ink is inside the room the layout kept for it.
+check(tcC[1] - tcC[0] + 1 <= tcC[4], 'the ink of a combined run is inside the square reserved')
+
 finish('writing-mode pixels')

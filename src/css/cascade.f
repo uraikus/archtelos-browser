@@ -7784,6 +7784,16 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
         else if tt == 'sideways' || tt == 'sideways-right' { s.textOrientation = TO_SIDEWAYS }
         else if tt == 'mixed' { s.textOrientation = TO_MIXED }
     }
+    // `text-combine-upright` inherits, which is what makes a nested
+    // element a combined run of its own rather than part of its
+    // parent's, and says nothing in a horizontal mode (§9.1).
+    s.textCombine = isRootIn ? false : parent.textCombine
+    ascii tcuv = styleProp(props, 'text-combine-upright')
+    if tcuv != null {
+        ascii tcu = asciiLower(asciiTrim(tcuv))
+        if tcu == 'all' { s.textCombine = true }
+        else if tcu == 'none' { s.textCombine = false }
+    }
     // `unicode-bidi` does not inherit: an element opens an embedding of
     // its own or it does not, and its children decide that again.
     s.unicodeBidi = UBIDI_NORMAL

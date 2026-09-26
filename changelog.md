@@ -5,6 +5,59 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `text-combine-upright: all`, the last property in Writing Modes 4
+
+An inline that asks for it is typeset horizontally inside **one square
+of its own em** along the inline axis, whatever it holds: one character
+is widened to the em and six are condensed into it, a space inside the
+run is content like any other, and an empty run takes no room at all.
+Chromium's rows are in todo.md and this engine now agrees with them.
+
+It **inherits**, which is what makes a nested element a combined run of
+its own rather than part of its parent's, so `<span all>1<span>2</span>
+</span>` is two ems; a child declaring `none` is ordinary text. The
+property says nothing in a horizontal mode.
+
+The em is the element's own rather than the line box: `line-height:
+40px` around it changes nothing, and borders and padding add outside it.
+
+Three places read it, all of them behind the one global a page with no
+vertical text pays for. `measureWidth` answers the em instead of
+measuring, in the same branch that already counted an upright run's
+cells -- which now costs a page in a horizontal mode one global read
+where it used to cost a call. `placeTextUncounted` hands the run to
+`placeCombined`, which joins its words back and places the square as one
+unbreakable thing, because the square is the element's text rather than
+its words. And `computeIntrinsicUncounted` answers the same square for
+both intrinsic sizes, which is what a shrink-to-fit box around one asks
+for -- found by the space in `1 2` coming out two squares wide in a box
+sized by its content while the line itself was right.
+
+The painter sets the run horizontally and centres it across the line,
+condensing anything wider than the em to fit rather than letting it out
+of the room layout kept. Chromium condenses by choosing a condensed
+face where the family has one and scaling where it does not; no face
+here has one, so this scales.
+
+The checks need no number from either engine: a line holding a combined
+run is the same length whatever that run's text is, and longer than the
+same line with the text left uncombined. In pixels, against the same
+text uncombined in the same mode, the combined run's ink is shorter
+down the line and wider across it, and lies inside the square layout
+reserved -- three checks that fail when the painter's branch is taken
+out.
+
+**282 → 283**, with `--fields` naming `textCombine`, the property's own
+field. `tests/run.sh` raises its floor to match.
+
+Two numbers elsewhere had gone stale and are corrected with it.
+css-2026.md's headline read 284 of 418, which was the count before the
+thirteen shorthand rows came out of the instrument and took the
+denominator back to 405. And README said the engine implements no part
+of two of the snapshot's specifications, where css-2026.md has said for
+some time that Compositing and Blending's `isolation` is implemented
+and only Easing is untouched.
+
 ### The scroll box in a vertical flow was right, and now something asks
 
 The last item on CSS Writing Modes 4 read "a scroll container inside a

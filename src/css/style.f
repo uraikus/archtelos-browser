@@ -1343,6 +1343,11 @@ struct Style {
     // the layout engine and not only by the cascade.
     writingMode:int
     textOrientation:int
+    // `text-combine-upright: all` (Writing Modes 4 §9.1): the element's
+    // text is one upright square of its own em along the inline axis,
+    // whatever it holds. It inherits, so a nested element is a combined
+    // run of its own rather than part of its parent's.
+    textCombine:bool
     width:Len
     height:Len
     minWidth:Len

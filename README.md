@@ -20,9 +20,8 @@ of the 117 each fails are the same cases. **CSS selectors match the same
 elements Chromium matches in all 129 cases** the instrument asks. CSS
 targets the [CSS Snapshot 2026](https://www.w3.org/TR/css-2026/), whose
 official definition of CSS is 24 specifications; the engine implements
-part of 22 and no part of 2 — Compositing and Blending, which needs a
-compositing operator Festina does not expose, and Easing, which needs
-the animation clock nothing here has. Where it stands on each is in
+part of 23 and no part of 1 — Easing, which needs the animation clock
+nothing here has. Where it stands on each is in
 [css-2026.md](css-2026.md).
 
 ![hello.html rendered by the browser](examples/screenshot-hello.png)

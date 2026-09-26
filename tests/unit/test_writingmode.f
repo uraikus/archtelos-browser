@@ -568,4 +568,72 @@ check(sbXh[0] != sbYh[0] || sbXh[1] != sbYh[1],
 check(sbBars('horizontal-tb', SBB)[0] != sbBars('vertical-rl', SBB)[0],
       'and overflow-block really does change axis with the mode')
 
+// ---- text-combine-upright ---------------------------------------------
+// Writing Modes 4 §9.1: an inline with `text-combine-upright: all` is
+// typeset horizontally inside ONE EM of the inline axis, whatever it
+// holds -- one character is widened to the em and six are condensed
+// into it. todo.md has Chromium's rows. The checks need no number from
+// either engine: a line holding a combined run is the same length
+// whatever that run's text is, and longer than the same line with the
+// text left uncombined.
+//
+// The wrapper is an inline-block so that it shrinks to the line in
+// both modes, which makes the inline advance its width in a horizontal
+// mode and its height in a vertical one.
+
+int func tcAdvance(mode:text, inner:text) {
+    Page p = pageFromHtml(
+        `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+        `.o{width:400px;height:300px}</style></head><body>` +
+        `<div class="o"><div style="display:inline-block;writing-mode:${mode}">` +
+        `${inner}</div></div></body></html>`, 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    return mode == 'horizontal-tb' ? all[1].w : all[1].h
+}
+
+text TCU = 'text-combine-upright:all'
+
+// Whatever the run holds, the line is the same length.
+int tcOne = tcAdvance('vertical-rl', `A<span style="${TCU}">1</span>B`)
+checkEqInt(tcAdvance('vertical-rl', `A<span style="${TCU}">123</span>B`), tcOne,
+    'three combined characters take the room one does')
+checkEqInt(tcAdvance('vertical-rl', `A<span style="${TCU}">MMMMMM</span>B`), tcOne,
+    'and so do six wide ones')
+checkEqInt(tcAdvance('vertical-rl', `A<span style="${TCU}">1 2</span>B`), tcOne,
+    'a space inside the run is content like any other')
+checkEqInt(tcAdvance('vertical-lr', `A<span style="${TCU}">123</span>B`),
+    tcAdvance('vertical-lr', `A<span style="${TCU}">1</span>B`),
+    'the same in vertical-lr')
+
+// The instrument: combining has to change the line, or every check
+// above would hold on an engine that ignored the property.
+check(tcOne > tcAdvance('vertical-rl', 'A<span>1</span>B'),
+    'and a combined character takes more room than an uncombined one')
+
+// It does nothing at all in a horizontal mode.
+checkEqInt(tcAdvance('horizontal-tb', `A<span style="${TCU}">123</span>B`),
+    tcAdvance('horizontal-tb', 'A123B'),
+    'the property does nothing in a horizontal mode')
+
+// It inherits, so a nested element is a combined run of its own rather
+// than part of its parent's -- and a child that declares `none` is
+// ordinary text.
+checkEqInt(tcAdvance('vertical-rl', `A<span style="${TCU}">1<span>2</span></span>B`),
+    tcAdvance('vertical-rl', `A<span style="${TCU}">1</span><span style="${TCU}">2</span>B`),
+    'a nested element is a combined run of its own')
+checkEqInt(tcAdvance('vertical-rl',
+        `A<span style="${TCU}">1<span style="text-combine-upright:none">2</span></span>B`),
+    tcAdvance('vertical-rl', `A<span style="${TCU}">1</span>2B`),
+    'and a child that declares none is ordinary text')
+
+// The em is the element's own, not the parent's, and it is not the
+// line box: doubling the font size doubles the advance, and a
+// line-height four times the em leaves it alone.
+int tcEm = tcAdvance('vertical-rl', `<span style="${TCU}">12</span>`)
+checkEqInt(tcAdvance('vertical-rl', `<span style="${TCU};font-size:32px">12</span>`), tcEm * 2,
+    'the combined run is the element in its own em')
+checkEqInt(tcAdvance('vertical-rl', `<span style="${TCU};line-height:40px">12</span>`), tcEm,
+    'and the em rather than the line box')
+
 finish('writing-mode')

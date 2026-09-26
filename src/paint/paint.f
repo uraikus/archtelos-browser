@@ -3000,7 +3000,40 @@ void func drawFragmentGlyphsUpright(f:Fragment, s:Style, dx:int, dy:int) {
     }
 }
 
+// `text-combine-upright: all` (Writing Modes 4 §9.1): the run is one
+// square of the element's own em along the inline axis, and inside it
+// the text is set horizontally, as it would be in a horizontal mode.
+// Layout reserved exactly that em, so anything wider than it is
+// condensed to fit rather than allowed out of the room it was given --
+// which is what the standard asks for and what Chromium does, by
+// choosing a condensed face where the family has one and scaling where
+// it does not. No face here has one, so this scales.
+//
+// Across the line the square is centred, as a single character is in
+// the upright cell beside it.
+void func drawFragmentGlyphsCombined(f:Fragment, s:Style, dx:int, dy:int) {
+    setFontFor(s)
+    int gw = measureTextWidth(f.content)
+    if gw <= 0 { return }
+    int em = maxInt(f.h, 1)
+    int asc = fontAscent(s)
+    if gw <= em {
+        pDrawText(f.content, f.x + dx + Math.floorDiv(f.w - gw, 2), f.y + dy + asc)
+        return
+    }
+    float k = em.toFloat() / gw.toFloat()
+    pSaveState()
+    pTranslate(f.x + dx + Math.floorDiv(f.w - em, 2), f.y + dy + asc)
+    pScale(k, 1.0)
+    pDrawText(f.content, 0, 0)
+    pRestoreState()
+}
+
 void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
+    if s.textCombine {
+        drawFragmentGlyphsCombined(f, s, dx, dy)
+        return
+    }
     if s.textOrientation == TO_UPRIGHT {
         drawFragmentGlyphsUpright(f, s, dx, dy)
         return

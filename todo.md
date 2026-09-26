@@ -868,10 +868,18 @@ declared.
    other in whichever mode makes them synonyms, which needs no number
    from either engine.
 
-6. **`text-combine-upright`, measured.** The specification this stretch
-   of work is closing has one property left in it, and the property
-   instrument grades it: `text-combine-upright: all` is in the file with
-   a real value and changes nothing here.
+6. **`text-combine-upright`. Landed**, and with it the last property
+   the specification has. `measureWidth` answers the em instead of
+   measuring, `placeCombined` places the square as one unbreakable
+   thing, `computeIntrinsicUncounted` answers the same square for both
+   intrinsic sizes, and the painter sets the run horizontally inside
+   it, condensing anything wider to fit. The count moved 282 to 283 on
+   `textCombine`. The measurement follows.
+
+   The specification this stretch of work is closing has one property
+   left in it, and the property instrument grades it:
+   `text-combine-upright: all` is in the file with a real value and
+   changes nothing here.
 
    Chromium at `font: 16px/16px monospace`, a span inside a
    `vertical-rl` block, reading `getBoundingClientRect()`. The height is
