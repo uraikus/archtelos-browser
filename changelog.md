@@ -78,6 +78,14 @@ columns balance to 25 with the tall block cut, against the 30 that moving
 it whole produced. A block taller than a whole column splits as many
 times as it needs.
 
+Clean under valgrind, counts unchanged: 290/405 properties, 122/122
+displays, 129/129 selectors, 1535/1652 conformance. Paired on
+`generated.html`, which declares no multi-column container and so cannot
+reach the new code -- **+0 and +1 forward, -3 reversed**, against a parent
+whose own total moved 139 to 137 between two rounds of identical code.
+Reported as nothing; benchmarks.md has the rounds. The binary grew 5,184
+bytes, which is the only thing here that can be measured at all.
+
 ### A scroll offset no longer outlives its document
 
 `boxScrollTops` and `boxScrollLefts` are keyed by **node id**, because a

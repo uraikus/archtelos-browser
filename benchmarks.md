@@ -96,6 +96,33 @@ the +3 of cascade that a `styleProp` lookup per element cost earlier in
 the same day was four times the noise and showed in every round -- and
 that is the size of thing worth taking to the code.
 
+### The first change measured under that rule read nothing
+
+Cutting a childless block at a column break added a field to `Box` and a
+call per painted box, both always on, so it was paired on
+`generated.html` -- which declares no multi-column container and so
+cannot reach the new code at all, which is what makes it the control
+CLAUDE.md asks for. Three rounds, both binaries first checked to render
+the page byte-identically:
+
+| round | TOTAL median | TOTAL mean | the first binary's own median |
+|---|---|---|---|
+| forward 1 | **+0** | -2.5 | 139 |
+| forward 2 | **+1** | -1.7 | 137 |
+| reversed | **-3** | -1.2 | 134 |
+
+The two forward rounds agree at nothing, the mirror does not cancel them
+but points the other way, and every mean is negative -- which would make
+the candidate *faster*, on a page that runs none of its new code. The
+parent's own total moved 139 to 137 between two rounds of identical code
+and the candidate read 134 running first, so the largest number here is
+the order and not the diff.
+
+Reported as nothing, by the rule above: three milliseconds out of 137 is
+not four times the noise and does not show in every round. The one thing
+this change did move that can be measured at all is the **binary, by
+5,184 bytes** -- 3,266,896 to 3,272,080.
+
 ## The canvas has to match, or the number means nothing
 
 Headless Chromium's `--screenshot` captures the **viewport**. This
