@@ -29,6 +29,12 @@ that `auto` and `balance` put the fifth block in one place passed while
 saying nothing. That comment in the test now says which coincidence it
 rests on.
 
+**Cost: nothing.** The two binaries are the same size to the byte -- the
+change reorganises a branch rather than adding one, and the balancing
+path is untouched. Paired on `features.html`, which has the two
+multi-column containers, two forward rounds give a total of +4 and then
+-4, with 18 of 25 pairs slower and then 7 of 25.
+
 ### A fixed-height block is still not fragmented across a column break
 
 The same probe shows it and it is its own piece of work: Chromium splits
