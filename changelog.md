@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A scroll offset no longer outlives its document
+
+`boxScrollTops` and `boxScrollLefts` are keyed by **node id**, because a
+box tree lasts one layout and a scroll position has to outlive several.
+Node ids start again at 1 for every document, and nothing cleared the
+two maps, so whichever element of the next page took a scrolled
+element's id opened part-way down. The fixture shows it exactly: a
+container scrolled 200 down and 150 across, and the next document's
+container starting at 200 and 150.
+
+**The fix is not the line todo.md predicted.** It said `cascadeReset`,
+where `resize` clears its own two maps for the same reason. That cannot
+work: the dragged sizes live in cascade.f because they reach layout as
+declarations, while the scroll offsets live in layout.f, which imports
+cascade.f -- so `cascadeReset` cannot name `boxScrollReset` without a
+cycle. It goes beside `nodeRegistryReset` in the page pipeline instead,
+which is the truer pairing: the line that restarts the ids is the line
+the offsets are keyed on.
+
+`boxScrollReset` already existed and was called from the suite only.
+
+The checks go in `tests/render/pagestate.f`, whose whole subject is what
+leaks from one document into the next, and they assert the invariant
+rather than a number: a fresh document's scroll container starts at the
+top and at the left, whatever was scrolled before it.
+
+**A reload now starts a scrolled box at the top**, where the shell keeps
+the page's own `scrollY` on purpose (`reload` saves it across
+`loadInto`). That is the standard's position -- the inner offset belongs
+to the document instance that was replaced -- and it is a real change in
+behaviour, not only a leak closed.
+
+No count moves, and no benchmark round: the two assignments run once per
+document load, outside every loop over boxes or declarations.
+
 ### `math-depth`, which acts only beside `font-size: math`
 
 The keyword `math` on `font-size` is the parent's size scaled by **0.71

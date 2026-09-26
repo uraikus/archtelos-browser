@@ -4537,24 +4537,6 @@ unimplemented, and are written down under "Layout" rather than claimed.
 
 The measurement alone; the tests and the implementation follow.
 
-### A scroll offset outlives the document it belongs to
-
-Found by asking the same question of `resize`'s dragged sizes, which
-are kept the same way. `boxScrollTops` and `boxScrollLefts` are keyed
-by **node id**, because a box tree lasts one layout and a scroll
-position has to outlive several. Node ids start again at 1 for every
-document -- `pageFromHtml` and the shell's `navigate` both call
-`nodeRegistryReset` -- and nothing clears the two maps, so a scroll
-container on the next page inherits whatever the element with its id
-was scrolled to on the previous one. `boxScrollReset` exists and is
-called from the suite only.
-
-`resize` clears its own two maps in `cascadeReset`, which is the fix
-this wants as well: one line, in the one function every document load
-goes through. It is not made here because the suite scrolls boxes
-across pages deliberately in places and each of those would want
-reading first, which is a task rather than a line.
-
 ### The four synthesis controls, measured -- one of them acts here
 
 **`font-synthesis-small-caps` has landed**, with the `font-synthesis`
@@ -4778,21 +4760,22 @@ this is one scroll rather than a chain of them.
 **And the document is a scroll container for this purpose**, which is
 the case a page with no `overflow` on anything at all still shows.
 
-This engine keeps a scroll offset in `boxScrollTops`, keyed by node id,
-with `boxScrollRange` to clamp it -- so the container case is a pass
-after layout rather than anything in it. The document case has nowhere
-to put the answer yet: `layoutDocument` returns a box and the shell owns
-the page's own scroll position, so it wants a field on `Page` that the
-shell applies on navigation, beside the flags layout already hands over
-that way.
+This engine keeps a container's offset in `boxScrollTops`, keyed by node
+id and clamped by `boxScrollRange`, so the container case is a pass after
+layout rather than anything in it. The document case has no map to write
+into: layout leaves the target's `y` in a global, the pipeline copies it
+onto `Page.initialScrollY`, and the shell applies that on navigation --
+beside the flags layout already hands over that way, because the shell
+owns the page's own scroll position.
 
 ### The sweep of what is left, measured -- two act and eight do not
 
 **Both have landed**: `view-transition-name` as one line in
-`boxIsStackingContext`. The eight declines are recorded in css-2026.md
-where their specifications are. and `math-depth` as a reader that runs before the font size, with the
-instrument's row carrying `font-size: math` as context because the
-property alone changes nothing in either engine. The sweep follows.
+`boxIsStackingContext`, and `math-depth` as a reader that runs before the
+font size, with the instrument's row carrying `font-size: math` as
+context because the property alone changes nothing in either engine. The
+eight declines are recorded in css-2026.md where their specifications
+are. The sweep follows.
 
 The reachable pool had thinned to the point where the honest first step
 was to ask Chromium whether a property does anything at all in HTML

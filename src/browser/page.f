@@ -203,6 +203,12 @@ Page func loadPage(url:text, width:int) {
     timing('fetch', t0)
     int t1 = now()
     nodeRegistryReset()
+    // A scroll offset belongs to the document it was scrolled in. The
+    // maps holding one outlive a box tree by being keyed on node id --
+    // which is what the line above starts again -- so an offset left
+    // behind would open whichever element of this page takes that id
+    // part-way down.
+    boxScrollReset()
     if !r.ok {
         page.error = r.error
         page.doc = errorDocument(url, r.error)
@@ -234,6 +240,7 @@ Page func pageFromHtml(html:text, baseUrl:text, width:int) {
     page.width = width
     page.error = ''
     nodeRegistryReset()
+    boxScrollReset()
     // No scan: there is no base to resolve against and nothing was
     // fetched. Clearing the cache keeps a resource fetched for an
     // earlier page from being served to this one unrevalidated.

@@ -117,4 +117,59 @@ for int i = 0, i < plainFirst.length, i++ {
 }
 checkEqInt(plainMoved, 0, 'and a plain page is not disturbed by a busy one either')
 
+// ---- a scroll offset belongs to its own document ------------------------
+// The same class of leak one step over. `boxScrollTops` is keyed by NODE
+// ID, because a box tree lasts one layout and a scroll offset has to
+// outlive several -- and node ids start again at 1 for every document.
+// So without a reset, whichever element of the next page happens to take
+// a scrolled element's id starts scrolled to where that element was.
+//
+// `resizeUsedReset` is called from `cascadeReset` for exactly this
+// reason, and says so in a comment. This is the same line for the same
+// reason, and the check is the invariant rather than a number: a fresh
+// document's scroll container starts at the top, whatever was scrolled
+// before it.
+
+Box func scrollBoxIn(root:Box, id:text) {
+    arr[Box] all = []
+    collectBoxesForTag(root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if getAttr(all[i].node, 'id') == id { return all[i] }
+    }
+    return null
+}
+
+text scrollerHtml = '<!doctype html><body style="margin:0">'
+    + '<div id="s" style="width:120px;height:60px;overflow-y:scroll;overflow-x:hidden">'
+    + '<div style="height:400px"></div></div></body>'
+
+// Page one, scrolled well down.
+Page scrollA = pageFromHtml(scrollerHtml, 'tests/fixtures/page.html', 300)
+Box scrollerA = scrollBoxIn(scrollA.root, 's')
+check(scrollerA != null, 'the fixture has a scroll container')
+boxScrollBy(scrollerA, 200)
+check(boxScrollTop(scrollerA) > 0, 'and it scrolls')
+
+// Page two: a different document that happens to have a scroll
+// container of its own. It must start at the top.
+Page scrollB = pageFromHtml(scrollerHtml, 'tests/fixtures/page.html', 300)
+checkEqInt(boxScrollTop(scrollBoxIn(scrollB.root, 's')), 0,
+    'a fresh document starts its scroll container at the top')
+
+// And the same for the horizontal offset, which is a second map with
+// the same key and the same hazard.
+Page scrollC = pageFromHtml('<!doctype html><body style="margin:0">'
+    + '<div id="s" style="width:120px;height:60px;overflow-x:scroll;overflow-y:hidden">'
+    + '<div style="width:400px;height:20px"></div></div></body>',
+    'tests/fixtures/page.html', 300)
+Box scrollerC = scrollBoxIn(scrollC.root, 's')
+boxScrollLeftBy(scrollerC, 150)
+check(boxScrollLeft(scrollerC) > 0, 'a container scrolls across too')
+Page scrollD = pageFromHtml('<!doctype html><body style="margin:0">'
+    + '<div id="s" style="width:120px;height:60px;overflow-x:scroll;overflow-y:hidden">'
+    + '<div style="width:400px;height:20px"></div></div></body>',
+    'tests/fixtures/page.html', 300)
+checkEqInt(boxScrollLeft(scrollBoxIn(scrollD.root, 's')), 0,
+    'and a fresh document starts it at the left')
+
 finish('page state')
