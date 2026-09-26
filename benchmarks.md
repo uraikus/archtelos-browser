@@ -433,11 +433,11 @@ result in the corpus's format.
 
 | | Passed | Rate |
 |---|---|---|
-| This browser | **1546 / 1652** | 93.6% |
+| This browser | **1550 / 1652** | 93.8% |
 | Chromium 141 | 1535 / 1652 | 92.9% |
 
 Both numbers were taken in the same minutes on the same corpus. This
-browser is **ahead on 29 cases and behind on 18**, so the eleven it leads
+browser is **ahead on 29 cases and behind on 14**, so the fifteen it leads
 by is a difference of two much larger sets rather than a lead in general.
 
 **88 of the cases are failed by both** — 84 of them the whole of
@@ -446,7 +446,7 @@ processing-instruction node and both engines build a comment, which is
 what the tokenizer's bogus-comment state produces; three more in
 `tests1.dat`, which are the same thing in another file, and one in
 `html5test-com.dat`. Setting `processing-instructions.dat` aside, this
-browser passes 1,506 of 1,528 and Chromium 1,495.
+browser passes 1,510 of 1,528 and Chromium 1,495.
 
 The subtraction is a command rather than an opinion: the runner's `--ids`
 prints every failure as `file #index` and `tests/chromium.py detail`
@@ -459,7 +459,7 @@ Where each engine is alone, in cases:
 |---|---|---|
 | `noscript01.dat` | | 15 |
 | `tests16.dat` | 1 | 6 |
-| `tests26.dat` | 5 | |
+| `tests26.dat` | 1 | |
 | `html5test-com.dat` | | 3 |
 | `tests2.dat` | 3 | |
 | `tests19.dat`, `tests1.dat` | 2 each | |

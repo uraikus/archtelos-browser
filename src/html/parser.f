@@ -2303,6 +2303,19 @@ int func insertForeignElement(tok:Token, ns:int) {
     return el.id
 }
 
+// Pops back to HTML content: every foreign element above the nearest HTML
+// element or integration point. An integration point stops it because the
+// content there is already HTML -- `<math><mtext><svg></p>x` leaves the
+// `<p>` inside `mtext`, measured in Chromium.
+void func popOutOfForeignContent() {
+    while openElements.length > 1 {
+        int id = currentNodeId()
+        if nsOf(id) == NS_HTML || isMathTextIntegrationPoint(id)
+            || isHtmlIntegrationPoint(id) { break }
+        popOpenElement()
+    }
+}
+
 void func processTokenForeign(tok:Token) {
     if tok.kind == TOK_TEXT {
         insertCharacters(tok.data)
@@ -2316,12 +2329,7 @@ void func processTokenForeign(tok:Token) {
     if tok.kind == TOK_DOCTYPE { return }
     if tok.kind == TOK_START {
         if foreignBreakoutTag(tok) {
-            // pop back to HTML content, then reprocess
-            while openElements.length > 1 {
-                int id = currentNodeId()
-                if nsOf(id) == NS_HTML || isMathTextIntegrationPoint(id) || isHtmlIntegrationPoint(id) { break }
-                popOpenElement()
-            }
+            popOutOfForeignContent()
             processToken(tok)
             return
         }
@@ -2331,6 +2339,30 @@ void func processTokenForeign(tok:Token) {
         return
     }
     if tok.kind == TOK_END {
+        // `p` and `br` break out of foreign content as an end tag, exactly
+        // as the start tags above do: the foreign elements are popped and
+        // the token is handled by the HTML rules, so `<svg></p><foo>` puts
+        // the `<p>` and the `<foo>` beside the svg rather than inside it.
+        // Any other unmatched end tag does not -- `<svg></div>x` leaves the
+        // text in the svg. Mapped against Chromium on thirteen fixtures,
+        // recorded in todo.md, because four corpus cases would not have
+        // said where the popping stops.
+        //
+        // It has to come before the "any other end tag" walk below, which
+        // dispatches to the HTML rules WITHOUT popping and so inserted the
+        // `<p>` into the svg.
+        if tok.name == 'p' || tok.name == 'br' {
+            popOutOfForeignContent()
+            // `dispatchToken` and not `processToken`: the popping stops at
+            // an integration point, and the dispatcher sends an END token
+            // at one back to the foreign rules -- its exceptions are for
+            // text and start tags. `processToken` there re-entered this
+            // branch, which popped nothing and dispatched again, until the
+            // stack gave out. A segmentation fault in the unit suite, on a
+            // run whose conformance number had gone up.
+            dispatchToken(tok, insertionMode)
+            return
+        }
         // "any other end tag" in foreign content
         int i = openElements.length - 1
         if i < 0 { return }

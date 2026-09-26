@@ -277,4 +277,54 @@ checkEq(parseAndDump('<title></title'),
 '| <html>\n|   <head>\n|     <title>\n|       "</title"\n|   <body>',
 'the same holds for RCDATA, where the text is decoded rather than raw')
 
+// ---- </p> and </br> break out of foreign content ----------------------
+// An end tag named `p` or `br` inside SVG or MathML pops the foreign
+// elements and is then handled by the HTML rules; any other unmatched end
+// tag is not. Mapped against Chromium on thirteen fixtures (todo.md has
+// them), because the four corpus cases alone would not have said where the
+// popping stops.
+
+checkEq(parseAndDump('<svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <p>\n|     <foo>',
+'`</p>` in SVG pops it, and what follows is HTML beside it')
+
+checkEq(parseAndDump('<svg></br><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <br>\n|     <foo>',
+'`</br>` does the same, and becomes a `<br>` as the HTML rules say')
+
+checkEq(parseAndDump('<math></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <math math>\n|     <p>\n|     <foo>',
+'and MathML is no different')
+
+checkEq(parseAndDump('<svg><circle></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       <svg circle>\n|     <p>\n|     "x"',
+'it pops all the way out rather than one level')
+
+checkEq(parseAndDump('<div><svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <div>\n|       <svg svg>\n|       <p>\n|       <foo>',
+'stopping at the nearest HTML element, which here is the div and not the body')
+
+checkEq(parseAndDump('<p><svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <p>\n|       <svg svg>\n|     <foo>',
+'and once out, `</p>` closes the p that was already open rather than making one')
+
+checkEq(parseAndDump('<math><mtext><svg></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <math math>\n|       <math mtext>\n|         <svg svg>\n|         <p>\n|         "x"',
+'an integration point is already HTML content, so the popping stops there')
+
+checkEq(parseAndDump('<svg><desc><svg></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       <svg desc>\n|         <svg svg>\n|         <p>\n|         "x"',
+'which holds for SVG\'s own integration points as well')
+
+// The instrument: any OTHER unmatched end tag must not break out, or every
+// check above would hold on an engine that left foreign content on each of
+// them.
+checkEq(parseAndDump('<svg></div>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       "x"',
+'`</div>` in SVG breaks out of nothing, and the text stays inside')
+
+checkEq(parseAndDump('<svg></svg>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     "x"',
+'while the matching end tag closes it, as it always did')
+
 finish('html')

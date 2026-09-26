@@ -5,6 +5,42 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `</p>` and `</br>` break out of foreign content: 1546 → 1550
+
+An end tag named `p` or `br` inside SVG or MathML pops the foreign elements
+and is then handled by the HTML rules, so `<svg></p><foo>` puts the `<p>`
+and the `<foo>` *beside* the svg. Any other unmatched end tag does not:
+`<svg></div>x` leaves the text inside.
+
+**Four corpus cases are not a rule**, so it was mapped against Chromium on
+thirteen fixtures, and the mapping is what said where the popping stops:
+all the way rather than one level (`<svg><circle></p>` pops both), at the
+nearest HTML element rather than the body (`<div><svg></p><foo>` leaves
+both in the div), and at an **integration point**, which is already HTML
+content -- `<math><mtext><svg></p>x` leaves the `<p>` inside `mtext`, and
+`<svg><desc><svg></p>x` inside `desc`.
+
+`processTokenForeign` already ran that loop for the start tags that break
+out, and it is now a function both use. The end-tag path had been reaching
+its "any other end tag" walk, which dispatches to the HTML rules *without*
+popping, so the `<p>` was inserted inside the svg.
+
+**The fix segfaulted on its first run, and the conformance number went up
+anyway.** Dispatching the popped token with `processToken` sent it back
+through the dispatcher, which returns an END token at an integration point
+to the foreign rules -- its exceptions are for text and start tags -- so the
+branch re-entered, popped nothing, and dispatched again until the stack gave
+out. The unit suite crashed and printed nothing; the conformance runner,
+which never parses those fixtures, reported 1550. `dispatchToken` is the
+right call and hands the token straight to the HTML rules.
+
+That is the valgrind lesson in another costume: piping a suite to `tail -1`
+eats its exit status, and a segmentation fault has no output to read. The
+number a run prints is not the same thing as the run having succeeded.
+
+1546 → 1550, `CONFORMANCE_MIN` with it. Chromium is 1535, so this engine is
+ahead on 29 cases and behind on 14.
+
 ### The end of the input is not a tag terminator: 1535 → 1546
 
 The standard reaches an end tag through the **end tag name state**, which

@@ -4867,38 +4867,27 @@ The eleventh `tests16.dat` case is what is left there: `<!doctype
 html><table>` with the corpus's trailing newline, where the newline belongs
 to the table as a text child and this engine drops it.
 
-**Four of `tests26.dat`'s five are one rule**: an end tag named `p` or
-`br` inside foreign content breaks out of it. Measured against Chromium on
-thirteen fixtures, because four corpus cases are not a rule:
+**`tests26.dat`'s four foreign-content cases have landed**: an end tag
+named `p` or `br` inside SVG or MathML pops out of it and is then handled
+by the HTML rules, where any other unmatched end tag is not. The rule was
+mapped against Chromium on thirteen fixtures, because four corpus cases
+are not a rule, and the mapping is what said where the popping stops -- all
+the way rather than one level, at the nearest HTML element rather than the
+body, and at an **integration point**, which is already HTML content.
 
-| input | Chromium | reading |
-|---|---|---|
-| `<svg></p><foo>` | `<svg svg>`, `<p>`, `<foo>` as siblings | the foreign element is popped |
-| `<svg></div>x` | `"x"` **inside** the svg | an arbitrary unmatched end tag does not break out |
-| `<svg><circle></p>x` | both popped, `<p>` and `"x"` in the body | it pops all the way, not one level |
-| `<p><svg></p><foo>` | `<p>` keeps the svg; `<foo>` in the body | afterwards `</p>` closes the OUTER p rather than making a new one |
-| `<div><svg></p><foo>` | `<p>` and `<foo>` in the **div** | it stops at the nearest HTML element, not at the body |
-| `<math><mtext><svg></p>x` | `<p>` and `"x"` inside **mtext** | it stops at an integration point, which is already HTML content |
-| `<svg><desc><svg></p>x` | `<p>` and `"x"` inside `<svg desc>` | the same, for SVG's HTML integration points |
-| `<svg></P>x`, `<svg></BR>x` | as the lowercase forms | ASCII case-insensitive, which the tokenizer already gives |
+`processTokenForeign` already had that loop for the start tags that break
+out; the end-tag path reached its "any other end tag" walk, which dispatches
+to the HTML rules *without* popping, so the `<p>` went inside the svg.
 
-So: **an end tag named `p` or `br` pops while the current node is a
-foreign element that is not an integration point, then the token is
-reprocessed by the HTML rules** -- which is what `processTokenForeign`
-already does for the start tags that break out, and its loop is exactly
-the one to reuse. The end-tag path instead reaches its "any other end
-tag" walk, which dispatches to the HTML rules **without popping**, so the
-`<p>` is inserted inside the svg.
+**The fifth `tests26.dat` case is what is left there**: `<p><code x</code></p>`,
+where the corpus expects the mis-parsed attribute to produce a second
+`<code>` and a text node after it.
 
-The standard's own prose could not be read for this: `html.spec.whatwg.org`
-is refused by this network as `www.w3.org` is, so the corpus's expected
-output and Chromium's agreement with it are the authority available.
-
-**The remaining 18, by file**: five in `tests26.dat`, three in
-`tests2.dat`, two each in `tests19.dat` and `tests1.dat`, and one each in
-`adoption01.dat`, `adoption02.dat`, `namespace-sensitivity.dat`,
-`tables01.dat`, `tests6.dat` and `tests16.dat`. No cluster left as large
-as the one that closed, so each is its own reading.
+**The remaining 14, by file**: three in `tests2.dat`, two each in
+`tests19.dat` and `tests1.dat`, and one each in `adoption01.dat`,
+`adoption02.dat`, `namespace-sensitivity.dat`, `tables01.dat`,
+`tests6.dat`, `tests16.dat` and `tests26.dat`. Nothing clusters any more,
+so each is its own reading.
 
 
 1,535 of 1,652 tree-construction cases pass, which is what Chromium
