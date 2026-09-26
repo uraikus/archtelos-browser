@@ -178,6 +178,12 @@ bool cascadeApplyRtl = false
 // applied. A page that never says `writing-mode` never asks.
 bool cascadeSawWritingMode = false
 int cascadeApplyWM = 0
+// Whether any rule on this document declares `text-combine-upright`.
+// The property is one map lookup per element in the cascade, and a
+// lookup per element is not nothing: it read +3 of 126 ms on
+// generated.html, which declares no vertical text at all. A page that
+// never says it never asks.
+bool cascadeSawTextCombine = false
 // Whether any element on this document is in a vertical writing mode.
 // Layout and paint both ask it once per box, so it guards the work that
 // would otherwise be done for pages with no vertical text on them.
@@ -313,6 +319,7 @@ void func cascadeReset() {
     cascadeSawDirection = false
     cascadeApplyRtl = false
     cascadeSawWritingMode = false
+    cascadeSawTextCombine = false
     cascadeApplyWM = 0
     anyVerticalWM = false
     map[int] emptyContainerAnswers = {}
@@ -468,6 +475,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawColorScheme && dn == 'color-scheme' { cascadeSawColorScheme = true }
             if !cascadeSawDirection && dn == 'direction' { cascadeSawDirection = true }
             if !cascadeSawWritingMode && dn == 'writing-mode' { cascadeSawWritingMode = true }
+            if !cascadeSawTextCombine && dn == 'text-combine-upright' {
+                cascadeSawTextCombine = true
+            }
             if !cascadeSawFontSizeAdjust && dn == 'font-size-adjust' {
                 cascadeSawFontSizeAdjust = true
             }
@@ -1832,6 +1842,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawWritingMode && decls[d].name == 'writing-mode' {
                 cascadeSawWritingMode = true
+            }
+            if !cascadeSawTextCombine && decls[d].name == 'text-combine-upright' {
+                cascadeSawTextCombine = true
             }
             if !cascadeSawFontSizeAdjust && decls[d].name == 'font-size-adjust' {
                 cascadeSawFontSizeAdjust = true
@@ -7788,11 +7801,13 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // element a combined run of its own rather than part of its
     // parent's, and says nothing in a horizontal mode (§9.1).
     s.textCombine = isRootIn ? false : parent.textCombine
-    ascii tcuv = styleProp(props, 'text-combine-upright')
-    if tcuv != null {
-        ascii tcu = asciiLower(asciiTrim(tcuv))
-        if tcu == 'all' { s.textCombine = true }
-        else if tcu == 'none' { s.textCombine = false }
+    if cascadeSawTextCombine {
+        ascii tcuv = styleProp(props, 'text-combine-upright')
+        if tcuv != null {
+            ascii tcu = asciiLower(asciiTrim(tcuv))
+            if tcu == 'all' { s.textCombine = true }
+            else if tcu == 'none' { s.textCombine = false }
+        }
     }
     // `unicode-bidi` does not inherit: an element opens an embedding of
     // its own or it does not, and its children decide that again.

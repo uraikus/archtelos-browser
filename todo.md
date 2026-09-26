@@ -874,7 +874,18 @@ declared.
    thing, `computeIntrinsicUncounted` answers the same square for both
    intrinsic sizes, and the painter sets the run horizontally inside
    it, condensing anything wider to fit. The count moved 282 to 283 on
-   `textCombine`. The measurement follows.
+   `textCombine`.
+
+   The cascade's read of the property is behind
+   `cascadeSawTextCombine`, and the benchmark is why: one `styleProp`
+   lookup per element, for a property `generated.html` never declares,
+   read +3 and +4 of 126 ms across two agreeing forward rounds, and a
+   binary with that one lookup deleted read -2. A lookup per element is
+   not nothing, which is worth remembering the next time a property is
+   added -- the cost is not in the feature's own code at all, and the
+   page that pays it is the one with no vertical text on it.
+
+   The measurement follows.
 
    The specification this stretch of work is closing has one property
    left in it, and the property instrument grades it:

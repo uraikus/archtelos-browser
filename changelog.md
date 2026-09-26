@@ -47,6 +47,20 @@ down the line and wider across it, and lies inside the square layout
 reserved -- three checks that fail when the painter's branch is taken
 out.
 
+**The cascade's own read of it is behind a per-document flag**, and the
+benchmark is why. One `styleProp` lookup per element, for a property no
+page in the benchmark declares, read **+3 and +4 of 126 ms** on
+`generated.html` across two agreeing forward rounds -- the shape this
+project's rules call real, on a page that cannot execute one line of the
+feature. A third binary with that one lookup deleted and everything else
+kept read **-2**, which pins it to the lookup rather than to where the
+compiler put the code. `cascadeSawTextCombine`, raised by the same two
+declaration scans that raise `cascadeSawWritingMode` -- the stylesheet
+rules and the inline `style` attribute, the second of which is what lets
+the element raising the flag benefit from it -- takes the reading to +0
+and -5 forward and -3 reversed: two forward rounds that disagree, which
+is this project's own definition of nothing.
+
 **282 → 283**, with `--fields` naming `textCombine`, the property's own
 field. `tests/run.sh` raises its floor to match.
 
