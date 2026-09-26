@@ -6934,7 +6934,13 @@ arr[Box] outOfFlowBoxes = []
 // containing block of both (todo.md). `none` parses to no functions at
 // all, which is what makes the length the right question.
 bool func boxTransformsPositioned(b:Box) {
-    return cascadeSawTransform && b.style.transforms.length > 0
+    if cascadeSawTransform && b.style.transforms.length > 0 { return true }
+    // And a `will-change` naming a property that would make one makes
+    // it one up front (Will Change 1 §3). The list is NARROWER than the
+    // one that creates a stacking context -- `opacity` and `z-index`
+    // create a context and no containing block -- which is why the
+    // value is ordered rather than a boolean (todo.md has both tables).
+    return anyWillChange && willChangeOf(b.style) == WC_CONTAINING
 }
 
 // `fx*` is the containing block a `fixed` box resolves against: the

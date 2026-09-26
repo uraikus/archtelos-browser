@@ -486,4 +486,41 @@ Box hitNatural = hitTest(pHit.root, 10, 60)
 check(hitNatural == null || getAttr(hitNatural.node, 'id') != 'q',
     'and not where the flow left it')
 
+// ---- will-change is a containing block, for a narrower list -----------
+// CSS Will Change 1: a `will-change` naming a property that would make
+// the element a containing block makes it one up front. The list is
+// NOT the one that creates a stacking context -- Chromium's two tables
+// are in todo.md, and seven names create a context without becoming a
+// containing block. Every check is against `cbChild`'s own two
+// answers, so neither 51 nor 71 is written down again.
+
+checkEqInt(cbChild('will-change:transform', 'absolute').x, cbTxAbs.x,
+    'will-change: transform is a containing block like a transform')
+checkEqInt(cbChild('will-change:transform', 'absolute').y, cbTxAbs.y, 'on both axes')
+checkEqInt(cbChild('will-change:filter', 'absolute').x, cbTxAbs.x,
+    'and so is will-change: filter')
+checkEqInt(cbChild('will-change:rotate', 'absolute').x, cbTxAbs.x, 'and will-change: rotate')
+checkEqInt(cbChild('will-change:left, translate', 'absolute').x, cbTxAbs.x,
+    'one qualifying name in a list is enough')
+
+// The seven that make a stacking context and not a containing block.
+checkEqInt(cbChild('will-change:opacity', 'absolute').x, cbPlainAbs.x,
+    'will-change: opacity is a stacking context and NOT a containing block')
+checkEqInt(cbChild('will-change:z-index', 'absolute').x, cbPlainAbs.x, 'nor is z-index')
+checkEqInt(cbChild('will-change:clip-path', 'absolute').x, cbPlainAbs.x, 'nor clip-path')
+checkEqInt(cbChild('will-change:mask', 'absolute').x, cbPlainAbs.x, 'nor mask')
+checkEqInt(cbChild('will-change:isolation', 'absolute').x, cbPlainAbs.x, 'nor isolation')
+checkEqInt(cbChild('will-change:mix-blend-mode', 'absolute').x, cbPlainAbs.x,
+    'nor mix-blend-mode')
+checkEqInt(cbChild('will-change:view-transition-name', 'absolute').x, cbPlainAbs.x,
+    'nor view-transition-name')
+checkEqInt(cbChild('will-change:left', 'absolute').x, cbPlainAbs.x,
+    'and a name that qualifies for neither changes nothing')
+
+// A `fixed` child asks the same question of the same box, as it does
+// of a transform.
+checkEqInt(cbChild('will-change:transform', 'fixed').x,
+    cbChild('transform:translateX(0px)', 'fixed').x,
+    'a fixed child takes a will-change containing block too')
+
 finish('position')

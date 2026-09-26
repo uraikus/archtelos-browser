@@ -5,6 +5,45 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `will-change`, which is two predicates rather than a hint
+
+There is no compositor here to hint at, so the hint half of CSS Will
+Change 1 is nothing -- but the specification also says a `will-change`
+naming a property that *would* create a stacking context creates one
+before the property is ever set, and the same for being a containing
+block. Both of those exist in this engine already, so both are the
+property.
+
+**The two lists are different**, which is the finding. Seventeen names
+create a stacking context: `transform`, `opacity`, `filter`,
+`z-index`, `position`, `contain`, `isolation`, `mix-blend-mode`,
+`clip-path`, `mask`, `perspective`, `rotate`, `scale`, `translate`,
+`offset-path`, `backdrop-filter` and `view-transition-name`. Ten of
+those also make the element a containing block for absolutely
+positioned descendants, and the other **seven do not** -- `opacity`,
+`z-index`, `clip-path`, `mask`, `isolation`, `mix-blend-mode` and
+`view-transition-name` create a context and no containing block, and
+nothing does the reverse. That subset relation is what lets one
+ordered value say both.
+
+The names are case-insensitive and a comma list asks for the strongest
+thing any one of its names asks for, so `left, transform` is a
+containing block because `transform` is. A `fixed` child takes the
+containing block too, as it does from a real transform.
+
+Both effects go through predicates that already existed --
+`boxIsStackingContext` in the painter and `boxTransformsPositioned` in
+layout -- so the change is two lines of behaviour and a reader, all of
+it behind `anyWillChange`.
+
+The checks are agreements with what the engine already does rather
+than colours or coordinates of their own: a qualifying `will-change`
+must paint what `z-index: 0` paints and place what
+`transform: translateX(0px)` places, and one that does not qualify must
+match declaring nothing at all.
+
+**285 → 286**, with `--fields` naming `willChange`.
+
 ### `image-rendering: pixelated`, drawn rather than asked for
 
 This engine scales an image through `drawImage`, which filters, and the

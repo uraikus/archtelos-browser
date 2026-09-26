@@ -258,4 +258,41 @@ check(getPixelColor(50, 45) == magenta, 'inline content covers a float it is pul
 check(getPixelColor(50, 62) == magenta, "and covers that float's own outline with it")
 
 
+// ---- will-change (CSS Will Change 1) -----------------------------------
+// A `will-change` naming a property that WOULD create a stacking
+// context creates one before the property is ever set. Chromium's
+// seventeen names are in todo.md; the checks here are the agreement
+// that says so without a colour of its own: a `will-change` that
+// qualifies must paint what `z-index: 0` paints, and one that does not
+// must paint what declaring nothing paints.
+
+shotStack('z-index:0')
+color wcContext150 = getPixelColor(30, 150)
+color wcContext30 = getPixelColor(30, 30)
+shotStack('')
+color wcPlain150 = getPixelColor(30, 150)
+
+// The instrument: the two have to differ, or every check below holds
+// on an engine that ignores the property.
+check(wcContext150 != wcPlain150, 'a stacking context and no stacking context differ')
+
+shotStack('will-change:transform')
+check(getPixelColor(30, 150) == wcContext150, 'will-change: transform makes a stacking context')
+check(getPixelColor(30, 30) == wcContext30, 'with the same order inside it')
+shotStack('will-change:opacity')
+check(getPixelColor(30, 150) == wcContext150, 'and so does will-change: opacity')
+shotStack('will-change:view-transition-name')
+check(getPixelColor(30, 150) == wcContext150, 'and a name this engine has no other use for')
+shotStack('will-change:TRANSFORM')
+check(getPixelColor(30, 150) == wcContext150, 'the names are case-insensitive')
+shotStack('will-change:left, transform')
+check(getPixelColor(30, 150) == wcContext150, 'and one qualifying name in a list is enough')
+
+shotStack('will-change:left')
+check(getPixelColor(30, 150) == wcPlain150, 'will-change: left makes no stacking context')
+shotStack('will-change:auto')
+check(getPixelColor(30, 150) == wcPlain150, 'nor does the initial value')
+shotStack('will-change:color, width')
+check(getPixelColor(30, 150) == wcPlain150, 'nor a list of names that do not qualify')
+
 finish('stacking')

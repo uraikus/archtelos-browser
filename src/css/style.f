@@ -1917,6 +1917,25 @@ int func fontCapsUsed(s:Style) {
     return CAPS_NORMAL
 }
 
+// `will-change` (CSS Will Change 1), kept by the computed style's
+// serial. It does NOT inherit. Two effects, with two different lists of
+// names behind them (todo.md has Chromium's tables), and the second
+// list is a subset of the first -- every name that makes a containing
+// block also makes a stacking context -- so one ordered value says
+// both.
+const int WC_NONE = 0
+const int WC_STACKING = 1
+const int WC_CONTAINING = 2
+
+map[int] willChangeOfSerial = {}
+bool anyWillChange = false
+
+int func willChangeOf(s:Style) {
+    if !anyWillChange || s == null { return WC_NONE }
+    int v = willChangeOfSerial[`${s.serial}`]
+    return v == null ? WC_NONE : v
+}
+
 // `image-rendering`, kept by the computed style's serial. It INHERITS.
 // The value is stored only when it is `pixelated`, so `anyPixelated`
 // means "some element on this document asks for nearest neighbour" --

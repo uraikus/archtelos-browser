@@ -233,6 +233,9 @@ bool cascadeSawFontSynthesis = false
 // And for `image-rendering`. A page that never says it never asks,
 // and the painter never reads a source pixel for it.
 bool cascadeSawImageRendering = false
+// And for `will-change`, whose whole effect is two predicates that
+// a page never naming it must not pay a lookup for.
+bool cascadeSawWillChange = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -349,6 +352,7 @@ void func cascadeReset() {
     cascadeSawFontCaps = false
     cascadeSawFontSynthesis = false
     cascadeSawImageRendering = false
+    cascadeSawWillChange = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -508,6 +512,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawImageRendering && dn == 'image-rendering' {
                 cascadeSawImageRendering = true
+            }
+            if !cascadeSawWillChange && dn == 'will-change' {
+                cascadeSawWillChange = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1883,6 +1890,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawImageRendering && decls[d].name == 'image-rendering' {
                 cascadeSawImageRendering = true
+            }
+            if !cascadeSawWillChange && decls[d].name == 'will-change' {
+                cascadeSawWillChange = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -7294,6 +7304,41 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// What one name in a `will-change` list asks for: nothing, a stacking
+// context, or a stacking context and a containing block. Chromium's two
+// tables are in todo.md, and the second list is a subset of the first.
+int func willChangeKeyword(k:ascii) {
+    if k == 'transform' || k == 'rotate' || k == 'scale' || k == 'translate'
+        || k == 'perspective' || k == 'filter' || k == 'backdrop-filter'
+        || k == 'offset-path' || k == 'position' || k == 'contain' {
+        return WC_CONTAINING
+    }
+    if k == 'opacity' || k == 'z-index' || k == 'clip-path' || k == 'mask'
+        || k == 'isolation' || k == 'mix-blend-mode' || k == 'view-transition-name' {
+        return WC_STACKING
+    }
+    return WC_NONE
+}
+
+// `will-change` does not inherit, and a list asks for the strongest
+// thing any one of its names asks for -- `left, transform` is a
+// containing block because `transform` is.
+void func applyWillChange(s:Style, props:map[text]) {
+    ascii decl = styleProp(props, 'will-change')
+    if decl == null { return }
+    arr[ascii] parts = asciiSplitChar(asciiLower(decl), CH_COMMA)
+    int v = WC_NONE
+    for int i = 0, i < parts.length, i++ {
+        // `asciiSplitChar` trims each piece already.
+        int k = willChangeKeyword(parts[i])
+        if k > v { v = k }
+    }
+    if v != WC_NONE {
+        willChangeOfSerial[`${s.serial}`] = v
+        anyWillChange = true
+    }
+}
+
 // `image-rendering` inherits, and only `pixelated` does anything:
 // `crisp-edges` is `auto` in Chromium pixel for pixel, measured rather
 // than assumed, so the two compute to the same value here and the
@@ -7832,6 +7877,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if cascadeSawFontCaps { applyFontCaps(s, parent, isRoot, props) }
     if cascadeSawFontSynthesis { applyFontSynthesis(s, parent, isRoot, props) }
     if cascadeSawImageRendering { applyImageRendering(s, parent, isRoot, props) }
+    if cascadeSawWillChange { applyWillChange(s, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

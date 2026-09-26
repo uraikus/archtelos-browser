@@ -4646,6 +4646,9 @@ says the word must not walk a single pixel for it.
 
 ### `will-change`, measured -- two effects, and different lists for them
 
+**Landed**, both effects: `boxIsStackingContext` takes the seventeen
+and `boxTransformsPositioned` the ten. The measurement follows.
+
 CSS Will Change 1 says a `will-change` naming a property that *would*
 create a stacking context creates one before the property is ever set,
 and the same for being a containing block. Both of those exist in this

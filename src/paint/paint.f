@@ -4470,6 +4470,10 @@ bool func boxIsStackingContext(b:Box) {
     if s.isolate { return true }
     if anyFilter && s.filterIdx > 0 { return true }
     if anyMask && s.maskIdx > 0 { return true }
+    // `will-change` naming a property that would create one creates it
+    // before the property is ever set (Will Change 1 §3, and Chromium's
+    // seventeen names are in todo.md).
+    if anyWillChange && willChangeOf(s) != WC_NONE { return true }
     return boxIsPositioned(b) && zIndexIsExplicit(s)
 }
 
