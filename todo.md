@@ -4747,6 +4747,41 @@ baseline shift when there is one. The other three do nothing, and an
 engine graded against Chromium has nothing to copy. They are declines
 with a measurement behind them rather than gaps.
 
+### `scroll-initial-target`, measured -- and it is not the nearest edge
+
+A 60-tall scroll container whose content is 150 of filler, then a
+20-tall target, then 150 more; and the same container nested inside
+another; and a target 900 into the page's own flow. Chromium, reading
+`scrollTop` and `window.scrollY` after load:
+
+| | Chromium |
+|---|---|
+| the container holding the target | `scrollTop` **150** |
+| the same container with no `scroll-initial-target` in it | 0 |
+| the **outer** container around that one | **0** -- it does not move |
+| the document, target 900 into the flow | `scrollY` **900** |
+
+**150 is the target's start edge at the container's start edge**, not
+the minimal scroll the keyword `nearest` suggests: minimal would be
+150 + 20 - 60 = 110, which would put the target against the container's
+*end*. So the name describes which container is chosen rather than
+where in it the target lands.
+
+**Only the nearest scroll container moves.** The outer one stays at 0
+even though the inner container is itself below its own scrollport, so
+this is one scroll rather than a chain of them.
+
+**And the document is a scroll container for this purpose**, which is
+the case a page with no `overflow` on anything at all still shows.
+
+This engine keeps a scroll offset in `boxScrollTops`, keyed by node id,
+with `boxScrollRange` to clamp it -- so the container case is a pass
+after layout rather than anything in it. The document case has nowhere
+to put the answer yet: `layoutDocument` returns a box and the shell owns
+the page's own scroll position, so it wants a field on `Page` that the
+shell applies on navigation, beside the flags layout already hands over
+that way.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
