@@ -40,7 +40,12 @@ the engine rather than reading it: the block-level cases passed while a
 inline path in `hitLines` is the third place the walk can reach content
 and the first two are where the obvious guards go.
 
-**286 → 287**, with `--fields` naming `interactivity`.
+**286 → 287**, with `--fields` naming `interactivity`. Paired on
+`generated.html`, which does no hit testing at all in a `--screenshot`
+run: −1 and +0 forward and +1 reversed. The parent's own total read 135,
+133 and 133 across the three runs against 127 earlier in the day, so the
+machine has drifted further than anything being looked for -- which is
+the reading, rather than a reason to keep running rounds.
 
 ### The three baseline properties, declined with a control behind it
 
