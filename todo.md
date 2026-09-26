@@ -4644,6 +4644,48 @@ when it is reduced -- bounded by the smaller of the two in each axis --
 and it belongs behind a per-document flag, because a page that never
 says the word must not walk a single pixel for it.
 
+### `will-change`, measured -- two effects, and different lists for them
+
+CSS Will Change 1 says a `will-change` naming a property that *would*
+create a stacking context creates one before the property is ever set,
+and the same for being a containing block. Both of those exist in this
+engine already -- `isolation: isolate` creates a stacking context and a
+transformed box is a containing block -- so the question was only which
+names Chromium counts, and the answer is two different lists.
+
+**The stacking context.** A `position: relative` element with a red
+background and an `inset: 0; z-index: -1` child in blue. A negative
+z-index child paints *below* its parent's background only when the
+parent is not a stacking context, so blue means one was created:
+
+| `will-change:` | |
+|---|---|
+| nothing, `color`, `width`, `auto` | red -- no stacking context |
+| `transform`, `opacity`, `filter`, `z-index`, `position`, `contain` | **blue** |
+| `isolation`, `mix-blend-mode`, `clip-path`, `mask` | **blue** |
+| `perspective`, `rotate`, `scale`, `translate`, `offset-path` | **blue** |
+| `backdrop-filter`, `view-transition-name` | **blue** |
+| `TRANSFORM` | **blue** -- the names are case-insensitive |
+| `transform, left` and `filter, width` | **blue** -- any item in the list is enough |
+
+**The containing block.** A *static* element with an `inset: 0`
+absolutely positioned child: the child comes out the element's own size
+when the element is a containing block and the viewport's when it is
+not.
+
+| `will-change:` | |
+|---|---|
+| `transform`, `filter`, `position`, `contain` | **the element's size** |
+| `rotate`, `scale`, `translate`, `perspective`, `backdrop-filter`, `offset-path` | **the element's size** |
+| `opacity`, `z-index` | the viewport -- no containing block |
+| `clip-path`, `mask`, `isolation`, `mix-blend-mode`, `view-transition-name` | the viewport |
+
+So seven names create a stacking context without becoming a containing
+block, and none do the reverse. That is the whole of the property: it
+is not a hint here, because a hint with no compositor to hint at is
+exactly the kind of property this project counts as unimplemented, and
+these two effects are what the standard says are observable.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
