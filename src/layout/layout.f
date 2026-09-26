@@ -4702,6 +4702,14 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
     }
     rowY = rowY + spacing
     int rowIndex = 0
+    // The rows are collected only where the table declares a height,
+    // because that is the only thing the post-pass below does with them:
+    // a table that declares none -- which is every table the user-agent
+    // stylesheet makes -- pays one `Len` read rather than two pushes per
+    // row. The benchmark said so before this line existed, reading +2 of
+    // layout across two forward rounds on a page with forty tables.
+    Len tblH = twVert ? s.width : s.height
+    bool tblWantsH = tblH.kind == LEN_PX
     arr[Box] tblRows = []
     arr[int] tblRowH = []
     for int i = 0, i < b.children.length, i++ {
@@ -4736,8 +4744,10 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
         if rowBlock.kind == LEN_PX { rowH = maxInt(rowH, roundPx(rowBlock.v)) }
         tableStretchRow(row, rowH)
         row.h = rowH
-        tblRows.push(row)
-        tblRowH.push(rowH)
+        if tblWantsH {
+            tblRows.push(row)
+            tblRowH.push(rowH)
+        }
         rowY = rowY + rowH + spacing
     }
     // A height on a table is a MINIMUM, and the surplus over what its
@@ -4751,9 +4761,8 @@ void func layoutTableWithWidths(b:Box, cx:int, y:int, cw:int, widths:arr[int],
     //
     // Nothing here runs on a table that declares no height, which is
     // every table the user-agent stylesheet makes.
-    Len tblH = twVert ? s.width : s.height
     int tblGrewTo = 0 - 1
-    if tblH.kind == LEN_PX && tblRows.length > 0 {
+    if tblWantsH && tblRows.length > 0 {
         int wantContent = roundPx(tblH.v)
         if s.boxSizing == BOX_BORDER {
             wantContent = wantContent - b.pt - b.pb - b.bt - b.bb

@@ -41,6 +41,18 @@ the rounding is part of the answer and a ratio would be satisfied by
 neither; everywhere else they are proportions, which hold whatever the
 rows' content heights turn out to be.
 
+**The benchmark caught a real cost, and the guard is because of it.**
+The row loop collected every row and its height so the post-pass could
+scale them -- two array pushes per row, on every table, whether or not
+the table declared a height. Paired against the parent on
+`generated.html`, which has forty tables and declares no table height,
+that read **+2 of layout across two agreeing forward rounds**: the
+shape this project's rules call real, on the phase that genuinely runs
+the diff, with a mechanism to point at. Collecting the rows only where
+the table declares a height took it to -1 and 0, and the totals from
++4 and +1 to 0 and -2. A table that declares none -- which is every
+table the user-agent stylesheet makes -- now pays one `Len` read.
+
 **Found by the writing-mode fixtures**, which walked past it: a
 `display:table` with `block-size` came out 100x50 where Chromium gives
 100x60, and the agreement checks could not see it because both sides of
