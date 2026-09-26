@@ -258,6 +258,65 @@ checkEqInt(runWidth('font-variant:small-caps', 'abc'),
            runWidth('font-variant-caps:small-caps', 'abc'),
            'the font-variant shorthand sets the same thing')
 
+// ---- font-synthesis-small-caps (CSS Fonts 4 §5.3) ----------------------
+// Small caps here ARE the synthesis -- no face this engine can reach
+// carries the feature -- so `font-synthesis-small-caps: none` has
+// something real to decline, and declining it must put the run back at
+// the width it has with no `font-variant-caps` at all. Chromium's
+// widths are in todo.md; every check below is that agreement rather
+// than a number.
+
+int func nestWidth(outer:text, inner:text, body:text) {
+    Box r = layoutHtml(`<body style="margin:0;font:40px/60px monospace">` +
+        `<div style="float:left;${outer}"><span id="t" style="${inner}">${body}</span></div></body>`, 800)
+    Box t = findBox(r, 'div')
+    return t == null ? 0 - 1 : t.w
+}
+
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none', 'abc'),
+           plainLower, 'declining the synthesis puts small caps back at full size')
+checkEqInt(runWidth('font-variant-caps:all-small-caps;font-synthesis-small-caps:none', 'ABC'),
+           plainUpper, 'and all-small-caps with it')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'auto is the initial value and leaves the synthesis on')
+
+// The shorthand names what MAY be synthesised, so the small-caps
+// component's absence is a refusal.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:none', 'abc'),
+           plainLower, 'font-synthesis: none declines it too')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:weight style', 'abc'),
+           plainLower, 'and so does a list that leaves small-caps out')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:weight style small-caps', 'abc'),
+           smallOfUpper, 'a list that names it leaves the synthesis on')
+
+// It inherits, and a child takes it back.
+checkEqInt(nestWidth('font-synthesis-small-caps:none', 'font-variant-caps:small-caps', 'abc'),
+           plainLower, 'the refusal inherits to a child that asks for small caps')
+checkEqInt(nestWidth('font-synthesis-small-caps:none',
+                     'font-variant-caps:small-caps;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'and the child can take it back')
+
+// The shorthand and the longhand compete on source order, as every
+// other pair in this engine does.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none;font-synthesis:weight style small-caps', 'abc'),
+           smallOfUpper, 'a later font-synthesis beats an earlier longhand')
+// `auto` is not one of the shorthand's values -- the grammar is `none`
+// or a list of the things that MAY be synthesised -- so this is an
+// invalid declaration dropped, and the longhand before it stands.
+// Chromium answers the same, which is what says the drop is right.
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:none;font-synthesis:auto', 'abc'),
+           plainLower, 'font-synthesis: auto is invalid and changes nothing')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:bogus', 'abc'),
+           smallOfUpper, 'and so is an unknown keyword, leaving the initial value')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis:none;font-synthesis-small-caps:auto', 'abc'),
+           smallOfUpper, 'and a later longhand beats an earlier font-synthesis')
+checkEqInt(runWidth('font-variant-caps:small-caps;font-synthesis-small-caps:auto;font-synthesis:none', 'abc'),
+           plainLower, 'the other way round for each')
+
+// The instrument: the two widths this section compares must differ, or
+// every check above holds on an engine that never synthesised at all.
+check(smallOfUpper != plainLower, 'a synthesised small cap and a full-size letter are different widths')
+
 // ---- a shorthand and its longhand must compete -------------------------
 // `white-space` is a shorthand for `white-space-collapse` and
 // `text-wrap-mode`, and `text-wrap` is a shorthand for

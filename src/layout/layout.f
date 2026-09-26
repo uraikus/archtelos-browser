@@ -439,7 +439,7 @@ int func measureWidth(s:Style, t:text) {
         return cached
     }
     profMeasureMisses++
-    int caps = fontCapsOf(s)
+    int caps = fontCapsUsed(s)
     int w = 0
     if caps == CAPS_NORMAL {
         setFontFor(s)

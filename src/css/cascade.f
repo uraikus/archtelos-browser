@@ -226,6 +226,10 @@ bool cascadeSawResize = false
 bool cascadeSawTextWrapStyle = false
 bool cascadeSawPrintColorAdjust = false
 bool cascadeSawFontCaps = false
+// The same question for `font-synthesis-small-caps` and the shorthand
+// that expands into it. A page that never refuses the synthesis never
+// asks.
+bool cascadeSawFontSynthesis = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -340,6 +344,7 @@ void func cascadeReset() {
     cascadeSawTextWrapStyle = false
     cascadeSawPrintColorAdjust = false
     cascadeSawFontCaps = false
+    cascadeSawFontSynthesis = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -492,6 +497,10 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !cascadeSawFontCaps
                 && (dn == 'font-variant-caps' || dn == 'font-variant' || dn == 'font') {
                 cascadeSawFontCaps = true
+            }
+            if !cascadeSawFontSynthesis
+                && (dn == 'font-synthesis-small-caps' || dn == 'font-synthesis') {
+                cascadeSawFontSynthesis = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1859,6 +1868,11 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawFontCaps && (decls[d].name == 'font-variant-caps'
                 || decls[d].name == 'font-variant' || decls[d].name == 'font') {
                 cascadeSawFontCaps = true
+            }
+            if !cascadeSawFontSynthesis
+                && (decls[d].name == 'font-synthesis-small-caps'
+                    || decls[d].name == 'font-synthesis') {
+                cascadeSawFontSynthesis = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -5492,6 +5506,56 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         // and every other value resets the caps -- which is what
         // Chromium does for `font-variant: common-ligatures`, and
         // differs from it only for a value that is invalid outright.
+        // `font-synthesis` names what MAY be synthesised, so a component
+        // it leaves out is a refusal rather than an omission (CSS Fonts
+        // 4 sec. 5.3). It is written out into its longhands rather than
+        // read beside them, so that the two are decided by source order
+        // like every other pair here. Only the small-caps longhand is
+        // read afterwards; the other two are declined, with Chromium's
+        // widths for them in todo.md.
+        if name == 'font-synthesis' {
+            if declIsCssWide(value) {
+                props['font-synthesis-weight'] = dup(value)
+                props['font-synthesis-style'] = dup(value)
+                props['font-synthesis-small-caps'] = dup(value)
+                return
+            }
+            arr[ascii] fst = cssTokens(value)
+            if fst.length == 0 || fst.length > 3 { return }
+            bool fsWeight = false
+            bool fsStyle = false
+            bool fsCaps = false
+            bool fsNone = false
+            for int i = 0, i < fst.length, i++ {
+                ascii fsk = asciiLower(fst[i])
+                if fsk == 'none' {
+                    if fst.length != 1 { return }
+                    fsNone = true
+                    continue
+                }
+                if fsk == 'weight' {
+                    if fsWeight { return }
+                    fsWeight = true
+                    continue
+                }
+                if fsk == 'style' {
+                    if fsStyle { return }
+                    fsStyle = true
+                    continue
+                }
+                if fsk == 'small-caps' {
+                    if fsCaps { return }
+                    fsCaps = true
+                    continue
+                }
+                // an unknown keyword makes the whole declaration invalid
+                return
+            }
+            setProp(props, 'font-synthesis-weight', fsWeight ? 'auto' : 'none')
+            setProp(props, 'font-synthesis-style', fsStyle ? 'auto' : 'none')
+            setProp(props, 'font-synthesis-small-caps', fsCaps ? 'auto' : 'none')
+            return
+        }
         if name == 'font-variant' {
             if declIsCssWide(value) {
                 props['font-variant-caps'] = dup(value)
@@ -7200,6 +7264,26 @@ void func applyFontCaps(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     }
 }
 
+// `font-synthesis-small-caps` inherits, and is the only one of the four
+// synthesis controls this engine can honour: small caps here ARE a
+// synthesis, and bold and italic are handed to the runtime, which
+// chooses or synthesises a face without saying which (todo.md has
+// Chromium's widths for all four). The `font-synthesis` shorthand
+// reaches here as its longhands, which applyDecl expanded it into.
+void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]) {
+    bool v = isRoot ? true : fontSynthSmallCapsOf(parent)
+    ascii decl = styleProp(props, 'font-synthesis-small-caps')
+    if decl != null {
+        ascii k = asciiLower(asciiTrim(decl))
+        if k == 'none' { v = false }
+        else if k == 'auto' { v = true }
+    }
+    if !v {
+        fontSynthSmallCapsOfSerial[`${s.serial}`] = false
+        anyFontSynthSmallCaps = true
+    }
+}
+
 void func applyTextWrapStyle(s:Style, parent:Style, isRoot:bool, props:map[text]) {
     int v = isRoot ? TWS_AUTO : textWrapStyleOf(parent)
     // `text-wrap` reaches here as its two longhands, which applyDecl
@@ -7624,6 +7708,15 @@ void func refreshFontKey(s:Style) {
         int ck = fontCapsOfSerial[`${s.serial}`]
         if ck != null { s.fontKey = s.fontKey + `|c${ck}` }
     }
+    // And a style that REFUSES the synthesis measures as though the
+    // keyword were not there, so the refusal belongs in the key beside
+    // the keyword: the same stale key a fourth time, and the one that
+    // found this one was the suite measuring the same string in two
+    // documents, one refusing and one not.
+    if anyFontSynthSmallCaps {
+        bool nk = fontSynthSmallCapsOfSerial[`${s.serial}`]
+        if nk != null { s.fontKey = s.fontKey + '|s0' }
+    }
 }
 
 Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[text]) {
@@ -7707,6 +7800,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // the smaller size its text is partly drawn at, and the width cache
     // would serve the plain run's advance to the small-caps one.
     if cascadeSawFontCaps { applyFontCaps(s, parent, isRoot, props) }
+    if cascadeSawFontSynthesis { applyFontSynthesis(s, parent, isRoot, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

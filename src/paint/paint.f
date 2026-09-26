@@ -3047,7 +3047,7 @@ void func drawFragmentGlyphsVertical(f:Fragment, s:Style, dx:int, dy:int) {
     pRotate(up ? -90.0 : 90.0)
     // Inside the turn, local +x is the inline direction, so everything
     // below is the horizontal painter with the run starting at zero.
-    int caps = fontCapsOf(s)
+    int caps = fontCapsUsed(s)
     if caps != CAPS_NORMAL {
         drawSmallCapsAt(f.content, s, caps, 0, 0)
         pRestoreState()
@@ -3073,7 +3073,7 @@ void func drawFragmentGlyphs(f:Fragment, s:Style, dx:int, dy:int) {
         drawFragmentGlyphsVertical(f, s, dx, dy)
         return
     }
-    int caps = fontCapsOf(s)
+    int caps = fontCapsUsed(s)
     if caps != CAPS_NORMAL {
         drawSmallCaps(f, s, caps, dx, dy)
         return

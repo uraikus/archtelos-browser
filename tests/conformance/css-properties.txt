@@ -237,7 +237,7 @@ font-size	21px
 font-size-adjust	2
 font-stretch	50%
 font-style	italic
-font-synthesis-small-caps	none
+font-synthesis-small-caps	none; font-variant-caps: small-caps
 font-synthesis-style	none
 font-synthesis-weight	none
 font-variant	none

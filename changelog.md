@@ -5,6 +5,48 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `font-synthesis-small-caps`, and three synthesis controls that cannot act here
+
+Small caps in this engine **are** a synthesis -- no face it can reach
+carries the feature, so a lowercase letter is drawn as its capital at
+0.7 of the size -- which makes `font-synthesis-small-caps: none` a
+refusal with something real to refuse. It puts the run back at the
+width and the pixels it has with no `font-variant-caps` at all.
+Chromium's widths are in todo.md and this engine now agrees with them.
+
+The `font-synthesis` shorthand reaches it, and is **written out into
+its three longhands** rather than read beside them, so the two are
+decided by source order like every other pair here. The shorthand names
+what may be synthesised, so a component it leaves out is a refusal:
+`font-synthesis: weight style` declines small caps. `auto` is not one of
+its values and `font-synthesis: auto` is an invalid declaration dropped,
+which Chromium confirms -- the longhand before it stands.
+
+**The other three cannot be told apart, and one of them for an
+interesting reason.** `font-synthesis-weight` and
+`font-synthesis-style` have nothing to act on: this engine hands `bold`
+or `italic` to `changeFont` and the runtime chooses or synthesises a
+face without saying which. And `font-variant-position` **synthesises
+nothing in Chromium**: `sub` and `super` leave the advance at exactly
+normal's, because the family has no `subs` or `sups` feature and
+Chromium does not draw a smaller glyph on a shifted baseline instead.
+The small-caps machinery would make synthesising it easy here, and
+doing so would disagree with the yardstick, which is a reason not to
+rather than an obstacle.
+
+**A fourth stale key, found by the suite rather than by reading.** The
+width cache is keyed on `fontKey`, which carries the font size, the
+weight, the style, the family, the zoom and the caps keyword -- and now
+the refusal, because two styles alike but for it measure differently.
+Without it the same string in two documents, one refusing and one not,
+served the first document's advance to the second: the checks failed
+with the cascade already answering correctly, which is what said the
+cache rather than the cascade was wrong.
+
+**283 → 284**, with `--fields` naming `fontSynthSmallCaps`, and the
+instrument's row carries `font-variant-caps: small-caps` as context
+because there is nothing to decline to synthesise without it.
+
 ### `text-combine-upright: all`, the last property in Writing Modes 4
 
 An inline that asks for it is typeset horizontally inside **one square

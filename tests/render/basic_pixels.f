@@ -334,4 +334,38 @@ paintPage(pval, 0, 0, 300)
 check(inkColorIn(0, 0, 200, 60, phBlue), 'a value takes the input colour')
 check(!inkColorIn(0, 0, 200, 60, phGrey), 'and never the placeholder grey')
 
+// ---- font-synthesis-small-caps, in pixels ------------------------------
+// Small caps here are drawn rather than selected, so declining the
+// synthesis has to reach the PAINTER as well as the measurer -- ink
+// drawn at a size the measurer did not keep room for is the failure
+// this is here to catch. The checks are agreements: the refusal must
+// paint what no `font-variant-caps` at all paints, and small caps must
+// paint something else.
+
+arr[int] func capsInk(decl:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;font:40px/50px monospace">'
+        + `<div style="color:#000000;${decl}">abc</div></body>`, 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    arr[int] out = []
+    for int y = 0, y < 50, y++ {
+        int n = 0
+        for int x = 0, x < 120, x++ { if getPixelColor(x, y) != white { n++ } }
+        out.push(n)
+    }
+    return out
+}
+
+arr[int] capsPlain = capsInk('')
+arr[int] capsSmall = capsInk('font-variant-caps:small-caps')
+arr[int] capsNone = capsInk('font-variant-caps:small-caps;font-synthesis-small-caps:none')
+arr[int] capsShort = capsInk('font-variant-caps:small-caps;font-synthesis:none')
+
+// The instrument first: the two the rest are graded against have to
+// differ, or every agreement below holds on an engine that paints one
+// thing whatever it is asked.
+check(!sameInk(capsPlain, capsSmall), 'synthesised small caps paint differently from plain text')
+check(sameInk(capsNone, capsPlain), 'declining the synthesis paints what plain text paints')
+check(sameInk(capsShort, capsPlain), 'and so does declining it through the shorthand')
+
 finish('render')

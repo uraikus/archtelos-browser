@@ -1882,6 +1882,35 @@ int func fontCapsOf(s:Style) {
     return v == null ? CAPS_NORMAL : v
 }
 
+// `font-synthesis-small-caps`, kept the same way and for the same
+// reason. It INHERITS. The value is stored only when it is `none`,
+// which is what makes `anyFontSynthSmallCaps` mean "some element on
+// this document refuses the synthesis".
+//
+// It is read at the two places that ASK FOR the synthesis -- the
+// measurer and the painter, through `fontCapsUsed` -- and never where
+// `font-variant-caps` is inherited, because the two properties
+// inherit separately: a child of an element that refuses the synthesis
+// still inherits `small-caps`, and can take the refusal back.
+map[bool] fontSynthSmallCapsOfSerial = {}
+bool anyFontSynthSmallCaps = false
+
+bool func fontSynthSmallCapsOf(s:Style) {
+    if !anyFontSynthSmallCaps || s == null { return true }
+    bool v = fontSynthSmallCapsOfSerial[`${s.serial}`]
+    return v == null ? true : v
+}
+
+// The caps the measurer and the painter act on, which is the computed
+// value unless this element refuses to have it synthesised. No face
+// here carries the feature, so a refusal leaves nothing at all.
+int func fontCapsUsed(s:Style) {
+    if !anySmallCaps { return CAPS_NORMAL }
+    int v = fontCapsOf(s)
+    if v == CAPS_NORMAL || fontSynthSmallCapsOf(s) { return v }
+    return CAPS_NORMAL
+}
+
 map[int] printColorAdjustOfSerial = {}
 bool anyPrintColorAdjust = false
 

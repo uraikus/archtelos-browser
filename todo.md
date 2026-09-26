@@ -4557,6 +4557,11 @@ reading first, which is a task rather than a line.
 
 ### The four synthesis controls, measured -- one of them acts here
 
+**`font-synthesis-small-caps` has landed**, with the `font-synthesis`
+shorthand written out into its three longhands so that the two are
+decided by source order. The other three are declines, for the reasons
+below. The measurement follows.
+
 CSS Fonts 4 §2.2 lets a browser synthesise what a face does not carry,
 and §5.3's `font-synthesis-*` say when it may not. This engine
 synthesises exactly one of the four things: small caps, because no face
