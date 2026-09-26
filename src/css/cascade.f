@@ -240,6 +240,9 @@ bool cascadeSawWillChange = false
 bool cascadeSawInteractivity = false
 // And for `scroll-initial-target`, which the pass after layout reads.
 bool cascadeSawInitialTarget = false
+// And for `view-transition-name`, which the painter's stacking
+// predicate reads.
+bool cascadeSawViewTransition = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -359,6 +362,7 @@ void func cascadeReset() {
     cascadeSawWillChange = false
     cascadeSawInteractivity = false
     cascadeSawInitialTarget = false
+    cascadeSawViewTransition = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -527,6 +531,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawInitialTarget && dn == 'scroll-initial-target' {
                 cascadeSawInitialTarget = true
+            }
+            if !cascadeSawViewTransition && dn == 'view-transition-name' {
+                cascadeSawViewTransition = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1911,6 +1918,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawInitialTarget && decls[d].name == 'scroll-initial-target' {
                 cascadeSawInitialTarget = true
+            }
+            if !cascadeSawViewTransition && decls[d].name == 'view-transition-name' {
+                cascadeSawViewTransition = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -7322,6 +7332,18 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// `view-transition-name` does not inherit. Any name but `none` creates a
+// stacking context, which is what it does here; the name itself is not
+// kept, because nothing would read it (todo.md has the measurement).
+void func applyViewTransition(s:Style, props:map[text]) {
+    ascii decl = styleProp(props, 'view-transition-name')
+    if decl == null { return }
+    ascii k = asciiLower(asciiTrim(decl))
+    if k == 'none' || k.length == 0 { return }
+    viewTransitionOfSerial[`${s.serial}`] = true
+    anyViewTransition = true
+}
+
 // `scroll-initial-target` does not inherit, and only `nearest` asks for
 // anything: the nearest scroll container starts with this element's start
 // edge at its own start edge (todo.md has Chromium's rows).
@@ -7921,6 +7943,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if cascadeSawWillChange { applyWillChange(s, props) }
     if cascadeSawInteractivity { applyInteractivity(s, props) }
     if cascadeSawInitialTarget { applyInitialTarget(s, props) }
+    if cascadeSawViewTransition { applyViewTransition(s, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

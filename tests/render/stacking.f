@@ -295,4 +295,19 @@ check(getPixelColor(30, 150) == wcPlain150, 'nor does the initial value')
 shotStack('will-change:color, width')
 check(getPixelColor(30, 150) == wcPlain150, 'nor a list of names that do not qualify')
 
+// ---- view-transition-name ----------------------------------------------
+// The transition itself needs a clock, which nothing here has. What it
+// does statically is create a stacking context, measured in Chromium
+// against the same fixture as `will-change`'s (todo.md), and that this
+// engine has.
+shotStack('view-transition-name:hero')
+check(getPixelColor(30, 150) == wcContext150,
+      'view-transition-name creates a stacking context')
+check(getPixelColor(30, 30) == wcContext30, 'with the same order inside it')
+
+// `none` is the initial value and asks for nothing, which is the check
+// that says the name rather than the property is what counts.
+shotStack('view-transition-name:none')
+check(getPixelColor(30, 150) == wcPlain150, 'and none does not')
+
 finish('stacking')

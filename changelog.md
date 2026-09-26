@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The sweep: `view-transition-name` acts, and eight properties do not
+
+The reachable pool had thinned to where the honest first step was to ask
+Chromium whether a property does anything in HTML at all, before
+implementing it. Two fixtures answered eleven rows.
+
+**`view-transition-name` creates a stacking context**, which is the
+whole of what it can do in a browser with no clock to transition with,
+and this engine has stacking contexts -- so it is one line beside
+`isolation`. Only whether a name was given is stored, not the name:
+nothing here would read it, and the behaviour is a boolean.
+
+**Eight declines with a measurement behind them.** `font-stretch` at
+`50%` and at `condensed`, `text-size-adjust`, `math-style`,
+`text-rendering`, `font-optical-sizing` and `font-kerning` all leave
+`MMMM` at exactly the unstyled 77.06 at 32px monospace; and
+`paint-order`, `overflow-anchor` and `text-size-adjust` leave a
+`z-index: -1` child behind its parent's background, so none of them
+creates a stacking context either. `font-stretch` wants a condensed
+face and Chromium will not synthesise one, `text-size-adjust` is a
+mobile inflation control a desktop ignores, `math-style` needs the
+scaling its companion does without it, and the rest are hints. An
+engine graded against Chromium has nothing to copy where Chromium does
+nothing.
+
+**And one more that acts, left for its own change**: `math-depth`
+scales the font beside `font-size: math`, by 0.71 per step of depth
+*from the parent's depth* -- which two rows pin down, since a child at
+depth 2 inside a parent at depth 2 computes the parent's own size.
+todo.md has the table.
+
+**288 → 289**, with `--fields` naming `viewTransitionName`.
+
 ### `scroll-initial-target`, which is the start edge and not the nearest one
 
 A scroll container whose descendant declares it starts scrolled so that

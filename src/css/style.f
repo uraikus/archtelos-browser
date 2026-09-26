@@ -1917,6 +1917,21 @@ int func fontCapsUsed(s:Style) {
     return CAPS_NORMAL
 }
 
+// `view-transition-name`, kept by the computed style's serial. It does
+// NOT inherit. Only whether a name was given is stored, not the name
+// itself: the transition it names needs a clock and a second document
+// to transition to, and what the property does without one is create a
+// stacking context -- the same shape as `isolation`, where the value is
+// a boolean because the behaviour is.
+map[bool] viewTransitionOfSerial = {}
+bool anyViewTransition = false
+
+bool func hasViewTransitionName(s:Style) {
+    if !anyViewTransition || s == null { return false }
+    bool v = viewTransitionOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
 // `scroll-initial-target`, kept by the computed style's serial. It does
 // NOT inherit. Only `nearest` asks for anything, and what it asks for is
 // one scroll offset set after layout rather than anything during it.

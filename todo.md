@@ -4788,6 +4788,10 @@ that way.
 
 ### The sweep of what is left, measured -- two act and eight do not
 
+**`view-transition-name` has landed**, as one line in
+`boxIsStackingContext`. The eight declines are recorded in css-2026.md
+where their specifications are. `math-depth` is next. The sweep follows.
+
 The reachable pool had thinned to the point where the honest first step
 was to ask Chromium whether a property does anything at all in HTML
 before implementing it. Two fixtures, one launch each.

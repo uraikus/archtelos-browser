@@ -4474,6 +4474,9 @@ bool func boxIsStackingContext(b:Box) {
     // before the property is ever set (Will Change 1 §3, and Chromium's
     // seventeen names are in todo.md).
     if anyWillChange && willChangeOf(s) != WC_NONE { return true }
+    // A named view transition creates one too, which is what that
+    // property does in a browser with no clock to transition with.
+    if anyViewTransition && hasViewTransitionName(s) { return true }
     return boxIsPositioned(b) && zIndexIsExplicit(s)
 }
 
