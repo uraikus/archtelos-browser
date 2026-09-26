@@ -868,6 +868,52 @@ declared.
    other in whichever mode makes them synonyms, which needs no number
    from either engine.
 
+6. **`text-combine-upright`, measured.** The specification this stretch
+   of work is closing has one property left in it, and the property
+   instrument grades it: `text-combine-upright: all` is in the file with
+   a real value and changes nothing here.
+
+   Chromium at `font: 16px/16px monospace`, a span inside a
+   `vertical-rl` block, reading `getBoundingClientRect()`. The height is
+   the inline advance, because the line runs down the page:
+
+   | the span's text | `text-combine-upright` | inline advance |
+   |---|---|---|
+   | `1` | `none` | 9.6 |
+   | `1` | `all` | **16** |
+   | `12` | `none` | 19.3 |
+   | `12`, `123`, `1234`, `12345`, `123456` | `all` | **16** each |
+   | `Ag` | `all` | 16 |
+   | `1 2` | `all` | 16 |
+   | `MMMMMM` | `all` | 16 |
+   | nothing at all | `all` | **0** |
+
+   So the rule is one line: **a non-empty combined run advances exactly
+   one em, whatever it holds**, and an empty one advances nothing. One
+   character is widened to the em and six are condensed into it; a space
+   counts as content. At `font-size: 32px` the advance is 32, so it is
+   the element's own em rather than the parent's.
+
+   Four more rows say what it is not:
+
+   | | Chromium |
+   |---|---|
+   | the same span in `horizontal-tb` | 28.9 for `123` -- the property does **nothing** |
+   | `line-height: 40px` around it | still 16 -- the em, not the line box |
+   | `border: 2px; padding: 3px` on it | 26 -- the em is the content, the edges add outside it |
+   | `A` + combined + `B` on one line | 35.3 for any combined text, against 28.9 for a plain `1` |
+
+   And it **inherits**, which is what the standard says and what a
+   nested span shows: `<span all>1<span>2</span></span>` comes out 32,
+   two ems, because the child is a combined run of its own rather than
+   part of the parent's. A child that declares `none` is ordinary text
+   -- the same fixture with it gives 25.6, one em and one character.
+
+   The last row is the check that earns its place, because it needs no
+   number from either engine: **a line holding a combined run is the
+   same length whatever that run's text is**, and it is longer than the
+   same line with the text left uncombined. Both fail today.
+
 ### What is left of the masks
 
 css-2026.md says of CSS Masking 1 only that `mask` and its longhands are
