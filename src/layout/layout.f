@@ -3144,6 +3144,11 @@ ColumnFrag func boxFrag(b:Box, i:int) {
     return b.frags[i]
 }
 
+// The boxes the collector descended into, outermost first, so the pass
+// that gives them their parts can run over it backwards -- an inner
+// wrapper has to be sized before the one around it reads its rectangle.
+arr[Box] columnBrokenBoxes = []
+
 // What the column plan below worked out, one entry per unit. Declared
 // here because `layoutColumnRun` reads them above the function that
 // fills them.
@@ -3178,6 +3183,12 @@ struct ColumnUnit {
     // "two struct references cannot be compared"), and the orphans rule
     // has to ask whether two units are lines of the same paragraph.
     childIndex:int
+    // The unit's OWN box, as an id. `childIndex` cannot serve: the
+    // paginator reads it back as an index into the host's children
+    // (`pageSideAt`), and with fragmentation recursive a unit's box may be
+    // a descendant rather than that child. Two struct references cannot be
+    // compared (FINDINGS.md), so this is the id.
+    unitBoxId:int
     lineIndex:int
     lineTotal:int
     orphans:int
@@ -3234,6 +3245,11 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
         : layoutBlockChildrenRange(b, innerX, innerY, colW, from, to)
 
     arr[ColumnUnit] units = []
+    // The boxes this run descends into. Cleared here rather than per
+    // document: a multi-column container nested in one of these subtrees
+    // has already been laid out and sized by its own call.
+    arr[Box] noBroken = []
+    columnBrokenBoxes = noBroken
     collectColumnUnits(b, units, from, to)
     if units.length == 0 { return flowH }
 
@@ -3301,6 +3317,11 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     // because a part fills its column, and the column's height is not
     // known until every unit has been placed.
     buildFragmentsForRun(units, colW, gap, innerY, tallest)
+    // Backwards, so a wrapper inside a wrapper is sized before the one
+    // around it reads its rectangle.
+    for int i = columnBrokenBoxes.length - 1, i >= 0, i-- {
+        buildWrapperParts(columnBrokenBoxes[i], innerX, innerY, colW, gap, tallest)
+    }
     return tallest
 }
 
@@ -3316,7 +3337,7 @@ bool func columnBreakAllowed(units:arr[ColumnUnit], i:int, colStart:int, relaxWi
     if units[i].avoidBefore { return false }
     if !units[i].hasLine || units[i].lineIndex == 0 { return true }
     int above = units[i].lineIndex
-    if units[colStart].hasLine && units[colStart].childIndex == units[i].childIndex {
+    if units[colStart].hasLine && units[colStart].unitBoxId == units[i].unitBoxId {
         above = units[i].lineIndex - units[colStart].lineIndex
     }
     if above < units[i].orphans { return false }
@@ -3537,6 +3558,112 @@ int func columnBreakPoint(units:arr[ColumnUnit], i:int, colStart:int) {
 // `break-before: page`, because on screen there is no page to break.
 bool fragForPage = false
 
+// A box the collector descended into, given one rectangle per column its
+// children ended up in. Its own rectangle becomes the first, as with every
+// other broken box here, and the rest go in `frags`.
+//
+// The columns are read off the children rather than from the plan, because
+// by now they have been moved: a child's `x` says which column it is in,
+// and a child that was itself cut reaches into its parts' columns too.
+// That also makes this work for a wrapper inside a wrapper, provided the
+// inner one is sized first -- which is why the caller walks
+// `columnBrokenBoxes` backwards.
+//
+// The rule is the one every other part here follows: a part that is not
+// the last fills its column, and the last is its own content plus the
+// box's closing edge. A break carries no opening edge under `slice`, so a
+// part after the first starts at its first child rather than above it.
+void func buildWrapperParts(w:Box, innerX:int, innerY:int, colW:int, gap:int, colH:int) {
+    int step = colW + gap
+    if step < 1 { return }
+    int edgeTop = w.bt + w.pt
+    int edgeBot = w.pb + w.bb
+    // Each child rectangle in turn, as (column, top, bottom, left).
+    arr[int] rCol = []
+    arr[int] rTop = []
+    arr[int] rBot = []
+    arr[int] rLeft = []
+    for int i = 0, i < w.children.length, i++ {
+        Box c = w.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if boxIsOutOfFlow(c) || boxIsFloated(c) { continue }
+        rCol.push(Math.floorDiv(c.x - innerX, step))
+        rTop.push(c.y - c.mt)
+        rBot.push(c.y + c.h + c.mb)
+        rLeft.push(c.x - c.ml)
+        for int k = 0, k < boxFragCount(c), k++ {
+            ColumnFrag f = boxFrag(c, k)
+            rCol.push(Math.floorDiv(f.x - innerX, step))
+            rTop.push(f.y)
+            rBot.push(f.y + f.h)
+            rLeft.push(f.x)
+        }
+    }
+    if rCol.length == 0 { return }
+    // One group per column, in the order the children reach them.
+    arr[int] gCol = []
+    arr[int] gTop = []
+    arr[int] gBot = []
+    arr[int] gLeft = []
+    for int i = 0, i < rCol.length, i++ {
+        int last = gCol.length - 1
+        if last >= 0 && gCol[last] == rCol[i] {
+            gTop[last] = minInt(gTop[last], rTop[i])
+            gBot[last] = maxInt(gBot[last], rBot[i])
+            gLeft[last] = minInt(gLeft[last], rLeft[i])
+            continue
+        }
+        gCol.push(rCol[i])
+        gTop.push(rTop[i])
+        gBot.push(rBot[i])
+        gLeft.push(rLeft[i])
+    }
+    for int g = 0, g < gCol.length, g++ {
+        bool isFirst = g == 0
+        bool isLast = g == gCol.length - 1
+        int y = isFirst ? gTop[g] - edgeTop : gTop[g]
+        int h = isLast ? gBot[g] + edgeBot - y : innerY + colH - y
+        int x = gLeft[g] - w.bl - w.pl
+        if isFirst {
+            w.x = x
+            w.y = y
+            w.h = maxInt(h, 0)
+        } else {
+            ColumnFrag f
+            f.x = x
+            f.y = y
+            f.w = w.w
+            f.h = maxInt(h, 0)
+            f.openTop = true
+            f.openBottom = !isLast
+            w.frags.push(f)
+            anyColumnFrags = true
+        }
+    }
+}
+
+// Whether a column break may fall INSIDE this child, by breaking its own
+// children. Fragmentation is recursive in Chromium and todo.md has the
+// rows: a wrapper holding two 30-tall blocks comes out 32 tall in two
+// columns of 100, against the 64 that keeping it whole gives -- and
+// keeping it whole makes a container holding one such wrapper degenerate
+// to a single column.
+//
+// Only a plain block in normal flow. A flex or grid container places its
+// children by its own algorithm, a table by another, and a scroll
+// container's content does not leave it; a box with its own columns is a
+// fragmentation container in its own right. `break-inside: avoid` is the
+// author saying no, and a box holding lines is the case
+// `buildLineFragments` already covers.
+bool func columnChildBreakable(c:Box) {
+    if c.kind != BOX_BLOCK { return false }
+    if c.style.breakInsideAvoid { return false }
+    if c.lines.length > 0 || c.children.length == 0 { return false }
+    if c.scrollsX || c.scrollsY { return false }
+    if usedColumnCount(c.style, maxInt(c.w, 1)) > 1 { return false }
+    return true
+}
+
 void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
     bool pendingForce = false
     bool pendingAvoid = false
@@ -3595,6 +3722,7 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
                 u.forceBefore = j == 0 && force
                 u.avoidBefore = j == 0 && avoid
                 u.childIndex = i
+                u.unitBoxId = c.id
                 u.lineIndex = j
                 u.lineTotal = c.lines.length
                 u.orphans = c.style.orphans
@@ -3602,6 +3730,23 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
                 out.push(u)
             }
             continue
+        }
+        if columnChildBreakable(c) {
+            int before = out.length
+            columnBrokenBoxes.push(c)
+            collectColumnUnits(c, out, 0, c.children.length)
+            if out.length > before {
+                // Its own edges belong to the columns its first and last
+                // descendants land in, exactly as a paragraph's first and
+                // last lines carry what sits above and below them.
+                out[before].top = minInt(out[before].top, c.y - c.mt)
+                out[out.length - 1].bottom =
+                    maxInt(out[out.length - 1].bottom, c.y + c.h + c.mb)
+                if force { out[before].forceBefore = true }
+                if avoid { out[before].avoidBefore = true }
+                continue
+            }
+            columnBrokenBoxes.pop()
         }
         ColumnUnit u
         u.box = c
@@ -3616,6 +3761,7 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
         u.forceBefore = force
         u.avoidBefore = avoid
         u.childIndex = i
+        u.unitBoxId = c.id
         out.push(u)
     }
 }
@@ -3698,10 +3844,10 @@ void func buildFragmentsForRun(units:arr[ColumnUnit], colW:int, gap:int,
     int i = 0
     while i < units.length {
         if !units[i].hasLine { i++  continue }
-        int ci = units[i].childIndex
+        int ci = units[i].unitBoxId
         int j = i
         while j + 1 < units.length && units[j + 1].hasLine
-            && units[j + 1].childIndex == ci { j++ }
+            && units[j + 1].unitBoxId == ci { j++ }
         buildLineFragments(units, i, j, colW, gap, innerY, colH)
         i = j + 1
     }

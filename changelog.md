@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Fragmentation is recursive
+
+A wrapper holding two 30-tall blocks, 210 wide in two columns of 100,
+comes out **32** tall in Chromium with a rectangle in each column. This
+engine left it whole, so the container became its full **64** and the
+second column was empty: a multi-column container holding one such
+wrapper degenerated to a single column. Not a wrong number so much as the
+feature not applying.
+
+Chromium's rule is simply the column algorithm at every level. With three
+children it splits the **middle** one across the break, 15 either side;
+with one 70-tall child it splits that, 35 either side. Both are the
+operation `cutUnitIntoColumns` already performed on a direct child, one
+level deeper.
+
+So the unit collector descends. A child that is a plain block in normal
+flow, holds no lines, has children and was not forbidden by
+`break-inside: avoid` contributes **its descendants'** units instead of
+one unit of its own, and the first and last of them carry its opening and
+closing edges the way a paragraph's first and last lines already carried
+what sat above and below them. What is not descended into is what the
+flow does not simply stack -- a flex or grid container, a table, a scroll
+container, a box with columns of its own.
+
+**The wrapper's own rectangles are read off its children rather than from
+the plan**, because by the time it is sized they have been moved: a
+child's `x` says which column it is in, and a child that was itself cut
+reaches into its parts' columns too. Grouping them by column gives one
+part per column, and the rule is the one every other part here follows --
+a part that is not the last fills its column, and the last is its own
+content plus the closing edge. A wrapper inside a wrapper works provided
+the inner one is sized first, which is why the pass walks the record of
+descended boxes backwards.
+
+`childIndex` could not be reused to say which box a unit belongs to: the
+paginator reads it back as an index into the host's children, and a unit's
+box may now be a descendant. Units carry `unitBoxId` for that instead.
+
+The pixel suite gained the check only pixels can make -- that the
+wrapper's background and border are painted in the second column, behind a
+child that was never inside its first rectangle -- and seven of its twelve
+new checks fail when the parts are not built. The paginator shares the
+collector and its two suites pass unchanged, 128 and 106.
+
 ### `box-decoration-break: clone` takes space in every column
 
 `clone` puts the whole box on every part of a broken one, so the repeated

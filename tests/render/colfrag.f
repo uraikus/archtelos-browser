@@ -144,4 +144,48 @@ check(getPixelColor(50, 43) == green, 'on the first part as well as the second')
 check(getPixelColor(50, 41) != green,
       'and the column is taller for it, rather than the edge sitting on the last line')
 
+// ---- a wrapper broken by breaking its children -------------------------
+// Fragmentation is recursive, so a wrapper holding two blocks is broken
+// between them and gets a rectangle in each column. The geometry is
+// checked in tests/unit/test_multicol.f; what only pixels say is that the
+// wrapper's own background and border are painted in the second column
+// too, behind a child that was never inside its first rectangle.
+//
+// The wrapper has 6px of side padding so its background is visible beside
+// its children: at x 113..117 in the second column, where the border is
+// at 110..111 and the child starts at 118.
+
+text func wrapPage(extra:text) {
+    return '<!doctype html><body style="margin:0;font:16px/20px monospace">'
+        + '<div style="width:210px;column-count:2;column-gap:10px">'
+        + `<div style="margin:0;background:#0000ff;border:2px solid #00aa00;`
+        + `padding:0 6px;box-sizing:border-box;${extra}">`
+        + '<div style="height:30px;background:#ff0000"></div>'
+        + '<div style="height:30px;background:#ff0000"></div>'
+        + '</div></div></body>'
+}
+
+void func paintWrap(extra:text) {
+    Page p = pageFromHtml(wrapPage(extra), 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+paintWrap('')
+check(getPixelColor(5, 10) == blue, 'the wrapper paints its background in the first column')
+check(getPixelColor(115, 10) == blue, 'and in the second, which its own rectangle never reached')
+check(getPixelColor(115, 10) == getPixelColor(5, 10),
+      'the two being one box, they are one colour')
+check(getPixelColor(110, 10) == green, 'the second part keeps the side border')
+check(getPixelColor(120, 10) == red, 'with the child that landed there painted over it')
+check(getPixelColor(120, 0) == red, 'that child starting at the column\'s very top')
+check(getPixelColor(115, 31) == green, 'and the part closing with a border at the real bottom')
+check(getPixelColor(115, 0) == blue, 'while carrying none across the break')
+check(getPixelColor(5, 1) == green, 'the first part opening with one')
+check(getPixelColor(5, 31) == blue, 'and not closing with one, because the break is there')
+check(getPixelColor(5, 34) != blue, 'nothing of the wrapper below its column')
+
+paintWrap('box-decoration-break:clone')
+check(getPixelColor(115, 0) == green, '`clone` puts a border across the break here too')
+
 finish('column fragments')

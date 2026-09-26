@@ -287,10 +287,11 @@ the breaks fall is under `break-before`, `break-after` and
 left at the foot of a column or carried to the head of the next. A child
 with `column-span: all` is in no column: it splits the container into
 the run before it, itself across the full width, and the run after. A box
-broken between columns gets a rectangle in each of them: a childless
+broken between columns gets a rectangle in each of them, and breaking is
+recursive: a wrapper is broken by breaking its children, a childless
 block whose fixed height does not fit what is left of its column is cut
-at the break, and a child whose lines are split gets a part per column
-its lines are in. The box keeps the part in the column it started in and
+at the break wherever in the tree it sits, and a child whose lines are
+split gets a part per column its lines are in. The box keeps the part in the column it started in and
 carries the rest, which paint and answer the pointer where the break put
 them, with `box-decoration-break` deciding whether a border crosses the
 break.

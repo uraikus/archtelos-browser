@@ -454,4 +454,66 @@ checkEqInt(boxFrag(fourP, 0).h, 42, 'with parts of 42')
 check(cloneP.lines.length == fourP.lines.length,
       'the two fixtures break into the same number of lines')
 
+// ---- a wrapper is broken by breaking its children ----------------------
+// Fragmentation is recursive: a subtree is broken by breaking its
+// children, and a childless box with a height is cut. Chromium's rows are
+// in todo.md. Without it a multi-column container holding one such
+// wrapper degenerates to a single column -- the wrapper cannot break, so
+// it stays whole and the container grows to its full height.
+
+text wSty = 'margin:0;border:2px solid #00aa00;box-sizing:border-box'
+text kid30 = '<div style="height:30px"></div>'
+
+Box func wrapped(inner:text) {
+    return layoutHtml(head
+        + '<div id="c" style="width:210px;column-count:2;column-gap:10px">'
+        + `<div id="w" style="${wSty}">${inner}</div>`
+        + '</div></body>', 400)
+}
+
+// Two 30-tall children: one per column, and the wrapper in both.
+Box twoK = wrapped(kid30 + kid30)
+Box twoW = findById(twoK, 'w')
+checkEqInt(findById(twoK, 'c').h, 32, 'two children break the wrapper into columns of 32')
+checkEqInt(twoW.h, 32, 'the wrapper filling the first')
+checkEqInt(boxFragCount(twoW), 1, 'and having a part in the second')
+checkEqInt(boxFrag(twoW, 0).x, 110, 'which is in that column')
+checkEqInt(boxFrag(twoW, 0).h, 32, 'and is as tall as it')
+checkEqInt(twoW.children[0].x, 2, 'the first child inside the wrapper\'s border')
+checkEqInt(twoW.children[0].y, 2, 'below its opening edge')
+checkEqInt(twoW.children[1].x, 112, 'the second child in the next column')
+checkEqInt(twoW.children[1].y, 0, 'at its very top, because the break carries no edge')
+
+// One 70-tall child: the child itself is cut, 35 either side.
+Box tallK = wrapped('<div style="height:70px"></div>')
+Box tallW = findById(tallK, 'w')
+Box tallC = tallW.children[0]
+checkEqInt(findById(tallK, 'c').h, 37, 'one 70-tall child makes columns of 37')
+checkEqInt(tallW.h, 37, 'the wrapper filling the first')
+checkEqInt(tallC.h, 35, 'and the child being cut at the break')
+checkEqInt(boxFragCount(tallC), 1, 'with a part of its own')
+checkEqInt(boxFrag(tallC, 0).h, 35, 'holding the other thirty-five')
+checkEqInt(tallC.h + boxFrag(tallC, 0).h, 70, 'the two together being its height')
+
+// Three children: the MIDDLE one is cut, which only recursion can do.
+Box threeK = wrapped(kid30 + kid30 + kid30)
+Box threeW = findById(threeK, 'w')
+checkEqInt(findById(threeK, 'c').h, 47, 'three children make columns of 47')
+checkEqInt(threeW.children[0].h, 30, 'the first child whole in the first column')
+checkEqInt(threeW.children[1].h, 15, 'the second cut at the break')
+checkEqInt(boxFragCount(threeW.children[1]), 1, 'with a part after it')
+checkEqInt(boxFrag(threeW.children[1], 0).h, 15, 'holding the other fifteen')
+checkEqInt(threeW.children[2].h, 30, 'and the third whole in the second column')
+check(threeW.children[2].x > threeW.children[0].x, 'which is the column after the first')
+
+// The instrument: `break-inside: avoid` on the wrapper must still keep it
+// whole, or every check above would hold on an engine that always broke.
+Box avoidK = layoutHtml(head
+    + '<div id="c" style="width:210px;column-count:2;column-gap:10px">'
+    + `<div id="w" style="${wSty};break-inside:avoid">${kid30}${kid30}</div>`
+    + '</div></body>', 400)
+Box avoidW = findById(avoidK, 'w')
+checkEqInt(boxFragCount(avoidW), 0, '`avoid` keeps the wrapper in one piece')
+checkEqInt(avoidW.h, 64, 'at its whole height')
+
 finish('multicol')
