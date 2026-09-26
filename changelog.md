@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `interactivity: inert`, which is not `pointer-events: none`
+
+Hit testing is what this engine has of interaction, and `inert` is a
+hit-testing rule: it takes the element **and its whole subtree** out of
+hit testing, and nothing inside can undo it. That last clause is the
+whole difference from `pointer-events: none`, whose descendants this
+engine searches *on purpose* because a child may ask for pointer events
+back -- so `inert` returns before the subtree is walked where
+`pointer-events` returns after. `inert` also beats `pointer-events:
+auto` on the same element.
+
+The computed value does not inherit, which is measured: the child of an
+inert element computes to `auto`. What reaches the subtree is the
+inertness rather than the property, and the hit tester stopping above it
+is exactly that.
+
+The rest of what `inert` means in CSS UI 4 -- no focus, no selection, no
+`:hover` -- has nothing here to act on, and that is recorded rather than
+implied.
+
+What the point lands on instead is whatever is behind the subtree: the
+root element in Chromium, an anonymous box here. So the checks ask that
+nothing in the inert subtree is hit rather than that nothing at all is,
+which is the honest form of the same statement -- and one of them failed
+first as `none` against `anon`, which is how the distinction was
+noticed.
+
+**286 → 287**, with `--fields` naming `interactivity`.
+
+### The three baseline properties, declined with a control behind it
+
+`dominant-baseline`, `alignment-baseline` and `baseline-shift` have rows
+in the instrument and are defined for CSS as well as SVG, so they look
+implementable. Chromium moves an HTML inline box by **exactly nothing**
+for all three -- against a `vertical-align: 10px` control that moves the
+same span ten pixels and grows its line box from 40 to 50 to hold it.
+The control is the point: the fixture can see a baseline shift when
+there is one. An engine graded against Chromium has nothing to copy, so
+all three stay unimplemented with a measurement behind them rather than
+a gap.
+
 ### `will-change`, which is two predicates rather than a hint
 
 There is no compositor here to hint at, so the hint half of CSS Will

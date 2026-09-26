@@ -4691,6 +4691,10 @@ these two effects are what the standard says are observable.
 
 ### `interactivity: inert`, measured -- and it is not `pointer-events`
 
+**Landed.** The hit tester returns above an inert box rather than below
+it, in both of the two places its walk can reach a child. The
+measurement follows.
+
 `elementFromPoint` over a 100x40 box at the same place in each case,
 each box holding a child of its own size:
 

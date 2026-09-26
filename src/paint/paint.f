@@ -5143,6 +5143,12 @@ Box func hitChild(c:Box, x:int, y:int) {
     }
     if hx < c.x || hx >= c.x + c.w { return null }
     if hy < c.y || hy >= c.y + c.h { return null }
+    // `interactivity: inert` takes the box AND its subtree out of hit
+    // testing, and no descendant can undo it -- which is exactly where
+    // it parts from `pointer-events: none` below, whose descendants are
+    // searched on purpose (todo.md has Chromium's rows). So it returns
+    // before the subtree is walked rather than after.
+    if anyInert && interactivityInert(c.style) { return null }
     // pointer-events: none takes a box out of hit testing so that what
     // is behind it is found instead. Its descendants are still
     // searched, because a child may ask for pointer events back.
@@ -5193,6 +5199,10 @@ Box func hitPhaseWalk(b:Box, x:int, y:int, phase:int) {
     for int i = b.children.length - 1, i >= 0, i-- {
         Box c = b.children[i]
         if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { continue }
+        // An inert box is not hit and neither is anything inside it, so
+        // the walk stops here rather than at `hitChild`, which the two
+        // branches below do not always reach.
+        if anyInert && interactivityInert(c.style) { continue }
         // Positioned first, as in the painter: an out-of-flow box is in
         // no line, so the inline-level test must not reach one.
         if docHasPositioned && boxIsPositioned(c) { continue }

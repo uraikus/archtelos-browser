@@ -236,6 +236,8 @@ bool cascadeSawImageRendering = false
 // And for `will-change`, whose whole effect is two predicates that
 // a page never naming it must not pay a lookup for.
 bool cascadeSawWillChange = false
+// And for `interactivity`, whose one value the hit tester reads.
+bool cascadeSawInteractivity = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -353,6 +355,7 @@ void func cascadeReset() {
     cascadeSawFontSynthesis = false
     cascadeSawImageRendering = false
     cascadeSawWillChange = false
+    cascadeSawInteractivity = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -515,6 +518,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawWillChange && dn == 'will-change' {
                 cascadeSawWillChange = true
+            }
+            if !cascadeSawInteractivity && dn == 'interactivity' {
+                cascadeSawInteractivity = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1893,6 +1899,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawWillChange && decls[d].name == 'will-change' {
                 cascadeSawWillChange = true
+            }
+            if !cascadeSawInteractivity && decls[d].name == 'interactivity' {
+                cascadeSawInteractivity = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -7304,6 +7313,17 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// `interactivity` does not inherit, and only `inert` does anything here
+// (CSS UI 4). What the subtree gets is the hit tester stopping above it.
+void func applyInteractivity(s:Style, props:map[text]) {
+    ascii decl = styleProp(props, 'interactivity')
+    if decl == null { return }
+    if asciiLower(asciiTrim(decl)) == 'inert' {
+        inertOfSerial[`${s.serial}`] = true
+        anyInert = true
+    }
+}
+
 // What one name in a `will-change` list asks for: nothing, a stacking
 // context, or a stacking context and a containing block. Chromium's two
 // tables are in todo.md, and the second list is a subset of the first.
@@ -7878,6 +7898,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if cascadeSawFontSynthesis { applyFontSynthesis(s, parent, isRoot, props) }
     if cascadeSawImageRendering { applyImageRendering(s, parent, isRoot, props) }
     if cascadeSawWillChange { applyWillChange(s, props) }
+    if cascadeSawInteractivity { applyInteractivity(s, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

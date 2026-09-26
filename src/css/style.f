@@ -1917,6 +1917,21 @@ int func fontCapsUsed(s:Style) {
     return CAPS_NORMAL
 }
 
+// `interactivity: inert`, kept by the computed style's serial. It does
+// NOT inherit -- the child of an inert element computes to `auto`, which
+// is measured -- because what reaches the subtree is the inertness
+// rather than the property: the hit tester stops at an inert box and
+// never asks its descendants, which is the whole difference from
+// `pointer-events: none`.
+map[bool] inertOfSerial = {}
+bool anyInert = false
+
+bool func interactivityInert(s:Style) {
+    if !anyInert || s == null { return false }
+    bool v = inertOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
 // `will-change` (CSS Will Change 1), kept by the computed style's
 // serial. It does NOT inherit. Two effects, with two different lists of
 // names behind them (todo.md has Chromium's tables), and the second
