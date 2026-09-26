@@ -4825,6 +4825,54 @@ itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
+**1535 of 1652, and 29 of the 117 failures are this engine's alone.** The
+runner's `--ids` flag prints every failure as `file #index` and
+`tests/chromium.py detail` prints the same form for Chromium, so the
+subtraction is one command rather than an opinion. Chromium fails **88**
+of the 117.
+
+The 88 are not this engine's to chase. Most of them are the whole of
+`processing-instructions.dat`, whose 124 cases expect a processing
+instruction *node* -- `| <?something ?>` -- where the standard's bogus
+comment state produces a comment; both engines give `<!-- ?something -->`
+and both fail all 84 of the cases that reach the parser. The rest are
+CDATA in MathML text (`<![CDATA[x]]>` expected as text, both engines make
+a comment) and `noscript` content expected as markup, which is the
+scripting-disabled tree that neither engine builds.
+
+**Where the 29 are:**
+
+| file | this engine's alone |
+|---|---|
+| `tests16.dat` | **11** |
+| `tests26.dat` | 5 |
+| `tests2.dat` | 4 |
+| `tests1.dat` | 2 |
+| `tests19.dat` | 2 |
+| `adoption01.dat`, `adoption02.dat`, `html5test-com.dat`, `namespace-sensitivity.dat`, `tables01.dat`, `tests6.dat` | 1 each |
+
+**Ten of `tests16.dat`'s eleven are one bug**: a `<script>` whose content
+ends in an unterminated end tag at EOF. The standard's script-data end tag
+name state, on anything that is not a matching `>`/whitespace/`/`, emits
+the buffered `</` and name **as character tokens** and returns to script
+data; at EOF the same buffer has to reach the text. This engine drops it:
+
+| input | expected text | this engine |
+|---|---|---|
+| `<script></SCRIPT` | `</SCRIPT` | nothing |
+| `<script></script` | `</script` | nothing |
+| `<script><!--</script` | `<!--</script` | `<!--` |
+| `<script><!--<script </script </script` | the whole run | the final `</script` dropped |
+| `<script><!--<script --></script` | the whole run | the final `</script` dropped |
+
+Each appears twice, once with a doctype and once without, which is what
+makes ten of one.
+
+The eleventh is `<!doctype html><table>` with the corpus's trailing
+newline: the newline belongs to the table as a text child, and this engine
+drops it.
+
+
 1,535 of 1,652 tree-construction cases pass, which is what Chromium
 passes on the same corpus. Of the 117 failures, 84 are cases Chromium
 fails too. The rest, largest first:
