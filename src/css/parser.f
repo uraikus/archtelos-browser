@@ -1536,7 +1536,7 @@ arr[text] supportedProperties = [
     'corner-start-start-shape', 'corner-start-end-shape',
     'corner-end-start-shape', 'corner-end-end-shape',
     'font', 'font-size', 'font-size-adjust', 'font-weight', 'font-style', 'font-family',
-    'font-variant-caps', 'font-synthesis', 'font-synthesis-small-caps', 'image-rendering', 'will-change', 'interactivity',
+    'font-variant-caps', 'font-synthesis', 'font-synthesis-small-caps', 'image-rendering', 'will-change', 'interactivity', 'scroll-initial-target',
     'line-height',
     'text-align', 'text-decoration', 'text-decoration-line', 'text-transform',
     'text-decoration-color', 'text-decoration-style',

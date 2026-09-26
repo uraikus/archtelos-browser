@@ -21,6 +21,11 @@ struct Page {
     // DocFlags in paint.f: the questions are globals, and a second
     // document laid out afterwards would otherwise answer them.
     flags:DocFlags
+    // Where the document starts scrolled to, which
+    // `scroll-initial-target` on an element in its own flow asks for.
+    // Layout works it out and the shell applies it, because the shell
+    // owns the page's scroll position (todo.md).
+    initialScrollY:int
 }
 
 int maxImagesPerPage = 60
@@ -348,6 +353,7 @@ void func layoutPage(page:Page, width:int) {
     // tree is built, so they belong to this page and not to whichever
     // page is laid out next. See DocFlags in paint.f.
     page.flags = captureDocFlags()
+    page.initialScrollY = docInitialScrollY
     if page.root == null {
         page.height = 0
         return

@@ -5,6 +5,39 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `scroll-initial-target`, which is the start edge and not the nearest one
+
+A scroll container whose descendant declares it starts scrolled so that
+the target's **start edge** is at the container's own start edge. That
+is 150 on Chromium's fixture and not the minimal 110 the keyword
+`nearest` suggests, so the name describes **which container is chosen**
+rather than where in it the target lands -- and only the nearest one
+moves: an outer container around it stays at 0 even though the inner
+container is itself below its own scrollport.
+
+**The document is a scroll container for this too.** A target 900 into
+the page's own flow leaves Chromium's `scrollY` at 900, and this engine
+answers it through a field on `Page` that the shell applies on
+navigation -- because `layoutDocument` returns a box and the shell owns
+the page's scroll position. `reload` still keeps the reader where they
+were, which it does by overwriting that offset on purpose.
+
+The container case is a pass after layout rather than anything in it,
+because it needs every box's final position: one walk of the tree on a
+document that declares the property, and one boolean on one that does
+not. The offset goes through `boxScrollTops`, keyed by node id, clamped
+by `boxScrollRange`, which is the same path a wheel takes.
+
+**A text box inside the target set the offset back to zero.** It shares
+the target's own computed style -- the same serial, so
+`scrollInitialTarget` answers the same for it -- while its `y` is not
+the target's, so the walk found the target, set 150, then found the text
+inside it and set 0. Every property kept by a style's serial has that
+shape, and this is the first one where a text box's own *position*
+mattered; the pass asks for an element's box now.
+
+**287 → 288**, with `--fields` naming `scrollInitialTarget`.
+
 ### `interactivity: inert`, which is not `pointer-events: none`
 
 Hit testing is what this engine has of interaction, and `inert` is a

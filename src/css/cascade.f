@@ -238,6 +238,8 @@ bool cascadeSawImageRendering = false
 bool cascadeSawWillChange = false
 // And for `interactivity`, whose one value the hit tester reads.
 bool cascadeSawInteractivity = false
+// And for `scroll-initial-target`, which the pass after layout reads.
+bool cascadeSawInitialTarget = false
 // And for the two ruby properties, which inherit for the same reason.
 bool cascadeSawRuby = false
 // The same question for `anchor(` inside an expression. The four
@@ -356,6 +358,7 @@ void func cascadeReset() {
     cascadeSawImageRendering = false
     cascadeSawWillChange = false
     cascadeSawInteractivity = false
+    cascadeSawInitialTarget = false
     cascadeSawRuby = false
     anyZoom = false
     cascadeZoomScale = 1.0
@@ -521,6 +524,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawInteractivity && dn == 'interactivity' {
                 cascadeSawInteractivity = true
+            }
+            if !cascadeSawInitialTarget && dn == 'scroll-initial-target' {
+                cascadeSawInitialTarget = true
             }
             if !cascadeSawPrintColorAdjust && dn == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -1902,6 +1908,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawInteractivity && decls[d].name == 'interactivity' {
                 cascadeSawInteractivity = true
+            }
+            if !cascadeSawInitialTarget && decls[d].name == 'scroll-initial-target' {
+                cascadeSawInitialTarget = true
             }
             if !cascadeSawPrintColorAdjust && decls[d].name == 'print-color-adjust' {
                 cascadeSawPrintColorAdjust = true
@@ -7313,6 +7322,18 @@ void func applyFontSynthesis(s:Style, parent:Style, isRoot:bool, props:map[text]
     }
 }
 
+// `scroll-initial-target` does not inherit, and only `nearest` asks for
+// anything: the nearest scroll container starts with this element's start
+// edge at its own start edge (todo.md has Chromium's rows).
+void func applyInitialTarget(s:Style, props:map[text]) {
+    ascii decl = styleProp(props, 'scroll-initial-target')
+    if decl == null { return }
+    if asciiLower(asciiTrim(decl)) == 'nearest' {
+        initialTargetOfSerial[`${s.serial}`] = true
+        anyInitialTarget = true
+    }
+}
+
 // `interactivity` does not inherit, and only `inert` does anything here
 // (CSS UI 4). What the subtree gets is the hit tester stopping above it.
 void func applyInteractivity(s:Style, props:map[text]) {
@@ -7899,6 +7920,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if cascadeSawImageRendering { applyImageRendering(s, parent, isRoot, props) }
     if cascadeSawWillChange { applyWillChange(s, props) }
     if cascadeSawInteractivity { applyInteractivity(s, props) }
+    if cascadeSawInitialTarget { applyInitialTarget(s, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
     // has to be resolved before anything on this element parses a

@@ -4749,6 +4749,10 @@ with a measurement behind them rather than gaps.
 
 ### `scroll-initial-target`, measured -- and it is not the nearest edge
 
+**Landed**, both halves: the container case as a pass after layout, and
+the document case through a field on `Page` that the shell applies. The
+measurement follows.
+
 A 60-tall scroll container whose content is 150 of filler, then a
 20-tall target, then 150 more; and the same container nested inside
 another; and a target 900 into the page's own flow. Chromium, reading

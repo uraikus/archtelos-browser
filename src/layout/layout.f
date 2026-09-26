@@ -2177,6 +2177,12 @@ void func applyContainerAspect(b:Box) {
 // element it belongs to. The box tree is rebuilt on every layout and
 // the offset has to outlive it; the node registry is what does. A page
 // that scrolls nothing never touches the map.
+// Where the DOCUMENT starts scrolled to, which `scroll-initial-target`
+// on an element in the page's own flow asks for. Layout cannot apply it
+// itself -- the shell owns the page's scroll position -- so it is handed
+// over the way the document's flags are, through a field on `Page`.
+int docInitialScrollY = 0
+
 map[int] boxScrollTops = {}
 // And how far across, for the axis a horizontal bar scrolls.
 map[int] boxScrollLefts = {}
@@ -7870,6 +7876,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
         staticPosY = emptyStaticY
     }
     docHasPositioned = false
+    docInitialScrollY = 0
     anyRtlText = false
     docHasFloats = false
     docHasWholePaint = false
@@ -7946,7 +7953,43 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
             if anchorBoxFound { placeAnchored(root, 0, 0, width, root.h) }
         }
     }
+    // The last thing layout does, because it reads where every box
+    // ended up: a document that never says `scroll-initial-target`
+    // pays one boolean for it.
+    if anyInitialTarget { applyInitialTargets(root, null) }
     return root
+}
+
+// `scroll-initial-target: nearest`: the nearest scroll container starts
+// scrolled so that the target's START edge is at the container's own
+// start edge -- 150 and not the minimal 110 on Chromium's fixture, so
+// the keyword names which container is chosen rather than where in it
+// the target lands (todo.md). Only the nearest container moves; an outer
+// one around it stays where it was.
+//
+// This runs after layout because it needs every box's final position,
+// and it is one walk of the tree on a document that declares the
+// property and none at all on one that does not.
+void func applyInitialTargets(b:Box, holder:Box) {
+    Box h = b.scrollsY && b.node != null && b.node.id != 0 ? b : holder
+    // An ELEMENT's box only. A text box inside the target shares the
+    // target's own computed style -- the same serial, so the same
+    // answer -- and its `y` is not the target's, so letting it through
+    // set the offset to zero and undid the line above it. Every
+    // property kept by a style's serial has that shape; this is the
+    // first one where a text box's own position mattered.
+    if b.node != null && b.node.kind == NODE_ELEMENT && scrollInitialTarget(b.style) {
+        if h == null {
+            // No scroll container above it: the document is the one
+            // that scrolls, and the shell owns that offset.
+            docInitialScrollY = maxInt(b.y, 0)
+        } else {
+            int top = h.y + h.bt + h.pt
+            boxScrollTops[h.node.id.toText()] =
+                clampInt(b.y - top, 0, boxScrollRange(h))
+        }
+    }
+    for int i = 0, i < b.children.length, i++ { applyInitialTargets(b.children[i], h) }
 }
 
 // Assigns list ordinals to list-item boxes (after building).

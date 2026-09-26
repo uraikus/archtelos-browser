@@ -144,7 +144,13 @@ void func showStatusNow(msg:text) {
 void func loadInto(url:text) {
     showStatusNow(`Loading ${url} ...`)
     page = loadPage(url, clientWidth)
-    scrollY = 0
+    // A new document starts at the top, unless something in it asked
+    // for `scroll-initial-target`: layout works out where, and the
+    // shell applies it because the shell owns this offset. `reload`
+    // keeps the position the reader was at, so it overwrites this
+    // afterwards on purpose.
+    scrollY = page.initialScrollY
+    clampScroll()
     statusText = ''
     editing = false
 }

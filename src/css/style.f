@@ -1917,6 +1917,18 @@ int func fontCapsUsed(s:Style) {
     return CAPS_NORMAL
 }
 
+// `scroll-initial-target`, kept by the computed style's serial. It does
+// NOT inherit. Only `nearest` asks for anything, and what it asks for is
+// one scroll offset set after layout rather than anything during it.
+map[bool] initialTargetOfSerial = {}
+bool anyInitialTarget = false
+
+bool func scrollInitialTarget(s:Style) {
+    if !anyInitialTarget || s == null { return false }
+    bool v = initialTargetOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
 // `interactivity: inert`, kept by the computed style's serial. It does
 // NOT inherit -- the child of an inert element computes to `auto`, which
 // is measured -- because what reaches the subtree is the inertness

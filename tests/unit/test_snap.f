@@ -296,4 +296,106 @@ checkEqInt(snapStopProx(true, 300), snapStopProx(false, 300),
 check(snapStopTo(true, 0, 300) != snapStopTo(false, 0, 300),
     'while mandatory does act on the same gesture')
 
+// ---- scroll-initial-target ---------------------------------------------
+// A scroll container whose descendant declares it starts scrolled so
+// that the target's START edge is at the container's own start edge --
+// which is 150 here and not the minimal 110 the keyword `nearest`
+// suggests, measured in Chromium (todo.md). Only the NEAREST container
+// moves, and the document counts as one.
+
+// A 200x60 scroll container: `before` pixels of filler, a 20-tall
+// target carrying `css`, then 150 more. Returns where the container
+// starts scrolled to.
+int func initialTargetTop(css:text, before:int) {
+    cascadeReset()
+    boxScrollReset()
+    cssViewportWidth = 600
+    Node doc = parseHtmlText('<html><body style="margin:0"><div id="s" style="width:200px;'
+        + 'height:60px;overflow-y:scroll;overflow-x:hidden">'
+        + `<div style="height:${before}px"></div>`
+        + `<div style="height:20px;${css}">t</div>`
+        + '<div style="height:150px"></div>'
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    Box root = layoutDocument(doc, 600)
+    return boxScrollTop(snapBoxById(root, 's'))
+}
+
+checkEqInt(initialTargetTop('', 150), 0, 'a container with no initial target starts at the top')
+checkEqInt(initialTargetTop('scroll-initial-target:nearest', 150), 150,
+    'and one with a target starts with that target at its own start edge')
+checkEqInt(initialTargetTop('scroll-initial-target:none', 150), 0,
+    'none is the initial value and asks for nothing')
+
+// The offset is the target's position, not a fixed number: moving the
+// target moves the scroll with it.
+checkEqInt(initialTargetTop('scroll-initial-target:nearest', 100), 100,
+    'the offset follows the target')
+
+// And it is clamped to what the container can scroll, which is the
+// container's own range rather than a number written here.
+// The same container with nothing after the target, so that the
+// target's own offset is past what the container can scroll to: it has
+// to clamp to the range rather than scroll beyond the content.
+int func initialTargetLast(css:text, before:int, wantRange:bool) {
+    cascadeReset()
+    boxScrollReset()
+    cssViewportWidth = 600
+    Node doc = parseHtmlText('<html><body style="margin:0"><div id="s" style="width:200px;'
+        + 'height:60px;overflow-y:scroll;overflow-x:hidden">'
+        + `<div style="height:${before}px"></div><div style="height:20px;${css}">t</div>`
+        + '</div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    Box s = snapBoxById(layoutDocument(doc, 600), 's')
+    return wantRange ? boxScrollRange(s) : boxScrollTop(s)
+}
+
+// The instrument: the range has to be short of the target's own offset,
+// or there is nothing to clamp and the check below is vacuous.
+check(initialTargetLast('', 150, true) < 150, 'the last target is past what the container can reach')
+checkEqInt(initialTargetLast('scroll-initial-target:nearest', 150, false),
+    initialTargetLast('', 150, true),
+    'a target past the end clamps to the container range')
+
+// Nested: the inner container takes it and the outer does not move.
+cascadeReset()
+boxScrollReset()
+cssViewportWidth = 600
+Node itDoc = parseHtmlText('<html><body style="margin:0">'
+    + '<div id="o" style="width:220px;height:60px;overflow-y:scroll;overflow-x:hidden">'
+    + '<div style="height:150px"></div>'
+    + '<div id="s" style="width:200px;height:60px;overflow-y:scroll;overflow-x:hidden">'
+    + '<div style="height:150px"></div>'
+    + '<div style="height:20px;scroll-initial-target:nearest">t</div>'
+    + '<div style="height:150px"></div></div>'
+    + '<div style="height:150px"></div></div></body></html>')
+cascadeAddDocumentStyles(itDoc)
+computeStyles(itDoc)
+Box itRoot = layoutDocument(itDoc, 600)
+checkEqInt(boxScrollTop(snapBoxById(itRoot, 's')), 150,
+    'the nearest container is the one that scrolls')
+checkEqInt(boxScrollTop(snapBoxById(itRoot, 'o')), 0, 'and the one outside it does not move')
+
+// The document is a scroll container for this too, and layout says so
+// through a field of its own because the shell owns the page's scroll.
+int func initialTargetPage(css:text) {
+    cascadeReset()
+    boxScrollReset()
+    cssViewportWidth = 600
+    Node doc = parseHtmlText('<html><body style="margin:0">'
+        + '<div style="height:900px"></div>'
+        + `<div style="height:20px;${css}">t</div>`
+        + '<div style="height:900px"></div></body></html>')
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    layoutDocument(doc, 600)
+    return docInitialScrollY
+}
+
+checkEqInt(initialTargetPage(''), 0, 'a page with no initial target starts at the top')
+checkEqInt(initialTargetPage('scroll-initial-target:nearest'), 900,
+    'and one with a target in the flow starts at it')
+
 finish('scroll snap')
