@@ -5,6 +5,79 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A childless fixed-height block is cut at a column break
+
+Chromium fragments a block whose height does not fit what is left of its
+column; this engine moved whole boxes and never split one. The rows are
+in todo.md, read with `getClientRects`, which returns one rectangle per
+fragment where `getBoundingClientRect` returns only their union -- which
+is why the earlier note had the union and not the parts.
+
+**The engine's old answer was Chromium's answer for `break-inside:
+avoid`** on all three counts: the box moved whole, it went to the next
+column, and the balanced height grew to hold it. So the gap was a missing
+choice rather than a wrong number, and the fixture that says so is the
+one this change has to keep passing: `avoid` must still move the block
+whole, or every check about the cut would hold on an engine that split
+unconditionally.
+
+**A box keeps its first part and carries the rest.** `Box` gained
+`frags`, and the parts after the first go there; every reader that knows
+nothing about fragments -- which is all of them but the painter and the
+hit tester -- goes on reading `x`, `y`, `w` and `h` and gets the first
+part, exactly as `refitFragmentedChild` has always left a child whose
+lines were split.
+
+**It is a field and not a side map, and the test is what settled that.**
+The first version kept the parts in a flat array with two maps giving
+each box its range, to keep an empty array off every box on every page.
+Box ids start again with every layout, so the map outlived the boxes it
+described: the suite lays several documents out and keeps them all, and a
+whole block read as split because a later layout's block had taken its
+id. That is the same hazard as a scroll offset outliving its document,
+one layer down, and it was caught by the one check in the new set that
+asked about a box from an earlier layout.
+
+**Only a childless block is cut**, because a block holding lines or
+children would need that content re-placed in the column after the break,
+and this engine breaks nothing deeper than the container's own children.
+A childless block has nothing to re-place: its height is the whole of it.
+
+**One walk decides the columns now.** `columnBreaks` returned the indices
+a column starts at and the placement loop re-derived the rest; a break
+can now fall *inside* a unit, which an index cannot say. `columnPlan`
+records the column, the offset and the cut for every unit, and the
+placement loop only reads them -- the two cannot disagree, which is what
+the old function's comment already said mattered. Nothing in the walk
+writes to a box, because the balancing loop runs it several times with a
+growing target and a walk that had shortened a box would plan the next
+round against the height it had just changed.
+
+The first version of that walk had a real bug of its own: when
+`columnBreakPoint` put the break *after* the unit that overflowed -- which
+is what `break-before: avoid` asks for -- it jumped to the break and left
+the units in between unplanned. Four checks in the fragmentation suite
+failed on it, which is what a suite is for.
+
+**`box-decoration-break` decides the break edge**, measured in Chromium's
+pixels both ways: `slice`, the initial value, paints no border across the
+break and lets the background run to the column's end; `clone` paints
+one. The sides and the background are on every part either way. The part
+is painted by moving the box to it, painting, and putting it back, so
+every painter reads the same fields it always did.
+
+**And a part answers the pointer.** Chromium's `elementFromPoint` names
+the block at every point in every part. That needed the rectangle test
+widened in two places, not one: `hitChild`, and the cull in
+`hitPhaseWalk` that rejects a child before `hitChild` is reached. The
+second was found by a check that failed after the first was written --
+the same third-place lesson `interactivity: inert` taught.
+
+`balance` now gives Chromium's answer where it did not: 20 and 30 in two
+columns balance to 25 with the tall block cut, against the 30 that moving
+it whole produced. A block taller than a whole column splits as many
+times as it needs.
+
 ### A scroll offset no longer outlives its document
 
 `boxScrollTops` and `boxScrollLefts` are keyed by **node id**, because a

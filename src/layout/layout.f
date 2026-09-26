@@ -45,6 +45,33 @@ int nextBoxId = 1
 // every box of the current layout, indexed by id (parentBox looks parents up here)
 arr[Box] boxRegistry = [null]
 
+// The parts of a box beyond the first, for a box a column break cut in
+// two. The box's own rectangle stays the FIRST part, so every reader that
+// knows nothing about fragments -- and that is all of them but the
+// painter and the hit tester -- goes on reading the same fields it did.
+//
+// This is a field on `Box` rather than a map keyed by box id, and the
+// test is what settled it: box ids start again with every layout, so a
+// map outlives the boxes it describes and hands a box from one layout the
+// parts of another. The suite lays several documents out and keeps them
+// all, and read a whole block as split because a later layout's block had
+// taken its id -- the same hazard as a scroll offset outliving its
+// document, one layer down. `anyColumnFrags` is what the painter and the
+// hit tester test before they walk for parts at all, so a page with no
+// multi-column container pays a boolean.
+struct ColumnFrag {
+    x:int
+    y:int
+    w:int
+    h:int
+    // The break edge. `box-decoration-break: slice`, the initial value,
+    // paints no border across a break, and `clone` paints one -- measured
+    // in Chromium, both ways, in todo.md.
+    openTop:bool
+    openBottom:bool
+}
+bool anyColumnFrags = false
+
 struct Box {
     id:int
     kind:int
@@ -95,6 +122,8 @@ struct Box {
     bl:int
     content:text               // BOX_TEXT
     lines:arr[Line]         // block containers with inline content
+    frags:arr[ColumnFrag]   // the parts after the first, when a column break cut this box
+
     image:img               // BOX_IMAGE
     imgW:int
     imgH:int
@@ -3101,6 +3130,31 @@ int func usedColumnCount(s:Style, width:int) {
     return fit
 }
 
+int func boxFragCount(b:Box) {
+    if !anyColumnFrags { return 0 }
+    return b.frags.length
+}
+
+// The `i`th part after the box's own. A caller past the end gets a zero
+// rectangle rather than an error, which is what every other accessor
+// here does.
+ColumnFrag func boxFrag(b:Box, i:int) {
+    ColumnFrag f
+    if i < 0 || i >= boxFragCount(b) { return f }
+    return b.frags[i]
+}
+
+// What the column plan below worked out, one entry per unit. Declared
+// here because `layoutColumnRun` reads them above the function that
+// fills them.
+arr[int] colPlanCol = []        // the column the unit's first part is in
+arr[int] colPlanTop = []        // the flow y that maps to the top of it
+arr[int] colPlanFirstH = []     // the first part's border-box height; -1 = whole
+arr[int] colPlanExtra = []      // how many further columns it continues into
+arr[int] colPlanLastH = []      // its border-box height in the last of those
+int colPlanCount = 1            // columns used
+int colPlanHeight = 0           // the tallest column's content
+
 // One thing that can be moved into a column on its own: a line box of a
 // child that holds lines, or a whole child that does not. Nothing
 // deeper is broken, so a subtree nested below the container's own
@@ -3192,7 +3246,6 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     if s.columnFillAuto && s.height.kind != LEN_PX { return flowH }
 
     int target = 0
-    arr[int] breaks = []
     if s.columnFillAuto {
         // Given a definite height, each column fills to THAT -- which is
         // the balanced share only by coincidence, and this line used to
@@ -3206,46 +3259,43 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
         if s.boxSizing == BOX_BORDER {
             target = target - b.pt - b.pb - b.bt - b.bb
         }
-        breaks = columnBreaks(units, maxInt(target, 1))
+        target = maxInt(target, 1)
+        columnPlan(units, target)
     } else {
         // Balance: aim for an equal share and grow the target until every
         // unit fits in the columns there are. A unit taller than the
         // target sets its own column's height, which is why this is a
         // loop rather than one division.
-        target = Math.floorDiv(flowH + count - 1, count)
-        breaks = columnBreaks(units, target)
+        target = maxInt(Math.floorDiv(flowH + count - 1, count), 1)
+        columnPlan(units, target)
         int guard = 0
         while guard < 64 {
-            if breaks.length + 1 <= count { break }
+            if colPlanCount <= count { break }
             target = target + maxInt(Math.floorDiv(target, 8), 1)
-            breaks = columnBreaks(units, target)
+            columnPlan(units, target)
             guard++
         }
     }
 
-    // Move each unit into its column. A unit's offset is the column's
-    // x step and the top of the run it belongs to.
-    int col = 0
-    int nextBreak = 0
-    int colTop = units[0].top
-    int tallest = 0
+    // Move each unit into the column the plan gave it. A unit's offset is
+    // the column's x step and the top of the run it belongs to.
     for int i = 0, i < units.length, i++ {
         ColumnUnit u = units[i]
-        if nextBreak < breaks.length && breaks[nextBreak] == i {
-            col++
-            nextBreak++
-            colTop = u.top
-        }
-        int dx = col * (colW + gap)
-        int dy = innerY - colTop
+        int dx = colPlanCol[i] * (colW + gap)
+        int dy = innerY - colPlanTop[i]
         // `hasLine` rather than a null test: a struct-typed field can
         // never read as null, so `u.line == null` is always false and
         // every unit would take the line branch (FINDINGS.md,
         // finding 5).
         if u.hasLine { offsetLine(u.line, dx, dy) }
         else { offsetBox(u.box, dx, dy) }
-        tallest = maxInt(tallest, u.bottom - colTop)
+        if colPlanFirstH[i] >= 0 {
+            cutUnitIntoColumns(u.box, colPlanFirstH[i], colPlanExtra[i],
+                               colPlanLastH[i], colPlanCol[i], colW, gap, innerY,
+                               target)
+        }
     }
+    int tallest = colPlanHeight
     // A child whose lines were split no longer occupies one rectangle.
     // Its box is cut back to the part that stayed in the first column
     // it appears in, so its background does not smear across the gap.
@@ -3273,30 +3323,163 @@ bool func columnBreakAllowed(units:arr[ColumnUnit], i:int, colStart:int, relaxWi
     return true
 }
 
-// The unit each column after the first starts at, for a given column
-// height. The balancing loop and the placement loop both read this one
-// answer rather than each deciding for itself, because they must agree:
-// a target that says two columns and a placement that makes three would
-// be a container the height of a column it does not contain.
-arr[int] func columnBreaks(units:arr[ColumnUnit], target:int) {
-    arr[int] out = []
+// Cuts a box the plan said to fragment. Its own rectangle becomes the
+// FIRST part, so every reader that knows nothing about fragments goes on
+// reading the same fields; the parts after it go in its `frags`, which
+// only the painter and the hit tester look at.
+//
+// `col` is the column the first part is in, and the parts follow in the
+// columns after it. Each is the width of the box, at the top of its
+// column, and the last is whatever is left of the height.
+void func cutUnitIntoColumns(c:Box, firstH:int, extra:int, lastH:int,
+                             col:int, colW:int, gap:int, innerY:int, target:int) {
+    if extra < 1 { return }
+    int baseX = c.x - col * (colW + gap)
+    for int k = 1, k <= extra, k++ {
+        ColumnFrag f
+        f.x = baseX + (col + k) * (colW + gap)
+        f.y = innerY
+        f.w = c.w
+        // A middle part fills its whole column; only the last is short.
+        f.h = k == extra ? lastH : target
+        f.openTop = true
+        f.openBottom = k < extra
+        c.frags.push(f)
+    }
+    anyColumnFrags = true
+    // The box keeps the part that stayed in the column it started in, so
+    // its background does not smear down past the column's end. The same
+    // thing `refitFragmentedChild` does for a child whose lines were split.
+    c.h = firstH
+}
+
+// Which column each unit goes in, at what offset, and where a column
+// break cuts one in two. One walk answers all of it and the placement
+// loop only reads the answers, because a count that said two columns and
+// a placement that made three would be a container the height of a
+// column it does not contain. That used to be a list of break indices
+// with the placement loop re-deriving the rest; a break can now fall
+// INSIDE a unit, which is not something an index can say.
+//
+// Nothing here writes to a box: the balancing loop runs this several
+// times with a growing target, and a walk that had shortened a box would
+// plan the next round against the height it had just changed.
+//
+// Parallel arrays rather than an array of structs, because several
+// answers out of one function need somewhere to go (FINDINGS.md, "one
+// value out of a function") and this is the shape the rest of the file
+// uses for it.
+// Whether a column break may cut through this unit rather than fall
+// before it. Chromium fragments a fixed-height block (todo.md has the
+// rows, from `getClientRects`, which returns one rectangle per fragment);
+// what is cut here is narrower than that, and deliberately so. A block
+// holding lines or children would need its content re-placed in the
+// column after the break, and this engine breaks nothing deeper than the
+// container's own children -- css-2026.md says so. A childless block has
+// no content to re-place: its height is the whole of it, and cutting the
+// height is cutting the box.
+bool func columnUnitSplittable(u:ColumnUnit) {
+    if u.hasLine { return false }
+    if u.box == null || u.box.kind != BOX_BLOCK { return false }
+    if u.box.style.breakInsideAvoid { return false }
+    if u.box.children.length > 0 || u.box.lines.length > 0 { return false }
+    return u.box.h > 0
+}
+
+void func columnPlan(units:arr[ColumnUnit], target:int) {
+    arr[int] pcol = []
+    arr[int] ptop = []
+    arr[int] pfirst = []
+    arr[int] pextra = []
+    arr[int] plast = []
+    for int i = 0, i < units.length, i++ {
+        pcol.push(0)
+        ptop.push(0)
+        pfirst.push(0 - 1)
+        pextra.push(0)
+        plast.push(0)
+    }
+    int col = 0
     int colStart = 0
     int colTop = units[0].top
-    int i = 1
-    while i < units.length {
-        bool overflow = units[i].bottom - colTop > target && units[i].top > colTop
-        if !units[i].forceBefore && !overflow {
+    int tallest = 0
+    // A break `columnBreakPoint` put LATER than the unit that overflowed,
+    // which is what `break-before: avoid` asks for. The units between the
+    // two stay in the column they are in and overflow it, so the break
+    // cannot be taken until the walk reaches it.
+    int pendingAt = 0 - 1
+    int i = 0
+    int guard = 0
+    while i < units.length && guard < 4096 {
+        guard++
+        ColumnUnit u = units[i]
+        if i == pendingAt {
+            col++
+            colStart = i
+            colTop = u.top
+            pendingAt = 0 - 1
+        }
+        bool fits = u.bottom - colTop <= target
+        // A forced break wins over a cut: `break-before: column` asks for
+        // the next column, not for part of this one.
+        bool wantBreak = i > colStart && u.forceBefore
+        bool wantCut = false
+        int avail = 0
+        if !fits && !wantBreak {
+            // The space left in this column for the box's border box,
+            // which starts below whatever margin it carries.
+            avail = target - (u.box.y - colTop)
+            if columnUnitSplittable(u) && avail >= 1 && avail < u.box.h { wantCut = true }
+            else { wantBreak = u.top > colTop }
+        }
+        if wantBreak && pendingAt < 0 {
+            int at = columnBreakPoint(units, i, colStart)
+            if at > i {
+                // Later than here: place this unit and the ones up to it
+                // in the column they are already in, and break there.
+                pendingAt = at
+            } else {
+                if at > colStart {
+                    col++
+                    colStart = at
+                    colTop = units[at].top
+                    i = at
+                    continue
+                }
+            }
+        }
+        if wantCut {
+            int rest = u.box.h - avail
+            int extra = Math.floorDiv(rest + target - 1, target)
+            int lastH = rest - (extra - 1) * target
+            pcol[i] = col
+            ptop[i] = colTop
+            pfirst[i] = avail
+            pextra[i] = extra
+            plast[i] = lastH
+            tallest = maxInt(tallest, target)
+            col = col + extra
+            // The part after the break sits at the top of its column, so
+            // the flow y of the box's own bottom edge maps to the bottom
+            // of that part -- and the margin below it follows.
+            colTop = u.box.y + u.box.h - lastH
+            tallest = maxInt(tallest, lastH + u.box.mb)
+            colStart = i
             i++
             continue
         }
-        int at = columnBreakPoint(units, i, colStart)
-        if at < 0 { break }
-        out.push(at)
-        colStart = at
-        colTop = units[at].top
-        i = at + 1
+        pcol[i] = col
+        ptop[i] = colTop
+        tallest = maxInt(tallest, u.bottom - colTop)
+        i++
     }
-    return out
+    colPlanCol = pcol
+    colPlanTop = ptop
+    colPlanFirstH = pfirst
+    colPlanExtra = pextra
+    colPlanLastH = plast
+    colPlanCount = col + 1
+    colPlanHeight = tallest
 }
 
 // The break to take when the column has run out of room before unit
@@ -7860,6 +8043,10 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     boxRegistry = [null]
     // The stand-in boxes are keyed by box id, which starts again here.
     firstLineBoxes = {}
+    // The parts a column break cut live on the boxes themselves, which
+    // this layout is about to build again; what has to be put back is the
+    // painter's question of whether there are any at all.
+    anyColumnFrags = false
     // One float list for the document. Properly a float belongs to its
     // block formatting context and cannot escape it, but nothing here
     // establishes one yet (todo.md); what matters for now is that a

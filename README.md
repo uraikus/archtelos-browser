@@ -286,7 +286,12 @@ the breaks fall is under `break-before`, `break-after` and
 `orphans` and `widows`, which say how few lines of a paragraph may be
 left at the foot of a column or carried to the head of the next. A child
 with `column-span: all` is in no column: it splits the container into
-the run before it, itself across the full width, and the run after.
+the run before it, itself across the full width, and the run after. A
+childless block whose fixed height does not fit what is left of its
+column is cut at the break: it keeps the part in the column it started
+in and carries the rest, which paint and answer the pointer where the
+break put them, with `box-decoration-break` deciding whether a border
+crosses the break.
 
 **Grid** lays a box's children out on two axes at once. `display: grid`
 establishes the container, `grid-template-columns` and

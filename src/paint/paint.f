@@ -4629,6 +4629,65 @@ bool func boxPaintsWhole(b:Box) {
 // at all -- a replaced element has painted its own, an empty cell
 // hiding its decoration has none to show, and `content-visibility:
 // hidden` says there are none.
+// A box's own background, border, border image and shadows, at whatever
+// rectangle the box is carrying. Lifted out of `paintBoxSelf` so a part
+// of a box cut by a column break can be painted the same way the box
+// itself is, rather than by a second copy of these six calls.
+void func paintBoxDecoration(b:Box) {
+    Style s = b.style
+    // a shadow is cast by the border box and lies under it
+    paintShadows(b.x, b.y, b.w, b.h, s)
+    bool bg = printsBackground(s)
+    if b.kind == BOX_ROW {
+        if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
+    } else {
+        if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
+        // A border image replaces the border's own styles where it is
+        // drawn, so it goes over them (Backgrounds and Borders 3 §6.1).
+        paintBorders(b)
+        paintBorderImage(b)
+    }
+    paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
+}
+
+// The parts of a box after the first, painted where the column break put
+// them. Only a multi-column container's own children are ever cut, and
+// `anyColumnFrags` says whether any box on the document was, so the call
+// site tests a boolean and this function is not reached at all on a page
+// that has none (CLAUDE.md: where a call is written is itself a cost).
+//
+// The box is MOVED to each part, painted, and put back. Every painter
+// here reads `b.x`, `b.y`, `b.h` and the box's own border widths, so a
+// stand-in would have to copy a dozen fields and would still be the same
+// box to `paintBackground`'s eyes.
+//
+// `box-decoration-break` decides the break edge, measured both ways in
+// Chromium (todo.md has the pixels): `slice`, the initial value, paints
+// no border across a break and lets the background run to the column's
+// end, which is what zeroing that edge's width does; `clone` paints one.
+void func paintBoxFragments(b:Box) {
+    int sx = b.x
+    int sy = b.y
+    int sh = b.h
+    int sbt = b.bt
+    int sbb = b.bb
+    bool clone = decorationIsClone(b.style)
+    for int i = 0, i < b.frags.length, i++ {
+        ColumnFrag f = b.frags[i]
+        b.x = f.x
+        b.y = f.y
+        b.h = f.h
+        b.bt = !clone && f.openTop ? 0 : sbt
+        b.bb = !clone && f.openBottom ? 0 : sbb
+        paintBoxDecoration(b)
+    }
+    b.x = sx
+    b.y = sy
+    b.h = sh
+    b.bt = sbt
+    b.bb = sbb
+}
+
 bool func paintBoxSelf(b:Box) {
     Style s = b.style
     // empty-cells: hide -- a cell with nothing in it draws neither
@@ -4637,20 +4696,17 @@ bool func paintBoxSelf(b:Box) {
     // decoration goes.
     if b.kind == BOX_CELL && s.emptyCellsHide && !s.borderCollapse && cellIsEmpty(b) { return false }
     if b.kind != BOX_ANON && !s.hidden {
-        // a shadow is cast by the border box and lies under it
-        paintShadows(b.x, b.y, b.w, b.h, s)
-        bool bg = printsBackground(s)
-        if b.kind == BOX_ROW {
-            if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
-        } else {
-            if bg { paintBackground(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, b.pl, b.pt, b.pr, b.pb, s) }
-            // A border image replaces the border's own styles where it
-            // is drawn, so it goes over them (Backgrounds and Borders 3
-            // §6.1).
-            paintBorders(b)
-            paintBorderImage(b)
+        // A box a column break cut keeps its first part's rectangle, and
+        // under `slice` -- the initial value -- carries no border across
+        // the break, which is the bottom edge of that first part.
+        bool cut = anyColumnFrags && b.frags.length > 0
+        int keptBB = b.bb
+        if cut && !decorationIsClone(s) { b.bb = 0 }
+        paintBoxDecoration(b)
+        if cut {
+            b.bb = keptBB
+            paintBoxFragments(b)
         }
-        paintInsetShadows(b.x, b.y, b.w, b.h, b.bl, b.bt, b.br, b.bb, s)
     }
     if b.kind == BOX_IMAGE {
         if !s.hidden { paintImage(b) }
@@ -5124,6 +5180,17 @@ Box func hitOutOfFlow(x:int, y:int) {
 // One child tested against the point, or null for "not this one".
 // Shared by the three passes below so the transform and
 // `pointer-events` rules cannot drift between them.
+// Whether the point is in one of the parts a column break cut off this
+// box. Only a childless block is ever cut (`columnUnitSplittable`), so a
+// part holds no content and there is nothing below it to search.
+bool func pointInBoxFragment(c:Box, x:int, y:int) {
+    for int i = 0, i < c.frags.length, i++ {
+        ColumnFrag f = c.frags[i]
+        if x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h { return true }
+    }
+    return false
+}
+
 Box func hitChild(c:Box, x:int, y:int) {
     if c.kind == BOX_TEXT || c.kind == BOX_BR || c.kind == BOX_INLINE { return null }
     // A transformed box is drawn somewhere other than where it was laid
@@ -5144,8 +5211,15 @@ Box func hitChild(c:Box, x:int, y:int) {
         hx = untransformedX
         hy = untransformedY
     }
-    if hx < c.x || hx >= c.x + c.w { return null }
-    if hy < c.y || hy >= c.y + c.h { return null }
+    if hx < c.x || hx >= c.x + c.w || hy < c.y || hy >= c.y + c.h {
+        // A box a column break cut is in more than one place, and its own
+        // rectangle is only the first. Chromium's `elementFromPoint` names
+        // it at every point in every part (todo.md), so the parts are
+        // tested too -- behind the boolean, so a page with none pays one
+        // test and never reaches the walk below.
+        if !anyColumnFrags || c.frags.length == 0 { return null }
+        if !pointInBoxFragment(c, hx, hy) { return null }
+    }
     // `interactivity: inert` takes the box AND its subtree out of hit
     // testing, and no descendant can undo it -- which is exactly where
     // it parts from `pointer-events: none` below, whose descendants are
@@ -5230,8 +5304,15 @@ Box func hitPhaseWalk(b:Box, x:int, y:int, phase:int) {
             if got != null { return got }
             continue
         }
-        if x < c.x || x >= c.x + c.w { continue }
-        if y < c.y || y >= c.y + c.h { continue }
+        if x < c.x || x >= c.x + c.w || y < c.y || y >= c.y + c.h {
+            // A box a column break cut is in more than one place, and its
+            // own rectangle is only the first part. This cull is the third
+            // place the walk reaches content -- `hitChild` and `hitLines`
+            // are the others -- and a part of a cut box that painted and
+            // could not be clicked was how that was found out here too.
+            if !anyColumnFrags || c.frags.length == 0 { continue }
+            if !pointInBoxFragment(c, x, y) { continue }
+        }
         Box deep = hitPhaseWalk(c, x, y, phase)
         if deep != null { return deep }
         if phase == PHASE_INLINES {

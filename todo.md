@@ -582,13 +582,18 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **A fixed-height block is not fragmented across a column break.**
-   Both halves of this item as originally written have landed -- a
-   definite table height reaches the rows, and `column-fill: auto` fills
-   each column to the container's own height -- and what the multicol
-   probe turned up beside them has not: Chromium splits a fixed-height
-   block across a column break and this engine moves whole boxes. The
-   original wording of the item follows.
+1. **A block with content in it is not fragmented across a column
+   break.** Everything this item asked for has landed -- a definite table
+   height reaches the rows, `column-fill: auto` fills each column to the
+   container's own height, and a **childless** fixed-height block is now
+   cut at a column break, keeping the first part as its own rectangle and
+   carrying the rest as parts that paint and answer the pointer. What is
+   left is the case a cut has to re-place something: a block holding
+   lines or children, where the content after the break would have to be
+   laid out again in the next column. Such a block still moves whole,
+   which is Chromium's own answer for `break-inside: avoid` -- so the
+   remaining gap is the same shape as the one that closed, one level
+   deeper. The measurements the work was done from follow.
 
    **`column-fill: auto` breaks a column early.** The table half of this
    item has landed -- a definite height reaches the rows in proportion to
