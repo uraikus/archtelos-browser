@@ -829,8 +829,44 @@ declared.
    being read by position rather than by which axis they name. That has
    been wrong in the plain horizontal mode since `anchor()` landed.
 
-5. **The scroll box.** A scroll container inside a vertical flow
-   reserves its bar on the physical axis. Not measured yet.
+5. **The scroll box, measured -- and there is nothing wrong with it.**
+   The item used to read "a scroll container inside a vertical flow
+   reserves its bar on the physical axis", written as though that were
+   the bug. Reserving the bar on the physical axis is what Chromium
+   does: a scrollbar is a physical thing and `overflow-x` and
+   `overflow-y` name physical axes, so neither the bar nor the room it
+   takes moves with the writing mode. What follows the mode is the
+   **logical** pair, and this engine already has that right.
+
+   A 120x80 box with 400x300 of content; `clientWidth`/`clientHeight`
+   is the border box less the bars, so 105 means a vertical bar and 65 a
+   horizontal one. Chromium, and this engine's own `sbW`/`sbH` beside
+   it:
+
+   | declaration | mode | Chromium client | bar here |
+   |---|---|---|---|
+   | `overflow: scroll` | all three | 105x65 | both |
+   | `overflow-x: scroll` | all three | 120x65 | horizontal |
+   | `overflow-y: scroll` | all three | 105x80 | vertical |
+   | `overflow-block: scroll` | `horizontal-tb` | 105x80 | vertical |
+   | | `vertical-rl`, `vertical-lr` | **120x65** | **horizontal** |
+   | `overflow-inline: scroll` | `horizontal-tb` | 120x65 | horizontal |
+   | | `vertical-rl`, `vertical-lr` | **105x80** | **vertical** |
+
+   Fifteen rows, and this engine agrees with every one. The two logical
+   spellings exchange axes with the mode because `wmPhysicalName`
+   answers them -- `overflow-block` is `overflow-x` in a vertical mode
+   and `overflow-y` in a horizontal one -- and that has been true since
+   the vertical modes landed, in the same table the two sizes and the
+   insets go through.
+
+   So this item closes with a test rather than a fix. CLAUDE.md's rule
+   is that a claim of this shape has no instrument behind it until one
+   is written, and this is the fifth sentence in this stretch of work
+   that was wrong for want of a probe. The checks ask the three
+   `overflow` spellings of each axis to reserve the same bar as each
+   other in whichever mode makes them synonyms, which needs no number
+   from either engine.
 
 ### What is left of the masks
 
