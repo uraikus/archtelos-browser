@@ -4786,6 +4786,78 @@ the page's own scroll position, so it wants a field on `Page` that the
 shell applies on navigation, beside the flags layout already hands over
 that way.
 
+### The sweep of what is left, measured -- two act and eight do not
+
+The reachable pool had thinned to the point where the honest first step
+was to ask Chromium whether a property does anything at all in HTML
+before implementing it. Two fixtures, one launch each.
+
+**The stacking-context fixture**: a `position: relative` box with a red
+background and a `z-index: -1` child in blue. The child paints above the
+parent's own background only when the parent is a stacking context, and
+`elementFromPoint` names the winner:
+
+| declared | hit |
+|---|---|
+| nothing | the parent |
+| **`view-transition-name: a`** | **the child** -- a stacking context |
+| `paint-order: stroke` | the parent |
+| `overflow-anchor: none` | the parent |
+| `text-size-adjust: 200%` | the parent |
+
+**The advance fixture**: `MMMM` at `32px/40px monospace`, the text
+node's own width:
+
+| declared | width | computed `font-size` |
+|---|---|---|
+| nothing | 77.06 | 32px |
+| `font-stretch: 50%` | 77.06 | 32px |
+| `font-stretch: condensed` | 77.06 | 32px |
+| `text-size-adjust: 200%` | 77.06 | 32px |
+| `math-style: compact` | 77.06 | 32px |
+| `text-rendering: geometricPrecision` | 77.06 | 32px |
+| `font-optical-sizing: none` | 77.06 | 32px |
+| `font-kerning: none` | 77.06 | 32px |
+| `math-depth: 3` alone | 77.06 | 32px |
+| **`font-size: math; math-depth: 3`** | **27.55** | **11.4532px** |
+
+So eight of them are **declines with a measurement behind them**, on the
+same ground as the baseline three: an engine graded against Chromium has
+nothing to copy where Chromium does nothing. `font-stretch` wants a
+condensed face and will not synthesise one, `text-size-adjust` is a
+mobile inflation control a desktop ignores, `math-style` needs the
+scaling its companion does without it, and the last four are hints.
+
+And two act.
+
+**`view-transition-name` creates a stacking context**, which is the
+whole of what it can do here -- the transition itself needs a clock --
+and this engine has stacking contexts, so it is one line beside
+`isolation`.
+
+**`math-depth` scales the font, but only beside `font-size: math`.**
+
+| `math-depth` | computed size, from a parent at depth 0 and 32px |
+|---|---|
+| 0 | 32px |
+| 1 | 22.72 = 32 x 0.71 |
+| 2 | 16.1312 = 32 x 0.71^2 |
+| 3 | 11.4532 = 32 x 0.71^3 |
+| -1 | **45.0704 = 32 / 0.71** |
+| `add(2)` | 16.1312, the same as 2 |
+| `auto-add` | 32px -- it adds nothing outside MathML |
+
+The factor is **0.71 per step of depth from the PARENT's depth**, not
+from zero, which two rows pin down: a child with `font-size: math` inside
+a `math-depth: 2` parent computes 32px, because both are at depth 2 and
+the difference is nothing; and `font-size: math; math-depth: add(1)`
+inside a parent at depth 1 with 22.72px computes 16.1312, one step from
+its parent rather than two from the root. `math-depth` inherits, which
+is what makes the parent's depth available to compare against.
+
+That one is a chunk of its own: it changes the used font size, which the
+cascade computes early because `em` depends on it.
+
 ### What the property instrument does not grade
 
 The property instrument cross-checks every claim about a *property*:
