@@ -92,4 +92,50 @@ Box hitPast = hitTest(hitPage.root, 150, 40)
 check(hitPast == null || hitPast.id != hit1.id,
       'and a point past the part is not the block')
 
+// ---- a split paragraph's parts paint too -------------------------------
+// The lines were always moved into their columns; what the child did not
+// have was a rectangle in each, so the lines after the break had nothing
+// behind them. Chromium's pixels on the same fixture are in todo.md.
+//
+// 210 wide, two columns of 100, four lines of 20 in a paragraph with a
+// 2px border: the column is 42, and each part is 42 -- the opening edge
+// and two lines in the first, two lines and the closing edge in the
+// second. `x = 150` is past the two characters of text, so it samples the
+// paragraph's own background rather than a glyph.
+
+text func splitPage(extra:text) {
+    return '<!doctype html><body style="margin:0;font:16px/20px monospace">'
+        + '<div style="width:210px;column-count:2;column-gap:10px">'
+        + `<p style="margin:0;background:#0000ff;border:2px solid #00aa00;`
+        + `box-sizing:border-box;${extra}">aa<br>bb<br>cc<br>dd</p>`
+        + '</div></body>'
+}
+
+void func paintSplit(extra:text) {
+    Page p = pageFromHtml(splitPage(extra), 'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+}
+
+paintSplit('')
+check(getPixelColor(150, 5) == blue,
+      'the part in the second column paints the paragraph\'s background')
+check(getPixelColor(150, 30) == blue, 'behind its second line as well as its first')
+check(getPixelColor(150, 44) != blue, 'and stops where the part does')
+check(getPixelColor(111, 20) == green, 'the part keeps the side border')
+// Two parts of one box are one colour, which is the check that does not
+// depend on either answer being known in advance.
+check(getPixelColor(150, 5) == getPixelColor(50, 25),
+      'and it is the same colour as the part in the first column')
+
+// The break edge: no border across it under `slice`.
+check(getPixelColor(150, 0) == blue, 'the second part carries no border across the break')
+check(getPixelColor(150, 41) == green, 'and closes with one at the paragraph\'s real bottom')
+check(getPixelColor(50, 1) == green, 'the first part opening with one')
+check(getPixelColor(50, 41) == blue, 'and not closing with one, because the break is there')
+
+paintSplit('box-decoration-break:clone')
+check(getPixelColor(150, 0) == green, '`clone` puts a border across the break')
+check(getPixelColor(50, 41) == green, 'on the first part as well as the second')
+
 finish('column fragments')

@@ -360,4 +360,71 @@ check(boxFrag(talB, 1).x > boxFrag(talB, 0).x, 'each in the column after the las
 check(boxFrag(talB, 0).openTop && boxFrag(talB, 0).openBottom,
       'the middle part opening at both ends')
 
+// ---- a child whose lines are split gets a part per column -------------
+// The lines are moved into their columns already; what the child did not
+// have is a rectangle in each of them, so the lines after the break had
+// no background or border behind them. Chromium's rows are in todo.md,
+// read with `getClientRects`, and they follow the same rule as a cut
+// childless block: every part but the last fills its column, and the last
+// is its own content's extent.
+
+text pSty = 'margin:0;border:2px solid #00aa00;box-sizing:border-box'
+text colsHead = '<div id="c" style="width:210px;column-count:2;column-gap:10px">'
+
+Box func splitP(inner:text) {
+    return layoutHtml(head + colsHead + inner + '</div></body>', 400)
+}
+
+// Four lines of 20 in two columns: two lines each, and 42 is a border
+// edge plus two lines either side of the break.
+Box fourL = splitP(`<p id="p" style="${pSty}">aa<br>bb<br>cc<br>dd</p>`)
+Box fourP = findById(fourL, 'p')
+checkEqInt(findById(fourL, 'c').h, 42, 'four split lines make a container of 42')
+checkEqInt(fourP.x, 0, 'the paragraph starts at its border box, not at its first line')
+checkEqInt(fourP.y, 0, 'at the top of the column')
+checkEqInt(fourP.h, 42, 'and fills the column it started in')
+checkEqInt(boxFragCount(fourP), 1, 'with one more part for the other column')
+checkEqInt(boxFrag(fourP, 0).x, 110, 'which is in that column')
+checkEqInt(boxFrag(fourP, 0).y, 0, 'at the top of it')
+checkEqInt(boxFrag(fourP, 0).h, 42, 'and is as tall as the two lines and the closing edge')
+checkEqInt(boxFrag(fourP, 0).w, fourP.w, 'both parts being a column wide')
+
+// Three lines cannot split evenly, and the difference is the point: the
+// last part is its OWN extent, not the column's.
+Box threeL = splitP(`<p id="p" style="${pSty}">aa<br>bb<br>cc</p>`)
+Box threeP = findById(threeL, 'p')
+checkEqInt(findById(threeL, 'c').h, 42,
+           'three split lines still make 42, because the opening edge is in the first column')
+checkEqInt(threeP.h, 42, 'whose part fills it')
+checkEqInt(boxFragCount(threeP), 1, 'and the second column holds one line')
+checkEqInt(boxFrag(threeP, 0).h, 22, 'so its part is that line and the closing edge, not the column')
+
+// Five lines with padding below them: the first part fills the column
+// although its own content stops short of it.
+Box fiveL = splitP(`<p id="p" style="${pSty};padding-bottom:30px">aa<br>bb<br>cc<br>dd<br>ee</p>`)
+Box fiveP = findById(fiveL, 'p')
+checkEqInt(findById(fiveL, 'c').h, 72, 'five lines and thirty of padding make 72')
+checkEqInt(fiveP.h, 72, 'and the first part fills that, though its lines stop at 62')
+checkEqInt(boxFrag(fiveP, 0).h, 72, 'the last part being its own content, which here is also 72')
+
+// A block above the paragraph, so its first part does not start at the
+// top of the column.
+Box underL = splitP('<div style="height:14px"></div>'
+    + `<p id="p" style="${pSty}">aa<br>bb<br>cc<br>dd</p>`)
+Box underP = findById(underL, 'p')
+checkEqInt(findById(underL, 'c').h, 56, 'a 14-tall block above them makes the container 56')
+checkEqInt(underP.y, 14, 'the paragraph starting below it')
+checkEqInt(underP.h, 42, 'and filling the rest of that column')
+checkEqInt(boxFrag(underP, 0).y, 0, 'while its second part starts at the top of the next')
+checkEqInt(boxFrag(underP, 0).h, 42, 'and is its own two lines and closing edge')
+
+// Which edges the break is on, for `box-decoration-break` to read.
+check(boxFrag(fourP, 0).openTop, 'the part after the break opens at it')
+check(!boxFrag(fourP, 0).openBottom, 'and closes at the paragraph\'s real bottom')
+
+// The instrument: a paragraph that is NOT split must have no parts, or
+// every check above would hold on an engine that gave every box one.
+Box whole = splitP(`<p id="p" style="${pSty}">aa</p>`)
+checkEqInt(boxFragCount(findById(whole, 'p')), 0, 'a paragraph that fits one column has no parts')
+
 finish('multicol')

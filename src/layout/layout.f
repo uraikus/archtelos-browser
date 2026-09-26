@@ -3296,10 +3296,11 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
         }
     }
     int tallest = colPlanHeight
-    // A child whose lines were split no longer occupies one rectangle.
-    // Its box is cut back to the part that stayed in the first column
-    // it appears in, so its background does not smear across the gap.
-    for int i = from, i < to, i++ { refitFragmentedChild(b.children[i]) }
+    // A child whose lines were split no longer occupies one rectangle: it
+    // gets one per column it has lines in. This runs after `tallest`
+    // because a part fills its column, and the column's height is not
+    // known until every unit has been placed.
+    buildFragmentsForRun(units, colW, gap, innerY, tallest)
     return tallest
 }
 
@@ -3349,7 +3350,7 @@ void func cutUnitIntoColumns(c:Box, firstH:int, extra:int, lastH:int,
     anyColumnFrags = true
     // The box keeps the part that stayed in the column it started in, so
     // its background does not smear down past the column's end. The same
-    // thing `refitFragmentedChild` does for a child whose lines were split.
+    // thing `buildLineFragments` does for a child whose lines were split.
     c.h = firstH
 }
 
@@ -3547,6 +3548,14 @@ void func collectColumnUnits(b:Box, out:arr[ColumnUnit], from:int, to:int) {
                 u.hasLine = true
                 u.top = c.lines[j].y
                 u.bottom = c.lines[j].y + c.lines[j].h
+                // The FIRST line carries whatever of the child sits
+                // ABOVE it -- its margin, border and padding -- for the
+                // same reason the last one carries what sits below: that
+                // space is in the column too. Without it a paragraph with
+                // a border came out a column shorter than Chromium's by
+                // the width of its opening edge, which the three-line row
+                // in todo.md measures (40 here against 42).
+                if j == 0 { u.top = minInt(u.top, c.y - c.mt) }
                 // The last line carries whatever of the child sits
                 // below it -- a declared height, a bottom padding, a
                 // margin -- because that space is in the container too,
@@ -3598,19 +3607,76 @@ void func offsetLine(ln:Line, dx:int, dy:int) {
 // After the lines have moved, a child that holds them may cover several
 // columns. Its own rectangle is refitted to the lines that share its
 // first column, so its background and border stay in one place.
-void func refitFragmentedChild(c:Box) {
-    if c.lines.length == 0 { return }
-    int firstX = c.lines[0].x
-    int top = c.lines[0].y
-    int bottom = c.lines[0].y + c.lines[0].h
-    for int i = 0, i < c.lines.length, i++ {
-        if c.lines[i].x != firstX { continue }
-        top = minInt(top, c.lines[i].y)
-        bottom = maxInt(bottom, c.lines[i].y + c.lines[i].h)
+// A child whose lines were split between columns, given one rectangle per
+// column: its own for the column it starts in and a `ColumnFrag` for each
+// of the others, so the lines after the break have its background and its
+// side borders behind them.
+//
+// This replaces cutting the box back to its first column, which is what
+// kept the background from smearing across the gap and left every later
+// column with nothing painted. It reads the same plan the placement loop
+// did, so the parts land where the lines did, and it reads the columns'
+// final height rather than the balancing target, because a unit taller
+// than the target sets its own column's height.
+//
+// The rule is the one `cutUnitIntoColumns` already follows, and Chromium's
+// rows in todo.md say it of this case too: every part but the last fills
+// its column, and the last is its own content's extent. Three lines in
+// two columns of 100 are 42 and 22, not 42 and 42.
+void func buildLineFragments(units:arr[ColumnUnit], from:int, to:int,
+                             colW:int, gap:int, innerY:int, colH:int) {
+    Box c = units[from].box
+    if c == null { return }
+    int flowX = c.x
+    int flowTop = c.y
+    int flowBottom = c.y + c.h
+    int k = from
+    bool first = true
+    while k <= to {
+        int col = colPlanCol[k]
+        int colTop = colPlanTop[k]
+        int e = k
+        while e + 1 <= to && colPlanCol[e + 1] == col { e++ }
+        bool last = e == to
+        int y = first ? innerY + flowTop - colTop : innerY
+        // The box's own bottom edge, in this column's coordinates. A part
+        // that is not the last one ends where its column does instead.
+        int h = last ? innerY + flowBottom - colTop - y : innerY + colH - y
+        if first {
+            c.x = flowX + col * (colW + gap)
+            c.y = y
+            c.h = maxInt(h, 0)
+        } else {
+            ColumnFrag f
+            f.x = flowX + col * (colW + gap)
+            f.y = y
+            f.w = c.w
+            f.h = maxInt(h, 0)
+            f.openTop = true
+            f.openBottom = !last
+            c.frags.push(f)
+            anyColumnFrags = true
+        }
+        first = false
+        k = e + 1
     }
-    c.x = firstX
-    c.y = top
-    c.h = maxInt(bottom - top, 0)
+}
+
+// Each line-bearing child of the run, handed to the function above. A
+// child whose lines all sat in one column comes out of it unchanged, so
+// this does not test for a split first.
+void func buildFragmentsForRun(units:arr[ColumnUnit], colW:int, gap:int,
+                               innerY:int, colH:int) {
+    int i = 0
+    while i < units.length {
+        if !units[i].hasLine { i++  continue }
+        int ci = units[i].childIndex
+        int j = i
+        while j + 1 < units.length && units[j + 1].hasLine
+            && units[j + 1].childIndex == ci { j++ }
+        buildLineFragments(units, i, j, colW, gap, innerY, colH)
+        i = j + 1
+    }
 }
 
 int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {

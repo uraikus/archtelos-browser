@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A child whose lines are split gets a part per column
+
+Its lines were always moved into their columns; what it did not have was
+a rectangle in each of them, so every column after the first had nothing
+painted behind its lines. The parts `Box.frags` already held for a
+childless cut block are the same shape, and Chromium's rule for this case
+is the one `cutUnitIntoColumns` already follows: every part but the last
+fills its column, and the last is its own content's extent. Three lines
+in two columns of 100 are **42 and 22**, not 42 and 42.
+
+**Three separate defects, and the rectangle was wrong before the parts
+were missing.** `refitFragmentedChild` cut the box back to its first
+column by reading its *lines*, so the box's `x` came out as the first
+line's `x` -- inside its own left border, 2 where the border box starts at
+0 -- and its `y` and `h` likewise came from the lines rather than from the
+column. That was true of a child that was *not* split as well, since the
+refit ran for every line-bearing child.
+
+**And a column was short by the box's opening edge.** A per-line column
+unit's top was the line's top, and only the *last* line's unit was
+stretched to cover the box, so nothing carried the border and padding
+*above* the first line. Three lines with a 2px border came out 40 here
+against Chromium's 42. The first line's unit now starts at the box's
+margin-box top, which is the mirror of what the last one already did.
+
+`buildLineFragments` replaces the refit. It reads the same plan the
+placement loop read, so the parts land where the lines did, and it reads
+the columns' final height rather than the balancing target, because a
+unit taller than the target sets its own column's height. A child whose
+lines all sat in one column comes out of it unchanged, which is why it
+does not test for a split first.
+
+Measured against Chromium on four fixtures -- four lines, three lines,
+five lines with padding below them, and four lines under a 14-tall block
+-- and this engine now gives its numbers on all four, containers
+included. The pixel checks in `tests/render/colfrag.f` grew from 20 to
+31, and eight of the eleven new ones fail when the parts are not built.
+
+What stays open is a block whose own **children** straddle a break, which
+would have to be laid out again in the next column, and
+`box-decoration-break: clone` making the container taller -- 44 against
+42, because the repeated edges take space in every column. Both are in
+todo.md with Chromium's rows.
+
 ### A childless fixed-height block is cut at a column break
 
 Chromium fragments a block whose height does not fit what is left of its

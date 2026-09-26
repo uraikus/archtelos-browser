@@ -582,46 +582,20 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **A child whose lines are split gets one rectangle, and the wrong
-   one.** Measured, 210 wide, two columns of 100, a `<p>` with
-   `border: 2px; box-sizing: border-box` and `margin: 0`, relative to
-   each container's own top:
-
-   | | Chromium | this engine |
-   |---|---|---|
-   | four lines: container | 42 | 42 |
-   | four lines: the paragraph | `0,0 100x42` **and** `110,0 100x42` | one box, `2,0 100x40` |
-   | three lines: container | 42 | **40** |
-   | three lines: the paragraph | `0,0 100x42` and `110,0 100x`**`22`** | one box, `2,0 100x40` |
-   | five lines + `padding-bottom: 30` | `0,0 100x72` (its content is 62) and `110,0 100x72` | -- |
-   | four lines under a 14-tall block | `0,`**`14`**` 100x42` and `110,0 100x42` | -- |
-   | four lines with `box-decoration-break: clone` | container **44**, two of `100x44` | -- |
-
-   **Earlier parts fill to the column's end and the last part is its own
-   content's extent**, which the three-line row says (22 against 42) and
-   the five-line row says the other way (the first part is 72 where its
-   content is 62). That is the rule `cutUnitIntoColumns` already
-   implements for a childless block, so the parts a line-bearing child
-   needs are the same shape as the ones it already has.
-
-   Three separate defects, not one:
-
-   - **The parts do not exist.** `refitFragmentedChild` cuts the box back
-     to its first column so the background does not smear across the gap,
-     and the lines in every other column have nothing painted behind
-     them.
-   - **The refitted rectangle is wrong.** Its `x` is the first line's `x`,
-     which is *inside* the box's own left border -- 2 where the border box
-     starts at 0 -- and its `h` is the lines' extent rather than the
-     column's.
-   - **The column height misses the box's own edges.** A per-line unit's
-     top is the line's top, and the last line's bottom is stretched to
-     cover the box, so nothing carries the *opening* border: three lines
-     come out 40 here against Chromium's 42.
-
-   And a fourth, in layout rather than painting: **`clone` makes the
-   container taller**, 44 against 42, because the repeated edges take
-   space in every column. This engine's balancing does not know that.
+1. **`box-decoration-break: clone` does not make a column taller.**
+   Measured: four lines of 20 in a paragraph with a 2px border, two
+   columns of 100. Under `slice` Chromium's container is 42 and each part
+   is 42; under `clone` the container is **44** and each part is 44,
+   because the repeated edges take space in every column. This engine
+   gives 42 either way, measured on the same fixture. The parts do carry
+   the cloned border -- the painter draws it and the pixel suite checks it
+   -- but the column height was worked out without it, so the edge is
+   drawn *over* the bottom of the last line's box instead of the column
+   growing to hold it. The fix is in `collectColumnUnits`: with `clone`
+   every part has both edges, so a unit that starts or ends a column has
+   to account for one whether or not it is the child's first or last
+   line -- and which units those are is not known until the breaks are
+   decided, so it is a second pass rather than a wider unit.
 
 2. **A block whose CHILDREN straddle a column break is not
    fragmented.** Everything this item originally asked for has landed -- a
