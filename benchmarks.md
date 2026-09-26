@@ -150,6 +150,24 @@ per-feature reading on this machine is reported as nothing, and only a
 cost several times this size and present in every round is worth a
 question to the code.
 
+The change after it -- recursive fragmentation, which adds a predicate per
+child to the unit collector -- failed at the **first** gate rather than the
+mirror, which is the cleanest kind of nothing: TOTAL +1 then -1 on
+`features.html` and -1 then +2 on `generated.html`, the two forward rounds
+disagreeing in sign on both pages, against +4 and -3 reversed.
+`features.html`'s own total moved 159, 165, 160 across the three rounds of
+one unchanged binary -- six milliseconds, more than any median in the
+table.
+
+**Neither benchmark page exercises that change at all.** `features.html`
+declares `column-count: 3` over paragraphs, which hold lines, so the
+collector reaches the new predicate and never descends past it. A page
+that did exercise it would have to lay out differently between the two
+binaries, which is the thing a paired reading cannot survive -- so the
+feature lives in the render suite and the pairing measures only what it
+costs the pages that do not use it, which is the division this file's own
+rules arrive at.
+
 ## The canvas has to match, or the number means nothing
 
 Headless Chromium's `--screenshot` captures the **viewport**. This

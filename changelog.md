@@ -49,6 +49,16 @@ child that was never inside its first rectangle -- and seven of its twelve
 new checks fail when the parts are not built. The paginator shares the
 collector and its two suites pass unchanged, 128 and 106.
 
+Clean under valgrind, counts unchanged: 290/405 properties, 122/122
+displays, 129/129 selectors, 1535/1652 conformance. Paired on both pages,
+each still rendering byte-identically: **+1 then -1** forward on
+`features.html` and **-1 then +2** on `generated.html`, the two forward
+rounds disagreeing in sign on both, so this fails at the first gate rather
+than the mirror. Neither page exercises the recursion -- `features.html`'s
+columns hold paragraphs, which hold lines -- so what was measured is the
+predicate's cost to the pages that do not use it, and it is nothing. The
+binary grew 4,256 bytes.
+
 ### `box-decoration-break: clone` takes space in every column
 
 `clone` puts the whole box on every part of a broken one, so the repeated
