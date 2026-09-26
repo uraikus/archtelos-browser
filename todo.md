@@ -582,7 +582,43 @@ declared.
 
 **What is left, in the order it is worth doing:**
 
-1. **A block whose CHILDREN straddle a column break is not
+1. **Fragmentation is not recursive**, and Chromium's is. Measured, 210
+   wide, two columns of 100, a wrapper `<div>` with `border: 2px;
+   box-sizing: border-box; margin: 0` holding 30-tall children, relative
+   to each container's own top:
+
+   | the wrapper holds | Chromium's container | Chromium's wrapper | this engine |
+   |---|---|---|---|
+   | two 30-tall children | **32** | `0,0 100x32` and `110,0 100x32` | container **64**, wrapper whole in the first column |
+   | three 30-tall children | **47** | two of `100x47` | container **94**, wrapper whole |
+   | one 70-tall child | **37** | two of `100x37` | container **74**, wrapper whole |
+
+   **The children are broken as well, and the middle one is cut.** With
+   three children Chromium gives the first `2,2 96x30`, the **second two
+   rectangles** -- `2,32 96x15` and `112,0 96x15` -- and the third
+   `112,15 96x30`. With one 70-tall child it gives that child `2,2 96x35`
+   and `112,0 96x35`. So the rule is simply the column algorithm applied
+   at every level: a subtree is broken by breaking its children, and a
+   childless box with a height is cut, which is what
+   `cutUnitIntoColumns` already does for a direct child.
+
+   **What this engine does instead is worse than a wrong number.** A
+   multi-column container holding one such wrapper degenerates to a
+   single column: the wrapper cannot be broken, so it stays whole and the
+   container grows to its full height -- 64 where Chromium gives 32, with
+   the second column empty.
+
+   The work is in `collectColumnUnits`, which walks the container's direct
+   children only. It has to descend into a child that cannot fit and may
+   be broken, emitting units for its descendants and remembering the
+   ancestors above each one -- and then every ancestor between the
+   container and a broken unit needs a part per column, which is the
+   generalisation of what `buildLineFragments` already does for one
+   child's line units.
+
+   The old wording of this item follows.
+
+   **A block whose CHILDREN straddle a column break is not
    fragmented.** Everything this item originally asked for has landed -- a
    definite table height reaches the rows, `column-fill: auto` fills each
    column to the container's own height, and a **childless** fixed-height
