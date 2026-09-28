@@ -4862,18 +4862,38 @@ rather than quality: `noscript01.dat` assumes a disabled scripting flag,
 which is permanently true here. The script-data corners of `tests16.dat`
 and four cases of `html5test-com.dat` are genuine leads.
 
-## A margin that collapses through to the root is dropped
+## A first child's collapsed-through margin is dropped
 
-`<body style="margin:0"><div style="margin-top:40px">` puts the div at
-the very top. Chromium puts it at 40, and says so:
-`getBoundingClientRect().top` is 40 there and 0 here.
+Not only at the root. When a block does **not** absorb its first child's
+top margin -- it has a top border or padding, or it is the root, a table
+cell, an inline-block or a list item -- the child is placed by its own
+`margin-top` alone, and whatever margin collapses up *through* the child
+from its own first descendants is lost. `collapsedTopMargin` computes the
+right value; the child loop in `layoutBlockChildrenRange` computes it and
+then lays the child out from where the flow was, letting `layoutBlock`
+add only the child's own margin. `layoutDocumentOnce` carries the same
+number for the root and drops it with a comment saying so.
 
-`layoutDocument` computes the margin collapsing into the root and never
-applies it, because applying it at the root double-counts the ordinary
-case where `layoutBlock` already has. The fix is to separate the margin
-that collapses *through* the root from the one that collapses *into* it.
-Found while testing absolute positioning, which resolves against the
-ancestor's border box and so depends on it.
+Measured in both engines (`getBoundingClientRect().top`, 400px wide):
+
+| fixture | div, here | div, Chromium |
+|---|---|---|
+| A `<body style="margin:0"><div style="margin-top:40px">` | 0 | **40** |
+| B default body, div `margin-top:40px` | 8 | **40** |
+| C default body, div `margin-top:4px` | 8 | 8 |
+| D `body` `margin-top:40px`, div none | 40 | 40 |
+| E `html` `margin-top:20px`, body 0, div 40 | 20 | **60** |
+| F body `padding-top:1px`, div 40 | 41 | 41 |
+| G body 0, `<section>`, div 40 | 0 | **40** |
+| H body `padding-top:1px`, `<section>`, div 40 | 1 | **41** |
+| I `border-top:2px` wrapper, section 5, div 40 | 7 | **42** |
+| J body `padding-top:50px`, section 10, div -30 | 60 | **30** |
+
+The six that differ all have a margin coming up through a child that
+the parent does not absorb. The four that agree have none: C collapses
+to the body's own 8, D and F put the margin on the child itself. The
+root's own margin never collapses (CSS2 §8.3.1), which E confirms: the
+`html` stays at 20 and the body's collapsed 40 is inside it.
 
 ## Layout
 
