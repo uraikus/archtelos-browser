@@ -152,6 +152,19 @@ bool cascadeSawNegativeZ = false
 map[bool] explicitZIndexOfSerial = {}
 bool anyExplicitZIndex = false
 
+// Which computed styles said `display: flow-root`. It computes to the
+// same `block` an ordinary block does, and the whole difference between
+// the two is that this one establishes a block formatting context, so
+// the fact is kept beside the value rather than as a field on `Style`
+// (benchmarks.md, "What one `int` on `Style` costs").
+map[bool] flowRootOfSerial = {}
+bool anyFlowRoot = false
+
+bool func styleIsFlowRoot(s:Style) {
+    if !anyFlowRoot || s == null { return false }
+    return flowRootOfSerial[`${s.serial}`] == true
+}
+
 bool func zIndexIsExplicit(s:Style) {
     if !anyExplicitZIndex || s == null { return false }
     return explicitZIndexOfSerial[`${s.serial}`] == true
@@ -334,6 +347,9 @@ void func cascadeReset() {
     map[bool] emptyExplicitZ = {}
     explicitZIndexOfSerial = emptyExplicitZ
     anyExplicitZIndex = false
+    map[bool] emptyFlowRoot = {}
+    flowRootOfSerial = emptyFlowRoot
+    anyFlowRoot = false
     cascadeSawClip = false
     cascadeSawColorScheme = false
     cascadeSawDirection = false
@@ -8466,6 +8482,12 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     s.display = cssWideKeyword(displayDecl) == CSSWIDE_INHERIT
         ? (isRoot ? dfltDisplay : parent.display)
         : parseDisplay(displayDecl, dfltDisplay)
+    // Nine characters is the first thing `flow-root` has that most
+    // declarations do not, so only those are lowered and compared.
+    if displayDecl != null && displayDecl.length == 9 && asciiLower(displayDecl) == 'flow-root' {
+        flowRootOfSerial[`${s.serial}`] = true
+        anyFlowRoot = true
+    }
     s.background = colorProp(props, 'background-color', s.color, COLOR_TRANSPARENT)
     // A background image paints over the background colour. Only
     // gradients are supported; `url()` needs a fetch the cascade cannot

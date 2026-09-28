@@ -125,11 +125,99 @@ checkEq(rects('<div style="display:flex"><div><div style="float:left;width:100px
     ' (0,0 400x50) (0,0 100x50) (0,0 100x50) (0,50 400x10)',
     'F26: flex item contains a float')
 
+checkEq(rects('<div style="overflow:hidden"><div style="margin-top:20px;height:10px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x30) (0,20 400x10) (0,30 400x10)',
+    'F27: a first child margin stays inside a BFC')
+
+checkEq(rects('<div style="overflow:hidden"><div style="margin-bottom:20px;height:10px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x30) (0,0 400x10) (0,30 400x10)',
+    'F28: a last child margin stays inside a BFC')
+
+checkEq(rects('<div><div style="margin-top:20px;margin-bottom:20px;height:10px"></div></div><div style="height:10px"></div>'),
+    ' (0,20 400x10) (0,20 400x10) (0,50 400x10)',
+    'F29: the same in a plain block collapses out')
+
+checkEq(rects('<div style="display:flow-root"><div style="margin-top:20px;margin-bottom:20px;height:10px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x50) (0,20 400x10) (0,50 400x10)',
+    'F30: both margins inside a flow-root')
+
+checkEq(rects('<div style="overflow:hidden;margin-top:5px"><div style="margin-top:20px;height:10px"></div></div>'),
+    ' (0,5 400x30) (0,25 400x10)',
+    'F31: own margin and a child margin in a BFC')
+
+checkEq(rects('<div style="height:10px"></div><div style="overflow:hidden;margin:15px 0"></div><div style="height:10px"></div>'),
+    ' (0,0 400x10) (0,25 400x0) (0,40 400x10)',
+    'F32: an empty BFC block')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><table style="border-collapse:collapse;width:100%"><tr><td style="padding:0"><div style="height:20px"></div></td></tr></table>'),
+    ' (0,0 100x100) (0,100 400x20)',
+    'G1: table beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="display:flex"><div style="height:20px;flex:1"></div></div>'),
+    ' (0,0 100x100) (100,0 300x20) (100,0 300x20)',
+    'G2: flex container beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="display:grid"><div style="height:20px"></div></div>'),
+    ' (0,0 100x100) (100,0 300x20) (100,0 300x20)',
+    'G3: grid container beside a float')
+
+checkEq(rects('<div><div style="float:left;width:100px;height:50px;margin-top:20px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x0) (0,20 100x50) (0,0 400x10)',
+    'G5: float as first child, plain parent')
+
+checkEq(rects('<div style="contain:layout"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x50) (0,0 100x50) (0,50 400x10)',
+    'G6: contain:layout contains a float')
+
+checkEq(rects('<div style="contain:paint"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x50) (0,0 100x50) (0,50 400x10)',
+    'G7: contain:paint contains a float')
+
+checkEq(rects('<div style="overflow:clip"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>'),
+    ' (0,0 400x0) (0,0 100x50) (0,0 400x10)',
+    'G8: overflow:clip does not')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="overflow:hidden;width:50%;height:30px"></div>'),
+    ' (0,0 100x100) (100,0 200x30)',
+    'H1: percentage width BFC beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="overflow:hidden;width:90%;height:30px"></div><div style="height:10px"></div>'),
+    ' (0,0 100x100) (0,100 360x30) (0,130 400x10)',
+    'H2: percentage width that does not fit')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><table style="border-collapse:collapse"><tr><td style="padding:0"><div style="width:150px;height:20px"></div></td></tr></table>'),
+    ' (0,0 100x100) (100,0 150x20)',
+    'H3: table auto width beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="display:flex;width:200px"><div style="height:20px;flex:1"></div></div>'),
+    ' (0,0 100x100) (100,0 200x20) (100,0 200x20)',
+    'H4: flex with declared width beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="overflow:hidden;padding:5px;border:2px solid;height:30px"></div>'),
+    ' (0,0 100x100) (100,0 300x44)',
+    'H5: BFC with padding and border beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="overflow:hidden;width:100px;margin:0 auto;height:30px"></div>'),
+    ' (0,0 100x100) (200,0 100x30)',
+    'H6: auto margins on a BFC with a width beside a float')
+
+checkEq(rects('<div style="float:left;width:100px;height:100px"></div><div style="float:right;width:50px;height:100px"></div><div style="overflow:hidden;height:30px"></div>'),
+    ' (0,0 100x100) (350,0 50x100) (100,0 250x30)',
+    'H7: BFC beside floats on both sides')
+
+checkEq(rects('<div style="float:left;width:100px;height:40px"></div><div style="clear:left;overflow:hidden;height:30px"></div>'),
+    ' (0,0 100x40) (0,40 400x30)',
+    'H8: BFC after a cleared float band')
+
+checkEq(rects('<div><div style="float:left;width:100px;height:50px"></div><div style="margin-top:20px;height:10px"></div></div><div style="height:10px"></div>'),
+    ' (0,20 400x10) (0,20 100x50) (0,20 400x10) (0,30 400x10)',
+    'H9: first in-flow child after a float, margins')
+
 // The instrument: three ways of establishing a block formatting context
 // must give the same rectangles, and a plain block, which establishes
-// none, must not. Every check above would hold on an engine that contained
-// floats in every block, or in none, only if the fixtures were the wrong
-// ones; these say the two are different things.
+// none, must not. Every check above would hold on an engine that
+// contained floats in every block, or in none, only if the fixtures were
+// the wrong ones; these say the two are different things.
 text hidden = rects('<div style="overflow:hidden"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>')
 text flowRoot = rects('<div style="display:flow-root"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>')
 text auto = rects('<div style="overflow:auto"><div style="float:left;width:100px;height:50px"></div></div><div style="height:10px"></div>')

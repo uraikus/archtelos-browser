@@ -4862,53 +4862,24 @@ rather than quality: `noscript01.dat` assumes a disabled scripting flag,
 which is permanently true here. The script-data corners of `tests16.dat`
 and four cases of `html5test-com.dat` are genuine leads.
 
-## Block formatting contexts
+## Block formatting contexts: what is still open
 
-A float belongs to a block formatting context and cannot leave it, and a
-box that establishes one neither contains a float nor is contained by
-another's. This engine keeps one float list for the whole document, so
-none of that holds: `overflow: hidden` does not contain a float, a
-`display: flow-root` box is as short as if the float were not there, and
-an inline-block, a table cell, a flex or grid item, an absolutely
-positioned box and a float itself all let their floats escape and join
-every other box's list.
+A box that establishes one now contains its floats, isolates them from
+the list outside it, keeps its margins from collapsing with its
+children's and goes beside the floats in the context it is in (forty-eight
+fixtures against Chromium, in `tests/unit/test_bfc.f`). Two things
+measured differently are left:
 
-Measured in both engines on 26 fixtures (400px wide, body margin 0, the
-rectangle of every `div` in document order): **20 differ and 6 agree**.
-The six that agree are the ordinary cases the single list gets right --
-a plain `div` neither contains a float (F2), nor stops one leaking into
-its sibling (F9), and `clear` in a plain `div` clears the outer float
-(F10) -- plus a fixed `height` (F22), a `min-height` above the floats
-(F23) and a margin larger than the float beside it (F14).
-
-What the other twenty measure, each as Chromium answers it:
-
-- **Containment.** A block that establishes a BFC grows to hold its
-  floats' *margin* boxes: `overflow` other than `visible` and `clip`
-  (F1, F11), `flow-root` (F3), an inline-block (F4), a table cell (F7),
-  a float (F17), an absolutely positioned box (F18), a grid item (F25)
-  and a flex item (F26). Its own padding and border go round them (F24:
-  50 + 10 + 4 = 64), and a float's own margin stays inside it rather
-  than collapsing out (F21: 75, where this engine moves the *container*
-  down 10 and makes it 0 tall). A float nested inside a plain block in a
-  BFC is contained by the BFC (F8).
-- **Isolation.** A float in a BFC does not join the outer list, so a
-  float outside and one inside do not push each other: an outer float
-  and an inner one both sit at x=0 rather than side by side (F17), and
-  `clear` inside the BFC looks at the BFC's own floats only (F6: the
-  cleared div is at 0, this engine puts it at 100).
-- **A BFC beside a float.** A box that establishes one does not overlap
-  the floats in its own context: it goes *beside* one, its border box
-  starting at the float's edge and running to the far one when the
-  width is `auto` (F5: x=100 w=300; F12 with a right float: x=0 w=300).
-  The margin is measured from the container, not from the float, so a
-  `margin-left` smaller than the float's width changes nothing (F13:
-  still x=100, w=300) and a larger one wins (F14: x=150, w=250). A
-  declared width that fits goes beside it (F15) and one that does not
-  drops the box **below** the float (F16: y=100, and the box after it at
-  130). The test is made at the box's own top, so a float that ended
-  above it no longer matters (F20: the second BFC is back at x=0) and a
-  float that has not ended narrows every BFC beside it (F19).
+- **A multicol container does not contain its floats.** `<div
+  style="column-count:2"><div style="float:left;width:50px;height:60px">`
+  is 400x30 in Chromium and 400x0 here, and the float's own rectangle is
+  258x30 there where 50x60 is declared, which has not been explained.
+  `boxEstablishesBFC` does not ask for a multicol container for that
+  reason: containing the float here would fix the container's height and
+  leave the float's size disagreeing.
+- **A list item holding only a float is 18px tall in Chromium and 0
+  here.** The outside marker generates a line box the item is as tall as,
+  and this engine draws the marker without giving the item one.
 
 ## Layout
 

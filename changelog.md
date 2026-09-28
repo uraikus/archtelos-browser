@@ -5,6 +5,76 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Block formatting contexts: floats stay where they belong
+
+This engine kept one float list for the whole document, so nothing
+contained a float and every float pushed every other box's content
+aside. Measured in both engines on 32 fixtures first, then 16 more
+as the first implementation showed what it had missed: **the parent
+disagreed with Chromium on 38 of the 48**, and this revision agrees on
+all 48, including the ordinary cases (a plain block, `clear` in a plain
+block) the single list already got right.
+
+A box that **establishes a block formatting context** -- the root, a
+float, an out-of-flow box, an inline-block, a table, a cell, a flex or
+grid container or item, `overflow` other than `visible` and `clip`,
+`display: flow-root`, `contain: layout` or `paint` -- now:
+
+- **contains its floats.** Its content is laid out against a fresh float
+  list, and the box grows to the lowest margin edge among them (F1, F4,
+  F7, F11, F17, F18, F25, F26), with its own padding and border round
+  them (F24). `overflow: hidden` on a wrapper holding only floats is
+  the ordinary clearfix, and it is no longer zero tall.
+- **isolates them.** Neither an outer float nor an inner one moves the
+  other, and `clear` inside looks at the inner ones only (F6, F17).
+- **keeps its margins from collapsing with its children's** (F21, F27,
+  F28, F30, F31), which `collapsedTopMargin` and `collapsedBottomMargin`
+  had no notion of: an `overflow: hidden` box's first child's margin was
+  escaping it.
+- **goes beside the floats in its own context** rather than under them.
+  A block, a table, a flex or a grid container is laid out in the room
+  between the floats when its width is `auto` (F5, G2, G3, H3), its
+  border box starting at the float's edge or at its own margin if that
+  is further in (F13, F14), and drops below them when a declared width
+  does not fit (F16, G1, H2).
+
+**The first version of that last rule was wrong, and the first 32
+fixtures did not say so.** It laid the box out in the narrowed room in
+every case, so a percentage width resolved against the room beside the
+float rather than against the containing block: `overflow:hidden;
+width:50%` beside a 100px float came out 150 wide where Chromium says
+200, and a `width:90%` that cannot fit beside it was put there anyway.
+Neither had a fixture. Sixteen more were written from what the first
+version suggested, asked of Chromium, and the two showed up at once. A
+declared width now keeps its base and the box is moved into place; an
+`auto` width or auto side margins are settled by the room, because that
+is what they mean (H6: auto margins centre a 100px box between a float
+and the edge).
+
+**Floats stopped taking part in margin collapsing.** A float's own
+`margin-top` was collapsing with its parent's and moving the parent, and
+a parent whose first child was a float looked no further than the float
+for the margin that collapses through it. `collapsedTopMargin` and
+`collapsedBottomMargin` now look for the first and last child *in the
+flow* (G5, H9).
+
+`display: flow-root` had parsed to plain `block` and could not be told
+apart from it. It is recorded per computed style, in a map behind one
+per-document boolean rather than as a field on `Style`, which is what
+benchmarks.md's "What one `int` on `Style` costs" found that a field
+would cost. `docHasBfcRoots` guards the margin rules the same way
+`docHasFloats` guards the float ones: a page that says none of the
+properties above pays a bool.
+
+The instrument is three ways of establishing a context -- `overflow:
+hidden`, `flow-root`, `overflow: auto` -- giving the same rectangles
+while a plain block does not, so the fixtures cannot all be passed by an
+engine that contains floats everywhere or nowhere. `overflow: scroll` is
+left out on purpose: a scroll box reserves room for its scrollbars.
+
+Open, and measured: a multicol container's floats, and a list item that
+holds only a float (todo.md).
+
 ### A first child's collapsed-through margin is placed
 
 todo.md said a margin collapsing through to the root was dropped. On ten

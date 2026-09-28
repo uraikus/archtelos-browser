@@ -542,6 +542,30 @@ bool docHasPositioned = false
 map[int] staticPosX = {}
 map[int] staticPosY = {}
 bool docHasFloats = false
+// Whether any block in the document establishes a block formatting
+// context by what its style says: a float, an out-of-flow box, an
+// `overflow` that clips or scrolls, `flow-root`, `contain: layout` or
+// `paint`, or a flex or grid container whose items do. Inline-blocks,
+// cells and tables are BFC roots by their kind and are not counted,
+// because the margin rules that ask never reach them. A page that says
+// none of these skips those rules' extra test.
+bool docHasBfcRoots = false
+
+struct FloatRect {
+    left:int
+    top:int
+    right:int
+    bottom:int
+    side:int
+    // CSS Shapes 1: the float's exclusion follows this shape rather
+    // than the rectangle above, which stays the margin box the float
+    // itself occupies and the edge the shape is clamped to.
+    hasShape:bool
+    shape:ShapeGeom
+}
+
+arr[FloatRect] bfcFloats = []
+
 // Set while the box tree is built when any box would be painted as one
 // unit rather than split across CSS2 §9.9's steps 3, 4 and 5 for a
 // reason that can only be read out of its `Style`: `overflow`, paint
@@ -659,7 +683,14 @@ Box func newBox(kind:int, node:Node, style:Style) {
     b.forcedWidthPx = -1
     if node != null && kind != BOX_TEXT && kind != BOX_BR && kind != BOX_ANON {
         if positionIsPositioned(style.position) { docHasPositioned = true }
-        if style.floatSide != FLOAT_NONE { docHasFloats = true }
+        if style.floatSide != FLOAT_NONE { docHasFloats = true  docHasBfcRoots = true }
+        if !docHasBfcRoots && (kind == BOX_FLEX || kind == BOX_GRID
+            || positionIsOutOfFlow(style.position)
+            || (style.overflowX != OVERFLOW_VISIBLE && style.overflowX != OVERFLOW_CLIP)
+            || (style.overflowY != OVERFLOW_VISIBLE && style.overflowY != OVERFLOW_CLIP)
+            || style.containLayout || style.containPaint || styleIsFlowRoot(style)) {
+            docHasBfcRoots = true
+        }
         if style.overflowHidden || style.containPaint || style.contentHidden
             || style.opacity < 1.0 { docHasWholePaint = true }
         if style.outlineWidth > 0 { docHasOutline = true }
@@ -2105,6 +2136,33 @@ int func imageBoxHeight(b:Box, w:int) {
 
 // ---- block layout -----------------------------------------------------------
 
+// Whether a box establishes a block formatting context (CSS2 §9.4.1),
+// which is what makes it the container its floats cannot leave, and
+// what stops its own margins collapsing with its children's. The list is
+// the standard's: the root, floats, absolutely positioned boxes,
+// inline-blocks, table cells and tables, flex and grid items,
+// `overflow` other than `visible` and `clip`, `display: flow-root` and
+// `contain: layout` or `paint`. A multicol container is the one it names
+// that is not asked here (todo.md).
+bool func boxEstablishesBFC(b:Box) {
+    if b == null { return false }
+    int k = b.kind
+    if k == BOX_INLINE_BLOCK || k == BOX_CELL || k == BOX_TABLE || k == BOX_FLEX || k == BOX_GRID {
+        return true
+    }
+    if k != BOX_BLOCK { return false }
+    if b.parentId <= 0 { return true }
+    Style s = b.style
+    if s.floatSide != FLOAT_NONE { return true }
+    if b.node != null && positionIsOutOfFlow(s.position) { return true }
+    if s.overflowX != OVERFLOW_VISIBLE && s.overflowX != OVERFLOW_CLIP { return true }
+    if s.overflowY != OVERFLOW_VISIBLE && s.overflowY != OVERFLOW_CLIP { return true }
+    if s.containLayout || s.containPaint { return true }
+    if styleIsFlowRoot(s) { return true }
+    int pk = parentKind(b)
+    return pk == BOX_FLEX || pk == BOX_GRID
+}
+
 // The margin that collapses out through the top of `b`: its own top
 // margin joined with its first in-flow child's, when nothing (border,
 // padding) separates them.
@@ -2122,9 +2180,18 @@ int func collapseMargins(a:int, b:int) {
 int func collapsedTopMargin(b:Box, cw:int) {
     int own = resolveLen(b.style.marginTop, cw, 0)
     if b.kind != BOX_BLOCK && b.kind != BOX_ANON { return own }
+    // A box that establishes a block formatting context keeps its
+    // children's margins inside it (CSS2 §8.3.1).
+    if docHasBfcRoots && boxEstablishesBFC(b) { return own }
     if b.style.borderTop > 0 || resolveLen(b.style.paddingTop, cw, 0) > 0 { return own }
     if hasInlineContent(b) || b.children.length == 0 { return own }
-    Box first = b.children[0]
+    // A float and an out-of-flow box take no part in margin collapsing
+    // (§8.3.1): the margin that collapses is the first child in the
+    // flow's, which is not necessarily the first child.
+    int fi = 0
+    while fi < b.children.length && (boxIsFloated(b.children[fi]) || boxIsOutOfFlow(b.children[fi])) { fi++ }
+    if fi >= b.children.length { return own }
+    Box first = b.children[fi]
     if first.kind != BOX_BLOCK && first.kind != BOX_ANON { return own }
     return collapseMargins(own, collapsedTopMargin(first, cw))
 }
@@ -2132,10 +2199,14 @@ int func collapsedTopMargin(b:Box, cw:int) {
 int func collapsedBottomMargin(b:Box, cw:int) {
     int own = resolveLen(b.style.marginBottom, cw, 0)
     if b.kind != BOX_BLOCK && b.kind != BOX_ANON { return own }
+    if docHasBfcRoots && boxEstablishesBFC(b) { return own }
     if b.style.borderBottom > 0 || resolveLen(b.style.paddingBottom, cw, 0) > 0 { return own }
     if !lenIsAuto(b.style.height) { return own }
     if hasInlineContent(b) || b.children.length == 0 { return own }
-    Box last = b.children[b.children.length - 1]
+    int li = b.children.length - 1
+    while li >= 0 && (boxIsFloated(b.children[li]) || boxIsOutOfFlow(b.children[li])) { li-- }
+    if li < 0 { return own }
+    Box last = b.children[li]
     if last.kind != BOX_BLOCK && last.kind != BOX_ANON { return own }
     return collapseMargins(own, collapsedBottomMargin(last, cw))
 }
@@ -2602,6 +2673,48 @@ int func scrollHThumbHeight(b:Box) { return b.sbH - 2 * SCROLLBAR_THUMB_INSET }
 // does twice: once to find out whether it overflows, and again with the
 // scrollbar's room taken out.
 int func layoutBlockContent(b:Box, innerX:int, innerY:int, width:int) {
+    // A box that establishes a block formatting context lays its content
+    // out against floats of its own and grows to hold them. A document
+    // with no float in it never asks.
+    if docHasFloats && boxEstablishesBFC(b) {
+        arr[FloatRect] outer = bfcEnter()
+        int h = layoutBlockContentFlow(b, innerX, innerY, width)
+        return bfcLeave(outer, innerY, h)
+    }
+    return layoutBlockContentFlow(b, innerX, innerY, width)
+}
+
+// Whether a block-level child that establishes a block formatting
+// context is placed beside the floats of the context it is in rather
+// than under them: a block, a table, a flex or a grid container.
+bool func boxBesideFloats(b:Box) {
+    int k = b.kind
+    if k != BOX_BLOCK && k != BOX_TABLE && k != BOX_FLEX && k != BOX_GRID { return false }
+    return boxEstablishesBFC(b)
+}
+
+// Puts a fresh float list in place and hands back the one it replaced.
+arr[FloatRect] func bfcEnter() {
+    arr[FloatRect] outer = bfcFloats
+    bfcFloats = []
+    return outer
+}
+
+// Takes the context's own floats out again and puts the outer list back.
+// The context ends at the lowest margin edge among its floats, so a
+// content height that stops short of it grows to it (CSS2 §10.6.7).
+int func bfcLeave(outer:arr[FloatRect], contentTop:int, contentH:int) {
+    int lowest = -1
+    for int i = 0, i < bfcFloats.length, i++ {
+        FloatRect f = bfcFloats[i]
+        if f.bottom > lowest { lowest = f.bottom }
+    }
+    bfcFloats = outer
+    if lowest >= 0 && lowest - contentTop > contentH { return lowest - contentTop }
+    return contentH
+}
+
+int func layoutBlockContentFlow(b:Box, innerX:int, innerY:int, width:int) {
     // A multi-column container lays its content out once, at the column
     // width, and then breaks that one flow into columns (CSS
     // Multi-column 1 §3). Nothing there is laid out twice, so the cost
@@ -3871,7 +3984,7 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
     int y = cy
     int prevBottomMargin = 0
     bool first = true
-    bool parentAbsorbsTop = b.bt == 0 && b.pt == 0 && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK && !b.isListItem
+    bool parentAbsorbsTop = b.bt == 0 && b.pt == 0 && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK && !b.isListItem && !(docHasBfcRoots && boxEstablishesBFC(b))
     int lastMarginBottom = 0
     for int i = from, i < to, i++ {
         Box c = b.children[i]
@@ -3919,7 +4032,53 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
         // collapsed up through it from its own first descendants is the
         // rest of `topM`, and nothing else would place it.
         int baseY = applied ? y : startY + topM - resolveLen(c.style.marginTop, cw, 0)
-        layoutBlock(c, cx, baseY, cw, applied)
+        // A box that establishes a block formatting context does not
+        // overlap the floats in its own (CSS2 §9.5): it goes beside them,
+        // its border box starting at the float's edge or at its own
+        // margin, whichever is further in, or below them when it does
+        // not fit. Only a block that has a float beside it pays for this.
+        bool placed = false
+        int placeX = cx
+        int placeW = cw
+        if bfcFloats.length > 0 && boxBesideFloats(c) {
+            int ownMt = applied ? 0 : resolveLen(c.style.marginTop, cw, 0)
+            int ml = resolveLen(c.style.marginLeft, cw, 0)
+            int mr = resolveLen(c.style.marginRight, cw, 0)
+            // An automatic width, or automatic side margins, are settled
+            // by the room beside the floats, so the box is laid out in
+            // that room. A declared width is not: a percentage is still
+            // a percentage of the containing block, so the box is laid
+            // out where it always was and moved.
+            bool inTheRoom = lenIsAuto(c.style.width) || lenIsAuto(c.style.marginLeft)
+                             || lenIsAuto(c.style.marginRight)
+            int tries = 0
+            while tries < 100 {
+                tries++
+                int top = baseY + ownMt
+                int l = floatLeftEdge(cx, top, top + 1)
+                int r = floatRightEdge(cx + cw, top, top + 1)
+                if l <= cx && r >= cx + cw { placeX = cx  placeW = cw  break }
+                int nb = nextFloatBottom(top)
+                if r - l <= 0 && nb > top { baseY = nb - ownMt  continue }
+                bool fits = false
+                if inTheRoom {
+                    placeX = maxInt(l - ml, cx)
+                    placeW = maxInt(minInt(r + mr, cx + cw) - placeX, 0)
+                    layoutBlock(c, placeX, baseY, placeW, applied)
+                    fits = c.x >= l && c.x + c.w <= r
+                } else {
+                    layoutBlock(c, cx, baseY, cw, applied)
+                    int x = maxInt(l, c.x)
+                    fits = x + c.w <= r
+                    if fits && x != c.x { shiftBoxTree(c, x - c.x, 0) }
+                }
+                placed = true
+                if fits || nb <= top { break }
+                placed = false
+                baseY = nb - ownMt
+            }
+        }
+        if !placed { layoutBlock(c, placeX, baseY, placeW, applied) }
         if !applied { c.mt = 0 }
         justifyBlockChild(b, c, cx, cw)
         if c.kind == BOX_IMAGE && c.blockLevel { }
@@ -3934,7 +4093,7 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
     if first { return 0 }
     // the last child's bottom margin collapses through b when nothing
     // separates them; otherwise it stays inside
-    bool absorbsBottom = b.bb == 0 && b.pb == 0 && lenIsAuto(b.style.height) && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK
+    bool absorbsBottom = b.bb == 0 && b.pb == 0 && lenIsAuto(b.style.height) && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK && !(docHasBfcRoots && boxEstablishesBFC(b))
     if absorbsBottom { y = y - lastMarginBottom }
     return y - cy
 }
@@ -5349,11 +5508,14 @@ void func layoutCell(cell:Box, x:int, y:int, w:int) {
     cell.w = w
     int inner = maxInt(w - cell.pl - cell.pr - cell.bl - cell.br, 0)
     int contentH = 0
+    // A cell establishes a block formatting context of its own.
+    arr[FloatRect] outerFloats = docHasFloats ? bfcEnter() : bfcFloats
     if hasInlineContent(cell) {
         contentH = layoutInlineContent(cell, contentX(cell), contentY(cell), inner)
     } else {
         contentH = layoutBlockChildren(cell, contentX(cell), contentY(cell), inner)
     }
+    if docHasFloats { contentH = bfcLeave(outerFloats, contentY(cell), contentH) }
     int h = contentH
     Len cellBlock = anyVerticalWM && cell.style.writingMode != WM_HORIZONTAL_TB
                     ? cell.style.width : cell.style.height
@@ -7148,20 +7310,6 @@ void func boxReferenceBox(b:Box, which:int) {
     boxRefH = boxRefH - b.pt - b.pb
 }
 
-struct FloatRect {
-    left:int
-    top:int
-    right:int
-    bottom:int
-    side:int
-    // CSS Shapes 1: the float's exclusion follows this shape rather
-    // than the rectangle above, which stays the margin box the float
-    // itself occupies and the edge the shape is clamped to.
-    hasShape:bool
-    shape:ShapeGeom
-}
-
-arr[FloatRect] bfcFloats = []
 
 void func resetFloats() {
     bfcFloats = []
@@ -8317,6 +8465,7 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     docInitialScrollY = 0
     anyRtlText = false
     docHasFloats = false
+    docHasBfcRoots = false
     docHasWholePaint = false
     docHasOutline = false
     inlineInkOverhang = 0
