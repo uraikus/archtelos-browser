@@ -62,9 +62,29 @@ flow* (G5, H9).
 apart from it. It is recorded per computed style, in a map behind one
 per-document boolean rather than as a field on `Style`, which is what
 benchmarks.md's "What one `int` on `Style` costs" found that a field
-would cost. `docHasBfcRoots` guards the margin rules the same way
-`docHasFloats` guards the float ones: a page that says none of the
-properties above pays a bool.
+would cost. Whether a box establishes a context is a bool on the `Box`,
+decided where the box is built (`newBox`, and `addChildBox` for a flex or
+grid item's half) and read by the margin rules as a field.
+
+**That last choice was the third attempt, and the first two cost
+instructions on pages that never use the feature.** Timing read +4 to
++13 ms of layout on both benchmark pages in every paired round, on a page
+where every new flag is false and none of the code runs; timing could not
+say whether that was work or placement, and the method's own noise floor
+is +/-4. `valgrind --tool=callgrind` on a generic build could: the
+candidate executed **31 million more instructions** than the parent on
+`generated.html`, all of them in Festina's cycle collector, and bisecting
+by count put 21 of them in one place -- a call that took the box, in
+`collapsedTopMargin`, `collapsedBottomMargin` and the child loop, at
+6 to 8 million a site, on a page where it never ran. A wrapper round
+`layoutBlockContent` and a helper round a cell's content were the other
+10. A stored bit computed by one walk after the tree was built cost
+nothing there and 26 million on `features.html`; decided inline in
+`newBox` it costs 0.73 million (+0.07%) on the first page and 5.5 million
+(+0.44%) on the one that uses floats and `overflow`. The numbers, the
+bisect and the method are in benchmarks.md. **Why a call cost that is not
+known**: two minimal reproductions did not show it, so it is not in
+FINDINGS.md as a limitation (todo.md).
 
 The instrument is three ways of establishing a context -- `overflow:
 hidden`, `flow-root`, `overflow: auto` -- giving the same rectangles

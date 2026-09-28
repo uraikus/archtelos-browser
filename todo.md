@@ -4877,6 +4877,17 @@ measured differently are left:
   `boxEstablishesBFC` does not ask for a multicol container for that
   reason: containing the float here would fix the container's height and
   leave the float's size disagreeing.
+- **Why a call that takes a `Box` cost 6 to 8 million instructions a site
+  is not known.** Written as `flag && boxEstablishesBFC(b)` or as a nested
+  `if`, in `collapsedTopMargin`, `collapsedBottomMargin`, the child loop's
+  `parentAbsorbsTop` or its `absorbsBottom`, on a page where the flag was
+  false and the call never ran, it was +6.28, +8.20, +8.24 and +8.16 M
+  instructions, one site at a time, all in `festina_cycle_*`. A tree walked
+  recursively with a never-taken `flag && special(n)` in it cost +0.3%,
+  and +0.4% with a struct-typed local in the callee (about 3 to 4
+  instructions a call). What is different about the real functions is what
+  a reproduction would have to find, and until it does, any predicate that
+  takes a box is a decision to count instructions for.
 - **A list item holding only a float is 18px tall in Chromium and 0
   here.** The outside marker generates a line box the item is as tall as,
   and this engine draws the marker without giving the item one.

@@ -4522,3 +4522,108 @@ the change adds one `resolveLen` per first child and takes away one
 them milliseconds of work, and the reversed rounds disagree with each
 other in both columns. By this file's rules that is placement, not a
 saving, and it is not claimed as one.
+
+## What a block formatting context cost, and the count that found it
+
+The first version of block formatting contexts read **+4 to +13 ms of
+layout on both benchmark pages, in every one of eight paired rounds,
+forward and reversed alike**. That is the shape this file calls real: two
+forward rounds agreeing and a mirror that does not cancel. It was also on
+a page that cannot reach the code -- `generated.html` has no float, no
+`overflow`, no positioned box, and every flag the change adds reads
+false -- which is the shape this file calls placement. Timing could not
+say which, and nothing in a dozen rounds could: the method's own noise
+floor, the same parent binary paired against a copy of itself, read
+layout **+1, -4, 0, 0** and total **+6, -3, +1, 0** in four rounds.
+
+**Instructions can.** `valgrind --tool=callgrind` on a binary built by
+`tools/festina-generic` counts every instruction the program executes,
+deterministically, so two runs of the same binary agree to the digit and
+a difference between two binaries is work, not weather. The same page,
+whole program, 800x600 screenshot:
+
+| binary | instructions | against the parent |
+|---|---|---|
+| parent (`6910429`) | 1,058,322,580 | |
+| first candidate | 1,089,277,467 | **+30,954,887 (+2.92%)** |
+| dead-code control: unused new code, no new call sites | 1,068,905,418 | +10,582,838 |
+| wrapper and cell helper taken off the common path | 1,079,188,465 | +20,865,885 (+1.97%) |
+| **final** | **1,059,049,048** | **+726,468 (+0.069%)** |
+
+Every screenshot is byte-identical to the parent's, so each row is the
+same page.
+
+Nearly all of the extra instructions were in **`festina_cycle_*`**,
+Festina's cycle collector, whose generated per-type functions are
+renamed from build to build (`gray_3872` in one, `gray_3874` in the
+other) and have to be grouped by family before they compare: the
+fourteen largest increases in the first candidate were all of them, and
+in the second every function outside the collector together added 0.6 M
+of the 20.9 M. So the extra was reference-count traffic on the box tree,
+which timing had placed nowhere: the layout sub-timers -- measure, text,
+intrinsic widths, the box-tree build -- were all flat.
+
+**Bisecting by count, not by time**, each step a cumulative reversion
+built and counted:
+
+| what was reverted | against the parent |
+|---|---|
+| nothing | +20,865,885 |
+| the cell helper | +20,840,758 |
+| and the child loop's beside-float branch | +20,977,265 |
+| **and the margin code's BFC test** | **+910,812** |
+| and the call sites' isolation check | +892,942 |
+| and `newBox`'s flag code | +461,918 |
+
+Then the margin code split: its BFC test alone cost **+20.89 M**, its
+in-flow-child search alone **+1.09 M**. And the test alone, kept at one
+of its four sites at a time, cost **+6.28, +8.20, +8.24 and +8.16 M** --
+the same at each, in four different functions, on a page where the flag
+was false and the call never ran. The test was `flag && f(b)` in an
+expression; written as `if flag { if f(b) { ... } }` it cost the same
++20.87 M, so it is not the short-circuit.
+
+**What fixed it is a field.** The bit is decided in `newBox` and
+`addChildBox`, stored on the box, and read by the margin rules as
+`b.bfcRoot`, with no call. An intermediate version that computed it in
+one walk after the tree was built cost nothing on `generated.html`
+(+0.83 M) and **+26.3 M (+2.12%)** on `features.html`, which has floats,
+because the walk is two calls per box. Decided inline where the box is
+built:
+
+| page | instructions against the parent |
+|---|---|
+| `generated.html` | +726,468 (+0.069%) |
+| `features.html`, which uses floats, `overflow` and positioning | +5,473,940 (+0.442%) |
+
+**The mechanism is not established.** Two minimal reproductions -- a
+tree walked recursively with a never-taken `flag && special(n)` in it,
+once with the callee holding a struct-typed local -- cost +0.3% and
++0.4%, about 3 to 4 instructions a call, where the real functions paid
+about 2,000. So this is not recorded in FINDINGS.md as a limitation: there
+is no reproduction to record it with. What is recorded is the
+measurement, and that a predicate taking the box, written in
+`collapsedTopMargin`, `collapsedBottomMargin` or the child loop, is a
+6-million-instruction decision on every page.
+
+Wall-clock, paired against the parent on the final binary, forward then
+reversed:
+
+| page | layout | total |
+|---|---|---|
+| `generated.html` | +2, +2, -3, 0 | +1, +4, -4, -9 |
+| `features.html` | -6, -3, 0, -3 | -9, -1, +6, -4 |
+
+(Forward rounds are candidate minus parent and reversed rounds parent
+minus candidate.) The two forward rounds disagree with each other on both
+pages, and the mirrors do not cancel; by the noise floor above there is
+nothing here to take to the code, which is what the count said.
+
+The method, for the next change that needs it:
+
+```bash
+tools/festina-generic compile browser.f -o build/parent_g   # in a checkout of the parent
+tools/festina-generic compile browser.f -o build/cand_g
+valgrind --tool=callgrind --callgrind-out-file=/dev/null ./cand_g page.html \
+    --screenshot out.png --width 800 --height 600 2>&1 | grep Collected
+```
