@@ -4825,94 +4825,39 @@ itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
-**1546 of 1652, and 18 of the 106 failures are this engine's alone** --
-against Chromium's 1535, which it is now ahead of on this corpus by
-eleven: ahead on 29 cases and behind on 18. The
-runner's `--ids` flag prints every failure as `file #index` and
-`tests/chromium.py detail` prints the same form for Chromium, so the
-subtraction is one command rather than an opinion. Chromium fails **88**
-of the 117.
+**1554 of 1652, and 10 of the 98 failures are this engine's alone** --
+against Chromium's 1535, which it is ahead of on this corpus by nineteen:
+ahead on 29 cases and behind on 10. The runner's `--ids` flag prints every
+failure as `file #index` and `tests/chromium.py detail` prints the same
+form for Chromium, so the subtraction is one command rather than an
+opinion. Chromium fails **88** of the 98.
 
-The 88 are not this engine's to chase. Most of them are the whole of
+The 88 are not this engine's to chase. 84 of them are the whole of
 `processing-instructions.dat`, whose 124 cases expect a processing
 instruction *node* -- `| <?something ?>` -- where the standard's bogus
 comment state produces a comment; both engines give `<!-- ?something -->`
-and both fail all 84 of the cases that reach the parser. The rest are
-CDATA in MathML text (`<![CDATA[x]]>` expected as text, both engines make
-a comment) and `noscript` content expected as markup, which is the
-scripting-disabled tree that neither engine builds.
+and both pass the other 40. The remaining four are the same thing in
+another file: `tests1.dat` #39, #43 and #46, and `html5test-com.dat` #11.
 
-**Where the 18 are:**
+**Where the 10 are:**
 
-| file | this engine's alone |
-|---|---|
-| `tests16.dat` | **11** |
-| `tests26.dat` | 5 |
-| `tests2.dat` | 4 |
-| `tests1.dat` | 2 |
-| `tests19.dat` | 2 |
-| `adoption01.dat`, `adoption02.dat`, `html5test-com.dat`, `namespace-sensitivity.dat`, `tables01.dat`, `tests6.dat` | 1 each |
+| file | case | what it wants |
+|---|---|---|
+| `tests1.dat` | #37 | `</` at the end of the input is the text `"</"`, not a bogus comment |
+| `tests1.dat` | #89 | `<image>` is renamed to `img` |
+| `tests19.dat` | #88 | the same, self-closing: `<image/>` |
+| `tests16.dat` | #194 | `<table>` with a trailing newline keeps it as a text child |
+| `tests2.dat` | #59 | `<!--x--` at the end of the input is the comment `x`, not `x--` |
+| `tests26.dat` | #9 | `<p><code x</code></p>` -- the mis-parsed attribute produces a second `<code>` and a text node after it |
+| `tables01.dat` | #17 | `<select>` in a foreignObject does not take the `<s>` that follows a nested `<table>` |
+| `adoption01.dat` | #12 | `<a><svg><tr><input></a>` keeps the svg subtree nested and adopts no `<a>` into it |
+| `adoption02.dat` | #2 | `<nobr><table><marquee></table><nobr>` puts the second `<nobr>` beside the first, not inside it |
+| `namespace-sensitivity.dat` | #0 | `</td>` inside a foreignObject foster-parents the text before the table |
 
-**`tests16.dat`'s ten script cases have landed.** The standard reaches an
-end tag through the end tag name state, which goes on into the tag on
-whitespace, `/` or `>` and on **anything else** -- the end of the input
-included -- emits the `</` and the name it buffered as character tokens.
-So `<script></script` is text and `<script></script ` is a tag whose EOF
-then drops it, and this engine had been treating the end of the input as a
-tag terminator, which answered the second correctly and the first not at
-all. One condition in `findRawTextEnd`; eleven cases, the tenth being
-`<title></title` in `tests2.dat`, because RCDATA reaches the same code.
-
-The eleventh `tests16.dat` case is what is left there: `<!doctype
-html><table>` with the corpus's trailing newline, where the newline belongs
-to the table as a text child and this engine drops it.
-
-**`tests26.dat`'s four foreign-content cases have landed**: an end tag
-named `p` or `br` inside SVG or MathML pops out of it and is then handled
-by the HTML rules, where any other unmatched end tag is not. The rule was
-mapped against Chromium on thirteen fixtures, because four corpus cases
-are not a rule, and the mapping is what said where the popping stops -- all
-the way rather than one level, at the nearest HTML element rather than the
-body, and at an **integration point**, which is already HTML content.
-
-`processTokenForeign` already had that loop for the start tags that break
-out; the end-tag path reached its "any other end tag" walk, which dispatches
-to the HTML rules *without* popping, so the `<p>` went inside the svg.
-
-**The fifth `tests26.dat` case is what is left there**: `<p><code x</code></p>`,
-where the corpus expects the mis-parsed attribute to produce a second
-`<code>` and a text node after it.
-
-**The remaining 14, by file**: three in `tests2.dat`, two each in
-`tests19.dat` and `tests1.dat`, and one each in `adoption01.dat`,
-`adoption02.dat`, `namespace-sensitivity.dat`, `tables01.dat`,
-`tests6.dat`, `tests16.dat` and `tests26.dat`. Nothing clusters any more,
-so each is its own reading.
-
-
-1,535 of 1,652 tree-construction cases pass, which is what Chromium
-passes on the same corpus. Of the 117 failures, 84 are cases Chromium
-fails too. The rest, largest first:
-
-- **`tests16.dat`** (11 cases). Script-data tokenizer corners, mostly
-  around `<!--` inside a script element and the escaped states.
-- **`tests26.dat`** (5) and **`tests1.dat`** (5), **`tests2.dat`** (4),
-  **`tests19.dat`** (2): a different small rule each, mostly formatting
-  elements interacting with tables and with `<nobr>`.
-- **Foreign content corners** (`namespace-sensitivity.dat`,
-  `html5test-com.dat`, one case each): breaking out of SVG and MathML
-  when an HTML block tag arrives in a namespace-sensitive position.
-- **Adoption agency corners** (`adoption01.dat`, `adoption02.dat`,
-  `tests6.dat`, `tables01.dat`, one each).
-- **Fragment parsing** (195 cases, currently skipped). `innerHTML`
-  parsing needs the fragment algorithm and a context element. Nothing
-  in the renderer needs it, but it is the single largest block of
-  skipped tests.
-- **NUL bytes in input** (98 cases, currently skipped). A Festina `text`
-  cannot hold a NUL at all, so these cannot run without moving the
-  tokenizer onto a byte buffer. See festina.md.
-- **Scripted tests** (14 cases, permanently skipped). There is no
-  JavaScript engine and there will not be one.
+**`<image>` is the one cluster left.** The standard's "in body" rules give
+it one line -- change the token's tag name to `img` and reprocess it --
+and it is two of the ten, in two files. Everything else is its own
+reading.
 
 **`processing-instructions.dat` is deliberately not implemented.** The
 corpus expects `<?x>` to build a processing-instruction node; the
@@ -4921,10 +4866,21 @@ which was checked directly. Whichever is right, matching the corpus here
 would mean disagreeing with every shipping engine. Revisit when the
 standard's text is reachable.
 
-**Where this browser is ahead of Chromium** it is mostly configuration
+**Three blocks of cases are skipped rather than failed.**
+
+- **Fragment parsing** (195 cases). `innerHTML` parsing needs the
+  fragment algorithm and a context element. Nothing in the renderer
+  needs it, but it is the single largest block of skipped tests.
+- **NUL bytes in input** (98 cases). A Festina `text` cannot hold a NUL
+  at all, so these cannot run without moving the tokenizer onto a byte
+  buffer. See festina.md.
+- **Scripted tests** (14 cases, permanently skipped). There is no
+  JavaScript engine and there will not be one.
+
+**Where this browser is ahead of Chromium** it is partly configuration
 rather than quality: `noscript01.dat` assumes a disabled scripting flag,
-which is permanently true here. `webkit02.dat` and three other files are
-genuine leads.
+which is permanently true here. The script-data corners of `tests16.dat`
+and four cases of `html5test-com.dat` are genuine leads.
 
 ## A margin that collapses through to the root is dropped
 

@@ -800,6 +800,20 @@ void func splitLeadingWhitespace(t:text) {
     remainingText = a.slice(i, a.length).toText()
 }
 
+// Every whitespace character of a run, in order, with the rest dropped.
+// The frameset modes are written per character -- they insert a whitespace
+// character and ignore any other one -- so a run reaching them keeps all of
+// its whitespace and not merely the leading part.
+text func whitespaceCharsOf(t:text) {
+    ascii a = t.toAscii()
+    if a == null { return '' }
+    text out = ''
+    for int i = 0, i < a.length, i++ {
+        if isSpaceCode(a.charCodeAt(i)) { out = out + a.slice(i, i + 1).toText() }
+    }
+    return out
+}
+
 void func clearStackBackToTableContext() {
     while openElements.length > 0 {
         text t = currentTag()
@@ -2018,8 +2032,8 @@ void func modeAfterBody(tok:Token) {
 
 void func modeInFrameset(tok:Token) {
     if tok.kind == TOK_TEXT {
-        splitLeadingWhitespace(tok.data)
-        if leadingSpace != '' { insertCharacters(leadingSpace) }
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
         return
     }
     if tok.kind == TOK_COMMENT {
@@ -2062,8 +2076,8 @@ void func modeInFrameset(tok:Token) {
 
 void func modeAfterFrameset(tok:Token) {
     if tok.kind == TOK_TEXT {
-        splitLeadingWhitespace(tok.data)
-        if leadingSpace != '' { insertCharacters(leadingSpace) }
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
         return
     }
     if tok.kind == TOK_COMMENT {
@@ -2117,6 +2131,11 @@ void func modeAfterAfterBody(tok:Token) {
 }
 
 void func modeAfterAfterFrameset(tok:Token) {
+    if tok.kind == TOK_TEXT {
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
+        return
+    }
     if tok.kind == TOK_COMMENT {
         insertCommentNode(tok.data, documentId)
         return

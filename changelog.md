@@ -5,6 +5,33 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### Every whitespace character in a frameset: 1550 → 1554
+
+The tokenizer emits a run of characters as one token. The standard's
+"in frameset", "after frameset" and "after after frameset" insertion modes
+are written **per character** -- each inserts a whitespace character and
+ignores any other one -- so a run reaching them keeps all of its
+whitespace, not merely the leading part. `<frameset> te st` puts two
+spaces in the frameset; the engine had been inserting the leading run
+alone and putting in one.
+
+The first two modes took the leading whitespace from
+`splitLeadingWhitespace`, which is right for the modes that then hand the
+rest on and wrong for these, which drop it. The third handled no text at
+all, so `<frameset></frameset></html> ` lost the space entirely.
+`whitespaceCharsOf` now keeps every whitespace character of a run and all
+three modes use it.
+
+Four corpus cases: `tests2.dat` #6 and #7, `tests6.dat` #45 and
+`tests19.dat` #39. Chromium passes all of `tests2.dat`, `tests6.dat` and
+`tests19.dat`, so all four were cases this engine was behind on: ahead on
+29 and behind on 10 now, from 29 and 14.
+
+The instrument is that a run with no whitespace in it must still insert
+nothing -- `<frameset>test` builds no text node, and neither does
+`</html>abc` -- because every check here would hold on an engine that
+inserted the whole run.
+
 ### `</p>` and `</br>` break out of foreign content: 1546 → 1550
 
 An end tag named `p` or `br` inside SVG or MathML pops the foreign elements

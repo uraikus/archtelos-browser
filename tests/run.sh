@@ -38,7 +38,7 @@ run() {
 }
 # The conformance floor: tests/conformance must not pass fewer than this.
 # Raise it when the parser improves; never lower it (CLAUDE.md).
-CONFORMANCE_MIN=1550
+CONFORMANCE_MIN=1554
 
 failed=0
 for src in tests/unit/*.f tests/render/*.f; do

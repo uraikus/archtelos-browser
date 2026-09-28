@@ -327,4 +327,41 @@ checkEq(parseAndDump('<svg></svg>x'),
 '| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     "x"',
 'while the matching end tag closes it, as it always did')
 
+// ---- whitespace in and after a frameset -------------------------------
+// The tokenizer emits a run of characters as one token; the standard's
+// "in frameset" and "after frameset" modes are written per character, and
+// insert every whitespace one while ignoring every other one. So the
+// whitespace a run keeps is all of it, not the leading part: ` te st`
+// reaches the tree as two spaces, not one.
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset> te st'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|     "  "',
+'every whitespace character in a frameset is inserted, and the rest dropped')
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset></frameset> te st'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'and after the frameset the same rule puts them beside it')
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset>  '),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|     "  "',
+'a run that is only whitespace is unchanged by that')
+
+checkEq(parseAndDump('<!DOCTYPE html><html><frameset></frameset></html>  '),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'and once `</html>` has been seen the rule still holds')
+
+checkEq(parseAndDump('<html><frameset></frameset></html> te st'),
+'| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'there too it is every whitespace character and nothing else')
+
+// The instrument: a run with no whitespace in it must insert nothing, or
+// every check above would hold on an engine that inserted the whole run.
+checkEq(parseAndDump('<!DOCTYPE html><frameset>test'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>',
+'and a run with no whitespace in it reaches the tree as nothing at all')
+
+checkEq(parseAndDump('<!DOCTYPE html><html><frameset></frameset></html>abc'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>',
+'which holds after `</html>` as well')
+
 finish('html')
