@@ -5,6 +5,44 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A first child's collapsed-through margin is placed
+
+todo.md said a margin collapsing through to the root was dropped. On ten
+fixtures measured in both engines it was wider than that: **whenever a
+parent does not absorb its first child's top margin** -- it has a top
+border or padding, or it is the root, a table cell, an inline-block or a
+list item -- the child was placed by its own `margin-top` alone, and
+whatever collapsed up through it from its own first descendants was lost.
+`collapsedTopMargin` computed the right number and the child loop laid the
+child out from where the flow was, letting `layoutBlock` add only the
+child's own margin. The root had the same number and dropped it with a
+comment saying so. Six of the ten fixtures differed from Chromium, three
+of them with no root involved: behind a 2px border, a section's 5 and a
+div's 40 put the div at 7 instead of 42, and behind 50px of padding a
+section's 10 and a div's -30 put it at 60 instead of 30. All ten now
+agree with Chromium on the html, the body and the div.
+
+The child now starts at the flow plus the whole collapsed margin, less
+its own, which `layoutBlock` still adds. The root's own margin never
+collapses (CSS2 §8.3.1), so nothing about the root is special any more
+and its comment went with the dropped number.
+
+**Two more things were behind it.** The same negative-margin fixture made
+the body 40px tall around 50px of padding: the content's bottom was above
+its top, and nothing kept a content height from going below zero. It is
+clamped now. And a `vertical-rl` box whose `margin-inline-start` is its
+physical top margin had been placed by that margin twice -- once by the
+flow that collapsed it and once more after the subtree is turned, because
+turning restores the physical margins from the logical ones -- and had
+landed in the right place only because the collapse above it was being
+dropped. Fixing the one exposed the other; Chromium puts the container
+and the vertical box at 20, and `wmTransposeSubtree` now takes the flag
+that says the flow already applied it.
+
+The instrument is the pair of checks this file keeps asking for: the same
+40px said on the child and on the wrapper it collapses through must put
+the div on the same pixel. Before, only the second one did.
+
 ### "Special" and "in scope" are about elements, not names: 1560 → 1564
 
 The standard defines its special category and its scopes in terms of

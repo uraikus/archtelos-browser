@@ -576,4 +576,55 @@ checkEqInt(thRow[1], 63, 'the first row is its own share of 100, rounded on its 
 checkEqInt(thRow[2], 38, 'and the second is its own')
 check(thRow[1] + thRow[2] > thRow[0], 'so the two together overflow the table by a pixel')
 
+
+// ---- a margin that collapses up through a first child ---------------------
+// A block that does not absorb its first child's top margin -- it has a
+// border or padding, or it is the root -- still has to place the child
+// by the margin that collapses out of it, which includes whatever
+// collapses up from the child's own first descendants (CSS2 §8.3.1).
+// Every expected value below is Chromium's getBoundingClientRect().top.
+
+int func divTop(html:text) {
+    Box r = layoutHtml(html, 400)
+    return findBox(r, 'div').y
+}
+
+checkEqInt(divTop('<body style="margin:0"><div style="margin-top:40px;height:10px"></div></body>'), 40,
+    'a first child\'s margin collapses through the body and stays inside the root')
+checkEqInt(divTop('<body><div style="margin-top:40px;height:10px"></div></body>'), 40,
+    'the default body margin collapses with it to the larger of the two')
+checkEqInt(divTop('<html style="margin-top:20px"><body style="margin:0"><div style="margin-top:40px;height:10px"></div></body></html>'), 60,
+    'the root\'s own margin does not collapse, so the two add')
+checkEqInt(divTop('<body style="margin:0"><section><div style="margin-top:40px;height:10px"></div></section></body>'), 40,
+    'and it collapses through more than one level')
+checkEqInt(divTop('<body style="margin:0;padding-top:1px"><section><div style="margin-top:40px;height:10px"></div></section></body>'), 41,
+    'a padded parent does not absorb it, but the section it passes through still carries it')
+checkEqInt(divTop('<body style="margin:0"><article style="border-top:2px solid"><section style="margin-top:5px"><div style="margin-top:40px;height:10px"></div></section></article></body>'), 42,
+    'behind a border, 5 and 40 collapse to 40')
+checkEqInt(divTop('<body style="margin:0;padding-top:50px"><section style="margin-top:10px"><div style="margin-top:-30px;height:10px"></div></section></body>'), 30,
+    'and a negative margin collapsing through is added, not dropped')
+
+Box rootA = layoutHtml('<body style="margin:0"><div style="margin-top:40px;height:10px"></div></body>', 400)
+checkEqInt(rootA.h, 50, 'the root grows by the margin that collapsed into it')
+checkEqInt(findBox(rootA, 'body').y, 40, 'and the body, whose margin it is, moves down with it')
+Box rootB = layoutHtml('<body><div style="margin-top:40px;height:10px"></div></body>', 400)
+checkEqInt(rootB.h, 58, 'the root holds the collapsed 40 above and the body\'s 8 below')
+// A negative margin can pull the content up past the parent's padding,
+// which leaves the distance from the content's top to its bottom
+// negative. A content box is never shorter than nothing, so the body is
+// its 50px of padding and not 40.
+Box rootJ = layoutHtml('<body style="margin:0;padding-top:50px"><section style="margin-top:10px"><div style="margin-top:-30px;height:10px"></div></section></body>', 400)
+checkEqInt(findBox(rootJ, 'body').h, 50, 'a content height pulled below zero is zero')
+
+// The instrument: the same margin said on the child and on the box it
+// collapses through must land the div on the same pixel, whichever of
+// the two says it. Before, only the second one did.
+checkEqInt(divTop('<body style="margin:0;padding-top:1px"><section><div style="margin-top:40px;height:10px"></div></section></body>'),
+    divTop('<body style="margin:0;padding-top:1px"><section style="margin-top:40px"><div style="height:10px"></div></section></body>'),
+    'a margin on the child and the same margin on its wrapper agree')
+// And a margin that has nothing to collapse through must not move: the
+// default body with a small child margin stays at the body's own 8.
+checkEqInt(divTop('<body><div style="margin-top:4px;height:10px"></div></body>'), 8,
+    'a smaller child margin collapses into the body\'s and adds nothing')
+
 finish('layout')

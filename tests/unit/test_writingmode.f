@@ -107,6 +107,18 @@ Box vNoM = containerOf('writing-mode: vertical-rl', 'height:150px', LONG)
 Box vM = containerOf('writing-mode: vertical-rl; margin-inline-start: 20px', 'height:150px', LONG)
 checkEqInt(vNoM.h, 150, 'a clamped orthogonal flow fills the block size it is given')
 checkEqInt(vM.y, 20, 'and margin-inline-start puts its top edge that far down')
+// The orthogonal flow's top margin collapses up through its container
+// like any first child's: Chromium puts the container at 20 as well, so
+// the 20 must be counted once and not again inside it.
+Page vmPage = pageFromHtml(
+    `<!doctype html><html><head><style>body{margin:0;font-size:16px}` +
+    `.o{width:400px;height:150px}</style></head><body>` +
+    `<div class="o"><div style="writing-mode: vertical-rl; margin-inline-start: 20px">${LONG}</div></div>` +
+    `</body></html>`, 'about:blank', 800)
+arr[Box] vmDivs = []
+collectBoxesForTag(vmPage.root, 'div', vmDivs)
+checkEqInt(vmDivs[0].y, 20, 'the container is moved down by the margin that collapsed through it')
+checkEqInt(vmDivs[1].y, 20, 'and the vertical box sits at its top rather than 20 below it')
 checkEqInt(vM.h, vNoM.h - 20, 'taking exactly that much out of the inline extent')
 
 // ---- an orthogonal flow shrinks to fit, clamped -----------------------

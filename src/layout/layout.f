@@ -1774,7 +1774,7 @@ void func wmAutoMargins(b:Box, cw:int, physW:int) {
     }
 }
 
-void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int, cwOuter:int) {
+void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int, cwOuter:int, topApplied:bool) {
     int L = root.x
     int T = root.y
     int BH = root.h
@@ -1788,6 +1788,11 @@ void func wmTransposeSubtree(root:Box, mode:int, cx:int, y:int, cwOuter:int) {
     // turned subtree is emitted about that corner rather than about the
     // one the logical layout happened to use.
     wmUnrotateEdges(root, rl, up)
+    // A physical top margin the parent's flow already placed the box by
+    // -- because it collapsed up through the parent -- is back after the
+    // unrotation, from the logical side it was stored on, and would be
+    // counted a second time.
+    if topApplied { root.mt = 0 }
     // The margins are physical again here, which is the only point at
     // which the box's own side margins and its turned width are both to
     // hand.
@@ -2801,7 +2806,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         // The quarter turn, as at the end of the block path: a flex,
         // grid or table container that starts a vertical flow has laid
         // itself out in logical space like any other box.
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW, topMarginApplied) }
         return
     }
     if b.kind == BOX_AUDIO {
@@ -2948,7 +2953,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutFlex(b, cx, y, cw)
         layoutCBHeight = savedFlexCB
         // the quarter turn, as at the end of the block path
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW, topMarginApplied) }
         return
     }
     // A grid container sizes its tracks and places its items into them
@@ -2963,7 +2968,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         layoutGrid(b, cx, y, cw, width)
         layoutCBHeight = savedGridCB
         // the quarter turn, as at the end of the block path
-        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
+        if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW, topMarginApplied) }
         return
     }
 
@@ -3090,7 +3095,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     // The quarter turn. Everything below this box is in logical space,
     // and this is where it becomes the rectangle the painter, the hit
     // tester and the parent's flow all read.
-    if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW) }
+    if wmRoot { wmTransposeSubtree(b, s.writingMode, cx, y, wmOuterCW, topMarginApplied) }
 }
 
 // Stacks the block-level children of b; returns the content height.
@@ -3854,7 +3859,9 @@ void func buildFragmentsForRun(units:arr[ColumnUnit], colW:int, gap:int,
 }
 
 int func layoutBlockChildren(b:Box, cx:int, cy:int, cw:int) {
-    return layoutBlockChildrenRange(b, cx, cy, cw, 0, b.children.length)
+    // A negative margin can carry the last child's bottom above the
+    // content's top; the content box is then empty, not inverted.
+    return maxInt(layoutBlockChildrenRange(b, cx, cy, cw, 0, b.children.length), 0)
 }
 
 // The same, over a run of the children rather than all of them, which
@@ -3907,7 +3914,11 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
         }
         int startY = y
         if !applied { y = y + topM }
-        int baseY = applied ? y : startY
+        // Unapplied, `layoutBlock` adds the child's own margin, so the
+        // child starts short of the flow by exactly that much. What
+        // collapsed up through it from its own first descendants is the
+        // rest of `topM`, and nothing else would place it.
+        int baseY = applied ? y : startY + topM - resolveLen(c.style.marginTop, cw, 0)
         layoutBlock(c, cx, baseY, cw, applied)
         if !applied { c.mt = 0 }
         justifyBlockChild(b, c, cx, cw)
@@ -8323,12 +8334,9 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // knowing which one it is.
     numberListItems(root)
     root.depth = 0
-    // the root box: the top margin of body collapses into it
-    // NOTE: topM is the margin that collapses into the root, and it is
-    // dropped when it collapses all the way through -- see todo.md,
-    // "a margin that collapses through to the root". Applying it here
-    // double-counts the ordinary case, where layoutBlock already does.
-    int topM = collapsedTopMargin(root, width)
+    // The root's own margins never collapse (CSS2 §8.3.1): whatever
+    // collapses out of the body stays inside the root's box, which the
+    // child loop places like any other first child's margin.
     layoutBlock(root, 0, 0, width, false)
     // The initial containing block is the viewport: as wide as the
     // layout and as tall as the document turned out to be. A document
