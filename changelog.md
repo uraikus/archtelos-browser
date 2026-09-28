@@ -5,6 +5,50 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### "Special" and "in scope" are about elements, not names: 1560 → 1564
+
+The standard defines its special category and its scopes in terms of
+elements, and the tree builder was reading them off tag names. Four places
+asked `isSpecialElement(tagOf(id))`, so an SVG `tr` counted as special
+(the HTML one is) and an SVG `foreignObject` did not (it is): the
+adoption agency's furthest-block search, the `li` and `dd`/`dt` loops,
+and "any other end tag". `isSpecialNode` now asks of the element: an HTML
+one from the list, MathML `mi`, `mo`, `mn`, `ms`, `mtext` and
+`annotation-xml`, and SVG `foreignObject`, `desc` and `title`.
+
+The scope search had the same shape one layer down. It ended at any
+foreign *integration point* for every kind of scope, which is too few
+elements for three of them (`annotation-xml` ends default scope whatever
+its encoding) and too many for table scope, which is "html, table,
+template" and stops at nothing foreign. So a `</td>` inside a
+`foreignObject` inside a cell could not find its cell. The foreign rule
+is now its own function, `foreignScopeStops`, by kind of scope. It has
+no branch for select scope, because nothing here asks for it: this
+engine parses a `select` as holding flow content and has no "in select"
+mode.
+
+And a `<nobr>` start tag with a `nobr` in scope runs the adoption agency,
+which returns without acting when the `nobr` sits behind a marker; the
+standard then acts as "any other end tag", and this engine had dropped
+that fallback. `<nobr><table><marquee></table><nobr>` leaves a marker
+from the `marquee` that the table closed.
+
+Four corpus cases -- `adoption01.dat` #12, `adoption02.dat` #2,
+`tables01.dat` #17 and `namespace-sensitivity.dat` #0 -- the last four
+this engine failed that Chromium passes. **It now passes every case
+Chromium passes**, and 29 that Chromium does not; the 88 it fails, Chromium
+fails too. Chromium's 1535 was re-measured in the same session.
+
+The corpus could not tell most of these apart, because it has no fixture
+with a special foreign element between an `li` and a new one, or between
+a `</span>` and its `span`. So nine fixtures were written for it, each
+asked of Chromium before the code changed -- which agreed with all of
+them, and with the checker reporting failure on deliberately wrong
+expectations, so its agreement meant something. Eight of them are in
+`tests/unit/test_html.f`; the ninth, an SVG `desc`, passed before the
+change as well as after. The instrument is an SVG `g`, which is not
+special and must not end a scope: `</div>` reaches the `div` through it.
+
 ### A `#data` section the runner was trimming: 1558 → 1560
 
 `joinSection` dropped every trailing blank line from both of a case's

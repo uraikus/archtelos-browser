@@ -428,4 +428,55 @@ checkEq(parseAndDump('<!DOCTYPE html><table>\n'),
 '| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <table>\n|       "\n"',
 'a table that ends in whitespace keeps it as a text child')
 
+// ---- "special" and "in scope" are about elements, not names ------------
+// The standard's special category holds HTML elements and six MathML and
+// three SVG ones; an SVG `tr` is not special and an SVG `foreignObject`
+// is. The scopes are the same: default, list item and button scope stop
+// at those nine foreign elements, table scope stops at none of them.
+// Chromium agrees with all ten expectations: eight are fixtures written for
+// this, and the `a` and `nobr` ones are corpus cases it passes.
+
+checkEq(body('<a><svg><tr><input></a>'),
+'<a>\n  <svg svg>\n    <svg tr>\n      <svg input>',
+'an SVG `tr` is no furthest block, so `</a>` just closes the `a`')
+
+checkEq(body('<span><svg><foreignObject></span>x'),
+'<span>\n  <svg svg>\n    <svg foreignObject>\n      "x"',
+'an SVG `foreignObject` is special, so `</span>` stops at it')
+
+checkEq(body('<span><math><mi></span>x'),
+'<span>\n  <math math>\n    <math mi>\n      "x"',
+'as is a MathML `mi`')
+
+checkEq(body('<li><svg><foreignObject><li>x'),
+'<li>\n  <svg svg>\n    <svg foreignObject>\n      <li>\n        "x"',
+'a new `li` does not close one outside the `foreignObject`')
+
+checkEq(body('<li><math><mtext><li>x'),
+'<li>\n  <math math>\n    <math mtext>\n      <li>\n        "x"',
+'nor one outside a MathML `mtext`')
+
+checkEq(body('<dd><svg><foreignObject><dt>x'),
+'<dd>\n  <svg svg>\n    <svg foreignObject>\n      <dt>\n        "x"',
+'and a `dt` does not close a `dd` from inside one either')
+
+checkEq(body('<div><math><annotation-xml></div>x'),
+'<div>\n  <math math>\n    <math annotation-xml>\n      "x"',
+'`annotation-xml` ends default scope whatever its encoding')
+
+checkEq(body('<table><tr><td><math><mi></td>x'),
+'"x"\n<table>\n  <tbody>\n    <tr>\n      <td>\n        <math math>\n          <math mi>',
+'while table scope reaches past a MathML `mi` to the cell')
+
+checkEq(body('<nobr><table><marquee></table><nobr>'),
+'<nobr>\n  <marquee>\n  <table>\n<nobr>',
+'a `nobr` the adoption agency cannot find behind a marker is closed')
+
+// The instrument: a foreign element that is not special must not end a
+// scope, or every check above would hold on an engine that stopped at
+// any foreign element at all.
+checkEq(body('<div><svg><g></div>x'),
+'<div>\n  <svg svg>\n    <svg g>\n"x"',
+'an SVG `g` is not special, so `</div>` reaches the `div` through it')
+
 finish('html')

@@ -187,6 +187,21 @@ bool func isSpecialElement(tag:text) {
         || tag == 'track' || tag == 'ul' || tag == 'wbr' || tag == 'xmp'
 }
 
+// Whether an element is special: an HTML one from the list above, or one
+// of six MathML and three SVG elements. The name alone does not say --
+// an SVG `tr` is not special and an SVG `foreignObject` is.
+bool func isSpecialNode(id:int) {
+    int ns = nsOf(id)
+    text t = tagOf(id)
+    if ns == NS_HTML { return isSpecialElement(t) }
+    if ns == NS_MATHML {
+        return t == 'mi' || t == 'mo' || t == 'mn' || t == 'ms' || t == 'mtext'
+            || t == 'annotation-xml'
+    }
+    if ns == NS_SVG { return t == 'foreignObject' || t == 'desc' || t == 'title' }
+    return false
+}
+
 bool func isFormattingElement(tag:text) {
     return tag == 'a' || tag == 'b' || tag == 'big' || tag == 'code' || tag == 'em'
         || tag == 'font' || tag == 'i' || tag == 'nobr' || tag == 's' || tag == 'small'
@@ -326,13 +341,21 @@ bool func scopeStops(kind:int, tag:text) {
     return false
 }
 
+// Whether a MathML or SVG element ends a scope search. Table scope is
+// "html, table, template" and nothing foreign; default, list item and
+// button scope list the special MathML and SVG elements beside their HTML
+// ones.
+bool func foreignScopeStops(kind:int, id:int) {
+    if kind == SCOPE_TABLE { return false }
+    return isSpecialNode(id)
+}
+
 bool func hasElementInScope(tag:text, kind:int) {
     for int i = openElements.length - 1, i >= 0, i-- {
         int id = openElements[i]
         if htmlTagOf(id) == tag { return true }
         if nsOf(id) != NS_HTML {
-            // foreign integration points also terminate a scope search
-            if isMathTextIntegrationPoint(id) || isHtmlIntegrationPoint(id) { return false }
+            if foreignScopeStops(kind, id) { return false }
             continue
         }
         if scopeStops(kind, tagOf(id)) { return false }
@@ -635,7 +658,7 @@ bool func adoptionAgency(subject:text) {
         // formatting element on the stack
         int furthestBlock = -1
         for int i = stackIndex + 1, i < openElements.length, i++ {
-            if isSpecialElement(tagOf(openElements[i])) {
+            if isSpecialNode(openElements[i]) {
                 furthestBlock = i
                 break
             }
@@ -1260,13 +1283,14 @@ void func inBodyStartTag(tok:Token) {
     if n == 'li' {
         framesetOk = false
         for int i = openElements.length - 1, i >= 0, i-- {
-            text t = tagOf(openElements[i])
+            int id = openElements[i]
+            text t = htmlTagOf(id)
             if t == 'li' {
                 generateImpliedEndTags('li')
                 popUntilIncludingTag('li')
                 break
             }
-            if isSpecialElement(t) && t != 'address' && t != 'div' && t != 'p' { break }
+            if isSpecialNode(id) && t != 'address' && t != 'div' && t != 'p' { break }
         }
         if hasElementInScope('p', SCOPE_BUTTON) { closePElement() }
         insertElementForToken(tok)
@@ -1275,13 +1299,14 @@ void func inBodyStartTag(tok:Token) {
     if n == 'dd' || n == 'dt' {
         framesetOk = false
         for int i = openElements.length - 1, i >= 0, i-- {
-            text t = tagOf(openElements[i])
+            int id = openElements[i]
+            text t = htmlTagOf(id)
             if t == 'dd' || t == 'dt' {
                 generateImpliedEndTags(t)
                 popUntilIncludingTag(t)
                 break
             }
-            if isSpecialElement(t) && t != 'address' && t != 'div' && t != 'p' { break }
+            if isSpecialNode(id) && t != 'address' && t != 'div' && t != 'p' { break }
         }
         if hasElementInScope('p', SCOPE_BUTTON) { closePElement() }
         insertElementForToken(tok)
@@ -1327,7 +1352,7 @@ void func inBodyStartTag(tok:Token) {
     if n == 'nobr' {
         reconstructActiveFormatting()
         if hasElementInScope('nobr', SCOPE_DEFAULT) {
-            adoptionAgency('nobr')
+            if !adoptionAgency('nobr') { inBodyAnyOtherEndTag('nobr') }
             reconstructActiveFormatting()
         }
         int id = insertElementForToken(tok)
@@ -1580,13 +1605,13 @@ void func inBodyEndTag(tok:Token) {
 
 void func inBodyAnyOtherEndTag(n:text) {
     for int i = openElements.length - 1, i >= 0, i-- {
-        text t = tagOf(openElements[i])
-        if t == n {
+        int id = openElements[i]
+        if htmlTagOf(id) == n {
             generateImpliedEndTags(n)
             while openElements.length > i { popOpenElement() }
             return
         }
-        if isSpecialElement(t) { return }
+        if isSpecialNode(id) { return }
     }
 }
 

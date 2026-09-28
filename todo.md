@@ -4825,29 +4825,18 @@ itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
-**1560 of 1652, and 4 of the 92 failures are this engine's alone** --
-against Chromium's 1535, which it is ahead of on this corpus by
-twenty-five: ahead on 29 cases and behind on 4. The runner's `--ids` flag
-prints every failure as `file #index` and `tests/chromium.py detail`
-prints the same form for Chromium, so the subtraction is one command
-rather than an opinion. Chromium fails **88** of the 92.
+**1564 of 1652, and none of the 88 failures is this engine's alone.**
+Chromium passes 1535, and every case Chromium passes this engine passes
+too, with 29 more besides. The runner's `--ids` flag prints every failure
+as `file #index` and `tests/chromium.py detail` prints the same form for
+Chromium, so that is one subtraction rather than an opinion.
 
-The 88 are not this engine's to chase. 84 of them are the whole of
-`processing-instructions.dat`, whose 124 cases expect a processing
-instruction *node* -- `| <?something ?>` -- where the standard's bogus
-comment state produces a comment; both engines give `<!-- ?something -->`
-and both pass the other 40. The remaining four are the same thing in
-another file: `tests1.dat` #39, #43 and #46, and `html5test-com.dat` #11.
-
-**The four are each their own reading**, and each is a formatting or
-foreign-content corner rather than a rule with instances:
-
-| file | case | what it wants |
-|---|---|---|
-| `adoption01.dat` | #12 | `<a><svg><tr><input></a>` keeps the svg subtree nested and adopts no `<a>` into it |
-| `adoption02.dat` | #2 | `<nobr><table><marquee></table><nobr>` puts the second `<nobr>` beside the first, not inside it |
-| `tables01.dat` | #17 | `<select>` in a foreignObject does not take the `<s>` that follows a nested `<table>` |
-| `namespace-sensitivity.dat` | #0 | `</td>` inside a foreignObject foster-parents the text before the table |
+84 of the 88 are the whole of `processing-instructions.dat` that reaches
+the parser: its 124 cases expect a processing instruction *node* --
+`| <?something ?>` -- where the standard's bogus comment state produces a
+comment. Both engines give `<!-- ?something -->` and both pass the other
+40. The remaining four are the same thing in another file: `tests1.dat`
+#39, #43 and #46, and `html5test-com.dat` #11.
 
 **`processing-instructions.dat` is deliberately not implemented.** The
 corpus expects `<?x>` to build a processing-instruction node; the
