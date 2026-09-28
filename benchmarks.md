@@ -4496,3 +4496,29 @@ above, that is not a reading that earns a question.
 
 Both binaries render `generated.html` byte-identically, `cmp`-checked
 before timing. The binary grows 128 bytes.
+
+## The collapsed-through margin, measured on a page it cannot move
+
+The fix changes the layout of both benchmark pages -- the body's 8px
+margin now collapses with the first heading's larger one, so everything
+moves down -- and a paired reading on a page that changes shape compares
+two documents rather than two binaries. So it was paired on
+`generated.html` with `h1{margin-top:0}` added, which leaves nothing to
+collapse through the body: the whole page, rendered on a 16000px canvas,
+is byte-identical from both binaries, while the unmodified page is not.
+The new line still runs for every first child there. `72cff86` against
+`6ad81a8`, fifteen alternating samples per round, all five phases summed:
+
+| round | layout diff | total diff |
+|---|---|---|
+| forward 1 | -2 | -2 |
+| reversed 1 | -4 | -4 |
+| forward 2 | -4 | -2 |
+| reversed 2 | 0 | +9 |
+
+Nothing reads as a cost. The forward rounds lean the candidate's way, but
+the change adds one `resolveLen` per first child and takes away one
+`collapsedTopMargin` walk down the root's first-child chain, neither of
+them milliseconds of work, and the reversed rounds disagree with each
+other in both columns. By this file's rules that is placement, not a
+saving, and it is not claimed as one.
