@@ -4469,3 +4469,30 @@ The binary **shrinks** by 40 bytes: a constant went away and a global
 took its place. That is the second entry in this file to record a
 smaller binary, and the first where the reason is a line deleted rather
 than a structure changed.
+
+## Four parser changes, 1550 → 1564, paired on the parse phase
+
+The frameset whitespace rule, `image` renamed to `img`, the two
+end-of-input states, and "special" and "in scope" asked of elements
+rather than names. The last of those puts a namespace lookup in loops
+that run on ordinary pages (the adoption agency, `li` and `dd`/`dt`,
+"any other end tag"), so it is the one that could plausibly cost
+something. The binary built from `2c084f6`, before all four, was paired
+against the one with all four, fifteen alternating samples on
+`generated.html` per round, idle machine:
+
+| round | parse, parent | parse, candidate | parse diff | total diff |
+|---|---|---|---|---|
+| forward 1 | 10 | 10 | 0 | 0 |
+| reversed 1 | 10 | 10 | 0 | +3 |
+| forward 2 | 11 | 10 | -1 | -3 |
+| reversed 2 | 10 | 10 | 0 | +4 |
+
+Parse is the only phase that runs a line of the diff, and it reads
+nothing in any round. The totals are the order effect this file already
+describes: the two forward rounds disagree with each other (0 and -3),
+and both reversed rounds favour whichever binary ran second. By the rules
+above, that is not a reading that earns a question.
+
+Both binaries render `generated.html` byte-identically, `cmp`-checked
+before timing. The binary grows 128 bytes.
