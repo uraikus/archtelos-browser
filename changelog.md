@@ -5,6 +5,47 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A `#data` section the runner was trimming: 1558 → 1560
+
+`joinSection` dropped every trailing blank line from both of a case's
+sections. That is right for `#document`, where the blank line separates
+one case from the next, and wrong for `#data`, where it is the newline
+the input ends with. `<!doctype html><table>` followed by a newline keeps
+that newline as a text child of the table, and the runner was handing the
+parser `<!doctype html><table>` instead, so the case could not pass
+however the engine behaved. Two cases -- `tests16.dat` #194 and
+`tests26.dat` #9 -- and the engine had both right already.
+`tests/chromium.py`'s reader joins a `#data` section verbatim, which is
+why Chromium's number never showed the same hole.
+
+The runner now has `joinData` for the input and `joinDocument` for the
+expectation, and the table case is pinned in `tests/unit/test_html.f`,
+where the input is written out rather than read from a file.
+
+### Two states that reach the end of the input: 1556 → 1558
+
+The end tag open state emits the `<` and the `/` as characters when the
+input ends there, where this engine opened a bogus comment, so `</` was
+lost instead of reaching the tree as text. And a comment that ends with
+the input is emitted without the one or two dashes that took the
+tokenizer into its comment end dash and comment end states, which never
+append them: `<!--x--` is the comment `x`, not `x--`, while a third dash
+is data because the comment end state does append that one.
+
+`tests1.dat` #37 and `tests2.dat` #59. The instrument is that a dash run
+in the middle of a comment is data, all of it -- `<!--x--y-->` is
+`x--y` -- because both checks would hold on an engine that dropped
+dashes wherever it found them.
+
+### An `image` start tag is renamed to `img`: 1554 → 1556
+
+The standard's "in body" rules give the tag one line: change the token's
+tag name to `img` and reprocess it. `<p><image></p>` builds an `img`,
+`<image/>` does too, and the attributes come with it.
+
+`tests1.dat` #89 and `tests19.dat` #88. The instrument is that the rename
+is that one name and not a prefix of it: `<imagex>` stays as written.
+
 ### Every whitespace character in a frameset: 1550 → 1554
 
 The tokenizer emits a run of characters as one token. The standard's

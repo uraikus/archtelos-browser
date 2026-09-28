@@ -364,4 +364,68 @@ checkEq(parseAndDump('<!DOCTYPE html><html><frameset></frameset></html>abc'),
 '| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>',
 'which holds after `</html>` as well')
 
+// ---- `<image>` is renamed to `img` -----------------------------------
+// The standard's "in body" rules give the tag one line: change the
+// token's tag name to `img` and reprocess it. So the element in the tree
+// is an `img`, void and carrying the attributes the token had.
+
+checkEq(body('<p><image></p>'), '<p>\n  <img>',
+'an `image` start tag builds an `img`')
+
+checkEq(parseAndDump('<!DOCTYPE html><image/>'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <img>',
+'and its self-closing form does the same')
+
+checkEq(body('<image src="x">y'), '<img>\n  src="x"\n"y"',
+'it keeps the attributes, and is void, so the text lands beside it')
+
+// The instrument: the rename is that one name and not a prefix of it, or
+// the checks above would hold on an engine that renamed anything starting
+// `image`.
+checkEq(body('<imagex>y'), '<imagex>\n  "y"',
+'a tag that merely starts with `image` is left as it was written')
+
+// ---- two states that reach the end of the input -----------------------
+// The end tag open state emits the `<` and the `/` as characters when the
+// input ends there, rather than opening a bogus comment; and a comment
+// that ends with the input is emitted without the one or two dashes that
+// took the tokenizer into its comment end dash and comment end states.
+
+checkEq(body('</'), '"</"',
+'`</` at the end of the input is text, not a comment')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x--'),
+'| <!DOCTYPE html>\n| <!-- x -->\n| <html>\n|   <head>\n|   <body>',
+'the two dashes that end a comment are not part of it at the end of input')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x-'),
+'| <!DOCTYPE html>\n| <!-- x -->\n| <html>\n|   <head>\n|   <body>',
+'nor is a single trailing dash')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x---'),
+'| <!DOCTYPE html>\n| <!-- x- -->\n| <html>\n|   <head>\n|   <body>',
+'while a third dash is data, because only two are consumed by the states')
+
+// The instrument: a dash run in the middle of a comment is data, all of
+// it, or the checks above would hold on an engine that dropped dashes
+// wherever they appeared.
+checkEq(parseAndDump('<!DOCTYPE html><!--x--y-->'),
+'| <!DOCTYPE html>\n| <!-- x--y -->\n| <html>\n|   <head>\n|   <body>',
+'dashes that are not at the end of the input stay in the comment')
+
+checkEq(body('</x'), '',
+'and an end tag that merely runs out of input still opens a tag')
+
+// ---- whitespace a table ends with -------------------------------------
+// The "in table text" mode collects a run and, when all of it is
+// whitespace, inserts it into the table. The corpus asks this of
+// `<!doctype html><table>` followed by a newline, and the conformance
+// runner had been trimming that newline out of the `#data` section before
+// the parser saw it, so the case could not pass however the engine
+// behaved. Pinned here, where the input is written out.
+
+checkEq(parseAndDump('<!DOCTYPE html><table>\n'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <table>\n|       "\n"',
+'a table that ends in whitespace keeps it as a text child')
+
 finish('html')

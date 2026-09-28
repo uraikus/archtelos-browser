@@ -222,9 +222,17 @@ int func scanComment(from:int, tok:Token) {
         }
         i = j
     }
-    // EOF in comment: everything left is the comment
-    if tokLen > runStart {
-        text run = tokSrc.slice(runStart, tokLen).toText()
+    // EOF in comment: everything left is the comment, except the one or
+    // two dashes that took the tokenizer into its comment end dash and
+    // comment end states, which those states never append
+    int stop = tokLen
+    int eaten = 0
+    while stop > runStart && eaten < 2 && tokSrc.charCodeAt(stop - 1) == CH_MINUS {
+        stop--
+        eaten++
+    }
+    if stop > runStart {
+        text run = tokSrc.slice(runStart, stop).toText()
         data = data + run
     }
     tok.data = decodeText(data.toAscii(), false, false)
@@ -469,6 +477,15 @@ Token func nextToken() {
         }
         if nx == CH_SLASH {
             int after = peekCode(tokPos + 2)
+            if after == -1 {
+                // end tag open state at the end of the input: the `<` and
+                // the `/` reach the tree as characters, not as a bogus
+                // comment
+                Token t = makeToken(TOK_TEXT)
+                t.data = '</'
+                tokPos = tokPos + 2
+                return t
+            }
             if after == CH_GT {
                 // `</>` is a parse error and produces nothing
                 tokPos = tokPos + 3

@@ -4825,12 +4825,12 @@ itself; it has to be handed in.
 
 ## HTML: the remaining conformance gap
 
-**1554 of 1652, and 10 of the 98 failures are this engine's alone** --
-against Chromium's 1535, which it is ahead of on this corpus by nineteen:
-ahead on 29 cases and behind on 10. The runner's `--ids` flag prints every
-failure as `file #index` and `tests/chromium.py detail` prints the same
-form for Chromium, so the subtraction is one command rather than an
-opinion. Chromium fails **88** of the 98.
+**1560 of 1652, and 4 of the 92 failures are this engine's alone** --
+against Chromium's 1535, which it is ahead of on this corpus by
+twenty-five: ahead on 29 cases and behind on 4. The runner's `--ids` flag
+prints every failure as `file #index` and `tests/chromium.py detail`
+prints the same form for Chromium, so the subtraction is one command
+rather than an opinion. Chromium fails **88** of the 92.
 
 The 88 are not this engine's to chase. 84 of them are the whole of
 `processing-instructions.dat`, whose 124 cases expect a processing
@@ -4839,25 +4839,15 @@ comment state produces a comment; both engines give `<!-- ?something -->`
 and both pass the other 40. The remaining four are the same thing in
 another file: `tests1.dat` #39, #43 and #46, and `html5test-com.dat` #11.
 
-**Where the 10 are:**
+**The four are each their own reading**, and each is a formatting or
+foreign-content corner rather than a rule with instances:
 
 | file | case | what it wants |
 |---|---|---|
-| `tests1.dat` | #37 | `</` at the end of the input is the text `"</"`, not a bogus comment |
-| `tests1.dat` | #89 | `<image>` is renamed to `img` |
-| `tests19.dat` | #88 | the same, self-closing: `<image/>` |
-| `tests16.dat` | #194 | `<table>` with a trailing newline keeps it as a text child |
-| `tests2.dat` | #59 | `<!--x--` at the end of the input is the comment `x`, not `x--` |
-| `tests26.dat` | #9 | `<p><code x</code></p>` -- the mis-parsed attribute produces a second `<code>` and a text node after it |
-| `tables01.dat` | #17 | `<select>` in a foreignObject does not take the `<s>` that follows a nested `<table>` |
 | `adoption01.dat` | #12 | `<a><svg><tr><input></a>` keeps the svg subtree nested and adopts no `<a>` into it |
 | `adoption02.dat` | #2 | `<nobr><table><marquee></table><nobr>` puts the second `<nobr>` beside the first, not inside it |
+| `tables01.dat` | #17 | `<select>` in a foreignObject does not take the `<s>` that follows a nested `<table>` |
 | `namespace-sensitivity.dat` | #0 | `</td>` inside a foreignObject foster-parents the text before the table |
-
-**`<image>` is the one cluster left.** The standard's "in body" rules give
-it one line -- change the token's tag name to `img` and reprocess it --
-and it is two of the ten, in two files. Everything else is its own
-reading.
 
 **`processing-instructions.dat` is deliberately not implemented.** The
 corpus expects `<?x>` to build a processing-instruction node; the
@@ -4870,7 +4860,8 @@ standard's text is reachable.
 
 - **Fragment parsing** (195 cases). `innerHTML` parsing needs the
   fragment algorithm and a context element. Nothing in the renderer
-  needs it, but it is the single largest block of skipped tests.
+  needs it, but it is the single largest block of skipped tests, and the
+  largest single thing that could still move this number.
 - **NUL bytes in input** (98 cases). A Festina `text` cannot hold a NUL
   at all, so these cannot run without moving the tokenizer onto a byte
   buffer. See festina.md.

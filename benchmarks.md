@@ -433,12 +433,13 @@ result in the corpus's format.
 
 | | Passed | Rate |
 |---|---|---|
-| This browser | **1554 / 1652** | 94.1% |
+| This browser | **1560 / 1652** | 94.4% |
 | Chromium 141 | 1535 / 1652 | 92.9% |
 
 Both numbers were taken in the same minutes on the same corpus. This
-browser is **ahead on 29 cases and behind on 10**, so the nineteen it leads
-by is a difference of two much larger sets rather than a lead in general.
+browser is **ahead on 29 cases and behind on 4**, so the twenty-five it
+leads by is a difference of two much larger sets rather than a lead in
+general.
 
 **88 of the cases are failed by both** — 84 of them the whole of
 `processing-instructions.dat`, where the corpus expects `<?x>` to build a
@@ -446,7 +447,7 @@ processing-instruction node and both engines build a comment, which is
 what the tokenizer's bogus-comment state produces; three more in
 `tests1.dat`, which are the same thing in another file, and one in
 `html5test-com.dat`. Setting `processing-instructions.dat` aside, this
-browser passes 1,514 of 1,528 and Chromium 1,495.
+browser passes 1,520 of 1,528 and Chromium 1,495.
 
 The subtraction is a command rather than an opinion: the runner's `--ids`
 prints every failure as `file #index` and `tests/chromium.py detail`

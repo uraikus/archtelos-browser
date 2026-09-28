@@ -1190,6 +1190,13 @@ void func modeInBody(tok:Token) {
 
 void func inBodyStartTag(tok:Token) {
     text n = tok.name
+    // "A start tag whose tag name is 'image'": change the token's tag name
+    // to `img` and reprocess it, which from here is the same as carrying on
+    // under the new name.
+    if n == 'image' {
+        tok.name = 'img'
+        n = 'img'
+    }
     if n == 'html' {
         if stackHasTag('template') { return }
         mergeAttributesInto(openElements[0], tok)

@@ -82,14 +82,24 @@ bool func blobHasNul(f:blob) {
     return false
 }
 
-// Joins accumulated section lines, dropping the blank line that
-// separates one test from the next.
-text func joinSection(lines:arr[text]) {
+// Joins a `#document` section's lines, dropping the blank line that
+// separates one test from the next. Only that section: a `#data`
+// section's own trailing blank line is the newline the input ends with,
+// and `<!doctype html><table>` followed by one keeps it as a text child
+// of the table, so trimming it fed the parser a different document than
+// the corpus was asking about.
+text func joinDocument(lines:arr[text]) {
     int end = lines.length
     while end > 0 && lines[end - 1] == '' { end-- }
     arr[text] kept = []
     for int i = 0, i < end, i++ { kept.push(lines[i]) }
     return kept.join('\n')
+}
+
+// A `#data` section is the input verbatim: every line it holds, blank
+// ones included.
+text func joinData(lines:arr[text]) {
+    return lines.join('\n')
 }
 
 text func truncate(t:text, limit:int) {
@@ -167,7 +177,7 @@ void func runFile(dir:text, name:text) {
         text header = isHeader ? line : ''
         if header == '#data' {
             if haveCase {
-                runCase(name, index, joinSection(dataLines), joinSection(docLines), isFragment, scriptOn)
+                runCase(name, index, joinData(dataLines), joinDocument(docLines), isFragment, scriptOn)
                 index++
             }
             if i >= lines.length { break }
