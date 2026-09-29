@@ -297,6 +297,27 @@ that is safe today becomes a compile error when an unrelated file gains
 a helper, and there is no way to see the collision coming from either
 end.
 
+**A local `text` named like a function compiles, and reads the function.**
+The animation shorthand's parser held its easing in a local called
+`timing`, which is also the name of the shell's phase-timer function:
+
+```festina
+void func timing(label:text, n:int) { log(`${label} ${n}`) }
+void func f() {
+    text timing = 'ease'
+    arr[text] out = []
+    out.push(timing)
+    log(out.join(','))
+}
+f()
+// prints machine-code bytes, not `ease`
+```
+
+There is no error at all, which is worse than either failure above: the
+value pushed is the function's address read as a string, and the program
+runs on with it. It was found by the garbage in a map of longhands, and
+by renaming until it went away.
+
 **It is the most frequent obstacle in this codebase.** `lineCount`,
 `cell`, `matches` and `doc` each collided while the CSS work below was
 being written, and the vocabulary a renderer wants — `cell`, `matches`,

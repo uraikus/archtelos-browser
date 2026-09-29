@@ -352,6 +352,18 @@ void func preparePage(page:Page, width:int) {
     if archtelosTiming { log(layoutProfile()) }
 }
 
+// The page again with the animation clock moved: the styles are computed
+// afresh against the sheets already gathered and the tree is laid out
+// again. Nothing is fetched and no sheet is re-parsed, which is what
+// `preparePage` would do.
+void func restylePage(page:Page, width:int) {
+    map[Style] freshStyles = {}
+    styleCache = freshStyles
+    resetPseudoElements()
+    computeStyles(page.doc)
+    layoutPage(page, width)
+}
+
 void func layoutPage(page:Page, width:int) {
     page.width = width
     cssViewportWidth = width

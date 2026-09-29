@@ -153,6 +153,38 @@ void func loadInto(url:text) {
     clampScroll()
     statusText = ''
     editing = false
+    startAnimationTimer()
+}
+
+// ---- CSS animations -----------------------------------------------------
+//
+// The clock is the shell's: while any animation on the page can still
+// change, a timer moves it on, styles are computed again and the page is
+// drawn. A page with none never starts the timer.
+int animationTimer = 0
+int animationStartMs = 0
+
+void func stopAnimationTimer() {
+    if animationTimer != 0 {
+        clearInterval(animationTimer)
+        animationTimer = 0
+    }
+}
+
+void func animationTick() {
+    if page.doc == null { stopAnimationTimer()  return }
+    animationClock = (now() - animationStartMs).toFloat()
+    restylePage(page, clientWidth)
+    clampScroll()
+    repaint()
+    if !animLive { stopAnimationTimer() }
+}
+
+void func startAnimationTimer() {
+    stopAnimationTimer()
+    animationStartMs = now()
+    animationClock = 0.0
+    if cssSawKeyframes && animLive { animationTimer = setInterval(animationTick, 40) }
 }
 
 void func navigate(url:text) {
@@ -478,8 +510,15 @@ for int i = 1, i < argv.length, i++ {
             screenshotHeightGiven = true
         }
         i++
+    } else if arg == '--time' && i + 1 < argv.length {
+        // The moment, in milliseconds after the load, the document's
+        // animations are drawn at.
+        parseNumberAt(argv[i + 1].toAscii(), 0)
+        if numOk { animationClock = numValue }
+        i++
     } else if arg == '--help' || arg == '-h' {
-        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H] [--no-background-graphics]')
+        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H] [--time MS] [--no-background-graphics]')
+        log('  --time draws CSS animations at MS milliseconds after the load')
         log('  --print paginates the document and writes out-1.png, out-2.png, ...')
         log('  --no-background-graphics omits backgrounds, which print-color-adjust: exact overrides')
         close(0)

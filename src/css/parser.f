@@ -10,6 +10,7 @@
 
 import ../util/text.f
 import counterstyles.f
+import keyframes.f
 import page.f
 
 const int COMB_NONE = 0
@@ -374,6 +375,115 @@ void func cssResetNamespaces() {
     map[text] empty = {}
     cssNamespacePrefixes = empty
     cssDefaultNamespace = ''
+}
+
+// The name an `@keyframes` rule declares: an identifier, or a string
+// (which may be a name that is not a valid identifier). `none` names
+// nothing, because `animation-name: none` cannot refer to it.
+text func keyframesName(prelude:ascii) {
+    ascii t = asciiTrim(prelude)
+    if t.length == 0 { return '' }
+    int first = t.charCodeAt(0)
+    if (first == CH_QUOTE || first == CH_APOS) && t.length >= 2
+        && t.charCodeAt(t.length - 1) == first {
+        if t.length == 2 { return '' }
+        return t.slice(1, t.length - 1).toText()
+    }
+    if asciiIndexOf(t, ' ', 0) >= 0 { return '' }
+    text n = t.toText()
+    if asciiLower(t) == 'none' { return '' }
+    return n
+}
+
+// One keyframe selector: `from`, `to` or a percentage. -1.0 for anything
+// else, which makes the whole block (and so its selector list) invalid.
+float func keyframeOffset(tok:ascii) {
+    ascii t = asciiLower(asciiTrim(tok))
+    if t == 'from' { return 0.0 }
+    if t == 'to' { return 1.0 }
+    if t.length < 2 || t.charCodeAt(t.length - 1) != CH_PERCENT { return -1.0 }
+    parseNumberAt(t, 0)
+    if !numOk || numEnd != t.length - 1 { return -1.0 }
+    float v = numValue
+    if v < 0.0 || v > 100.0 { return -1.0 }
+    return v / 100.0
+}
+
+// The blocks of an `@keyframes` body. The frames come back in ascending
+// order of offset, and frames at one offset stay in the order they were
+// written, so a later block's declaration is the one that wins.
+KeyframesRule func parseKeyframesBody(body:ascii) {
+    KeyframesRule rule
+    rule.defined = true
+    int n = body.length
+    int i = 0
+    while i < n {
+        while i < n && isSpaceCode(body.charCodeAt(i)) { i++ }
+        if i >= n { break }
+        int open = i
+        while open < n && body.charCodeAt(open) != CH_LBRACE {
+            int c = body.charCodeAt(open)
+            if c == CH_QUOTE || c == CH_APOS { open = skipQuoted(body, open)  continue }
+            open++
+        }
+        if open >= n { break }
+        int depth = 0
+        int close = open
+        while close < n {
+            int c = body.charCodeAt(close)
+            if c == CH_QUOTE || c == CH_APOS { close = skipQuoted(body, close)  continue }
+            if c == CH_LBRACE { depth++ }
+            else if c == CH_RBRACE {
+                depth--
+                if depth == 0 { break }
+            }
+            close++
+        }
+        arr[float] offsets = []
+        bool valid = true
+        arr[ascii] sels = splitOnCommas(body.slice(i, open))
+        for int k = 0, k < sels.length, k++ {
+            float off = keyframeOffset(sels[k])
+            if off < 0.0 { valid = false  break }
+            offsets.push(off)
+        }
+        i = close + 1
+        if !valid || offsets.length == 0 { continue }
+        arr[text] names = []
+        arr[text] values = []
+        text easeFn = ''
+        if close > open + 1 {
+            // Read as any declaration is, so the per-document flags that
+            // a shorthand's expansion is gated on (`gap`, `border-radius`,
+            // `place-items`) are raised by a keyframe that says one.
+            arr[ascii] decls = splitOnSemicolons(body.slice(open + 1, close))
+            for int d = 0, d < decls.length, d++ {
+                Decl dd = parseOneDeclaration(decls[d])
+                if dd == null || dd.important { continue }
+                text nm = dd.name
+                if nm == 'animation-timing-function' { easeFn = dd.value.toText()  continue }
+                if asciiStartsWith(nm.toAscii(), 'animation'.toAscii(), 0) { continue }
+                names.push(nm)
+                values.push(dd.value.toText())
+            }
+        }
+        for int k = 0, k < offsets.length, k++ {
+            Keyframe f
+            f.offset = offsets[k]
+            f.names = names
+            f.values = values
+            f.timing = easeFn
+            // Insert after every frame at or below this offset.
+            rule.frames.push(f)
+            int at = rule.frames.length - 1
+            while at > 0 && rule.frames[at - 1].offset > f.offset {
+                rule.frames[at] = rule.frames[at - 1]
+                at--
+            }
+            rule.frames[at] = f
+        }
+    }
+    return rule
 }
 
 // The body of an `@counter-style` rule.
@@ -2388,6 +2498,16 @@ void func parseRulesInto(sheet:Stylesheet, src:ascii, parents:arr[text], parentS
                 if close < brace + 1 { close = brace + 1 }
                 if csName != '' {
                     cssCounterStyles[csName] = parseCounterStyleBody(src.slice(brace + 1, close))
+                }
+            } else if atName == 'keyframes' || atName == '-webkit-keyframes' {
+                // The name is the prelude, an identifier or a string, and
+                // the body a list of blocks each with its own selector.
+                text kfName = keyframesName(src.slice(nameEnd, brace))
+                int close = blockEnd - 1
+                if close < brace + 1 { close = brace + 1 }
+                if kfName != '' {
+                    cssKeyframes[kfName] = parseKeyframesBody(src.slice(brace + 1, close))
+                    cssSawKeyframes = true
                 }
             } else if atName == 'page' {
                 // The prelude is the page selector and the body an

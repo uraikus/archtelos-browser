@@ -5,6 +5,30 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Animations 1
+
+`@keyframes` blocks were skipped and no `animation-*` property was read.
+They now run, as a function of a clock: the cascade writes an animated
+value over the declared one for every property an element's keyframes
+reach, after the declarations are applied and before anything reads
+them, so the children inherit it and layout and painting see an
+ordinary declaration. The time model (delay, iteration count, direction,
+fill mode, a zero duration), keyframe merging and per-interval timing
+functions, the shorthand's any-order parsing and its source-order
+interplay with the longhands, and interpolation by value type all follow
+458 rows measured in Chromium (`tests/unit/test_animation.f`, and
+todo.md, "CSS Animations 1, measured"). A screenshot takes `--time MS`;
+the window starts a timer, re-styles and repaints while any animation can
+still change, and stops it when none can. A page with no `@keyframes`
+enters none of it: the flag is asked before the property is.
+
+**What it costs a page that has none** is +3.3 M instructions of
+1,056.8 M on `generated.html` (+0.31%) and +0.26 M of 1,243 M on
+`features.html` (+0.02%), screenshots byte-identical (benchmarks.md).
+The two call sites are 0.5 M between them; the rest is the new code's
+presence, which is the same unexplained shape the block formatting
+context work found.
+
 ### A list item's marker gives it a height, and its margins collapse
 
 An outside marker looks for a baseline in its item's in-flow content, a

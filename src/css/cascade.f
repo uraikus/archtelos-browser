@@ -6,6 +6,7 @@ import ../dom/node.f
 import ../util/color.f
 import ../util/bidi.f
 import ua.f
+import animation.f
 
 const int ORIGIN_UA = 0
 const int ORIGIN_AUTHOR = 1
@@ -409,6 +410,8 @@ void func cascadeReset() {
     resizeUsedReset()
     cssResetNamespaces()
     cssResetCounterStyles()
+    cssResetKeyframes()
+    animResetCache()
     // The computed-style cache is keyed partly on declaration serials,
     // which are unique for the life of the process, so a stale entry
     // could never be returned for a new page -- but it would sit in the
@@ -4819,6 +4822,14 @@ text func wmPhysicalName(name:text) {
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // `animation` is expanded into its longhands so that the cascade
+    // decides between it and them by source order. Asked only where a
+    // document declared `@keyframes`, because no other document can have
+    // an animation and this is the loop over every declaration.
+    if cssSawKeyframes && name == 'animation' {
+        animExpandShorthand(props, value)
+        return
+    }
     // `all` (Cascade 4 §3.2) sets every property at once to one
     // CSS-wide keyword, and overrides every declaration before it in the
     // block -- so those are dropped here and the ones after it are
@@ -6878,6 +6889,7 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
         ? matchedWritingMode(matches, isRoot ? WM_HORIZONTAL_TB : parent.writingMode)
         : WM_HORIZONTAL_TB
     applyMatches(props, matches)
+    if cssSawKeyframes && props['animation-name'] != null { applyAnimations(props, parent) }
     if archtelosTiming {
         profApplyMs = profApplyMs + (now() - t1)
         profElements++
@@ -6893,6 +6905,8 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     // makes sharing one safe (see Box.forcedWidthPx for the one place
     // that used to).
     text key = styleCacheKey(n, parent, isRoot, matches)
+    // An animated element's style is a function of the clock too.
+    if cssSawKeyframes && props['animation-name'] != null { key = `${key}|t${animationClock}` }
     Style cached = styleCache[key]
     if cached != null {
         profShareTotal++
@@ -9869,6 +9883,7 @@ void func computeStylesFrom(n:Node, parent:Style, isRoot:bool) {
 void func computeStyles(doc:Node) {
     Style none
     styleDepth = 0
+    animLive = false
     // A layer's place depends on layers that may be named after it, so
     // the ranks are computed once here rather than as each is declared.
     // A page with no `@layer` on it returns on the function's first

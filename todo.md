@@ -5009,6 +5009,35 @@ the animated value.
 
 The measurement alone; the tests and the implementation follow.
 
+## CSS Animations: what is still open
+
+Measured differently, or not reached (`tests/unit/test_animation.f` holds
+what agrees):
+
+- **A colour that is not sRGB is interpolated in sRGB.** `oklch(.6 .2 30)`
+  to `oklch(.6 .2 250)` reads `oklab(0.6 0.113 0.028)` at 250 in Chromium,
+  which computes the colour in its own space; here both ends are converted
+  to sRGB first, so the hue path differs. `color-mix()` in a keyframe is
+  the same.
+- **Transforms this engine does not draw** -- `skew()`, `matrix()`, the
+  three-dimensional functions -- are not interpolated because they are not
+  parsed; `transform-origin` and the individual `translate`, `rotate` and
+  `scale` properties are interpolated as generic values but ungraded.
+- **`filter` is interpolated and ungraded**: this engine draws no
+  `blur()`, and the colour functions were not among the rows measured.
+- **A custom property in a keyframe** is discrete, as in Chromium
+  (`width: var(--w)` steps when `--w` is animated, and the row agrees).
+
+- **`animation-composition`, `animation-timeline` and `animation-range`**
+  are ignored, and so is `@keyframes` inside a layer being scoped to it.
+- **Transitions.** Nothing changes a computed value under a running page,
+  so `transition-*` has nothing to act on.
+- **The window's timer is untested headlessly.** It re-styles the whole
+  document each tick (`restylePage`) and repaints; the screenshot path
+  and the 458 rows are what is measured. A tick costs the cascade and the
+  layout of the page, so an animation on a large page runs at the speed of
+  that page's layout, not at the 40 ms the timer asks for.
+
 ## Block formatting contexts: what is still open
 
 A box that establishes one now contains its floats, isolates them from

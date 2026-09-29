@@ -4645,3 +4645,24 @@ Both screenshots are byte-identical to the parent's, so each row is one
 page. A tenth of a percent is under what a timed round can resolve on this
 machine (a binary paired against a copy of itself reads +-4 ms), so no
 timed round was run; the count is the measurement.
+
+## CSS Animations 1, on pages that declare no `@keyframes`
+
+Counted with `valgrind --tool=callgrind` on `tools/festina-generic` builds,
+whole program, 800x600 screenshot, the parent being the tree without the
+animation code; both screenshots byte-identical on each page.
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,056,811,800 | 1,060,084,828 | +3,273,028 (+0.31%) |
+| `features.html` | 1,243,205,218 | 1,243,466,835 | +261,617 (+0.02%) |
+
+Taking the two call sites out one at a time (`applyAnimations` in
+`computeStyle`, `animExpandShorthand` in `applyDecl`, each behind
+`cssSawKeyframes`) gives 1,059,601,621 and 1,059,592,937, and taking both
+out gives 1,059,679,721: **the call sites are about 0.4 M between them and
+the other 2.9 M is the module being present**, in `festina_cycle_*` as
+before. A struct-typed global root is one candidate (`cssKeyframes`,
+`animTrackCache` and `animTimingCache` are maps of structs); it was not
+isolated. The cost is per page load and does not grow with the page.
+

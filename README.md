@@ -400,6 +400,19 @@ The two insets that act are the vertical ones: the painter is given the
 document's scroll offset down the page, and the document does not
 scroll across.
 
+**`@keyframes` and `animation`** run as a function of a clock. An element
+that names an animation has the animated value of every property its
+keyframes reach written over the declared one before anything reads it,
+so its children inherit it, layout sees it and the painter draws it; the
+delay, the iteration count, the direction and the fill mode say whether
+an animation applies at a moment and how far through it is, the timing
+function shapes each interval between two keyframes, and a value is
+interpolated by what it is (numbers, lengths, colours, transform lists,
+shadows, filters) or flips at halfway where it cannot be. The window
+keeps a timer while any animation on the page can still change, and
+stops it when none can; a screenshot draws one moment, `--time 500`
+being half a second after the load.
+
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and
 `rotate` in any order and composes them left to right, `transform-origin`
