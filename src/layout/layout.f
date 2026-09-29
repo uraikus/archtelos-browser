@@ -2931,6 +2931,32 @@ bool func hasDefiniteHeight(b:Box) {
         || (hl.kind == LEN_PERCENT && layoutCBHeight >= 0)
 }
 
+// A list item's outside marker sits on the first baseline in the item's
+// in-flow content: a line box, or a table. Floats and out-of-flow boxes
+// give it none, and neither does an empty block or a collapsed run of
+// white space (measured against Chromium in todo.md).
+bool func listItemHasBaseline(b:Box) {
+    if b.lines.length > 0 || b.kind == BOX_TABLE { return true }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.style == null { continue }
+        if c.style.floatSide != FLOAT_NONE || positionIsOutOfFlow(c.style.position) { continue }
+        if listItemHasBaseline(c) { return true }
+    }
+    return false
+}
+
+// Where there is no baseline to sit on, the marker is a line box of its
+// own and the item is at least that tall: 20px of line height gives an
+// empty item, or one holding only a float, 20px. Reached only by a list
+// item, and only for the height an item computes for itself.
+int func listItemContentHeight(b:Box, h:int) {
+    text declared = markerContentOf(b)
+    if declared == null && b.style.listStyle == LIST_NONE && b.style.listImageUrl == '' { return h }
+    if listItemHasBaseline(b) { return h }
+    return maxInt(h, lineHeightOf(markerStyleOf(b)))
+}
+
 void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     Style s0 = b.style
     // A vertical writing mode lays the box out in logical space: the
@@ -3208,6 +3234,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
     }
     layoutCBHeight = savedCB
     int h = contentH
+    if b.isListItem && ownDefinite < 0 { h = listItemContentHeight(b, h) }
     // Size containment: the box is sized as if it had no content, so
     // the height its children came to is discarded and
     // contain-intrinsic-height, if there is one, stands in its place
@@ -4033,7 +4060,7 @@ int func layoutBlockChildrenRange(b:Box, cx:int, cy:int, cw:int, from:int, to:in
     int y = cy
     int prevBottomMargin = 0
     bool first = true
-    bool parentAbsorbsTop = b.bt == 0 && b.pt == 0 && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK && !b.isListItem
+    bool parentAbsorbsTop = b.bt == 0 && b.pt == 0 && (b.kind == BOX_BLOCK || b.kind == BOX_ANON) && b.parentId > 0 && parentKind(b) != BOX_CELL && parentKind(b) != BOX_INLINE_BLOCK
     if b.bfcRoot { parentAbsorbsTop = false }
     int lastMarginBottom = 0
     for int i = from, i < to, i++ {

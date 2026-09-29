@@ -4627,3 +4627,21 @@ tools/festina-generic compile browser.f -o build/cand_g
 valgrind --tool=callgrind --callgrind-out-file=/dev/null ./cand_g page.html \
     --screenshot out.png --width 800 --height 600 2>&1 | grep Collected
 ```
+
+## A list item's marker height, counted rather than timed
+
+The change adds one bool read to `layoutBlock` (`b.isListItem`) and a call
+behind it, which this file's own history says can cost a page that never
+reaches the call. Counted with `valgrind --tool=callgrind` on
+`tools/festina-generic` builds, whole program, 800x600 screenshot, the
+parent being the tree without the change:
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html`, 40 list items | 1,056,215,766 | 1,056,666,860 | +451,094 (+0.043%) |
+| `features.html`, 24 list items | 1,242,903,470 | 1,243,155,323 | +251,853 (+0.020%) |
+
+Both screenshots are byte-identical to the parent's, so each row is one
+page. A tenth of a percent is under what a timed round can resolve on this
+machine (a binary paired against a copy of itself reads +-4 ms), so no
+timed round was run; the count is the measurement.

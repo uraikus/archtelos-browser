@@ -5,6 +5,25 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A list item's marker gives it a height, and its margins collapse
+
+An outside marker looks for a baseline in its item's in-flow content, a
+line box or a table, to sit on. Where there is none -- an empty item, one
+holding only floats or out-of-flow boxes, an empty block, collapsed white
+space -- the marker is a line of its own and the item is at least as tall
+as it: 20px of line height gives an empty item 20px, and an item holding
+only a 60px float 20px, where this engine said 0. An item that names its
+own height, `list-style: none` without a `::marker` `content`, and an item
+with a baseline of its own are unchanged. Thirty-six fixtures against
+Chromium, in `tests/unit/test_listitem.f`.
+
+The same fixtures showed that an item **did not collapse its margin with
+its first or last child's**: `li > div { margin: 10px 0 }` placed the div
+at 20 where Chromium puts it at 10, the margin counted once by the item
+and again by the child. A rule that had excluded list items since the
+first commit is gone. The count of instructions on both benchmark pages
+moves by under 0.05% (benchmarks.md).
+
 ### A sticky box sticks to its scroll container
 
 `position: sticky` had one scrollport, the document's. The nearest

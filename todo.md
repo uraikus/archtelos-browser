@@ -4932,9 +4932,12 @@ measured differently are left:
   instructions a call). What is different about the real functions is what
   a reproduction would have to find, and until it does, any predicate that
   takes a box is a decision to count instructions for.
-- **A list item holding only a float is 18px tall in Chromium and 0
-  here.** The outside marker generates a line box the item is as tall as,
-  and this engine draws the marker without giving the item one.
+- **A list item whose only baseline is a table's** is 15px tall in
+  Chromium with the table's box at y=5: the marker's ascent is taller
+  than the cell's baseline is deep, and the item's content is shifted
+  down to seat it. This engine gives the item the table's height and
+  seats nothing. (`<li><table style="border-spacing:0"><tr><td
+  style="padding:0;height:10px">` at a 20px line height.)
 
 ## Layout
 
