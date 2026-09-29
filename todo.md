@@ -5009,6 +5009,27 @@ the animated value.
 
 The measurement alone; the tests and the implementation follow.
 
+### Fragment navigation, measured
+
+HTML "navigate to a fragment", read in Chromium 141 as `scrollY` after a
+load of `file.html#fragment` and the element `:target` matched:
+
+| fragment | `:target` | scrollY, 1000px above the element |
+|---|---|---|
+| `t`, an element with that id | it | 1000 |
+| one naming nothing, empty, or `top` | none | 0 |
+| `t`, on `<a name=t>` | the `<a>` | 1000 |
+| `t` with `#t { scroll-margin-top: 30px }` | it | **970** |
+| `t` with `html { scroll-padding-top: 40px }` | it | **960** |
+| both | it | **930** |
+| `%74` | it | 1000 -- decoded before it is compared |
+| `T` | none | 0 -- compared as written |
+| `t` on a `display: none` element | it | 0 -- no box to scroll to |
+| `t` on a `position: fixed` element | it | 0 |
+| `t` in a 100px scroll container at y=500, 300px down | it | 500, and the container's `scrollTop` is 300 |
+
+The measurement alone; the tests and the implementation follow.
+
 ## CSS Animations: what is still open
 
 Measured differently, or not reached (`tests/unit/test_animation.f` holds

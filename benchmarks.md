@@ -4666,3 +4666,16 @@ before. A struct-typed global root is one candidate (`cssKeyframes`,
 `animTrackCache` and `animTimingCache` are maps of structs); it was not
 isolated. The cost is per page load and does not grow with the page.
 
+## `:target` and fragment navigation, counted
+
+Callgrind on `tools/festina-generic` builds, whole program, 800x600
+screenshot, screenshots byte-identical to the parent's:
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,059,949,167 | 1,059,983,344 | +34,177 (+0.003%) |
+| `features.html` | 1,243,555,008 | 1,243,498,233 | -56,775 (-0.005%) |
+
+Neither page has a fragment, so the whole of the change is one call per
+page load and a comparison of a global against zero at the end of layout.
+

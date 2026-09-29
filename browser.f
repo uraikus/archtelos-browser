@@ -187,8 +187,29 @@ void func startAnimationTimer() {
     if cssSawKeyframes && animLive { animationTimer = setInterval(animationTick, 40) }
 }
 
+// A link to a place in the document already open is not a load: the
+// same document is styled again, because `:target` now names another
+// element, and scrolled to it (HTML, "navigate to a fragment").
+bool func isSameDocument(url:text) {
+    if !page.loaded || page.doc == null || url == null { return false }
+    ascii a = url.toAscii()
+    if a == null || asciiIndexOf(a, '#', 0) < 0 { return false }
+    return withoutFragment(url) == withoutFragment(page.url)
+}
+
+void func goToFragment(url:text) {
+    page.url = url
+    setTargetFragment(page, url)
+    restylePage(page, clientWidth)
+    text frag = urlFragmentOf(url)
+    if cssTargetNode > 0 { scrollY = page.initialScrollY }
+    else if frag == '' || asciiLower(frag.toAscii()) == 'top' { scrollY = 0 }
+    clampScroll()
+    statusText = ''
+}
+
 void func navigate(url:text) {
-    loadInto(url)
+    if isSameDocument(url) { goToFragment(url) } else { loadInto(url) }
     // a new navigation truncates any forward history
     while history.length > historyIndex + 1 { history.pop() }
     history.push(page.url)
@@ -199,7 +220,8 @@ void func navigate(url:text) {
 void func goBack() {
     if historyIndex <= 0 { return }
     historyIndex--
-    loadInto(history[historyIndex])
+    if isSameDocument(history[historyIndex]) { goToFragment(history[historyIndex]) }
+    else { loadInto(history[historyIndex]) }
     repaint()
 }
 
@@ -223,7 +245,6 @@ bool func isNavigableHref(href:text) {
     if href == null || href == '' { return false }
     ascii a = href.toAscii()
     if a == null { return true }
-    if a.charCodeAt(0) == CH_HASH { return false }
     return !asciiStartsWithLower(a, 'javascript:', 0) && !asciiStartsWithLower(a, 'mailto:', 0) && !asciiStartsWithLower(a, 'tel:', 0)
 }
 

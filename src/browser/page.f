@@ -214,6 +214,9 @@ Page func loadPage(url:text, width:int) {
         page.doc = errorDocument(url, r.error)
     } else {
         page.url = r.finalUrl
+        // A redirect's final address has no fragment of its own, and the
+        // one asked for is still the one the reader named.
+        if urlFragmentOf(page.url) == '' && urlFragmentOf(url) != '' { page.url = `${page.url}#${asciiAfterHash(url)}` }
         // Decoded once and used twice: the scanner reads the same
         // bytes the tokenizer is about to.
         ascii src = blobToAsciiSafe(r.data).toAscii()
@@ -324,6 +327,60 @@ void func timing(label:text, since:int) {
     if archtelosTiming { log(`[timing] ${label}: ${now() - since} ms`) }
 }
 
+// The fragment of a URL, percent-decoded, or '' where there is none.
+// Everything after the first `#`, as written.
+text func asciiAfterHash(url:text) {
+    ascii a = url.toAscii()
+    int h = asciiIndexOf(a, '#', 0)
+    if h < 0 || h + 1 >= a.length { return '' }
+    return a.slice(h + 1, a.length).toText()
+}
+
+text func urlFragmentOf(url:text) {
+    ascii a = url.toAscii()
+    if a == null { return '' }
+    int h = asciiIndexOf(a, '#', 0)
+    if h < 0 || h + 1 >= a.length { return '' }
+    ascii f = a.slice(h + 1, a.length)
+    text out = ''
+    int i = 0
+    while i < f.length {
+        int c = f.charCodeAt(i)
+        if c == CH_PERCENT && i + 2 < f.length && isHexCode(f.charCodeAt(i + 1))
+            && isHexCode(f.charCodeAt(i + 2)) {
+            out = out + (hexValue(f.charCodeAt(i + 1)) * 16 + hexValue(f.charCodeAt(i + 2))).toChar()
+            i = i + 3
+            continue
+        }
+        out = out + c.toChar()
+        i++
+    }
+    return out
+}
+
+// The element a fragment names: the first with that id and, failing one,
+// the first <a> with that name. Compared as written, in case.
+int func targetNodeFor(n:Node, frag:text, byName:bool) {
+    if n.kind == NODE_ELEMENT {
+        if !byName && getAttr(n, 'id') == frag { return n.id }
+        if byName && n.tag == 'a' && getAttr(n, 'name') == frag { return n.id }
+    }
+    for int i = 0, i < n.children.length, i++ {
+        int got = targetNodeFor(n.children[i], frag, byName)
+        if got > 0 { return got }
+    }
+    return 0
+}
+
+void func setTargetFragment(page:Page, url:text) {
+    cssTargetFragment = urlFragmentOf(url)
+    cssTargetNode = 0
+    if cssTargetFragment == '' { return }
+    int found = targetNodeFor(page.doc, cssTargetFragment, false)
+    if found == 0 { found = targetNodeFor(page.doc, cssTargetFragment, true) }
+    cssTargetNode = found
+}
+
 void func preparePage(page:Page, width:int) {
     int t0 = now()
     cascadeReset()
@@ -337,6 +394,7 @@ void func preparePage(page:Page, width:int) {
     Node titleNode = findElement(page.doc, 'title')
     page.title = titleNode == null ? '' : textContent(titleNode).replace(spaceRun, ' ').trim()
     int t2 = now()
+    setTargetFragment(page, page.url)
     computeStyles(page.doc)
     timing('cascade', t2)
     // Background images come from computed styles, so they cannot be

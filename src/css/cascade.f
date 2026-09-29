@@ -34,6 +34,11 @@ int profMatchesTotal = 0
 int profHintsMs = 0
 int profSelectorTests = 0
 map[Style] styleCache = {}
+// The URL's fragment, decoded, and the element it names: what `:target`
+// matches and what a document starts scrolled to. Set by the page before
+// the cascade runs; zero is no target.
+text cssTargetFragment = ''
+int cssTargetNode = 0
 int profShareTotal = 0
 int profShareDistinct = 0
 int styleSerialNext = 1
@@ -1296,11 +1301,7 @@ bool func pseudoMatches(nid:int, name:text) {
         if lower != 'checkbox' && lower != 'radio' { return false }
         return hasAttrOf(nid, 'checked')
     }
-    if name == 'target' {
-        // No fragment is ever navigated to, so nothing is the target.
-        // Matching nothing is what the standard says for that state.
-        return false
-    }
+    if name == 'target' { return cssTargetNode > 0 && nid == cssTargetNode }
 
     ascii a = name.toAscii()
     if asciiStartsWith(a, 'lang:', 0) {

@@ -2282,6 +2282,7 @@ void func applyContainerAspect(b:Box) {
 // itself -- the shell owns the page's scroll position -- so it is handed
 // over the way the document's flags are, through a field on `Page`.
 int docInitialScrollY = 0
+bool fragmentTargetDone = false
 
 map[int] boxScrollTops = {}
 // And how far across, for the axis a horizontal bar scrolls.
@@ -8593,7 +8594,39 @@ Box func layoutDocumentOnce(doc:Node, width:int) {
     // ended up: a document that never says `scroll-initial-target`
     // pays one boolean for it.
     if anyInitialTarget { applyInitialTargets(root, null) }
+    if cssTargetNode > 0 {
+        fragmentTargetDone = false
+        applyFragmentTarget(root, null, resolveLen(root.style.scrollPaddingTop, cssViewportHeight, 0))
+    }
     return root
+}
+
+// The document starts scrolled to the element its URL's fragment names
+// (HTML, "scroll to the fragment"): the element's top edge at the top of
+// the scrollport, less the scrollport's `scroll-padding-top` and the
+// element's own `scroll-margin-top`. A scroll container holding it scrolls
+// first, and the document is then scrolled to where the element has come
+// to. An element with no box has nothing to scroll to, and a fixed one is
+// where it is however far the document goes (both measured, todo.md).
+void func applyFragmentTarget(b:Box, holder:Box, rootPad:int) {
+    if fragmentTargetDone { return }
+    Box h = b.scrollsY && b.node != null && b.node.id != 0 ? b : holder
+    if b.node != null && b.node.kind == NODE_ELEMENT && b.node.id == cssTargetNode {
+        fragmentTargetDone = true
+        if b.style.position == POS_FIXED { return }
+        int margin = resolveLen(b.style.scrollMarginTop, cssViewportHeight, 0)
+        int y = b.y
+        if h != null {
+            int top = h.y + h.bt + h.pt
+            int pad = resolveLen(h.style.scrollPaddingTop, h.h, 0)
+            int st = clampInt(b.y - top - pad - margin, 0, boxScrollRange(h))
+            boxScrollTops[h.node.id.toText()] = st
+            y = b.y - st
+        }
+        docInitialScrollY = maxInt(y - rootPad - margin, 0)
+        return
+    }
+    for int i = 0, i < b.children.length, i++ { applyFragmentTarget(b.children[i], h, rootPad) }
 }
 
 // `scroll-initial-target: nearest`: the nearest scroll container starts

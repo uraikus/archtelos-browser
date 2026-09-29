@@ -5,6 +5,19 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `:target` and fragment navigation
+
+`:target` matched nothing and a `#section` link did nothing. The URL's
+fragment is now decoded and names an element (the first with that id, else
+the first `<a>` with that name), which `:target` matches, and the document
+starts scrolled to it less the root's `scroll-padding-top` and the
+element's `scroll-margin-top`, the container that holds it scrolling first.
+A link to a place in the open document restyles and scrolls without a
+load, and a fragment-only reference keeps the query of the address it is
+on, which `resolveUrl` dropped. Twenty-six checks against Chromium
+(`tests/unit/test_target.f`); the window's click and back-button paths are
+not exercised headlessly.
+
 ### CSS Animations 1
 
 `@keyframes` blocks were skipped and no `animation-*` property was read.
