@@ -4906,6 +4906,109 @@ rather than quality: `noscript01.dat` assumes a disabled scripting flag,
 which is permanently true here. The script-data corners of `tests16.dat`
 and four cases of `html5test-com.dat` are genuine leads.
 
+### CSS Animations 1, measured
+
+The cascade skips `@keyframes` and reads no `animation-*` property, and the
+shell has no clock. Festina has `setInterval`, so a clock is a shell
+matter and the rest is a function from time to computed values. Measured
+against Chromium 141 with `animation.pause(); animation.currentTime = t`
+and `getComputedStyle`, so every row is deterministic. About 250 rows;
+the rules they agree on:
+
+**Time.** An animation has a delay `d`, a duration `D` and an iteration
+count `n`; the local time is `t - d`, the active duration `D * n`.
+- **Before the active interval** the animation has no effect unless
+  `fill-mode` is `backwards` or `both`, when it applies the first
+  keyframe at iteration 0 (progress 1 for a `reverse` or
+  `alternate-reverse` direction: `500ms backwards reverse` reads the
+  `to` value at every t < 500). **After** it, the value is the
+  underlying one unless `forwards` or `both`, when it holds the last
+  progress: `2.5 forwards` reads progress 0.5 of iteration 2, and
+  `3 alternate forwards` the `to` value.
+- **An animation with a duration of `0s`** is finished at once: it
+  contributes nothing without `forwards` (Chromium reports zero
+  animations) and its last keyframe with it; with `backwards` and a delay
+  it holds its first keyframe until the delay ends.
+- **Direction.** `alternate` reverses odd iterations, `alternate-reverse`
+  even ones; the timing function applies to the directed progress.
+- At exactly `t = d + D` with one iteration and no fill the value is the
+  underlying one (`width` reads 50px, its own, not 200px).
+- A negative delay starts the animation part-way: `-500ms` reads 150px at
+  t=0 and is finished at t=500.
+
+**Keyframes.** Selectors are `from`, `to` and percentages in a comma
+list, in any order (they are sorted); declarations at one offset from
+several blocks merge, so `50% { width }` beside `50% { height }` gives
+both. `!important` declarations in a keyframe are ignored. A property
+missing at 0% or 100% interpolates against the underlying value
+(`to { width:150px }` on a 50px box reads 50px at t=0 and 100px at t=500).
+A keyframe's `animation-timing-function` applies from that keyframe to
+the next one *that has the property*, and the animation's own function
+everywhere else; it is applied per interval, not to the whole animation
+(`0%{width:0;timing:linear} 50%{100px} 100%{20px}` under `ease-in` reads
+50px at 250 and 74.7656px at 750). The `animation-*` properties inside a
+keyframe other than the timing function are ignored.
+
+**Timing functions.** `ease` at 0.1 is 0.0947 (109.469px of 100..200);
+`steps(4)` reads 100, 125, 125, 150, 175 at 100, 250, 300, 500, 999;
+`steps(4, jump-start)` 125, 150, 175, 200; `steps(4, jump-none)` 100,
+133.33, 166.67, 200; `step-start` is 200 from the first millisecond and
+`step-end` 100 until the last. `linear(0, .25 75%, 1)` reads 108.33 at
+250 and 170 at 900. An overshooting `cubic-bezier(.5,-1,.5,2)` reads
+84.4px (below the from value) at 100 and 218.2px at 750.
+
+**The shorthand** takes its parts in any order: the first time is the
+duration and the second the delay, and a keyword goes to the role it fits
+first, so what is left over is the name. `animation: k 1s 2s 3s`, with a
+third time, is invalid and drops the whole declaration (no animation).
+A longhand after the shorthand wins and before it loses. Lists repeat
+cyclically against the name list (`animation-duration: 1s, 3s` with one
+name uses the first); with two names both apply, the later one winning
+where they touch the same property (`k, k` with `linear, ease-in` reads
+131.53px at 500, the `ease-in` one). An unknown name, `none` and
+`animation-name: missing` do nothing.
+
+**Interpolation**, by what the values are:
+- **Numbers and lengths.** Same unit: linear. Different units are one
+  `calc()`: `100px` to `50%` of 400 reads 125px at 250. `auto`,
+  `inherit`, `initial` and any keyword are discrete, flipping at 50%
+  (`width: 100px → auto` reads 100px at 250 and 400px at 500).
+  `z-index`, `order`, `column-count` round; `font-weight` is a number
+  (`normal → bold` reads 475 at 250) and does not snap to hundreds;
+  `opacity` is clamped after overshoot.
+- **Colours** are interpolated premultiplied in sRGB and computed to
+  `rgb()` or `rgba()`: `rgb(255,0,0) → rgb(0,0,255)` reads
+  `rgb(191, 0, 64)` at 250; `transparent → red` reads
+  `rgba(255, 0, 0, 0.25)` (transparent is premultiplied, not black);
+  `currentcolor` is resolved first. `oklch()` is interpolated in
+  `oklab`, and `color-mix()` computes to `oklab()` in Chromium.
+- **Lists** (`box-shadow`, `background-position`, `filter`,
+  `transform`) are interpolated item by item. A `box-shadow` list
+  shorter than its partner is padded with a transparent zero shadow, and
+  `filter` and `transform` lists with the identity of the missing
+  function.
+- **`transform`**: matching function lists are interpolated function by
+  function (`translateX(0) rotate(0) → translateX(100px) rotate(90deg)`
+  reads a rotation of 22.5 degrees and 25px across at 250); lists that do
+  not match, or `matrix()`, are interpolated as matrices, decomposed into
+  translation, rotation, scale and skew: `translateX(0) → rotate(90deg)`
+  reads a pure rotation. `none` is the identity. A percentage in
+  `translate` is of the element's own width (`0 → 50%` of 50px reads
+  6.25px at 250).
+- **`visibility`** is visible for the whole of an interval where either
+  end is (`hidden → visible` is visible from the first millisecond;
+  `visible → hidden` still visible at 99.9%).
+- **Discrete** properties flip at 50%: `position`, `text-align`, custom
+  properties (which is why `width: var(--w)` steps when `--w` is animated
+  in a keyframe). **`display` does not animate at all** (`block → none`
+  reads `block` throughout).
+
+**The cascade**: an animation's value overrides the normal declarations
+and the property's own inheritance from the parent, and children inherit
+the animated value.
+
+The measurement alone; the tests and the implementation follow.
+
 ## Block formatting contexts: what is still open
 
 A box that establishes one now contains its floats, isolates them from
