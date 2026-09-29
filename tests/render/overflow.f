@@ -524,4 +524,25 @@ check(getPixelColor(2, 20) == rcAt20, 'down the side of that corner as well')
 check(getPixelColor(30, 30) == rcIn, 'and is still painted inside the curve')
 check(getPixelColor(60, 60) == rcMid, 'and in the middle')
 
+// ---- a scrolled container's window ------------------------------------
+//
+// The painter skips boxes outside the rows the page is showing, and those
+// rows are the document's. A scroll container shows a different stretch
+// of its own content -- the part `scrollTop` has moved into view -- so a
+// box 700px down a container scrolled 650px is on screen while being
+// nowhere near the document's first 300 rows, and has to be painted.
+Page scWin = pageFromHtml('<!doctype html><body style="margin:0">'
+    + '<div style="height:100px;overflow:auto">'
+    + '<div style="height:700px"></div>'
+    + '<div style="height:20px;background:#0088ff"></div>'
+    + '<div style="height:300px"></div></div></body>', 'test.html', 400)
+arr[Box] scWinBoxes = []
+collectBoxesForTag(scWin.root, 'div', scWinBoxes)
+color scMark = '#0088ff'
+check(boxScrollBy(scWinBoxes[0], 650), 'the container scrolls to the marker')
+clearCanvas()
+paintPage(scWin, 0, 0, 300)
+check(getPixelColor(10, 60) == scMark, 'content far below the document window is painted when scrolled into view')
+check(getPixelColor(10, 40) != scMark, 'and only where it has scrolled to')
+
 finish('overflow')

@@ -4422,12 +4422,56 @@ at 50 -- which falls out of the rule rather than needing a case.
 `position: relative` is unaffected, and `getComputedStyle` answers
 `sticky`, not `relative`, so the keyword is not a synonym.
 
-What this does not reach. A sticky box inside an `overflow: scroll`
-container sticks to *that* container's scrollport, not the document's;
-and `left`/`right` need a horizontal scroll offset, which the painter
-does not have -- there is a `paintScrollY` and no `paintScrollX`,
-because the document itself does not scroll across. Both stay
-unimplemented, and are written down under "Layout" rather than claimed.
+What this does not reach. `left`/`right` need a horizontal scroll
+offset, which the painter does not have -- there is a `paintScrollY` and
+no `paintScrollX`, because the document itself does not scroll across.
+That stays unimplemented, and is written down under "Layout" rather than
+claimed. (A sticky box inside a scroll container was left out of this
+first pass and is measured under "A sticky box in a scroll container"
+below.)
+
+The measurement alone; the tests and the implementation follow.
+
+### A sticky box in a scroll container, measured
+
+CSS Positioned Layout 3 §3.5 says the sticky view rectangle is the
+scrollport of the box's nearest scroll container. Twenty-four rows to
+Chromium 141: a scroller at document y=50 with a 7px `border-top`, 5px of
+`padding-top` and 8px of `padding-bottom`, 100px high, holding a 400px
+`position: relative` containing block and 500px more below it; the
+sticky box is 20px and positions are read as
+`rect.top - scroller.top - 7 + scrollTop`, so they are in the
+container's content coordinates.
+
+| box | scrollTop 0 | 20 | 60 | 100 | 200 | 380 |
+|---|---|---|---|---|---|---|
+| `top:10px`, first in the block | **15** | 35 | 75 | 115 | 215 | **385** |
+| `top:10px`, after a 100px spacer | 105 | 105 | 105 | 115 | 215 | 385 |
+| `bottom:10px`, after a 300px spacer | **75** | 95 | 135 | 175 | 275 | 305 |
+| `top:0`, in a 150px block | 5 | 25 | 65 | 105 | 135 | 135 |
+
+- **The view rectangle is the scroller's content box**, not its padding
+  box: the first row rests at 5 + 10, not 10, and the `bottom` row at
+  the content box's bottom (5 + 100) less 10 less 20.
+- The rule of the document case holds unchanged with `scrollY` replaced
+  by the container's content top plus its scroll offset.
+- **`overflow: hidden` is a scroll container** and `clip` is not. With
+  the document scrolled 0, 40 and 60 and a 300px container that cannot
+  scroll, the box reads 15, 15 and 15 under `hidden` -- it stays put
+  inside the container -- and 5, 5 and 13 under `clip`, which is the
+  document case. Without the border and padding, `hidden`, `auto` and
+  `scroll` all keep the box 10px below the container's top at every
+  document scroll, and `visible` and `clip` stick it to the document.
+- The document's scroll offset does not enter a box that has a scroll
+  container: the container carries the box away and the box stays put
+  inside it.
+
+A separate fault turned up because the deepest row could not be painted:
+a scroll container's content was culled against the *document's* window,
+so a box more than a screen down a scrolled container was never drawn,
+sticky or not (a 20px box 700px down, container scrolled 650: no pixel
+painted). The cull window now moves down the content by the container's
+scroll offset.
 
 The measurement alone; the tests and the implementation follow.
 
@@ -4897,12 +4941,11 @@ measured differently are left:
 The layout engine handles normal flow well and does not attempt the
 rest. In rough order of how often real pages need it:
 
-- **A sticky box inside a scroll container**, which sticks to the
-  document's scrollport rather than to the container's. `position:
-  sticky` is a shift the painter applies against `paintScrollY`, and a
-  scroll container's own offset never reaches it. `left` and `right`
-  are the same gap along the other axis: there is no `paintScrollX`,
-  because the document itself does not scroll across.
+- **`left` and `right` on a sticky box.** They need a horizontal scroll
+  offset, and the painter has a `paintScrollY` and no `paintScrollX`,
+  because the document itself does not scroll across. (A scroll
+  container's own `boxScrollLeft` is there, so only the document's
+  scrollport lacks one.)
 - **Sub-pixel layout.** Every length is an integer, so three items
   sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
   rounds only when painting. Distributing free space by rounding the

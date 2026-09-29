@@ -385,11 +385,14 @@ and so do a `transform` and an `opacity` below 1; `z-index: auto` does
 not.
 
 **`position: sticky`** keeps the box where the flow put it and draws it
-somewhere else. A `top` inset holds it that far below the top of the
-window while the page scrolls under it, a `bottom` inset that far above
-the bottom, and it travels no further than its containing block's
+somewhere else. A `top` inset holds it that far below the top of its
+scrollport while the content scrolls under it, a `bottom` inset that far
+above the bottom, and it travels no further than its containing block's
 content box — so a stuck heading leaves with its own section rather
-than sitting over the next one. The shift belongs to the painter
+than sitting over the next one. The scrollport is the content box of the
+nearest ancestor with `overflow` other than `visible` or `clip`, moved by
+that container's own scroll offset, and the window where there is none.
+The shift belongs to the painter
 because the scroll position changes on every wheel event and the
 document is laid out once, and clicks come back through it, so a stuck
 box is clickable where it is drawn rather than where it was laid out.

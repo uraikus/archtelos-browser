@@ -3815,12 +3815,25 @@ void func paintClipped(b:Box) {
     // the box's scroll position with it, which is what moves the
     // content while the box, its background and its scrollbars stay
     // where they are.
-    layer.translate(0 - px - boxScrollLeft(b), 0 - py - boxScrollTop(b))
+    int scrolledTo = boxScrollTop(b)
+    layer.translate(0 - px - boxScrollLeft(b), 0 - py - scrolledTo)
     paintLayer = layer
+    // The rows the cull keeps are the document's, and a scrolled box
+    // shows the stretch of its content that `scrollTop` moved into view,
+    // so the window moves down the content by as much. A box that has
+    // not scrolled leaves it where it was.
+    int culledTop = paintTop
+    int culledBottom = paintBottom
+    if scrolledTo > 0 {
+        paintTop = paintTop + scrolledTo
+        paintBottom = paintBottom + scrolledTo
+    }
     // The layer holds this box's contents, which is §9.9's steps 3, 4
     // and 5 and everything positioned after them -- the same three
     // walks the document gets, over this subtree.
     paintContents(b, false)
+    paintTop = culledTop
+    paintBottom = culledBottom
     paintLayer = null
     pDrawImage(layer, px, py)
     paintScrollbars(b)
@@ -3975,9 +3988,35 @@ void func applyBoxOffset(b:Box) {
 //
 // Reached only through `anySticky`, so a document that never said the
 // word pays one boolean per box painted rather than these lookups.
+//
+// The scrollport is the nearest scroll container's content box, moved by
+// that container's own scroll offset, and the document's only where no
+// ancestor is one -- measured against Chromium in todo.md. `overflow:
+// clip` is not a scroll container and `hidden` is, whether or not the
+// box can scroll.
+Box func stickyScroller(b:Box) {
+    Box up = parentBox(b)
+    while up != null {
+        Style us = up.style
+        if us != null && us.overflowX != OVERFLOW_VISIBLE && us.overflowX != OVERFLOW_CLIP
+            || us != null && us.overflowY != OVERFLOW_VISIBLE && us.overflowY != OVERFLOW_CLIP {
+            return up
+        }
+        up = parentBox(up)
+    }
+    return null
+}
+
 int func stickyOffsetY(b:Box) {
     Style s = b.style
     if s == null { return 0 }
+    int viewTop = paintScrollY
+    int viewHeight = paintViewHeight
+    Box scroller = stickyScroller(b)
+    if scroller != null {
+        viewTop = contentY(scroller) + boxScrollTop(scroller)
+        viewHeight = scrollVisibleHeight(scroller)
+    }
     // The containing block is the parent's content box -- measured with
     // 30px of padding and 30px of border on the parent, which separates
     // that rectangle from its padding box and its border box. It is
@@ -3988,11 +4027,11 @@ int func stickyOffsetY(b:Box) {
     int cbHeight = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
     int dy = 0
     if !lenIsAuto(s.top) {
-        int want = paintScrollY + resolveLen(s.top, cbHeight, 0)
+        int want = viewTop + resolveLen(s.top, cbHeight, 0)
         if want > b.y { dy = want - b.y }
     }
     if !lenIsAuto(s.bottom) {
-        int limit = paintScrollY + paintViewHeight - resolveLen(s.bottom, cbHeight, 0)
+        int limit = viewTop + viewHeight - resolveLen(s.bottom, cbHeight, 0)
         if b.y + b.h + dy > limit { dy = limit - b.y - b.h }
     }
     if dy == 0 || up == null { return dy }

@@ -117,4 +117,100 @@ checkEqInt(stTop(NOINSET, 20), stTop(STATIC, 20),
 checkEqInt(stTop(NOINSET, 80), -1,
     'and scrolls off the top with it')
 
+// ---- inside a scroll container ---------------------------------------
+//
+// A sticky box sticks to the scrollport of its nearest scroll container,
+// not the document's: `overflow` other than `visible` and `clip` makes
+// one, whether or not the box can scroll, and the rectangle it keeps
+// inside is that container's content box, moved by that container's own
+// scroll offset. Every row below is the number Chromium gave for the
+// same document (todo.md, "a sticky box inside a scroll container"),
+// read as a position in the container's content and turned into a
+// screen row -- the container is at y=50 with a 7px border-top, so its
+// padding box starts on screen row 57 -- because a number worked out
+// here would only test the arithmetic that produced it.
+
+// The container: content between 5px of padding above and 8 below,
+// holding a containing block of `cbHeight` whose sticky box sits after
+// `spacer` pixels, and 500px more below it so there is room to scroll
+// past the containing block's end.
+text func scDoc(overflow:text, decl:text, cbHeight:int, spacer:int, height:int) {
+    return '<!doctype html><body style="margin:0">'
+        + '<div style="height:50px"></div>'
+        + `<div id="sc" style="height:${height}px;overflow:${overflow};border-top:7px solid #000;padding:5px 0 8px 0">`
+        + `<div style="position:relative;height:${cbHeight}px">`
+        + `<div style="height:${spacer}px"></div>`
+        + `<div id="q" style="${decl};height:20px;background:#0088ff"></div>`
+        + `<div style="height:${cbHeight - spacer - 20}px"></div></div>`
+        + '<div style="height:500px"></div></div>'
+        + '<div style="height:1000px"></div></body>'
+}
+
+// Where the box is on screen with the container scrolled `inner` and the
+// document scrolled `outer`, read as a position in the container's
+// content -- that is, the screen row less the padding box's row, plus how
+// far the container has scrolled -- so that the rows compare to
+// Chromium's numbers directly. -1 where the box is off screen.
+int func scPos(overflow:text, decl:text, cbHeight:int, spacer:int, height:int, inner:int, outer:int) {
+    Page p = pageFromHtml(scDoc(overflow, decl, cbHeight, spacer, height), 'tests/fixtures/page.html', 400)
+    Box sc = null
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if getAttr(all[i].node, 'id') == 'sc' { sc = all[i] }
+    }
+    if inner > 0 { boxScrollBy(sc, inner) }
+    clearCanvas()
+    paintPage(p, 0, outer, 300)
+    for int y = 0, y < 300, y++ {
+        if getPixelColor(10, y) == stMark { return y + outer - 57 + inner }
+    }
+    return -1
+}
+
+text SC_TOP = 'position:sticky;top:10px'
+
+// top: 10px, the box first in the container. The view is the content
+// box, so the first stop is 5 (padding) + 10, not 10.
+checkEqInt(scPos('auto', SC_TOP, 400, 0, 100, 0, 0), 15, 'stuck at scroll 0, inset from the content box')
+checkEqInt(scPos('auto', SC_TOP, 400, 0, 100, 20, 0), 35, 'and at scroll 20')
+checkEqInt(scPos('auto', SC_TOP, 400, 0, 100, 60, 0), 75, 'and at scroll 60')
+checkEqInt(scPos('auto', SC_TOP, 400, 0, 100, 200, 0), 215, 'and at scroll 200')
+checkEqInt(scPos('auto', SC_TOP, 400, 0, 100, 380, 0), 385, 'clamped to its containing block at scroll 380')
+// The same box after a spacer, so the natural place is below the stop:
+// it has to wait to be reached.
+checkEqInt(scPos('auto', SC_TOP, 400, 100, 100, 0, 0), 105, 'a box below its stop stays in its place at scroll 0')
+checkEqInt(scPos('auto', SC_TOP, 400, 100, 100, 60, 0), 105, 'and at scroll 60')
+checkEqInt(scPos('auto', SC_TOP, 400, 100, 100, 200, 0), 215, 'until it is reached')
+// bottom: 10px pulls the box up into a view it is below.
+text SC_BOT = 'position:sticky;bottom:10px'
+checkEqInt(scPos('auto', SC_BOT, 400, 300, 100, 0, 0), 75, 'a bottom inset pulls it up to the content box bottom less 10')
+checkEqInt(scPos('auto', SC_BOT, 400, 300, 100, 60, 0), 135, 'and it rides along with the scroll')
+checkEqInt(scPos('auto', SC_BOT, 400, 300, 100, 220, 0), 295, 'and at scroll 220')
+checkEqInt(scPos('auto', SC_BOT, 400, 300, 100, 240, 0), 305, 'until it is in its natural place')
+// A containing block shorter than the scroller's content leaves the box
+// nowhere to go but the clamp.
+checkEqInt(scPos('auto', 'position:sticky;top:0', 150, 0, 100, 60, 0), 65, 'a short containing block: stuck')
+checkEqInt(scPos('auto', 'position:sticky;top:0', 150, 0, 100, 100, 0), 105, 'and at scroll 100')
+
+// The document's scroll does not move it: the container is the box's
+// scrollport, so a scrolled page only carries the container away.
+checkEqInt(scPos('hidden', SC_TOP, 400, 0, 300, 0, 0), 15, 'an overflow: hidden container is a scroll container')
+checkEqInt(scPos('hidden', SC_TOP, 400, 0, 300, 0, 40), 15, 'and scrolling the page leaves the box in it')
+// `clip` makes no scroll container, so the box sticks to the document.
+checkEqInt(scPos('clip', SC_TOP, 400, 0, 300, 0, 60), 13, 'overflow: clip is not one, and the box sticks to the page')
+
+// A click lands where the box is drawn, which is not where it was laid
+// out: scrolled 200, the box is stuck at row 72 and laid out at row 62.
+Page scHit = pageFromHtml(scDoc('auto', SC_TOP, 400, 0, 100), 'tests/fixtures/page.html', 400)
+arr[Box] scHitBoxes = []
+collectBoxesForTag(scHit.root, 'div', scHitBoxes)
+for int i = 0, i < scHitBoxes.length, i++ {
+    if getAttr(scHitBoxes[i].node, 'id') == 'sc' { boxScrollBy(scHitBoxes[i], 200) }
+}
+Box scHitQ = hitTest(scHit.root, 10, 72)
+check(scHitQ != null && getAttr(scHitQ.node, 'id') == 'q', 'a click on the stuck box reaches it')
+Box scHitBehind = hitTest(scHit.root, 10, 100)
+check(scHitBehind == null || getAttr(scHitBehind.node, 'id') != 'q', 'and one below it does not')
+
 finish('sticky')

@@ -5,6 +5,20 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A sticky box sticks to its scroll container
+
+`position: sticky` had one scrollport, the document's. The nearest
+ancestor with `overflow` other than `visible` or `clip` now supplies it:
+its content box, moved by its own scroll offset (`hidden` counts,
+`clip` does not), which is what Chromium does on 24 measured rows
+(todo.md). `left` and `right` are still unimplemented.
+
+The deepest of those rows could not be painted, which found an older
+fault: a scroll container's content was culled against the document's
+window rather than the stretch of content the container had scrolled to,
+so anything more than a screen down a scrolled container never appeared.
+The cull window now follows the container's scroll offset.
+
 ### Block formatting contexts: floats stay where they belong
 
 This engine kept one float list for the whole document, so nothing
