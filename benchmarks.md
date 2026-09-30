@@ -4654,17 +4654,21 @@ animation code; both screenshots byte-identical on each page.
 
 | page | parent | candidate | against the parent |
 |---|---|---|---|
-| `generated.html` | 1,056,811,800 | 1,060,084,828 | +3,273,028 (+0.31%) |
-| `features.html` | 1,243,205,218 | 1,243,466,835 | +261,617 (+0.02%) |
+| `generated.html` | 1,059,734,052 | 1,059,228,736 | -505,316 (-0.05%) |
+| `features.html` | 1,243,317,424 | 1,243,482,234 | +164,810 (+0.013%) |
 
-Taking the two call sites out one at a time (`applyAnimations` in
-`computeStyle`, `animExpandShorthand` in `applyDecl`, each behind
-`cssSawKeyframes`) gives 1,059,601,621 and 1,059,592,937, and taking both
-out gives 1,059,679,721: **the call sites are about 0.4 M between them and
-the other 2.9 M is the module being present**, in `festina_cycle_*` as
-before. A struct-typed global root is one candidate (`cssKeyframes`,
-`animTrackCache` and `animTimingCache` are maps of structs); it was not
-isolated. The cost is per page load and does not grow with the page.
+Both binaries were built and counted in the same batch. An earlier reading
+of this section, +3.3 M (+0.31%) on `generated.html`, set the candidate
+against a parent counted in an earlier session, and **absolute callgrind
+counts differ between sessions and between builds**: the parent of that
+session read 1,056.8 M where the same tree reads 1,059.7 M now, so the 3 M
+was the difference between two sessions, not between two trees. Bisecting
+in one batch: `keyframes.f` alone moves the count by -16 K and `animation.f`
+imported with no call site by -668 K, both inside the +-0.5 M by which
+adding code that no page reaches moves `festina_cycle_*` placement (the
+entries above and below say the same). There is no cost to a page that
+declares no `@keyframes` that a count can resolve. The parent for a count
+is rebuilt in the batch it is compared in.
 
 ## `:target` and fragment navigation, counted
 

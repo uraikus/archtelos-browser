@@ -67,12 +67,12 @@ the window starts a timer, re-styles and repaints while any animation can
 still change, and stops it when none can. A page with no `@keyframes`
 enters none of it: the flag is asked before the property is.
 
-**What it costs a page that has none** is +3.3 M instructions of
-1,056.8 M on `generated.html` (+0.31%) and +0.26 M of 1,243 M on
-`features.html` (+0.02%), screenshots byte-identical (benchmarks.md).
-The two call sites are 0.5 M between them; the rest is the new code's
-presence, which is the same unexplained shape the block formatting
-context work found.
+**What it costs a page that has none** is nothing a count resolves:
+-0.5 M of 1,059.7 M on `generated.html` (-0.05%) and +0.16 M of 1,243 M
+on `features.html` (+0.013%), parent and candidate built and counted in
+one batch, screenshots byte-identical (benchmarks.md). An earlier
+reading of +0.31% compared against a parent counted in another session,
+and absolute counts differ between sessions.
 
 ### A list item's marker gives it a height, and its margins collapse
 
