@@ -4859,6 +4859,26 @@ the more practical instrument.
 by this network's egress policy, so a session cannot fetch the document
 itself; it has to be handed in.
 
+### `scroll-behavior`, measured and not taken
+
+The property has a row in `css-properties.txt` (`smooth`) and no field in
+`Style`, so it grades as changing nothing, and the only thing in this
+engine it could act on is a fragment jump (`goToFragment`). Adding the
+field would move the count by one and leave the page jumping, which is a
+count that rose without the feature working.
+
+What would make it real is a scroll that takes time -- a timer stepping
+`scrollY` toward the target, which the animation clock's timer could
+carry -- and the curve and duration to give it. Neither is measurable
+with what is here. A page with `html { scroll-behavior: smooth }` that
+calls `scrollIntoView()` on an element 500px down and samples
+`scrollY` every 16 ms for 2.5 s, under `headless_shell --dump-dom`,
+reads 0 at every sample, and the same at 2000px: the animation is
+driven by compositor frames and this mode produces none. A headed
+browser under Xvfb could be asked, but it would need a driver the
+project does not have (no Playwright or DevTools client is installed,
+and adding one needs permission).
+
 ## HTML: the remaining conformance gap
 
 **1564 of 1652, and none of the 88 failures is this engine's alone.**
