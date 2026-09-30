@@ -317,7 +317,7 @@ text func lenKey(l:Len) {
 
 arr[text] func digestFieldsFor(decl:text) {
     cascadeReset()
-    Node doc = parseHtmlText(`<html><body><table><tr><td><p id="t" style="${decl}">x</p></td></tr></table></body></html>`)
+    Node doc = parseHtmlText(`<html><head><style>@keyframes slidein{from{opacity:.5}to{opacity:.9}}</style></head><body><table><tr><td><p id="t" style="${decl}">x</p></td></tr></table></body></html>`)
     cascadeAddDocumentStyles(doc)
     computeStyles(doc)
     arr[Node] ps = []
@@ -379,6 +379,12 @@ if !f.exists() {
     close(0)
 }
 
+// The animation properties act through the clock, so it is set to a moment
+// at which running, paused, delayed and reversed animations are all in
+// different places: half a second in. The fixture declares `slidein`,
+// which takes opacity from .5 to .9, and an animation row names it and
+// reads the opacity the clock leaves it at.
+animationClock = 500.0
 arr[text] baseFields = digestFieldsFor('')
 text baseline = baseFields.join('\u0001')
 arr[text] fieldNames = styleDigestFieldNames()

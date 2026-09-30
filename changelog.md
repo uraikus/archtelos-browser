@@ -5,6 +5,23 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The property instrument counts the animation properties: 290 → 298
+
+The eight `animation-*` longhands the engine now runs were graded as
+changing nothing, because an animation's whole effect is on other
+properties and the digest has no animation field. Each row now names the
+fixture's `@keyframes slidein` (opacity .5 to .9), carries the context it
+needs, and is graded at a clock of 500 ms: a duration of zero has no
+effect and one second does, a delay pushes the animation out of its active
+interval, a reverse direction reads the far end, `paused` holds it at
+zero, an iteration count of zero removes it, a backwards fill applies it
+before its delay ends, a named timing function reads a different progress,
+and the name is what makes any of it apply. The field that moves is
+`opacity`, which is the animated property, and `@supports` now says yes to
+all eight and to `animation` -- which the cross-check caught, the list it
+asks having been written before they worked. `animation-composition`,
+`animation-timeline` and `animation-range-*` still change nothing.
+
 ### `:target` and fragment navigation
 
 `:target` matched nothing and a `#section` link did nothing. The URL's

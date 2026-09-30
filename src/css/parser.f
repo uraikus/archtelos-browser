@@ -1736,7 +1736,10 @@ arr[text] supportedProperties = [
     'border-inline-start-color', 'border-inline-end-color',
     'inset', 'inset-block', 'inset-inline',
     'inset-block-start', 'inset-block-end', 'inset-inline-start', 'inset-inline-end',
-    'overflow-block', 'overflow-inline'
+    'overflow-block', 'overflow-inline',
+    'animation', 'animation-name', 'animation-duration', 'animation-timing-function',
+    'animation-delay', 'animation-iteration-count', 'animation-direction',
+    'animation-fill-mode', 'animation-play-state'
 ]
 
 bool func cssKnownProperty(prop:ascii) {
