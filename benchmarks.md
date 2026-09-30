@@ -4679,3 +4679,19 @@ screenshot, screenshots byte-identical to the parent's:
 Neither page has a fragment, so the whole of the change is one call per
 page load and a comparison of a global against zero at the end of layout.
 
+## `animation-composition`, on pages that declare no `@keyframes`
+
+Callgrind on `tools/festina-generic` builds, whole program, 800x600
+screenshot, screenshots byte-identical to the parent's:
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,059,522,043 | 1,058,976,528 | -545,515 (-0.051%) |
+| `features.html` | 1,243,734,524 | 1,243,188,912 | -545,612 (-0.044%) |
+
+Both pages fell by the same 545 K, which is not work the change removed: it
+adds code and no page reaches it. It is the placement effect the animation
+entry above and the block formatting context entry before it describe, in
+the direction that flatters, and it is reported for the same reason they
+were.
+

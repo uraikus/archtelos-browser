@@ -5049,7 +5049,7 @@ what agrees):
 - **A custom property in a keyframe** is discrete, as in Chromium
   (`width: var(--w)` steps when `--w` is animated, and the row agrees).
 
-- **`animation-composition`, `animation-timeline` and `animation-range`**
+- **`animation-timeline` and `animation-range`**
   are ignored, and so is `@keyframes` inside a layer being scoped to it.
 - **Transitions.** Nothing changes a computed value under a running page,
   so `transition-*` has nothing to act on.

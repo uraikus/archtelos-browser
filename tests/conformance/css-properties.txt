@@ -88,7 +88,7 @@ align-self	flex-end
 alignment-baseline	baseline
 anchor-name	--a
 anchor-scope	all
-animation-composition	add
+animation-composition	add;animation-name:slidein;animation-duration:1s;animation-timing-function:linear;opacity:.3
 animation-delay	1s;animation-name:slidein;animation-duration:2s
 animation-direction	reverse;animation-name:slidein;animation-duration:2s;animation-timing-function:linear
 animation-duration	1s;animation-name:slidein

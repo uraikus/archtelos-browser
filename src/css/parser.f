@@ -452,6 +452,7 @@ KeyframesRule func parseKeyframesBody(body:ascii) {
         arr[text] names = []
         arr[text] values = []
         text easeFn = ''
+        text composeFn = ''
         if close > open + 1 {
             // Read as any declaration is, so the per-document flags that
             // a shorthand's expansion is gated on (`gap`, `border-radius`,
@@ -462,6 +463,7 @@ KeyframesRule func parseKeyframesBody(body:ascii) {
                 if dd == null || dd.important { continue }
                 text nm = dd.name
                 if nm == 'animation-timing-function' { easeFn = dd.value.toText()  continue }
+                if nm == 'animation-composition' { composeFn = dd.value.toText()  continue }
                 if asciiStartsWith(nm.toAscii(), 'animation'.toAscii(), 0) { continue }
                 names.push(nm)
                 values.push(dd.value.toText())
@@ -473,6 +475,7 @@ KeyframesRule func parseKeyframesBody(body:ascii) {
             f.names = names
             f.values = values
             f.timing = easeFn
+            f.composition = composeFn
             // Insert after every frame at or below this offset.
             rule.frames.push(f)
             int at = rule.frames.length - 1
@@ -1739,7 +1742,7 @@ arr[text] supportedProperties = [
     'overflow-block', 'overflow-inline',
     'animation', 'animation-name', 'animation-duration', 'animation-timing-function',
     'animation-delay', 'animation-iteration-count', 'animation-direction',
-    'animation-fill-mode', 'animation-play-state'
+    'animation-fill-mode', 'animation-play-state', 'animation-composition'
 ]
 
 bool func cssKnownProperty(prop:ascii) {

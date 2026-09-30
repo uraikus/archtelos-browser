@@ -11,6 +11,7 @@ struct Keyframe {
     names:arr[text]         // as written, lowercased; shorthands included
     values:arr[text]
     timing:text             // this keyframe's `animation-timing-function`, or ''
+    composition:text        // this keyframe's `animation-composition`, or ''
 }
 
 struct KeyframesRule {

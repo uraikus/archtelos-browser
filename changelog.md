@@ -5,6 +5,21 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `animation-composition`: 298 → 299
+
+`replace`, `add` and `accumulate`, as a list against the animations and per
+keyframe. A composited keyframe is the underlying value plus its own --
+lengths through `calc()`, colours by channel, transform lists end to end --
+and the sums are interpolated before they are clamped: `opacity: .5` with
+keyframes .2 to .9 goes from .7 to 1.4, so it reads .875 a quarter of the
+way and 1 (from 1.05) halfway, and a colour channel 250 + 50 is 300 on the
+way. An implicit keyframe stays the
+underlying value, and a later animation composites onto what the earlier
+ones left, which also changes which value an implicit keyframe interpolates
+against. `accumulate` sums `scale(2)` and `scale(3)` to `scale(4)` where
+`add` gives `scale(6)`. A value that cannot be added (`auto`, a keyword)
+is replaced. Twenty-nine Chromium rows in `tests/unit/test_animation.f`.
+
 ### The property instrument counts the animation properties: 290 → 298
 
 The eight `animation-*` longhands the engine now runs were graded as

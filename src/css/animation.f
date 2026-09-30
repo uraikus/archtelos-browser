@@ -316,6 +316,7 @@ struct AnimSpec {
     direction:int
     fill:int
     paused:bool
+    composition:text    // replace, add or accumulate
 }
 
 // A time in milliseconds, or the global says it was not a time.
@@ -512,6 +513,7 @@ arr[AnimSpec] func animSpecs(props:map[text]) {
         a.direction = animDirectionOf(animItem(props, 'animation-direction', i, 'normal'))
         a.fill = animFillOf(animItem(props, 'animation-fill-mode', i, 'none'))
         a.paused = animItem(props, 'animation-play-state', i, 'running') == 'paused'
+        a.composition = animItem(props, 'animation-composition', i, 'replace')
         if a.name != '' { out.push(a) }
     }
     return out
@@ -576,6 +578,7 @@ struct AnimTrack {
     offsets:arr[float]
     values:arr[text]
     timings:arr[text]   // the keyframe's own function, or '' for the animation's
+    comps:arr[text]     // the keyframe's own `animation-composition`, or ''
 }
 
 struct AnimTracks {
@@ -642,10 +645,12 @@ AnimTracks func animTracksFor(name:text) {
                 // a later block at the same offset wins the property
                 track.values[last] = v
                 track.timings[last] = f.timing
+                track.comps[last] = f.composition
             } else {
                 track.offsets.push(f.offset)
                 track.values.push(v)
                 track.timings.push(f.timing)
+                track.comps.push(f.composition)
             }
         }
     }
@@ -673,6 +678,47 @@ text func animLerpColor(ca:int, cb:int, p:float) {
     float r = animLerp(colorRed(ca).toFloat() * aa, colorRed(cb).toFloat() * ab, p) / a
     float g = animLerp(colorGreen(ca).toFloat() * aa, colorGreen(cb).toFloat() * ab, p) / a
     float b = animLerp(colorBlue(ca).toFloat() * aa, colorBlue(cb).toFloat() * ab, p) / a
+    return animColorText(packColor(clampChannel(r), clampChannel(g), clampChannel(b), Math.round(a * 255.0)))
+}
+
+// A colour as its four channels, red, green and blue out of 255 and alpha
+// out of 1, or nothing where the text is not one. An `rgb()` keeps the
+// channels it was written with, past 255 included, because a sum of two
+// colours is interpolated before it is clamped.
+arr[float] func animRgbaOf(t:ascii, cur:int) {
+    arr[float] out = []
+    ascii low = asciiLower(asciiTrim(t))
+    if asciiStartsWith(low, 'rgb(', 0) || asciiStartsWith(low, 'rgba(', 0) {
+        int open = asciiIndexOf(low, '(', 0)
+        arr[float] nums = parseColorComponents(low.slice(open + 1, low.length - 1), false)
+        if nums.length >= 3 {
+            out.push(nums[0])
+            out.push(nums[1])
+            out.push(nums[2])
+            out.push(nums.length >= 4 ? nums[3] : 1.0)
+            return out
+        }
+    }
+    int c = parseCssColor(low, cur)
+    if c == COLOR_UNSET { return out }
+    out.push(colorRed(c).toFloat())
+    out.push(colorGreen(c).toFloat())
+    out.push(colorBlue(c).toFloat())
+    out.push(colorAlpha(c).toFloat() / 255.0)
+    return out
+}
+
+// Two colours as channels, premultiplied by alpha, which is how a colour
+// fades to transparent without passing through black: `transparent` to red
+// is `rgba(255, 0, 0, 0.25)` a quarter of the way (measured).
+text func animLerpRgba(fa:arr[float], fb:arr[float], p:float) {
+    float aa = fa[3]
+    float ab = fb[3]
+    float a = animLerp(aa, ab, p)
+    if a <= 0.0 { return 'rgba(0, 0, 0, 0)' }
+    float r = animLerp(fa[0] * aa, fb[0] * ab, p) / a
+    float g = animLerp(fa[1] * aa, fb[1] * ab, p) / a
+    float b = animLerp(fa[2] * aa, fb[2] * ab, p) / a
     return animColorText(packColor(clampChannel(r), clampChannel(g), clampChannel(b), Math.round(a * 255.0)))
 }
 
@@ -758,9 +804,9 @@ text func animLerpToken(prop:text, ta:text, tb:text, p:float, cur:int) {
         return animCalcMix(ta, tb, p)
     }
     if aNum || bNum { return null }
-    int ca = parseCssColor(a, cur)
-    int cb = parseCssColor(b, cur)
-    if ca != COLOR_UNSET && cb != COLOR_UNSET { return animLerpColor(ca, cb, p) }
+    arr[float] ra = animRgbaOf(a, cur)
+    arr[float] rb = animRgbaOf(b, cur)
+    if ra.length == 4 && rb.length == 4 { return animLerpRgba(ra, rb, p) }
     return null
 }
 
@@ -1242,6 +1288,112 @@ text func animLerpRatio(a:text, b:text, p:float) {
     return `${animNum(r)} / 1`
 }
 
+// ---- composition (CSS Animations 2, `animation-composition`) -------------
+
+// The sum of an underlying value and a keyframe's: numbers and lengths add
+// (unlike units through one `calc()`), a colour adds by channel, and a
+// transform list is the underlying one followed by the keyframe's. Null for
+// anything else -- a keyword, `auto`, `visibility` -- which is then replaced
+// rather than added to, as Chromium does. `accumulate` differs from `add`
+// only in how two transform functions of one kind combine, which is
+// visible in `scale`: `scale(2)` accumulated with `scale(3)` is `scale(4)`,
+// where added it is `scale(6)` (measured).
+text func animAddToken(prop:text, tu:text, tv:text, cur:int) {
+    ascii a = asciiLower(asciiTrim(tu.toAscii()))
+    ascii b = asciiLower(asciiTrim(tv.toAscii()))
+    parseNumberAt(a, 0)
+    bool aNum = numOk
+    float av = numValue
+    int aEnd = numEnd
+    parseNumberAt(b, 0)
+    bool bNum = numOk
+    float bv = numValue
+    int bEnd = numEnd
+    if aNum && bNum {
+        ascii ua = a.slice(aEnd, a.length)
+        ascii ub = b.slice(bEnd, b.length)
+        if ua == '' && ub == '' {
+            float v = av + bv
+            if animIsIntegerProp(prop) { return `${Math.round(v)}` }
+            return animNum(v)
+        }
+        if ua == ub { return `${animNum(av + bv)}${ua.toText()}` }
+        float fa = animAngleUnitDeg(ua)
+        float fb = animAngleUnitDeg(ub)
+        if fa > 0.0 && fb > 0.0 { return `${animNum(av * fa + bv * fb)}deg` }
+        if ua == '' && av == 0.0 && animIsLengthUnit(ub) { return tv }
+        if ub == '' && bv == 0.0 && animIsLengthUnit(ua) { return tu }
+        if animIsLengthUnit(ua) && animIsLengthUnit(ub) { return `calc(${tu} + ${tv})` }
+        return null
+    }
+    if (aNum || animIsCalcish(a)) && (bNum || animIsCalcish(b)) {
+        if aNum && animIsLengthUnit(a.slice(aEnd, a.length)) == false { return null }
+        if bNum && animIsLengthUnit(b.slice(bEnd, b.length)) == false { return null }
+        return `calc(${tu} + ${tv})`
+    }
+    if aNum || bNum { return null }
+    arr[float] fa2 = animRgbaOf(a, cur)
+    arr[float] fb2 = animRgbaOf(b, cur)
+    if fa2.length == 4 && fb2.length == 4 {
+        // Not clamped: the sum is interpolated with its neighbour before it
+        // is, so `250 + 50` is 300 on the way there (measured).
+        float al = fa2[3] + fb2[3]
+        if al > 1.0 { al = 1.0 }
+        return `rgba(${animNum(fa2[0] + fb2[0])}, ${animNum(fa2[1] + fb2[1])}, ${animNum(fa2[2] + fb2[2])}, ${animNum(al)})`
+    }
+    return null
+}
+
+text func animAddValue(prop:text, u:text, v:text, cur:int, accumulate:bool) {
+    if prop == 'transform' {
+        arr[TxFn] lu = animParseTransform(u)
+        if !animTxOk { return null }
+        arr[TxFn] lv = animParseTransform(v)
+        if !animTxOk { return null }
+        arr[TxFn] both = []
+        for int i = 0, i < lu.length, i++ { both.push(lu[i]) }
+        for int i = 0, i < lv.length, i++ {
+            TxFn f = lv[i]
+            // Accumulated, a function meeting one of its own kind at the end
+            // of the list is summed into it rather than following it.
+            if accumulate && both.length > 0 && both[both.length - 1].kind == f.kind {
+                TxFn last = both[both.length - 1]
+                if f.kind == TXK_SCALE {
+                    last.f1 = last.f1 + f.f1 - 1.0
+                    last.f2 = last.f2 + f.f2 - 1.0
+                    continue
+                }
+                if f.kind == TXK_ROTATE {
+                    last.f1 = last.f1 + f.f1
+                    continue
+                }
+            }
+            both.push(f)
+        }
+        return animTxText(both)
+    }
+    if prop == 'visibility' || asciiStartsWith(prop.toAscii(), '--', 0) { return null }
+    arr[ascii] la = splitTopLevelCommas(u.toAscii())
+    arr[ascii] lb = splitTopLevelCommas(v.toAscii())
+    if la.length != lb.length { return null }
+    arr[text] items = []
+    for int i = 0, i < la.length, i++ {
+        arr[ascii] ta = cssTokens(la[i])
+        arr[ascii] tb = cssTokens(lb[i])
+        if ta.length == 0 || ta.length != tb.length { return null }
+        arr[text] toks = []
+        for int k = 0, k < ta.length, k++ {
+            text x = ta[k].length == 0 ? '' : ta[k].toText()
+            text y = tb[k].length == 0 ? '' : tb[k].toText()
+            text one = animAddToken(prop, x, y, cur)
+            if one == null { return null }
+            toks.push(one)
+        }
+        items.push(toks.join(' '))
+    }
+    return items.join(', ')
+}
+
 // ---- one property, two values, a progress --------------------------------
 
 text func animInterpolate(prop:text, a:text, b:text, p:float, cur:int) {
@@ -1302,7 +1454,7 @@ text func animUnderlying(prop:text, orig:map[text], parent:Style) {
 }
 
 // The value of one property at one progress through one animation.
-text func animTrackValue(track:AnimTrack, prop:text, p:float, defaultTiming:text, underlying:text, cur:int) {
+text func animTrackValue(track:AnimTrack, prop:text, p:float, defaultTiming:text, defaultComp:text, underlying:text, cur:int) {
     arr[float] offs = []
     arr[text] vals = []
     arr[text] tims = []
@@ -1315,7 +1467,14 @@ text func animTrackValue(track:AnimTrack, prop:text, p:float, defaultTiming:text
     }
     for int i = 0, i < n, i++ {
         offs.push(track.offsets[i])
-        vals.push(track.values[i])
+        // A keyframe composited with the underlying value is that value
+        // plus its own; an implicit one stays the underlying value.
+        text comp = track.comps[i] == '' ? defaultComp : track.comps[i]
+        text composed = null
+        if underlying != null && (comp == 'add' || comp == 'accumulate') {
+            composed = animAddValue(prop, underlying, track.values[i], cur, comp == 'accumulate')
+        }
+        vals.push(composed != null ? composed : track.values[i])
         tims.push(track.timings[i])
     }
     if track.offsets[n - 1] < 1.0 {
@@ -1369,7 +1528,7 @@ void func applyAnimations(props:map[text], parent:Style) {
         float p = animProgress
         for int k = 0, k < tr.props.length, k++ {
             text prop = tr.props[k]
-            text v = animTrackValue(tr.tracks[k], prop, p, a.timing, animUnderlying(prop, orig, parent), cur)
+            text v = animTrackValue(tr.tracks[k], prop, p, a.timing, a.composition, animUnderlying(prop, props, parent), cur)
             if v != null { props[prop] = v }
         }
     }
