@@ -864,3 +864,24 @@ already holds it alive.
 The alternative Festina leaves is a list of ids and a registry to
 resolve them, which is finding 40's cost paid on the way back out.
 
+## 3u Let a struct be copied
+
+**Today.** `Pair q = p` makes `q` another name for `p` (FINDINGS.md,
+finding 42). A program that needs an independent value has to list the
+fields and assign each one, and the list goes stale when a field is added
+without anything noticing.
+
+**Proposal.** A shallow copy the language provides, with the same rule
+for fields that arrays and structs already follow:
+
+```festina
+Pair q = copy(p)          // a new Pair, every field assigned from p
+q.a = 9                   // p is unchanged
+```
+
+**What it removes here.** The one thing `inherit` cannot do today: take
+the parent's *computed* value for a property named at run time. With
+`copy`, `all: inherit` is a copy of the parent style followed by the
+declarations after it, and `prop: inherit` is a copy of one field rather
+than of the parent's declaration text.
+

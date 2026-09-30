@@ -99,16 +99,70 @@ check(allInit != null, 'the element with `all: initial` is there')
 checkEqInt(allInit.color, COLOR_BLACK, '`all: initial` takes the initial colour, not the inherited one')
 checkEqInt(allInit.borderTop, 0, 'and the initial border width')
 
-// `all: inherit` is the one keyword this engine does not honour: giving
-// a non-inherited property the parent's value needs a field-by-field
-// copy of the parent style, and a hand-written list of fields is the
-// thing that rotted in styleDigest (todo.md). What it does instead is
-// drop the declarations before it, which is the half of the standard's
-// rule that costs nothing, so an inherited property still arrives and a
-// non-inherited one takes its initial value.
+// `inherit` on a property that does not inherit takes the parent's
+// computed value. The cascade resolves it by giving the child the
+// parent's declaration for that name, so it works for every property
+// without a list of them (todo.md, "What `inherit` does").
+Style func inheritedBy(parentDecls:text, childDecls:text) {
+    return styleOf(`<div style="${parentDecls}"><span id="a" style="${childDecls}">x</span></div>`, 'a')
+}
+
+Style inhOpacity = inheritedBy('opacity:.5', 'opacity:inherit')
+check(inhOpacity.opacity > 0.49 && inhOpacity.opacity < 0.51, '`opacity: inherit` takes the parent\'s opacity')
+Style noInhOpacity = inheritedBy('opacity:.5', '')
+checkEqInt(noInhOpacity.opacity > 0.99 ? 1 : 0, 1, 'and without it the child is opaque, because opacity does not inherit')
+Style inhBorder = inheritedBy('border:7px solid blue', 'border-top-width:inherit;border-top-style:inherit')
+checkEqInt(inhBorder.borderTop, 7, '`border-top-width: inherit` takes the parent\'s width')
+Style inhZ = inheritedBy('position:relative;z-index:4', 'position:inherit;z-index:inherit')
+checkEqInt(inhZ.zIndex, 4, '`z-index: inherit`')
+checkEqInt(inhZ.position, POS_RELATIVE, 'and `position: inherit`')
+Style inhFloat = inheritedBy('float:left', 'float:inherit')
+checkEqInt(inhFloat.floatSide, FLOAT_LEFT, '`float: inherit`')
+Style inhOrder = inheritedBy('order:3', 'order:inherit')
+checkEqInt(inhOrder.order, 3, '`order: inherit`')
+// The parent's own inherit is resolved before the child's asks for it,
+// so a value travels down a chain.
+Style chain = styleOf('<div style="opacity:.5"><div style="opacity:inherit"><span id="a" style="opacity:inherit">x</span></div></div>', 'a')
+check(chain.opacity > 0.49 && chain.opacity < 0.51, 'a value inherited twice arrives')
+// A parent that declares nothing gives the initial value.
+Style inhNothing = inheritedBy('', 'opacity:inherit;border-top-width:inherit')
+checkEqInt(inhNothing.opacity > 0.99 ? 1 : 0, 1, 'a parent that declared nothing gives the initial opacity')
+// The declaration wins by source order like any other.
+Style inhThenOwn = inheritedBy('opacity:.5', 'opacity:inherit;opacity:1')
+checkEqInt(inhThenOwn.opacity > 0.99 ? 1 : 0, 1, 'a later declaration beats it')
+
+// A shorthand's `inherit` reaches its longhands: the parent declared them
+// in pieces, or the shorthand whole, and the child gets whichever it has.
+Style inhBorderAll = inheritedBy('border:6px solid blue', 'border:inherit')
+checkEqInt(inhBorderAll.borderLeft, 6, '`border: inherit` gives the width')
+checkEqInt(inhBorderAll.borderTopStyle, BORDER_SOLID, 'and the style')
+Style inhBorderWidth = inheritedBy('border:6px solid blue', 'border-width:inherit;border-style:solid')
+checkEqInt(inhBorderWidth.borderBottom, 6, '`border-width: inherit`')
+Style inhRadius = inheritedBy('border-radius:9px', 'border-radius:inherit')
+checkEqInt(inhRadius.borderRadius > 0 ? 1 : 0, 1, '`border-radius: inherit`')
+Style inhOverflow = inheritedBy('overflow:hidden', 'overflow:inherit')
+checkEqInt(inhOverflow.overflowY, OVERFLOW_HIDDEN, '`overflow: inherit`')
+Style inhBgPos = inheritedBy('background-position:right bottom', 'background-position:inherit')
+Style directBgPos = inheritedBy('', 'background-position:right bottom')
+checkEqInt(inhBgPos.backgroundPosY.kind, directBgPos.backgroundPosY.kind, '`background-position: inherit` agrees with writing the value')
+checkEq(`${inhBgPos.backgroundPosY.v}`, `${directBgPos.backgroundPosY.v}`, 'on the vertical position too')
+Style inhOutline = inheritedBy('outline:4px solid red', 'outline:inherit')
+checkEqInt(inhOutline.outlineWidth, 4, '`outline: inherit`')
+Style inhGap = inheritedBy('gap:12px', 'gap:inherit')
+checkEqInt(inhGap.rowGap, 12, '`gap: inherit`')
+
+// `all: inherit` is every property `inherit`: the non-inherited ones
+// take the parent's value, and the inherited ones already arrive.
 Style allInherit = styleOf('<span id="a" style="border:9px solid;all:inherit">x</span>', 'a')
 checkEqInt(allInherit.color, packColor(255, 0, 0, 255), '`all: inherit` leaves an inherited property inherited')
-checkEqInt(allInherit.borderTop, 0, 'and drops the declarations before it')
+checkEqInt(allInherit.borderTop, 5, 'and gives a non-inherited one the parent\'s value, not the one before it')
+Style allInhOpacity = inheritedBy('opacity:.5;z-index:3;position:relative', 'all:inherit')
+check(allInhOpacity.opacity > 0.49 && allInhOpacity.opacity < 0.51, '`all: inherit` takes the parent\'s opacity')
+checkEqInt(allInhOpacity.zIndex, 3, 'and its z-index')
+checkEqInt(allInhOpacity.position, POS_RELATIVE, 'and its position')
+Style allInhOwn = inheritedBy('opacity:.5;z-index:3', 'all:inherit;z-index:9')
+checkEqInt(allInhOwn.zIndex, 9, 'a longhand after `all: inherit` wins')
+check(allInhOwn.opacity > 0.49 && allInhOwn.opacity < 0.51, 'and the rest still comes from the parent')
 
 // `unset` is inherit for an inherited property and initial for the rest,
 // which is the one keyword that tells the two apart in a single

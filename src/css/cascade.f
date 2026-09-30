@@ -191,6 +191,20 @@ bool cascadeSawColorScheme = false
 bool cascadeSawDirection = false
 bool cascadeApplyRtl = false
 
+// Whether any declaration says `inherit`. A property that does not inherit
+// takes its parent's value from the parent's own declaration for it, which
+// means keeping every style's declarations after it is computed; a page
+// that never says `inherit` keeps none.
+bool cascadeSawInherit = false
+map[text] inheritSpec = {}
+
+// The style whose declarations a `inherit` in this element's block reads,
+// or -1 outside the cascade of an element with a parent. It is set around
+// applyMatches so that an `inherit` is resolved where it is applied, in
+// cascade order: a declaration after it beats it and one before it does
+// not, as for any other value.
+int inheritParent = -1
+
 // The same question for `writing-mode`, and for the same reason: a
 // vertical mode makes `inline-start` the top edge and `block-start` a
 // side, so the mode has to be known before the declarations are
@@ -359,6 +373,9 @@ void func cascadeReset() {
     cascadeSawClip = false
     cascadeSawColorScheme = false
     cascadeSawDirection = false
+    cascadeSawInherit = false
+    map[text] emptyInheritSpec = {}
+    inheritSpec = emptyInheritSpec
     cascadeApplyRtl = false
     cascadeSawWritingMode = false
     cascadeSawTextCombine = false
@@ -516,7 +533,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
         if anyCounters && anyQuotes && cascadeSawColorScheme && cascadeSawDirection
             && cascadeSawFontSizeAdjust && cascadeSawBaselineSource && cascadeSawZoom
             && cascadeSawResize && cascadeSawTextWrapStyle && cascadeSawRuby
-            && cascadeSawPrintColorAdjust
+            && cascadeSawPrintColorAdjust && cascadeSawInherit
             && anyRevert && !wantAnchor { continue }
         for int d = 0, d < rule.decls.length, d++ {
             text dn = rule.decls[d].name
@@ -525,6 +542,7 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyQuotes && dn == 'quotes' { anyQuotes = true }
             if !cascadeSawColorScheme && dn == 'color-scheme' { cascadeSawColorScheme = true }
             if !cascadeSawDirection && dn == 'direction' { cascadeSawDirection = true }
+            if !cascadeSawInherit && declSaysInherit(rule.decls[d].value) { cascadeSawInherit = true }
             if !cascadeSawWritingMode && dn == 'writing-mode' { cascadeSawWritingMode = true }
             if !cascadeSawTextCombine && dn == 'text-combine-upright' {
                 cascadeSawTextCombine = true
@@ -1909,6 +1927,7 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
             }
+            if !cascadeSawInherit && declSaysInherit(decls[d].value) { cascadeSawInherit = true }
             if !cascadeSawWritingMode && decls[d].name == 'writing-mode' {
                 cascadeSawWritingMode = true
             }
@@ -4823,6 +4842,8 @@ text func wmPhysicalName(name:text) {
 
 void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     text name = nameIn
+    // `inherit` where the parent's declarations are known.
+    if inheritParent >= 0 && declSaysInherit(value) && name != 'all' && inheritNow(props, name) { return }
     // `animation` is expanded into its longhands so that the cascade
     // decides between it and them by source order. Asked only where a
     // document declared `@keyframes`, because no other document can have
@@ -4841,11 +4862,9 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
     // nothing beyond the dropping: taking the parent's value for an
     // inherited property and the initial value for every other one is
     // what the ordinary cascade already does, and `revert` behaves as
-    // `unset` here for the reason cssWideKeyword gives. `inherit` is not
-    // honoured -- giving a non-inherited property the parent's value
-    // needs a field-by-field copy of the parent style, and a
-    // hand-written list of fields is the thing that rotted in
-    // styleDigest (todo.md).
+    // `unset` here for the reason cssWideKeyword gives. `inherit` takes
+    // the parent's declarations, which is resolved with the rest of
+    // `inherit` (resolveInheritedDeclarations).
     if name == 'all' {
         int allKw = cssWideKeyword(value)
         if allKw == CSSWIDE_NONE { return }
@@ -4858,6 +4877,7 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
             delete props[had[i]]
         }
         if allKw == CSSWIDE_INITIAL { setProp(props, 'all', value) }
+        if allKw == CSSWIDE_INHERIT { inheritEverything(props) }
         // `all: revert` puts the previous origin's declarations back and
         // `all: revert-layer` the previous layer's, which is what the
         // drop above took away.
@@ -6878,6 +6898,108 @@ text func computeFontFamily(v:ascii, dflt:text) {
     return first.toText()
 }
 
+// ---- `inherit` on a property that does not inherit ---------------------
+//
+// Nothing in a computed Style says which declaration produced a field, and
+// a struct cannot be copied field by field without a hand-written list
+// (todo.md, "What `inherit` does"). So `inherit` is resolved one step
+// earlier, on the declarations: the child is given the parent's
+// declaration for the same property, which was itself resolved in its turn,
+// and everything downstream reads it as if the child had written it. A
+// parent that declared nothing for the property leaves the child with none,
+// which is the initial value for a property that does not inherit and the
+// parent's own value for one that does.
+//
+// It is the parent's specified value that is passed down, where the
+// standard passes its computed one, and the two differ for a value written
+// in a relative unit: `padding: 2em` inherited by a child of another font
+// size is 2em of the child's. The properties below read `inherit` from the
+// parent's computed style already and are left to that.
+bool func declSaysInherit(v:ascii) {
+    return v != null && v.length == 7 && (v.charCodeAt(0) == 105 || v.charCodeAt(0) == 73) && asciiLower(v) == 'inherit'
+}
+
+bool func inheritReadFromParentStyle(name:text) {
+    if name == 'display' || name == 'font-size' || name == 'vertical-align' { return true }
+    if name == 'width' || name == 'height' || name == 'min-width' || name == 'max-width' { return true }
+    if name == 'min-height' { return true }
+    if name == 'margin-top' || name == 'margin-right' || name == 'margin-bottom' || name == 'margin-left' { return true }
+    if name == 'padding-top' || name == 'padding-right' || name == 'padding-bottom' || name == 'padding-left' { return true }
+    if name == 'color' || name == 'background-color' { return true }
+    return name == 'border-top-color' || name == 'border-right-color'
+        || name == 'border-bottom-color' || name == 'border-left-color'
+}
+
+bool func textHasPrefix(t:text, prefix:text) {
+    if t.length <= prefix.length { return false }
+    for int i = 0, i < prefix.length, i++ {
+        if t.charCodeAt(i) != prefix.charCodeAt(i) { return false }
+    }
+    return true
+}
+
+// Give `props` the parent's declarations for `name`, or for the longhands
+// `name-*` of a shorthand the parent declared in pieces. False when the
+// parent has neither, which leaves it to the reader of that property or,
+// failing that, to resolveInheritedDeclarations.
+bool func inheritNow(props:map[text], name:text) {
+    if inheritReadFromParentStyle(name) { return false }
+    text own = inheritSpec[`${inheritParent}\u0001${name}`]
+    if own != null {
+        props[name] = own
+        return true
+    }
+    text listed = inheritSpec[`${inheritParent}\u0001*`]
+    if listed == null { return false }
+    arr[text] every = listed.split('\u0002')
+    text prefix = `${name}-`
+    bool any = false
+    for int i = 0, i < every.length, i++ {
+        text k = every[i]
+        if textHasPrefix(k, prefix) {
+            props[k] = inheritSpec[`${inheritParent}\u0001${k}`]
+            any = true
+        }
+    }
+    return any
+}
+
+// `all: inherit`: every property the parent declared, except the two that
+// `all` leaves alone and custom properties, which are not properties in
+// its sense. What follows it in the block is applied over the top.
+void func inheritEverything(props:map[text]) {
+    text listed = inheritSpec[`${inheritParent}\u0001*`]
+    if listed == null { return }
+    arr[text] every = listed.split('\u0002')
+    for int i = 0, i < every.length, i++ {
+        text name = every[i]
+        if name == '' || name == 'all' || name == 'direction' || name == 'unicode-bidi' { continue }
+        if name.length >= 2 && name.charCodeAt(0) == 45 && name.charCodeAt(1) == 45 { continue }
+        if inheritReadFromParentStyle(name) { props[name] = 'inherit' }
+        else { props[name] = inheritSpec[`${inheritParent}\u0001${name}`] }
+    }
+}
+
+void func resolveInheritedDeclarations(props:map[text], parent:Style, isRoot:bool) {
+    arr[text] names = props.keys()
+    for int i = 0, i < names.length, i++ {
+        text name = names[i]
+        if !declSaysInherit(props[name].toAscii()) { continue }
+        if inheritReadFromParentStyle(name) { continue }
+        text fromParent = isRoot || parent == null ? null : inheritSpec[`${parent.serial}\u0001${name}`]
+        if fromParent == null { delete props[name] }
+        else { props[name] = fromParent }
+    }
+}
+
+void func recordInheritedDeclarations(props:map[text], s:Style) {
+    arr[text] names = props.keys()
+    for int i = 0, i < names.length, i++ {
+        inheritSpec[`${s.serial}\u0001${names[i]}`] = props[names[i]]
+    }
+    inheritSpec[`${s.serial}\u0001*`] = names.join('\u0002')
+}
+
 Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     map[text] props = {}
     int t0 = archtelosTiming ? now() : 0
@@ -6889,7 +7011,12 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     cascadeApplyWM = cascadeSawWritingMode
         ? matchedWritingMode(matches, isRoot ? WM_HORIZONTAL_TB : parent.writingMode)
         : WM_HORIZONTAL_TB
+    if cascadeSawInherit && !isRoot && parent != null { inheritParent = parent.serial }
     applyMatches(props, matches)
+    if cascadeSawInherit {
+        inheritParent = -1
+        resolveInheritedDeclarations(props, parent, isRoot)
+    }
     if cssSawKeyframes && props['animation-name'] != null { applyAnimations(props, parent) }
     if archtelosTiming {
         profApplyMs = profApplyMs + (now() - t1)
@@ -6916,6 +7043,7 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     }
     Style s = computeStyleValues(n, parent, isRoot, props)
     styleCache[key] = s
+    if cascadeSawInherit { recordInheritedDeclarations(props, s) }
     profShareTotal++
     profShareDistinct++
     if archtelosTiming { profComputeMs = profComputeMs + (now() - t2) }

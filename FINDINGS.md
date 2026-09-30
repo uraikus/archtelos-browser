@@ -1392,3 +1392,33 @@ explicit weak or borrowed element type would do, since the alternative
 -- a list of ids and a registry to resolve them -- is finding 40's cost
 paid on the way back out.
 
+## 42 A struct cannot be copied, so `inherit` cannot copy a style
+
+Assigning a struct copies a reference, and nothing copies the struct
+itself: there is no clone, no field iteration, and no way to write one
+without naming every field.
+
+```festina
+struct Pair {
+    a:int
+    b:int
+}
+Pair p
+p.a = 1
+p.b = 2
+Pair q = p
+q.a = 9
+log(`p.a = ${p.a}`)     // p.a = 9
+```
+
+The computed `Style` has 251 fields, `copy(p)` is an unknown function and `p.clone()` an unknown field, and CSS's `inherit`
+means "this property takes the parent's computed value" for a property
+chosen by name at run time. A style copy is what the standard's wording
+describes and what `all: inherit` needs; without one, this engine
+resolves `inherit` on the declarations instead -- the child is handed the
+parent's declaration for the same name -- which passes the parent's
+*specified* value, so a relative unit is read against the child's font
+size where it should have kept the parent's computed length
+(todo.md, "The cascade"). A hand-written field list would have done the
+copy exactly, and is the list that rotted in `styleDigest`.
+

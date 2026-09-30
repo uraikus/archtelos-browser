@@ -5,6 +5,35 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `inherit` on a property that does not inherit, and `all: inherit`
+
+Two hundred and seven of the 298 properties the instrument counts as
+implemented ignored `inherit`: `opacity: inherit`, `position: inherit`,
+`float: inherit`, `z-index: inherit`, every border width and every
+`grid-*` and `flex-*` longhand took the initial value where the standard
+gives the parent's. Only the lengths in `parentLenFor`, the colours in
+`parentColorFor`, `display`, `font-size` and `vertical-align` were read
+from the parent, one name at a time, which is why `all: inherit` had been
+left out: it would have needed every one.
+
+The cascade now resolves `inherit` on the declarations rather than on the
+computed style. A page that says `inherit` anywhere keeps each style's
+declarations after computing it, and an `inherit` is replaced, where it is
+applied and so in cascade order, by the parent's declaration for the same
+name, or for a shorthand the parent declared in pieces by its `name-*`
+longhands. `all: inherit` is every declaration the parent has except
+`direction`, `unicode-bidi` and custom properties, with what follows it
+applied over the top. Measured with a probe over every gradable row of the
+property instrument (a parent declaring the row, a child saying
+`inherit`, the child's digest against the row set directly): 207 rows
+failed before and the eleven that differ now are ones that differ in
+Chromium too -- `opacity` and the animation rows multiply down to an
+effective opacity, `text-decoration` propagates, and `zoom` and
+`font-size-adjust` inherit anyway. What is passed down is the parent's
+specified value rather than its computed one, so a value in a relative
+unit differs (css-2026.md). Twenty-five checks in
+`tests/unit/test_cascade.f`.
+
 ### `animation-composition`: 298 → 299
 
 `replace`, `add` and `accumulate`, as a list against the animations and per

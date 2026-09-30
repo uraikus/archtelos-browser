@@ -24,21 +24,14 @@ parent's computed value, `@supports` evaluates its condition,
 resolve against the real root font size and viewport, and an unparseable
 selector drops its whole rule. What is left of CSS Cascade 4:
 
-1. **`all: inherit`**, the one CSS-wide keyword left: `inherit`,
-   `initial`, `unset`, `revert` and `revert-layer` all work on their
-   own, and `all` carries every one of them but this. `all` itself is
-   done — it drops every declaration
-   before it in the block; for `initial` it computes the element as
-   though it had no parent, which is what every default in
-   `computeStyleValues` already means by "root"; for `revert` it puts
-   the previous origin's declarations back; and `unset` needs nothing
-   beyond the dropping, because taking the parent's value for an
-   inherited property and the initial value for the rest is what the
-   ordinary cascade does. `inherit` is the one that does not fit:
-   giving a *non-inherited* property the parent's value means copying
-   the parent style field by field, and a hand-written list of a
-   struct's fields is exactly what rotted in `styleDigest`. It wants a
-   generated copy, or a language that can copy a struct by value.
+1. **`inherit` passes the parent's specified value, not its computed
+   one.** `column-gap: 2em` on a parent of 20px text, inherited by a child of
+   10px text, is 40px in Chromium and 20px here. The lengths and colours
+   whose readers take the parent's computed value keep doing so; every
+   other property goes through the declaration, because a computed
+   `Style` cannot be copied field by field without a hand-written list of
+   fields (the list that rotted in `styleDigest`). A sound fix needs a
+   struct copy from the language, or a generated one (festina.md).
 
 ### Then the official definition, largest holes first
 
@@ -2977,9 +2970,8 @@ nothing to tell apart. Chromium rolls all nine back. Widening the digest
 is what would let them be asked.
 
 **Two more rows differ and neither is a cascade bug.** `all: inherit` on
-a non-inherited property gives the parent's width in Chromium and `auto`
-here, which is the gap css-2026.md's row already names as the one thing
-missing from CSS Cascade 4. And an `<h1>`'s user-agent `margin-top` of
+a non-inherited property gave the parent's width in Chromium and `auto`
+here, which changelog.md's `inherit` entry closes. And an `<h1>`'s user-agent `margin-top` of
 `0.67em` computes to 21.44px in Chromium and 21px here: this engine
 rounds a length to the pixel where Chromium keeps the fraction, which is
 a different question from the cascade and is recorded here rather than
