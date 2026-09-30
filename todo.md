@@ -5053,11 +5053,15 @@ what agrees):
   are ignored, and so is `@keyframes` inside a layer being scoped to it.
 - **Transitions.** Nothing changes a computed value under a running page,
   so `transition-*` has nothing to act on.
-- **The window's timer is untested headlessly.** It re-styles the whole
-  document each tick (`restylePage`) and repaints; the screenshot path
-  and the 458 rows are what is measured. A tick costs the cascade and the
-  layout of the page, so an animation on a large page runs at the speed of
-  that page's layout, not at the 40 ms the timer asks for.
+- **The window's timer and the `#fragment` click are checked by hand, not
+  by the suite.** Under Xvfb, with `xdotool` and `xwd`: an alternating
+  animation's width read 300, 228, 150 and 71 pixels in four captures half
+  a second apart, a click on `<a href="#t">` scrolled the target to the top
+  of the viewport and turned `#t:target` green, and Back returned to the
+  top. Repeating that in `tests/run.sh` needs those three tools, which the
+  suite does not otherwise ask for. A tick re-styles the whole document
+  (`restylePage`) and repaints, so an animation on a large page runs at the
+  speed of that page's layout, not at the 40 ms the timer asks for.
 
 ## Block formatting contexts: what is still open
 

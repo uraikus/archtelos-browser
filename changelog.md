@@ -47,8 +47,8 @@ element's `scroll-margin-top`, the container that holds it scrolling first.
 A link to a place in the open document restyles and scrolls without a
 load, and a fragment-only reference keeps the query of the address it is
 on, which `resolveUrl` dropped. Twenty-six checks against Chromium
-(`tests/unit/test_target.f`); the window's click and back-button paths are
-not exercised headlessly.
+(`tests/unit/test_target.f`); the window's click and back-button paths were checked once by hand under
+Xvfb (todo.md).
 
 ### CSS Animations 1
 
