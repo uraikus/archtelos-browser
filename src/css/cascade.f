@@ -191,7 +191,10 @@ bool cascadeSawColorScheme = false
 bool cascadeSawDirection = false
 bool cascadeApplyRtl = false
 
-// Whether any declaration says `inherit`. A property that does not inherit
+// Whether any declaration says `inherit` on a property whose reader does
+// not already take the parent's computed value -- the user-agent
+// stylesheet says `vertical-align: inherit`, and that must not switch this
+// on for every page. A property that does not inherit
 // takes its parent's value from the parent's own declaration for it, which
 // means keeping every style's declarations after it is computed; a page
 // that never says `inherit` keeps none.
@@ -542,7 +545,8 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             if !anyQuotes && dn == 'quotes' { anyQuotes = true }
             if !cascadeSawColorScheme && dn == 'color-scheme' { cascadeSawColorScheme = true }
             if !cascadeSawDirection && dn == 'direction' { cascadeSawDirection = true }
-            if !cascadeSawInherit && declSaysInherit(rule.decls[d].value) { cascadeSawInherit = true }
+            if !cascadeSawInherit && declSaysInherit(rule.decls[d].value)
+                && !inheritReadFromParentStyle(dn) { cascadeSawInherit = true }
             if !cascadeSawWritingMode && dn == 'writing-mode' { cascadeSawWritingMode = true }
             if !cascadeSawTextCombine && dn == 'text-combine-upright' {
                 cascadeSawTextCombine = true
@@ -1927,7 +1931,8 @@ arr[Match] func collectMatches(n:Node) {
             if !cascadeSawDirection && decls[d].name == 'direction' {
                 cascadeSawDirection = true
             }
-            if !cascadeSawInherit && declSaysInherit(decls[d].value) { cascadeSawInherit = true }
+            if !cascadeSawInherit && declSaysInherit(decls[d].value)
+                && !inheritReadFromParentStyle(decls[d].name) { cascadeSawInherit = true }
             if !cascadeSawWritingMode && decls[d].name == 'writing-mode' {
                 cascadeSawWritingMode = true
             }
@@ -10013,6 +10018,7 @@ void func computeStyles(doc:Node) {
     Style none
     styleDepth = 0
     animLive = false
+    if nodeSawInheritInStyle { cascadeSawInherit = true }
     // A layer's place depends on layers that may be named after it, so
     // the ranks are computed once here rather than as each is declared.
     // A page with no `@layer` on it returns on the function's first

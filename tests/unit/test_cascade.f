@@ -131,6 +131,16 @@ checkEqInt(inhNothing.opacity > 0.99 ? 1 : 0, 1, 'a parent that declared nothing
 Style inhThenOwn = inheritedBy('opacity:.5', 'opacity:inherit;opacity:1')
 checkEqInt(inhThenOwn.opacity > 0.99 ? 1 : 0, 1, 'a later declaration beats it')
 
+// The flag that keeps the parent's declarations is raised by a page that
+// needs them and by no other: the user-agent stylesheet says
+// `vertical-align: inherit`, and a page that says nothing must not pay.
+Style noInherit = styleOf('<span id="a">x</span>', 'a')
+check(!cascadeSawInherit, 'a page that says no inherit keeps no declarations')
+Style exactInherit = styleOf('<style>#a{padding-left:inherit;color:inherit}</style><span id="a">x</span>', 'a')
+check(!cascadeSawInherit, 'nor a rule whose inherit is on a property read from the parent style')
+Style needsInherit = styleOf('<span id="a" style="opacity:inherit">x</span>', 'a')
+check(cascadeSawInherit, 'and one that inherits a property that does not inherit raises it')
+
 // A shorthand's `inherit` reaches its longhands: the parent declared them
 // in pieces, or the shorthand whole, and the child gets whichever it has.
 Style inhBorderAll = inheritedBy('border:6px solid blue', 'border:inherit')

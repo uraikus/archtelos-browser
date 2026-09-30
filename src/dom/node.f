@@ -297,6 +297,7 @@ void func setAttr(n:Node, name:text, value:text) {
     n.attrs[name] = value
     n.present[name] = true
     if isPresentationalAttr(name) { n.hasPresHint = true }
+    if name == 'style' && styleAttrSaysInherit(value) { nodeSawInheritInStyle = true }
 }
 
 bool func hasParent(n:Node) {

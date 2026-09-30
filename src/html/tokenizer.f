@@ -157,6 +157,7 @@ int func scanAttributes(from:int, tok:Token) {
             tok.attrs[name] = value
             tok.present[name] = true
             if isPresentationalAttr(name) { tok.hasPresHint = true }
+            if name == 'style' && styleAttrSaysInherit(value) { nodeSawInheritInStyle = true }
         }
     }
     tokTagUnterminated = true

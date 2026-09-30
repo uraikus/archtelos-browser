@@ -371,3 +371,30 @@ text func asciiToTextOrEmpty(s:ascii) {
     if s == null { return '' }
     return s.toText()
 }
+
+// Whether some `style` attribute in the document says `inherit`. The
+// cascade keeps every computed style's declarations only for a document
+// that needs them, and an inline `inherit` is otherwise found after the
+// parent it reads from has been computed. It cannot tell which property
+// says it, so an inline `color: inherit` raises the flag too, which costs
+// that page the recording and nothing else.
+bool nodeSawInheritInStyle = false
+
+arr[int] inheritLetters = [105, 110, 104, 101, 114, 105, 116]
+
+bool func styleAttrSaysInherit(v:text) {
+    int n = v.length
+    for int i = 0, i + 7 <= n, i++ {
+        bool all = true
+        for int j = 0, j < 7, j++ {
+            int c = v.charCodeAt(i + j)
+            if c >= 65 && c <= 90 { c = c + 32 }
+            if c != inheritLetters[j] {
+                all = false
+                break
+            }
+        }
+        if all { return true }
+    }
+    return false
+}

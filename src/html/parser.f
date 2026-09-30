@@ -2544,6 +2544,7 @@ text func dropLeadingNewline(t:text) {
 
 Node func parseHtml(src:ascii) {
     Node doc = newDocument()
+    nodeSawInheritInStyle = false
     documentId = doc.id
     insertionMode = IM_INITIAL
     originalInsertionMode = IM_INITIAL
