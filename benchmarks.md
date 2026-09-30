@@ -4699,3 +4699,24 @@ entry above and the block formatting context entry before it describe, in
 the direction that flatters, and it is reported for the same reason they
 were.
 
+## `inherit` on a property that does not inherit, on pages that say none
+
+Callgrind on `tools/festina-generic` builds, whole program, 800x600
+screenshot, parent (505e0ed) and candidate built and counted in the same
+batch, screenshots byte-identical:
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,059,299,745 | 1,060,378,072 | +1,078,327 (+0.10%) |
+| `features.html` | 1,242,850,848 | 1,243,238,189 | +387,341 (+0.03%) |
+
+Neither page says `inherit`, so the parent's declarations are not kept and
+what is added is a few boolean reads per element and one test per
+declaration in the rule scan. `features.html` is inside the +-0.5 M by
+which code no page reaches moves `festina_cycle_*`; `generated.html` is
+about twice that and was not bisected. A tenth of a percent is under what a
+timed round resolves on this machine, so none was run. The user-agent
+stylesheet's own `vertical-align: inherit` does not raise the flag, which
+the first version of the change did: every page would have kept every
+style's declarations.
+
