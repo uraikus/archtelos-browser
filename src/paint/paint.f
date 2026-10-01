@@ -2926,8 +2926,8 @@ void func paintListMarker(b:Box) {
     text declared = markerContentOf(b)
     if declared != null {
         if declared == '' { return }
-        Line dln = firstLineOf(b)
-        int dbase = dln != null ? dln.baseline : contentY(b) + fontAscent(s)
+        int dbase = listMarkerBaselineY(b)
+        if dbase < 0 { dbase = contentY(b) + listMarkerAscent(b) }
         paintFill(s.color, s.effectiveOpacity)
         setFontFor(s)
         int dw = measureTextWidth(declared)
@@ -2952,8 +2952,8 @@ void func paintListMarker(b:Box) {
         }
     }
     if s.listStyle == LIST_NONE { return }
-    Line ln = firstLineOf(b)
-    int baseline = ln != null ? ln.baseline : contentY(b) + fontAscent(s)
+    int baseline = listMarkerBaselineY(b)
+    if baseline < 0 { baseline = contentY(b) + listMarkerAscent(b) }
     int fs = s.fontSize
     paintFill(s.color, s.effectiveOpacity)
     int edge = contentX(b)

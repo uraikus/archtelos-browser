@@ -2948,6 +2948,128 @@ bool func listItemHasBaseline(b:Box) {
     return false
 }
 
+// Whether the item generates a marker at all: something to draw, or a
+// `::marker` that says it draws nothing but still takes its line.
+bool func listItemHasMarker(b:Box) {
+    return !(markerContentOf(b) == null && b.style.listStyle == LIST_NONE
+             && b.style.listImageUrl == '')
+}
+
+// How far below the top of its line the marker's baseline is: the half
+// leading its line height adds above the font, and then the font's ascent.
+// This is the distance an outside marker's baseline is from the content
+// edge of an item whose marker has a line of its own, and the distance a
+// table's baseline has to reach for the item to need no seating.
+int func listMarkerAscent(b:Box) {
+    Style ms = markerStyleOf(b)
+    int lh = lineHeightOf(ms)
+    int content = fontAscent(ms) + fontDescent(ms)
+    return Math.floorDiv(lh - content, 2) + fontAscent(ms)
+}
+
+// Whether the first baseline `listItemFirstBaselineY` found is a table's.
+// A line box's needs no seating -- the marker is set in the item's own font,
+// so its line already has the same ascent -- and a table's may be nearer its
+// top than that. A global because a function answers with one value
+// (FINDINGS.md, "one value out of a function").
+bool listBaselineIsTable = false
+
+// The y of the first baseline in a box's in-flow content, or -1: the first
+// line box, or a table's first row's baseline, whichever comes first in the
+// flow. Floats and out-of-flow boxes have no part in it. A cell with no line
+// of its own has its content edge's bottom for a baseline (CSS2 §17.5.1), so
+// an empty cell is as deep as it is tall.
+int func listItemFirstBaselineY(b:Box) {
+    if b.lines.length > 0 {
+        listBaselineIsTable = false
+        return b.lines[0].baseline
+    }
+    if b.kind == BOX_TABLE {
+        for int i = 0, i < b.children.length, i++ {
+            Box row = b.children[i]
+            if row.kind != BOX_ROW { continue }
+            for int j = 0, j < row.children.length, j++ {
+                Box cell = row.children[j]
+                if cell.kind != BOX_CELL { continue }
+                int y = listItemFirstBaselineY(cell)
+                listBaselineIsTable = true
+                if y >= 0 { return y }
+                return cell.y + cell.h - cell.bb - cell.pb
+            }
+        }
+        return -1
+    }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.style == null { continue }
+        if c.style.floatSide != FLOAT_NONE || positionIsOutOfFlow(c.style.position) { continue }
+        int y = listItemFirstBaselineY(c)
+        if y >= 0 { return y }
+    }
+    return -1
+}
+
+// The first in-flow child of a box: neither text nor a float nor out of flow.
+Box func listFirstInFlowChild(b:Box) {
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || c.style == null { continue }
+        if c.style.floatSide != FLOAT_NONE || positionIsOutOfFlow(c.style.position) { continue }
+        return c
+    }
+    return null
+}
+
+// An inside marker is an inline box, and a block after it cannot share its
+// line, so where the item holds no line of its own and its first in-flow
+// content is a block the marker makes a line box of its own above it.
+bool func listInsideMarkerOwnLine(b:Box) {
+    if !b.style.listInside || b.lines.length > 0 || !listItemHasMarker(b) { return false }
+    Box first = listFirstInFlowChild(b)
+    if first == null { return false }
+    return first.kind == BOX_BLOCK || first.kind == BOX_TABLE || first.kind == BOX_FLEX
+        || first.kind == BOX_GRID
+}
+
+// Where the marker's baseline is, or -1 where the marker has nothing to
+// sit on and the painter falls back to a line of its own.
+int func listMarkerBaselineY(b:Box) {
+    if listInsideMarkerOwnLine(b) { return contentY(b) + listMarkerAscent(b) }
+    return listItemFirstBaselineY(b)
+}
+
+// Seats an item's marker (CSS Lists 3 §3): an inside marker that has a line
+// of its own pushes the content down by that line, and an outside marker
+// level with a table's baseline that is nearer the table's top than the
+// marker's ascent pushes the table down until the two are level, the item
+// growing by the push. Content that includes a float is left where it is,
+// because the float list holds its place in document coordinates and
+// moving the float would leave that stale. Returns the content height.
+int func listItemSeatMarker(b:Box, contentH:int, innerY:int) {
+    if !listItemHasMarker(b) { return contentH }
+    int dy = 0
+    if listInsideMarkerOwnLine(b) {
+        dy = lineHeightOf(markerStyleOf(b))
+    } else if !b.style.listInside && b.lines.length == 0 {
+        int base = listItemFirstBaselineY(b)
+        if base < 0 || !listBaselineIsTable { return contentH }
+        dy = listMarkerAscent(b) - (base - innerY)
+    }
+    if dy <= 0 { return contentH }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if c.style != null && c.style.floatSide != FLOAT_NONE { return contentH }
+    }
+    for int i = 0, i < b.children.length, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if c.style != null && positionIsOutOfFlow(c.style.position) { continue }
+        offsetBox(c, 0, dy)
+    }
+    return contentH + dy
+}
+
 // Where there is no baseline to sit on, the marker is a line box of its
 // own and the item is at least that tall: 20px of line height gives an
 // empty item, or one holding only a float, 20px. Reached only by a list
@@ -3235,6 +3357,7 @@ void func layoutBlock(b:Box, cx:int, y:int, cw:int, topMarginApplied:bool) {
         b.scrollW = childrenReach(b, innerX)
     }
     layoutCBHeight = savedCB
+    if b.isListItem { contentH = listItemSeatMarker(b, contentH, innerY) }
     int h = contentH
     if b.isListItem && ownDefinite < 0 { h = listItemContentHeight(b, h) }
     // Size containment: the box is sized as if it had no content, so

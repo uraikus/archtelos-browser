@@ -5,6 +5,28 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A list item whose first baseline is a table's, and an inside marker above a block
+
+An outside marker sits on the first baseline in its item, and a table has
+one -- its first row's, the bottom of the cell's content edge where the cell
+holds no text -- which this engine did not look for. `<li><table><td
+style="height:10px">` at a 20px line height is 15px tall with the table at
+y=5 in Chromium: the marker's baseline is 15 down, the table's 10, and the
+table is pushed down the 5 between them. Here it was 10px with the table at
+0, and the marker was drawn at the top. The table is now found through the
+blocks around it, pushed down when its baseline is nearer the top than the
+marker's ascent (half the leading and the font's ascent, in the marker's own
+font and line height), and the marker is drawn on it. A cell with text
+already agreed, and so did a baseline lower than the marker's.
+
+An inside marker is an inline box, so ahead of a block or a table it has a
+line of its own: `list-style-position: inside` with a 10px block is 30px
+tall and the block starts at 20. The same pass gives the marker the right y
+there. Twenty new checks in `tests/unit/test_listitem.f`, eleven of which
+fail on the old code (the twelfth asks for a function it did not have). Both pieces read off a marker square against
+Chromium's pixels put its bottom edge on the same row. todo.md has what is
+left.
+
 ### A named page can have a sheet of its own size
 
 A named `@page` with a `size` of a different width printed on a sheet of

@@ -5128,12 +5128,17 @@ multicol container, whose floats are cut at the column breaks
   instructions a call). What is different about the real functions is what
   a reproduction would have to find, and until it does, any predicate that
   takes a box is a decision to count instructions for.
-- **A list item whose only baseline is a table's** is 15px tall in
-  Chromium with the table's box at y=5: the marker's ascent is taller
-  than the cell's baseline is deep, and the item's content is shifted
-  down to seat it. This engine gives the item the table's height and
-  seats nothing. (`<li><table style="border-spacing:0"><tr><td
-  style="padding:0;height:10px">` at a 20px line height.)
+- **What the list-item seating leaves out.** An item whose first baseline
+  is a table's takes the first cell of the first row for it, where
+  Chromium's row baseline is the baseline-aligned cells' together, so a
+  first row whose cells differ is unmeasured; an item that holds a float is
+  not seated, because the float list keeps the float's place in document
+  coordinates and moving the float would leave that stale; and an
+  out-of-flow child is not moved. Separately, in the fixture
+  `<li><table><td style="height:10px;background:...">` with a red square
+  marker the square is 6px across here and 5 in Chromium, and an inside
+  marker begins at x=43 here where Chromium's begins at the content edge,
+  x=40: both predate this work and were read off that one fixture.
 
 ## Layout
 
