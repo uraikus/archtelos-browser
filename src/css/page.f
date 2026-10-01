@@ -29,6 +29,22 @@ bool cssMediaPrint = false
 // (FINDINGS.md, "one global namespace, and globals are not hoisted").
 bool anyPageBreak = false
 
+// Whether this document has ever said `place-items`, `place-content`
+// or `place-self`. The same bargain as anyPageBreak above, and the
+// user-agent stylesheet says none of the three, so the flag is false
+// on a page that does not use them and the three name comparisons in
+// applyDecl never run.
+bool anyPlaceShorthand = false
+
+// Whether this document has ever said one of the eight shorthands
+// applyDecl expands at the end of its chain -- `border-radius`,
+// `outline`, `flex`, `flex-flow`, `gap`, `font-variant`, `text-box` and
+// `overscroll-behavior`. One boolean instead of eight name comparisons
+// on every one of the 11,614 matched declarations of the benchmark
+// page, and the user-agent stylesheet says none of the eight, so the
+// flag is false wherever the page does not use them.
+bool anyLateShorthand = false
+
 struct PageBox {
     width:int
     height:int
@@ -57,18 +73,97 @@ struct PageDecl {
     value:ascii
 }
 
+// ---- the margin boxes --------------------------------------------------
+//
+// Sixteen boxes in the page margin (CSS Paged Media 3 §5), numbered
+// the way the standard lists them: the five along the top, the five
+// along the bottom, then the three down each side. The order is what
+// the painter walks, and nothing else depends on it.
+const int MB_NONE = -1
+const int MB_TOP_LEFT_CORNER = 0
+const int MB_TOP_LEFT = 1
+const int MB_TOP_CENTER = 2
+const int MB_TOP_RIGHT = 3
+const int MB_TOP_RIGHT_CORNER = 4
+const int MB_BOTTOM_LEFT_CORNER = 5
+const int MB_BOTTOM_LEFT = 6
+const int MB_BOTTOM_CENTER = 7
+const int MB_BOTTOM_RIGHT = 8
+const int MB_BOTTOM_RIGHT_CORNER = 9
+const int MB_LEFT_TOP = 10
+const int MB_LEFT_MIDDLE = 11
+const int MB_LEFT_BOTTOM = 12
+const int MB_RIGHT_TOP = 13
+const int MB_RIGHT_MIDDLE = 14
+const int MB_RIGHT_BOTTOM = 15
+const int MB_COUNT = 16
+
+int func marginBoxSlot(n:ascii) {
+    if n == 'top-left-corner' { return MB_TOP_LEFT_CORNER }
+    if n == 'top-left' { return MB_TOP_LEFT }
+    if n == 'top-center' { return MB_TOP_CENTER }
+    if n == 'top-right' { return MB_TOP_RIGHT }
+    if n == 'top-right-corner' { return MB_TOP_RIGHT_CORNER }
+    if n == 'bottom-left-corner' { return MB_BOTTOM_LEFT_CORNER }
+    if n == 'bottom-left' { return MB_BOTTOM_LEFT }
+    if n == 'bottom-center' { return MB_BOTTOM_CENTER }
+    if n == 'bottom-right' { return MB_BOTTOM_RIGHT }
+    if n == 'bottom-right-corner' { return MB_BOTTOM_RIGHT_CORNER }
+    if n == 'left-top' { return MB_LEFT_TOP }
+    if n == 'left-middle' { return MB_LEFT_MIDDLE }
+    if n == 'left-bottom' { return MB_LEFT_BOTTOM }
+    if n == 'right-top' { return MB_RIGHT_TOP }
+    if n == 'right-middle' { return MB_RIGHT_MIDDLE }
+    if n == 'right-bottom' { return MB_RIGHT_BOTTOM }
+    return MB_NONE
+}
+
+// Each box's default `text-align` and `vertical-align` (§5.2). The
+// corners align INWARD, toward the page content, which is the one part
+// of the table a reader would not guess and the one the measurement in
+// todo.md pinned: a `@top-left-corner`'s text is right-aligned.
+const int MBALIGN_START = 0
+const int MBALIGN_CENTER = 1
+const int MBALIGN_END = 2
+
+int func marginBoxDefaultAlign(slot:int) {
+    if slot == MB_TOP_LEFT_CORNER || slot == MB_BOTTOM_LEFT_CORNER { return MBALIGN_END }
+    if slot == MB_TOP_RIGHT_CORNER || slot == MB_BOTTOM_RIGHT_CORNER { return MBALIGN_START }
+    if slot == MB_TOP_LEFT || slot == MB_BOTTOM_LEFT { return MBALIGN_START }
+    if slot == MB_TOP_RIGHT || slot == MB_BOTTOM_RIGHT { return MBALIGN_END }
+    return MBALIGN_CENTER
+}
+
+// Where the line sits in the band, down the page: the top and bottom
+// edges centre it, and the three down each side are the three the
+// names say.
+int func marginBoxDefaultVAlign(slot:int) {
+    if slot == MB_LEFT_TOP || slot == MB_RIGHT_TOP { return MBALIGN_START }
+    if slot == MB_LEFT_BOTTOM || slot == MB_RIGHT_BOTTOM { return MBALIGN_END }
+    return MBALIGN_CENTER
+}
+
 // An `@page` rule: which pages it speaks for, and what it says.
-// `blank` is parsed and never matches -- this engine generates no blank
-// pages, so a rule for one would be a rule for nothing.
+// `blank` speaks for a page the paginator generated to put the next one
+// on the side a `break-before: left` or `right` asked for; there is no
+// other way to produce a page with nothing on it, so a `:blank` rule
+// speaks for those pages alone.
 struct PageRule {
     name:text
     first:bool
     blank:bool
     left:bool
     right:bool
+    // MB_NONE for the page box itself, or the margin box this rule's
+    // declarations belong to. One array holds both, so the matcher and
+    // the specificity are written once.
+    slot:int
     order:int
     decls:arr[PageDecl]
 }
+
+// A page that declares no margin box pays nothing for them.
+bool anyPageMarginBox = false
 
 arr[PageRule] cssPageRules = []
 int cssPageRuleOrder = 0
@@ -77,6 +172,7 @@ void func resetPageRules() {
     arr[PageRule] empty = []
     cssPageRules = empty
     cssPageRuleOrder = 0
+    anyPageMarginBox = false
 }
 
 // ---- lengths -----------------------------------------------------------
@@ -145,18 +241,45 @@ bool func namedPageSize(name:text) {
 
 // A page rule's body is an ordinary declaration list, except that a
 // margin box -- `@top-center { ... }` -- is a nested block inside it.
-// None are drawn here, so they are cut out before the list is split,
-// rather than left to turn into declarations that are not any.
-ascii func pageBodyWithoutMarginBoxes(body:ascii) {
-    int at = asciiIndexOf(body, '{', 0)
-    if at < 0 { return body }
+// They are cut out before the list is split, so that neither the block
+// nor the `@name` in front of it turns into a declaration that is not
+// one, and kept: the caller registers a rule per box.
+//
+// Two lists out of a function need globals (FINDINGS.md, "one value
+// out of a function").
+arr[int] pageMarginSlots = []
+arr[ascii] pageMarginBodies = []
+
+// The last occurrence of a character code, or -1. `text.f` has no
+// backward search and a margin box's name is whatever follows the last
+// semicolon of the segment before its brace.
+int func asciiLastIndexOfCode(s:ascii, code:int) {
+    for int i = s.length - 1, i >= 0, i-- {
+        if s.charCodeAt(i) == code { return i }
+    }
+    return -1
+}
+
+ascii func splitPageBody(body:ascii) {
+    arr[int] slots = []
+    arr[ascii] bodies = []
+    pageMarginSlots = slots
+    pageMarginBodies = bodies
     ascii out = ''
     int i = 0
     int n = body.length
     int keep = 0
     while i < n {
         if body.charCodeAt(i) == CH_LBRACE {
-            out = out + body.slice(keep, i)
+            // What is between the last declaration and this brace is
+            // the box's `@name`, which is how the slot is known. The
+            // declarations before it stay in the page's own body, so
+            // the split is at the last semicolon rather than at `keep`.
+            ascii seg = body.slice(keep, i)
+            int cut = asciiLastIndexOfCode(seg, CH_SEMI)
+            ascii head = asciiLower(asciiTrim(seg.slice(cut + 1, seg.length)))
+            out = out + seg.slice(0, cut + 1)
+            int open = i
             int depth = 1
             i++
             while i < n && depth > 0 {
@@ -165,8 +288,13 @@ ascii func pageBodyWithoutMarginBoxes(body:ascii) {
                 if c == CH_RBRACE { depth-- }
                 i++
             }
-            // The `@top-center` before the brace is not a declaration
-            // either; it has no colon, so the split drops it.
+            if head.length > 1 && head.charCodeAt(0) == CH_AT {
+                int slot = marginBoxSlot(asciiTrim(head.slice(1, head.length)))
+                if slot != MB_NONE {
+                    pageMarginSlots.push(slot)
+                    pageMarginBodies.push(body.slice(open + 1, maxInt(i - 1, open + 1)))
+                }
+            }
             keep = i
             continue
         }
@@ -175,9 +303,10 @@ ascii func pageBodyWithoutMarginBoxes(body:ascii) {
     return out + body.slice(keep, n)
 }
 
-void func parsePageRule(prelude:ascii, body:ascii) {
+// The declarations of one block, in the order they were written.
+arr[PageDecl] func parsePageDecls(body:ascii) {
     arr[PageDecl] decls = []
-    arr[ascii] parts = splitOnSemicolons(pageBodyWithoutMarginBoxes(body))
+    arr[ascii] parts = splitOnSemicolons(body)
     for int i = 0, i < parts.length, i++ {
         int colon = asciiIndexOf(parts[i], ':', 0)
         if colon < 0 { continue }
@@ -187,6 +316,16 @@ void func parsePageRule(prelude:ascii, body:ascii) {
         if d.name == '' { continue }
         decls.push(d)
     }
+    return decls
+}
+
+void func parsePageRule(prelude:ascii, body:ascii) {
+    arr[PageDecl] decls = parsePageDecls(splitPageBody(body))
+    // `splitPageBody` fills these, and registering the boxes below
+    // parses them again through the same declaration splitter, so a
+    // margin box's body and a page's body are read one way.
+    arr[int] slots = pageMarginSlots
+    arr[ascii] bodies = pageMarginBodies
     // A comma list is one rule per selector, because each carries its
     // own specificity.
     arr[ascii] sels = splitOnCommas(asciiTrim(prelude))
@@ -203,6 +342,7 @@ void func parsePageRule(prelude:ascii, body:ascii) {
         r.left = false
         r.right = false
         r.decls = decls
+        r.slot = MB_NONE
         cssPageRuleOrder++
         r.order = cssPageRuleOrder
         int colon = asciiIndexOf(sel, ':', 0)
@@ -220,6 +360,20 @@ void func parsePageRule(prelude:ascii, body:ascii) {
             at = next
         }
         cssPageRules.push(r)
+        for int m = 0, m < slots.length, m++ {
+            PageRule mr
+            mr.name = r.name
+            mr.first = r.first
+            mr.blank = r.blank
+            mr.left = r.left
+            mr.right = r.right
+            mr.slot = slots[m]
+            mr.decls = parsePageDecls(bodies[m])
+            cssPageRuleOrder++
+            mr.order = cssPageRuleOrder
+            cssPageRules.push(mr)
+            anyPageMarginBox = true
+        }
     }
 }
 
@@ -229,8 +383,8 @@ void func parsePageRule(prelude:ascii, body:ascii) {
 // for the pages that asked for that name; one without speaks for any.
 // The first page is a right-hand one, so odd pages are `:right` and
 // even ones `:left` (CSS2 §13.2.4).
-bool func pageRuleMatches(r:PageRule, name:text, index:int) {
-    if r.blank { return false }
+bool func pageRuleMatches(r:PageRule, name:text, index:int, blank:bool) {
+    if r.blank && !blank { return false }
     if r.name != '' && r.name != name { return false }
     if r.first && index != 1 { return false }
     bool odd = index - Math.floorDiv(index, 2) * 2 == 1
@@ -335,7 +489,88 @@ void func applyPageMargin(box:PageBox, d:PageDecl) {
 // that speaks for it, weakest specificity first and source order within
 // it. Rules accumulate -- what a later one does not say, an earlier one
 // still does -- because this is the cascade and not a last-one-wins.
-PageBox func pageBoxFor(name:text, index:int) {
+// The declarations in force for one margin box on one page, in
+// cascade order: the same selector specificity the page box uses, so
+// a `@page :first` box replaces the general one on page one and
+// leaves it standing on the rest.
+arr[PageDecl] func marginBoxDecls(slot:int, name:text, index:int, blank:bool) {
+    arr[PageDecl] out = []
+    if !anyPageMarginBox { return out }
+    for int spec = 0, spec <= 7, spec++ {
+        for int i = 0, i < cssPageRules.length, i++ {
+            PageRule r = cssPageRules[i]
+            if r.slot != slot { continue }
+            if pageRuleSpecificity(r) != spec { continue }
+            if !pageRuleMatches(r, name, index, blank) { continue }
+            for int j = 0, j < r.decls.length, j++ { out.push(r.decls[j]) }
+        }
+    }
+    return out
+}
+
+// The text a margin box's `content` comes to. The value is a sequence
+// of strings and counters; `counter(page)` is the page's own number
+// and `counter(pages)` the number of pages, which are the two the
+// standard makes available in a page context and the two a margin box
+// is written for. Anything else contributes nothing rather than its
+// own source text.
+// The closing parenthesis matching the one at `open`. page.f is
+// imported by the CSS parser and cannot reach the cascade's copy.
+int func pageMatchingParen(t:ascii, open:int) {
+    int depth = 0
+    for int i = open, i < t.length, i++ {
+        int c = t.charCodeAt(i)
+        if c == CH_LPAREN { depth++ }
+        else if c == CH_RPAREN {
+            depth--
+            if depth == 0 { return i }
+        }
+    }
+    return -1
+}
+
+// The index of the next character equal to `code`, at or after `from`.
+int func pageIndexOfCode(t:ascii, code:int, from:int) {
+    for int i = from, i < t.length, i++ {
+        if t.charCodeAt(i) == code { return i }
+    }
+    return -1
+}
+
+text func marginBoxContent(value:ascii, index:int, total:int) {
+    ascii v = asciiTrim(value)
+    if v == '' { return '' }
+    ascii low = asciiLower(v)
+    if low == 'none' || low == 'normal' { return '' }
+    text out = ''
+    int i = 0
+    int n = v.length
+    while i < n {
+        int c = v.charCodeAt(i)
+        if isSpaceCode(c) { i++  continue }
+        if c == CH_QUOTE || c == CH_APOS {
+            int close = pageIndexOfCode(v, c, i + 1)
+            if close < 0 { break }
+            out = out + v.slice(i + 1, close).toText()
+            i = close + 1
+            continue
+        }
+        int open = pageIndexOfCode(v, CH_LPAREN, i)
+        if open < 0 { break }
+        ascii fn = asciiLower(asciiTrim(v.slice(i, open)))
+        int close = pageMatchingParen(v, open)
+        if close < 0 { break }
+        ascii arg = asciiLower(asciiTrim(v.slice(open + 1, close)))
+        if fn == 'counter' {
+            if arg == 'page' { out = out + `${index}` }
+            else if arg == 'pages' { out = out + `${total}` }
+        }
+        i = close + 1
+    }
+    return out
+}
+
+PageBox func pageBoxFor(name:text, index:int, blank:bool) {
     PageBox box
     box.width = PAGE_DEFAULT_W
     box.height = PAGE_DEFAULT_H
@@ -349,8 +584,9 @@ PageBox func pageBoxFor(name:text, index:int) {
     for int spec = 0, spec <= 7, spec++ {
         for int i = 0, i < cssPageRules.length, i++ {
             PageRule r = cssPageRules[i]
+            if r.slot != MB_NONE { continue }
             if pageRuleSpecificity(r) != spec { continue }
-            if !pageRuleMatches(r, name, index) { continue }
+            if !pageRuleMatches(r, name, index, blank) { continue }
             pick.push(i)
         }
     }

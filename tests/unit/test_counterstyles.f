@@ -133,4 +133,50 @@ checkEq(markerDrawnFor('@counter-style ticks { system: cyclic; symbols: "*" "+" 
     + 'ol { list-style-type: ticks }'), '+',
         'and so does one the page defined itself')
 
+// ---- the `range` and `fallback` descriptors ----------------------------
+// A counter inside the style's range is written by the style; one
+// outside it falls to the declared `fallback`, or to `decimal` where
+// none is declared. Measured in Chromium first (todo.md), with a
+// base-three `numeric` system so a value's length gives it away --
+// and at 8 and 9, because at 1 and 5 the roman and the decimal are
+// both one character and the first probe could not tell them apart.
+
+text func styleIn(sheet:text, style:text, n:int) {
+    cascadeReset()
+    cssViewportWidth = 400
+    Node doc = parseHtmlText('<html><body><p>x</p></body></html>')
+    cascadeAddAuthorSheet(parseStylesheet(sheet.toAscii()))
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    return counterStyleLabel(style, n)
+}
+
+text BASE3 = '@counter-style ranged { system: numeric; symbols: "0" "1" "2"; range: 2 4 }'
+text BASE3FB = '@counter-style fb { system: numeric; symbols: "0" "1" "2"; '
+    + 'range: 2 4; fallback: upper-roman }'
+
+checkEq(styleIn(BASE3, 'ranged', 2), '2', 'a counter inside the range is written by the style')
+checkEq(styleIn(BASE3, 'ranged', 3), '10', 'in the style\'s own base')
+checkEq(styleIn(BASE3, 'ranged', 4), '11', 'up to the end of the range')
+checkEq(styleIn(BASE3, 'ranged', 1), '1', 'and one below it falls back to decimal')
+checkEq(styleIn(BASE3, 'ranged', 8), '8', 'as does one above it')
+
+checkEq(styleIn(BASE3FB, 'fb', 3), '10', 'a declared fallback leaves the range alone')
+checkEq(styleIn(BASE3FB, 'fb', 8), 'VIII',
+        'and takes a counter outside the range, rather than decimal')
+checkEq(styleIn(BASE3FB, 'fb', 9), 'IX', 'at every value outside it')
+
+// The two must differ, or neither check is measuring the descriptor:
+// `VIII` against `8` is what says the fallback was read.
+check(styleIn(BASE3FB, 'fb', 8) != styleIn(BASE3, 'ranged', 8),
+      'the declared fallback and the default answer differently')
+
+// A fallback naming a style that falls back again, and one that names
+// itself: neither may hang.
+text LOOP = '@counter-style l1 { system: numeric; symbols: "0" "1"; range: 9 9; fallback: l2 } '
+    + '@counter-style l2 { system: numeric; symbols: "0" "1"; range: 9 9; fallback: l1 }'
+checkEq(styleIn(LOOP, 'l1', 3), '3', 'a fallback loop ends in decimal rather than hanging')
+text SELF = '@counter-style s1 { system: numeric; symbols: "0" "1"; range: 9 9; fallback: s1 }'
+checkEq(styleIn(SELF, 's1', 3), '3', 'and so does a style that names itself')
+
 finish('counter styles')

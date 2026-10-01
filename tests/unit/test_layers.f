@@ -79,6 +79,42 @@ layerIs('@layer a.c, a.b; @layer a { @layer b { #t { color: blue } } @layer c { 
 layerIs('@layer { #t { color: red } } @layer { #t { color: blue } }',
         layerBlue, 'two anonymous layers are two layers')
 
+// ---- a sub-layer is inside its parent, not beside it -------------------
+// CSS Cascade 5 nests `a.b` inside `a`: the sub-layer takes `a`'s place
+// in the outer order, and within `a` the sub-layers come first and
+// `a`'s own rules last -- the implicit outer layer rule applied one
+// level down. This engine read `a.b` as another top-level layer whose
+// place was where it was first named, so the two sorted as siblings in
+// declaration order and got every case below the other way round.
+//
+// Each expected colour is Chromium 141's, asked of the same stylesheet.
+// The first three are one fact written three ways, which is the point:
+// a sub-layer loses to its parent's own rules however the two are
+// arranged in the source.
+layerIs('@layer a { @layer b { #t { color: lime } } #t { color: red } }',
+        layerRed, "a layer's own rules come after its nested sub-layer")
+layerIs('@layer a { #t { color: red } } @layer a.b { #t { color: lime } }',
+        layerRed, 'and the same written flat, the parent first')
+layerIs('@layer a.b { #t { color: lime } } @layer a { #t { color: red } }',
+        layerRed, 'and the same with the sub-layer first')
+
+// The other half: a sub-layer belongs to its parent's position, so it
+// loses to a top-level layer declared after that parent -- where a flat
+// reading would give it the place it was named at and let it win.
+layerIs('@layer a, b; @layer a.z { #t { color: red } } @layer b { #t { color: lime } }',
+        layerLime, 'a sub-layer of an earlier layer loses to a later layer')
+
+// Two sub-layers of one parent keep their own declaration order, which
+// a flat reading also gets right -- so this one is here to pin that the
+// fix did not reverse it.
+layerIs('@layer a.x { #t { color: red } } @layer a.y { #t { color: lime } }',
+        layerLime, 'two sub-layers of one parent keep their order')
+// And a grandchild is inside its parent in turn.
+layerIs('@layer a { @layer b { @layer c { #t { color: lime } } #t { color: red } } }',
+        layerRed, "a grandchild loses to its grandparent's own rules")
+layerIs('@layer a.b.c { #t { color: lime } } @layer a.b { #t { color: red } }',
+        layerRed, 'written flat, the same')
+
 // ---- what the weights say ---------------------------------------------
 // The same order, asserted of the numbers the cascade sorts on, so a
 // failure says which tier is wrong rather than only which colour won.

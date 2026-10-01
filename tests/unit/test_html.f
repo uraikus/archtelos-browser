@@ -239,4 +239,244 @@ checkEq(parseAndDump('<!DOCTYPE html><p><template></template><frameset>'),
 '| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <p>\n|       <template>\n|         content',
 'a template in the body rules a later frameset out')
 
+// ---- an end tag that runs to the end of the input ---------------------
+// The standard's end tag name state emits the `</` and the name it had
+// buffered as CHARACTER tokens when what follows is not a matching `>`,
+// whitespace or `/`, and at the end of the input the same buffer has to
+// reach the text. So a script whose content ends in an unterminated end
+// tag keeps it as text rather than losing it: ten cases of tests16.dat,
+// each appearing once with a doctype and once without.
+
+checkEq(parseAndDump('<script></script'),
+'| <html>\n|   <head>\n|     <script>\n|       "</script"\n|   <body>',
+'an unterminated end tag at the end of a script is its text')
+
+checkEq(parseAndDump('<script></SCRIPT'),
+'| <html>\n|   <head>\n|     <script>\n|       "</SCRIPT"\n|   <body>',
+'and keeps the case it was written in, because it is text and not a name')
+
+checkEq(parseAndDump('<script><!--</script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--</script"\n|   <body>',
+'the escaped state does not change that')
+
+checkEq(parseAndDump('<script><!--<script </script </script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--<script </script </script"\n|   <body>',
+'nor does the double escaped state, which the first `</script ` leaves')
+
+checkEq(parseAndDump('<script><!--<script --></script'),
+'| <html>\n|   <head>\n|     <script>\n|       "<!--<script --></script"\n|   <body>',
+'and an unterminated end tag after the escape closed is text as well')
+
+// The instrument: a TERMINATED end tag must still end the script, or every
+// check above would hold on an engine that never closed one.
+checkEq(parseAndDump('<script></script>x'),
+'| <html>\n|   <head>\n|     <script>\n|   <body>\n|     "x"',
+'a terminated end tag still closes the script and takes nothing with it')
+
+checkEq(parseAndDump('<title></title'),
+'| <html>\n|   <head>\n|     <title>\n|       "</title"\n|   <body>',
+'the same holds for RCDATA, where the text is decoded rather than raw')
+
+// ---- </p> and </br> break out of foreign content ----------------------
+// An end tag named `p` or `br` inside SVG or MathML pops the foreign
+// elements and is then handled by the HTML rules; any other unmatched end
+// tag is not. Mapped against Chromium on thirteen fixtures (todo.md has
+// them), because the four corpus cases alone would not have said where the
+// popping stops.
+
+checkEq(parseAndDump('<svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <p>\n|     <foo>',
+'`</p>` in SVG pops it, and what follows is HTML beside it')
+
+checkEq(parseAndDump('<svg></br><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     <br>\n|     <foo>',
+'`</br>` does the same, and becomes a `<br>` as the HTML rules say')
+
+checkEq(parseAndDump('<math></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <math math>\n|     <p>\n|     <foo>',
+'and MathML is no different')
+
+checkEq(parseAndDump('<svg><circle></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       <svg circle>\n|     <p>\n|     "x"',
+'it pops all the way out rather than one level')
+
+checkEq(parseAndDump('<div><svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <div>\n|       <svg svg>\n|       <p>\n|       <foo>',
+'stopping at the nearest HTML element, which here is the div and not the body')
+
+checkEq(parseAndDump('<p><svg></p><foo>'),
+'| <html>\n|   <head>\n|   <body>\n|     <p>\n|       <svg svg>\n|     <foo>',
+'and once out, `</p>` closes the p that was already open rather than making one')
+
+checkEq(parseAndDump('<math><mtext><svg></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <math math>\n|       <math mtext>\n|         <svg svg>\n|         <p>\n|         "x"',
+'an integration point is already HTML content, so the popping stops there')
+
+checkEq(parseAndDump('<svg><desc><svg></p>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       <svg desc>\n|         <svg svg>\n|         <p>\n|         "x"',
+'which holds for SVG\'s own integration points as well')
+
+// The instrument: any OTHER unmatched end tag must not break out, or every
+// check above would hold on an engine that left foreign content on each of
+// them.
+checkEq(parseAndDump('<svg></div>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|       "x"',
+'`</div>` in SVG breaks out of nothing, and the text stays inside')
+
+checkEq(parseAndDump('<svg></svg>x'),
+'| <html>\n|   <head>\n|   <body>\n|     <svg svg>\n|     "x"',
+'while the matching end tag closes it, as it always did')
+
+// ---- whitespace in and after a frameset -------------------------------
+// The tokenizer emits a run of characters as one token; the standard's
+// "in frameset" and "after frameset" modes are written per character, and
+// insert every whitespace one while ignoring every other one. So the
+// whitespace a run keeps is all of it, not the leading part: ` te st`
+// reaches the tree as two spaces, not one.
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset> te st'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|     "  "',
+'every whitespace character in a frameset is inserted, and the rest dropped')
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset></frameset> te st'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'and after the frameset the same rule puts them beside it')
+
+checkEq(parseAndDump('<!DOCTYPE html><frameset>  '),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|     "  "',
+'a run that is only whitespace is unchanged by that')
+
+checkEq(parseAndDump('<!DOCTYPE html><html><frameset></frameset></html>  '),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'and once `</html>` has been seen the rule still holds')
+
+checkEq(parseAndDump('<html><frameset></frameset></html> te st'),
+'| <html>\n|   <head>\n|   <frameset>\n|   "  "',
+'there too it is every whitespace character and nothing else')
+
+// The instrument: a run with no whitespace in it must insert nothing, or
+// every check above would hold on an engine that inserted the whole run.
+checkEq(parseAndDump('<!DOCTYPE html><frameset>test'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>',
+'and a run with no whitespace in it reaches the tree as nothing at all')
+
+checkEq(parseAndDump('<!DOCTYPE html><html><frameset></frameset></html>abc'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <frameset>',
+'which holds after `</html>` as well')
+
+// ---- `<image>` is renamed to `img` -----------------------------------
+// The standard's "in body" rules give the tag one line: change the
+// token's tag name to `img` and reprocess it. So the element in the tree
+// is an `img`, void and carrying the attributes the token had.
+
+checkEq(body('<p><image></p>'), '<p>\n  <img>',
+'an `image` start tag builds an `img`')
+
+checkEq(parseAndDump('<!DOCTYPE html><image/>'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <img>',
+'and its self-closing form does the same')
+
+checkEq(body('<image src="x">y'), '<img>\n  src="x"\n"y"',
+'it keeps the attributes, and is void, so the text lands beside it')
+
+// The instrument: the rename is that one name and not a prefix of it, or
+// the checks above would hold on an engine that renamed anything starting
+// `image`.
+checkEq(body('<imagex>y'), '<imagex>\n  "y"',
+'a tag that merely starts with `image` is left as it was written')
+
+// ---- two states that reach the end of the input -----------------------
+// The end tag open state emits the `<` and the `/` as characters when the
+// input ends there, rather than opening a bogus comment; and a comment
+// that ends with the input is emitted without the one or two dashes that
+// took the tokenizer into its comment end dash and comment end states.
+
+checkEq(body('</'), '"</"',
+'`</` at the end of the input is text, not a comment')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x--'),
+'| <!DOCTYPE html>\n| <!-- x -->\n| <html>\n|   <head>\n|   <body>',
+'the two dashes that end a comment are not part of it at the end of input')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x-'),
+'| <!DOCTYPE html>\n| <!-- x -->\n| <html>\n|   <head>\n|   <body>',
+'nor is a single trailing dash')
+
+checkEq(parseAndDump('<!DOCTYPE html><!--x---'),
+'| <!DOCTYPE html>\n| <!-- x- -->\n| <html>\n|   <head>\n|   <body>',
+'while a third dash is data, because only two are consumed by the states')
+
+// The instrument: a dash run in the middle of a comment is data, all of
+// it, or the checks above would hold on an engine that dropped dashes
+// wherever they appeared.
+checkEq(parseAndDump('<!DOCTYPE html><!--x--y-->'),
+'| <!DOCTYPE html>\n| <!-- x--y -->\n| <html>\n|   <head>\n|   <body>',
+'dashes that are not at the end of the input stay in the comment')
+
+checkEq(body('</x'), '',
+'and an end tag that merely runs out of input still opens a tag')
+
+// ---- whitespace a table ends with -------------------------------------
+// The "in table text" mode collects a run and, when all of it is
+// whitespace, inserts it into the table. The corpus asks this of
+// `<!doctype html><table>` followed by a newline, and the conformance
+// runner had been trimming that newline out of the `#data` section before
+// the parser saw it, so the case could not pass however the engine
+// behaved. Pinned here, where the input is written out.
+
+checkEq(parseAndDump('<!DOCTYPE html><table>\n'),
+'| <!DOCTYPE html>\n| <html>\n|   <head>\n|   <body>\n|     <table>\n|       "\n"',
+'a table that ends in whitespace keeps it as a text child')
+
+// ---- "special" and "in scope" are about elements, not names ------------
+// The standard's special category holds HTML elements and six MathML and
+// three SVG ones; an SVG `tr` is not special and an SVG `foreignObject`
+// is. The scopes are the same: default, list item and button scope stop
+// at those nine foreign elements, table scope stops at none of them.
+// Chromium agrees with all ten expectations: eight are fixtures written for
+// this, and the `a` and `nobr` ones are corpus cases it passes.
+
+checkEq(body('<a><svg><tr><input></a>'),
+'<a>\n  <svg svg>\n    <svg tr>\n      <svg input>',
+'an SVG `tr` is no furthest block, so `</a>` just closes the `a`')
+
+checkEq(body('<span><svg><foreignObject></span>x'),
+'<span>\n  <svg svg>\n    <svg foreignObject>\n      "x"',
+'an SVG `foreignObject` is special, so `</span>` stops at it')
+
+checkEq(body('<span><math><mi></span>x'),
+'<span>\n  <math math>\n    <math mi>\n      "x"',
+'as is a MathML `mi`')
+
+checkEq(body('<li><svg><foreignObject><li>x'),
+'<li>\n  <svg svg>\n    <svg foreignObject>\n      <li>\n        "x"',
+'a new `li` does not close one outside the `foreignObject`')
+
+checkEq(body('<li><math><mtext><li>x'),
+'<li>\n  <math math>\n    <math mtext>\n      <li>\n        "x"',
+'nor one outside a MathML `mtext`')
+
+checkEq(body('<dd><svg><foreignObject><dt>x'),
+'<dd>\n  <svg svg>\n    <svg foreignObject>\n      <dt>\n        "x"',
+'and a `dt` does not close a `dd` from inside one either')
+
+checkEq(body('<div><math><annotation-xml></div>x'),
+'<div>\n  <math math>\n    <math annotation-xml>\n      "x"',
+'`annotation-xml` ends default scope whatever its encoding')
+
+checkEq(body('<table><tr><td><math><mi></td>x'),
+'"x"\n<table>\n  <tbody>\n    <tr>\n      <td>\n        <math math>\n          <math mi>',
+'while table scope reaches past a MathML `mi` to the cell')
+
+checkEq(body('<nobr><table><marquee></table><nobr>'),
+'<nobr>\n  <marquee>\n  <table>\n<nobr>',
+'a `nobr` the adoption agency cannot find behind a marker is closed')
+
+// The instrument: a foreign element that is not special must not end a
+// scope, or every check above would hold on an engine that stopped at
+// any foreign element at all.
+checkEq(body('<div><svg><g></div>x'),
+'<div>\n  <svg svg>\n    <svg g>\n"x"',
+'an SVG `g` is not special, so `</div>` reaches the `div` through it')
+
 finish('html')
