@@ -36,12 +36,24 @@ Two modes, both used by tests/bench.sh:
                `--virtual-time-budget`, `--run-all-compositor-stages-
                before-draw` or a software rasterizer is asked of it.
 
+  sample       Loads a page in a live headless Chromium, runs one statement
+               in it, then reads one expression every animation frame for
+               a stretch of time and prints [milliseconds, value] pairs.
+               The other modes read a page after it has settled
+               (`--dump-dom` produces no frames, so a scroll or an
+               animation that takes time never advances there); this one
+               is how a smooth scroll's curve or a transition's progress
+               has a browser's answer to be graded against. It speaks the
+               DevTools protocol over `--remote-debugging-pipe` with the
+               standard library alone -- no client library, no socket.
+
 Chromium is found via CHROME, or the Playwright browser directory that
 ships in this container. Nothing here is part of the browser: it is
 benchmark tooling, and it only ever reads the corpus and the pages.
 """
 
 import base64
+import fcntl
 import glob
 import json
 import os
@@ -636,6 +648,117 @@ report(bad);
     return 0
 
 
+# ---- a live browser, over the DevTools pipe -----------------------------
+
+class Devtools:
+    """One headless browser and its protocol pipe, with the standard
+    library only. The browser reads commands on file descriptor 3 and
+    writes replies on 4, each message a JSON object ending in a NUL.
+
+    The pipes are moved above descriptor 9 first: `os.pipe()` hands out the
+    lowest free numbers, which are 3 and 4 here, and `dup2` onto a
+    descriptor that already has that number does nothing -- leaving it
+    marked close-on-exec, so the browser starts with neither open."""
+
+    def __init__(self, chrome):
+        high = lambda fd: fcntl.fcntl(fd, fcntl.F_DUPFD, 10)
+        c2p_r, c2p_w = [high(fd) for fd in os.pipe()]
+        p2c_r, p2c_w = [high(fd) for fd in os.pipe()]
+
+        def setup():
+            os.dup2(c2p_r, 3, inheritable=True)
+            os.dup2(p2c_w, 4, inheritable=True)
+
+        self.proc = subprocess.Popen(
+            [chrome, "--headless", "--disable-gpu", "--no-sandbox",
+             "--remote-debugging-pipe", "about:blank"],
+            preexec_fn=setup, close_fds=False,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+        os.close(c2p_r)
+        os.close(p2c_w)
+        self.out = os.fdopen(c2p_w, "wb", buffering=0)
+        self.inp = os.fdopen(p2c_r, "rb", buffering=0)
+        self.buf = b""
+        self.n = 0
+
+    def send(self, method, params=None, session=None):
+        self.n += 1
+        msg = {"id": self.n, "method": method, "params": params or {}}
+        if session:
+            msg["sessionId"] = session
+        self.out.write(json.dumps(msg).encode() + b"\0")
+        while True:
+            while b"\0" not in self.buf:
+                chunk = self.inp.read(65536)
+                if not chunk:
+                    raise EOFError("the browser closed the protocol pipe")
+                self.buf += chunk
+            raw, self.buf = self.buf.split(b"\0", 1)
+            reply = json.loads(raw)
+            if reply.get("id") == self.n:
+                if "error" in reply:
+                    raise RuntimeError(reply["error"])
+                return reply.get("result", {})
+
+    def page(self):
+        """A fresh tab, attached, as a session id."""
+        target = self.send("Target.createTarget", {"url": "about:blank"})
+        session = self.send("Target.attachToTarget",
+                            {"targetId": target["targetId"], "flatten": True})["sessionId"]
+        self.send("Page.enable", session=session)
+        return session
+
+    def evaluate(self, session, expression):
+        reply = self.send("Runtime.evaluate",
+                          {"expression": expression, "awaitPromise": True,
+                           "returnByValue": True}, session=session)
+        if "exceptionDetails" in reply:
+            raise RuntimeError(reply["exceptionDetails"])
+        return reply["result"].get("value")
+
+    def close(self):
+        try:
+            self.send("Browser.close")
+        except Exception:
+            pass
+        self.proc.kill()
+
+
+SAMPLE_JS = """new Promise(function (resolve) {
+  var out = [], t0 = 0;
+  %(action)s;
+  function frame(ts) {
+    if (!t0) t0 = ts;
+    out.push([ts - t0, (%(value)s)]);
+    if (ts - t0 > %(ms)d) resolve(out); else requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})"""
+
+
+def sample(page_path, action, value, ms):
+    chrome = find_shell() or find_chrome()
+    if not chrome:
+        print("no Chromium found", file=sys.stderr)
+        return 1
+    browser = Devtools(chrome)
+    try:
+        session = browser.page()
+        browser.send("Page.navigate", {"url": "file://" + os.path.abspath(page_path)},
+                     session=session)
+        # A load event is the page being ready to be asked.
+        browser.evaluate(session, "new Promise(function (r) {"
+                         "if (document.readyState === 'complete') r(1);"
+                         "else addEventListener('load', function () { r(1); }); })")
+        series = browser.evaluate(session, SAMPLE_JS % {"action": action,
+                                                         "value": value, "ms": ms})
+    finally:
+        browser.close()
+    print(json.dumps([[round(t, 1), v] for t, v in series]))
+    return 0
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -653,6 +776,8 @@ def main():
     if sys.argv[1] == "pixels":
         return pixels(sys.argv[2], sys.argv[3], int(sys.argv[4]),
                       int(sys.argv[5]), int(sys.argv[6]))
+    if sys.argv[1] == "sample":
+        return sample(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))
     if sys.argv[1] == "properties-audit":
         return properties_audit(sys.argv[2])
     if sys.argv[1] == "which":
