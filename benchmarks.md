@@ -4720,3 +4720,25 @@ stylesheet's own `vertical-align: inherit` does not raise the flag, which
 the first version of the change did: every page would have kept every
 style's declarations.
 
+## The block formatting context cost, counted again in one batch
+
+The animation entry above found that a cost recorded against a parent
+counted in another session was the difference between two sessions. The
+block formatting context entry was checked for the same fault by building
+its three revisions together and counting them in one batch, whole
+program, 800x600 screenshot of `generated.html`, on
+`tools/festina-generic` builds, screenshots byte-identical:
+
+| revision | instructions | against the parent |
+|---|---|---|
+| parent (`6910429`) | 1,058,085,613 | |
+| first implementation (`daa04e4`) | 1,088,064,438 | +29,978,825 (+2.83%) |
+| final (`d5d079b`) | 1,059,328,258 | +1,242,645 (+0.117%) |
+
+The first implementation's cost reproduces: +30.0 M here against the
++31.0 M recorded, a difference of one million on thirty, where a
+cross-session offset is about three million on a thousand. The final
+revision reads +1.24 M against the +0.73 M recorded, which is the
+placement band (+-0.5 M) and not a disagreement. The cost is real, and
+what is still unknown is its mechanism, as the entry above says.
+

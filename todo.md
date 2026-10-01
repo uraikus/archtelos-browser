@@ -5095,7 +5095,9 @@ measured differently are left:
   `if`, in `collapsedTopMargin`, `collapsedBottomMargin`, the child loop's
   `parentAbsorbsTop` or its `absorbsBottom`, on a page where the flag was
   false and the call never ran, it was +6.28, +8.20, +8.24 and +8.16 M
-  instructions, one site at a time, all in `festina_cycle_*`. A tree walked
+  instructions, one site at a time, all in `festina_cycle_*`. The whole
+  of it reproduces in one batch (+30.0 M against +31.0 M recorded;
+  benchmarks.md), so it is not a comparison across sessions. A tree walked
   recursively with a never-taken `flag && special(n)` in it cost +0.3%,
   and +0.4% with a struct-typed local in the callee (about 3 to 4
   instructions a call). What is different about the real functions is what
