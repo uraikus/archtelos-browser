@@ -5,6 +5,20 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### A named page can have a sheet of its own size
+
+A named `@page` with a `size` of a different width printed on a sheet of
+that width with the content laid out at the first sheet's: Chromium lays a
+page out at its own sheet's width -- three 100px blocks, the middle one on
+an 800px named sheet between two 400px ones, print 360, 760 and 360 wide,
+read from `Page.printToPDF` over the DevTools pipe. A run of the body's
+children sharing a `page` name is now paginated against a layout at the
+width its sheet gives, one layout for each distinct width, and the runs are
+put end to end. A document whose pages are all one width makes one layout, as
+before. Twenty-two checks in `tests/unit/test_pagesize.f` and eight pixel
+checks in `tests/render/paged.f`; `--print` writes 400x300, 800x300 and
+400x300 pages for the document above.
+
 ### The default column gap is 1em, and floats go into columns
 
 `column-gap: normal` is `1em` in a multi-column container and this engine

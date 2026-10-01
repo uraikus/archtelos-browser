@@ -4742,3 +4742,22 @@ revision reads +1.24 M against the +0.73 M recorded, which is the
 placement band (+-0.5 M) and not a disagreement. The cost is real, and
 what is still unknown is its mechanism, as the entry above says.
 
+## `scroll-behavior`, the column gap and floats in columns, on pages that use none
+
+Callgrind on `tools/festina-generic` builds, whole program, 800x600
+screenshot, parent (`f66809e`) and candidate (`4d06ba1`) built and counted in
+the same batch, screenshots byte-identical:
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,060,371,207 | 1,060,198,554 | -172,653 (-0.016%) |
+| `features.html` | 1,243,252,615 | 1,242,277,247 | -975,368 (-0.078%) |
+
+Neither page declares `scroll-behavior`, a column count or a width, so
+what the change adds to them is a flag test per declaration, one more
+`||` in the block formatting context test in `newBox`, and a field read of
+`columnCount` and `columnWidth` there. Both counts fell, inside the +-0.5 M
+by which code no page reaches moves `festina_cycle_*`; none of it is a
+saving. A tenth of a percent is under what a timed round resolves, so none
+was run. Valgrind is clean on `test_multicol.f` and `test_scrollbehavior.f`.
+

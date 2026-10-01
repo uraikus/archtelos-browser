@@ -10,10 +10,11 @@
 // `@page :first` and a named page can each declare their own, so the
 // height is asked for one page at a time rather than fixed in advance.
 //
-// The document is laid out once, at the first page's area width, and
-// each page is a strip of it. Nothing is moved: a page knows where it
-// begins in the document, and painting it is the same painting with a
-// different offset.
+// Each page is a strip of a layout of the document at that page's area
+// width. Nothing is moved: a page knows where it begins in its layout, and
+// painting it is the same painting with a different offset. A document whose
+// pages are all one width has one layout; a named page with a sheet of
+// another width gets one of its own (paginatePage in page.f).
 import layout.f
 
 // The document offset each page begins at, the page name in force on
@@ -28,6 +29,14 @@ arr[PageBox] pageBoxes = []
 // a page that carries no content is not the same thing: a page can end
 // short because the next box would not fit.
 arr[bool] pageBlanks = []
+// The layout each page is a strip of. A document whose pages are all one
+// width has one, and every entry is the same root; a named page of another
+// width is laid out at its own (paginatePage in page.f).
+arr[Box] pageRoots = []
+// Which pagination the page arrays belong to. Each is a new number, so
+// anything kept beside them (paginatePage in page.f keeps the layouts) can
+// tell whether it is still theirs.
+int paginationRun = 0
 
 // A document that will not break is still a document, and a runaway
 // would be a file per page: a page that takes no content ends the walk.
@@ -104,11 +113,14 @@ void func paginateDocument(root:Box) {
     arr[text] names = []
     arr[PageBox] boxes = []
     arr[bool] blanks = []
+    arr[Box] roots = []
     pageStartY = ys
     pageEndY = ends
     pageNames = names
     pageBoxes = boxes
     pageBlanks = blanks
+    pageRoots = roots
+    paginationRun++
     if root == null { return }
 
     arr[ColumnUnit] units = []
@@ -128,16 +140,32 @@ void func paginateDocument(root:Box) {
         names.push('')
         blanks.push(false)
         boxes.push(pageBoxFor('', 1, false))
+        roots.push(root)
         return
     }
+    paginateUnits(host, units, 1, 0, root)
+}
+
+// The pages for `units`, the units of one run of the document laid out in
+// `root`, appended to the page arrays from page number `index` on and
+// starting at document offset `top`. The whole document is one run unless a
+// named page has a sheet of a different width: then each such run is
+// laid out at its own, and this is called once for each (paginatePage).
+void func paginateUnits(host:Box, units:arr[ColumnUnit], startIndex:int, startTop:int, root:Box) {
+    arr[int] ys = pageStartY
+    arr[int] ends = pageEndY
+    arr[text] names = pageNames
+    arr[PageBox] boxes = pageBoxes
+    arr[bool] blanks = pageBlanks
+    arr[Box] roots = pageRoots
     int docBottom = 0
     for int k = 0, k < units.length, k++ {
         docBottom = maxInt(docBottom, units[k].bottom)
     }
 
     int i = 0
-    int index = 1
-    int top = 0
+    int index = startIndex
+    int top = startTop
     while index <= PAGE_LIMIT {
         // The name is the one this page's first unit asked for, which is
         // what keeps this from being circular: the box decides how much
@@ -149,6 +177,7 @@ void func paginateDocument(root:Box) {
         names.push(name)
         blanks.push(false)
         boxes.push(box)
+        roots.push(root)
 
         int at = 0 - 1
         int j = i + 1
@@ -179,6 +208,7 @@ void func paginateDocument(root:Box) {
                 names.push('')
                 blanks.push(true)
                 boxes.push(pageBoxFor('', index, true))
+                roots.push(root)
                 index++
             }
             continue

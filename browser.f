@@ -628,7 +628,7 @@ if printPath != '' {
     int areaW = pageAreaWidth(firstBox)
     setCssViewport(areaW, pageAreaHeight(firstBox))
     preparePage(page, areaW)
-    paginateDocument(page.root)
+    paginatePage(page)
     int written = 0
     for int i = 0, i < pageStartY.length, i++ {
         PageBox pbox = pageBoxes[i]

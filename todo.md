@@ -37,18 +37,12 @@ selector drops its whole rule. What is left of CSS Cascade 4:
 
 1. **What is left of the CSS2 chapters**: nothing whole. Paged media
    (§13) is in -- `@page` with `size` and `margin`, the page selectors,
-   named pages, all sixteen margin boxes, the three `page-break-*`
-   properties, the four page-side break keywords with the blank page
-   they generate, and `@page :blank` for that page -- but one part of it
-   is not: **a page's own `size` when a named page declares a different
-   one**. The document is laid out once at the first page's width and
-   every page is a strip of that one layout, which is what makes a page
-   cost nothing to build; a named page on a wider sheet would need its
-   own run of the document laid out at its own width and the strips
-   stitched together, which is a different paginator rather than a
-   second pass over this one. Each page already takes its own *height*
-   from its own box, because the paginator asks for the box before it
-   measures how much fits. A wheel
+   named pages with sheets of their own sizes, all sixteen margin boxes,
+   the three `page-break-*` properties, the four page-side break
+   keywords with the blank page they generate, and `@page :blank` for
+   that page. A page takes its own *height* from its own box, because
+   the paginator asks for the box before it measures how much fits, and
+   its own *width* from the run of pages it belongs to (below). A wheel
    over a scroll container scrolls it, the thumb follows, and the thumb
    can be taken hold of and dragged. Both axes scroll, both thumbs drag,
    and a wheel tilted sideways scrolls a container across **on X11 and
@@ -4895,6 +4889,26 @@ inside one is set when the document is laid out, and there is no
 programmatic scroll for the property to act on), the keyboard (Chromium
 scrolls smoothly on a key press, and this engine's keys are instant), and
 a wheel, which is instant in Chromium and here.
+
+### A named page of another size, measured
+
+`Page.printToPDF` with `preferCSSPageSize`, driven over the DevTools pipe
+(`tests/chromium.py`), on a document of three 100px blocks, the middle one
+`page: wide` with `@page wide { size: 800px 300px }` and `@page { size:
+400px 300px; margin: 20px }`: three pages, media boxes 300, 600 and 300
+points (400, 800 and 400 pixels), and the three blocks' fill rectangles 360,
+760 and 360 wide. So a page is laid out at ITS sheet's width, and the pages
+after a wider one go back to the narrow width rather than keeping it.
+
+Here a run of the body's children sharing a `page` name is paginated
+against a layout at the width its first sheet gives, and the runs are put
+end to end (`paginatePage`, `tests/unit/test_pagesize.f`, and the pixels in
+`tests/render/paged.f`). Not done: a change of width by `:first`, `:left` or
+`:right` inside a run, and a `page` name that changes inside a wrapper
+rather than between the body's children -- both keep the run's width. And
+the media queries and viewport units of a layout at another width are
+evaluated against the viewport the sheet gives, where Chromium's are not
+known.
 
 ## HTML: the remaining conformance gap
 

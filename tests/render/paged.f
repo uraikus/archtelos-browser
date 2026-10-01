@@ -446,4 +446,37 @@ checkEqInt(pageBoxes[1].marginTop, 200, '@page :blank matches the generated page
 printPage(blankSel, sideBody, 0)
 checkEqInt(pageBoxes[0].marginTop, 50, 'and no other page')
 
+// ---- a named page of another width ---------------------------------------
+// The wide sheet is 800 across with 20px margins, so its block reaches x=780
+// where the 400px sheets' reach 380 -- the content drawn is the layout at
+// that sheet's width, not the narrow one cut off or stretched.
+text sizedCss = '@page { size: 400px 300px; margin: 20px } @page wide { size: 800px 300px; margin: 20px }'
+    + ' body { margin: 0 } .a { height: 100px; background: red } .w { page: wide; height: 100px; background: blue }'
+text sizedBody = '<div class="a"></div><div class="w"></div><div class="a"></div>'
+
+void func printSized(index:int) {
+    cssMediaPrint = true
+    Page p = pageFromHtml('<!doctype html><html><head><style>' + sizedCss
+        + '</style></head><body>' + sizedBody + '</body></html>', 'test.html', 360)
+    paginatePage(p)
+    cssMediaPrint = false
+    PageBox box = pageBoxes[index]
+    setClientWidth(box.width)
+    setClientHeight(box.height)
+    clearCanvas()
+    paintPagedPage(p, box, pageStartY[index], pageEndY[index], index, pageStartY.length)
+}
+
+printSized(1)
+check(getPixelColor(400, 70) == blue, 'the wide sheet draws its block')
+check(getPixelColor(779, 70) == blue, 'out to the right margin, 760 across')
+check(getPixelColor(781, 70) == white, 'and no further')
+check(getPixelColor(19, 70) == white, 'with the margin on the left')
+check(getPixelColor(400, 125) == white, 'the block is the 100px it declares')
+printSized(0)
+check(getPixelColor(379, 70) == red, 'a narrow sheet\'s block reaches its margin at 380')
+check(getPixelColor(381, 70) == white, 'and stops')
+printSized(2)
+check(getPixelColor(379, 70) == red, 'the sheet after the wide one is narrow again')
+
 finish('paged render')
