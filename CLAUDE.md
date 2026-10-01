@@ -361,6 +361,24 @@ dead-code control stays for changes both pages reach. Sum the five
 phases per sample either way, because the compiler moves milliseconds
 between phases and only the total says whether any work was added.
 
+**An instruction count compares two binaries only when both were counted
+in the same batch.** `valgrind --tool=callgrind` on a `tools/festina-generic`
+build is deterministic -- two runs of one binary agree to the digit -- but
+the absolute count of one tree is not the same from one session to the next:
+the parent of the animation work read 1,056.8 M on `generated.html` in one
+session and 1,059.7 M in another, with nothing changed. A candidate counted
+today against a parent counted last week therefore read +3.3 M (+0.31%) for
+code that, counted beside its parent in one batch, reads -0.5 M (-0.05%),
+and the first figure sat in benchmarks.md and changelog.md until a bisect
+could not reproduce it. So build the parent and the candidate together,
+count them together, and report only that difference. A difference of
+30 million on a billion survives this -- the block formatting context cost
+read +30.0 M in one batch against +31.0 M recorded across sessions -- and
+a difference of a few million does not, which is where the rule earns its
+keep; and code no page reaches moves the count by about half a million
+either way (the cycle collector's generated functions are renamed from build
+to build), so a difference inside that band is placement and not work.
+
 **Never add a dependency** — a system library, a tool, a vendored file
 — without explicit permission. The whole point is that this links what
 Festina links and nothing else.

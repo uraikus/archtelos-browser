@@ -325,11 +325,17 @@ def verify(out, browser):
 
 def main():
     args = sys.argv[1:]
+    usage = 'usage: featurepage.py [--verify] <output-directory> [browser]'
     checking = args and args[0] == '--verify'
     if checking:
         args = args[1:]
-    if not args or (checking and len(args) < 2):
-        sys.exit('usage: featurepage.py [--verify] <output-directory> [browser]')
+    # `--help` was taken for the output directory and made a directory of
+    # that name, which got committed. Nothing starting with a dash is one.
+    if args and args[0] in ('-h', '--help'):
+        print(usage)
+        return 0
+    if not args or (checking and len(args) < 2) or args[0].startswith('-'):
+        sys.exit(usage)
     out = args[0]
     os.makedirs(out, exist_ok=True)
     png(os.path.join(out, IMAGE), 120, 60)
