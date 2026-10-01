@@ -701,7 +701,8 @@ Box func newBox(kind:int, node:Node, style:Style) {
                 && (style.floatSide != FLOAT_NONE || positionIsOutOfFlow(style.position)
                     || (style.overflowX != OVERFLOW_VISIBLE && style.overflowX != OVERFLOW_CLIP)
                     || (style.overflowY != OVERFLOW_VISIBLE && style.overflowY != OVERFLOW_CLIP)
-                    || style.containLayout || style.containPaint || styleIsFlowRoot(style)))
+                    || style.containLayout || style.containPaint || styleIsFlowRoot(style)
+                    || style.columnCount > 0 || style.columnWidth.kind == LEN_PX))
     }
     return b
 }
@@ -3427,6 +3428,62 @@ int func layoutColumns(b:Box, innerX:int, innerY:int, width:int, count:int) {
     return y - innerY
 }
 
+// The floats a run's flow holds: its own floated children, and those of the
+// blocks it goes into that do not start a formatting context of their own.
+void func collectColumnFloats(b:Box, out:arr[Box], from:int, to:int) {
+    for int i = from, i < to, i++ {
+        Box c = b.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR { continue }
+        if boxIsFloated(c) { out.push(c)  continue }
+        if boxIsOutOfFlow(c) || c.bfcRoot { continue }
+        if c.kind == BOX_BLOCK || c.kind == BOX_ANON {
+            collectColumnFloats(c, out, 0, c.children.length)
+        }
+    }
+}
+
+// Moves each float into the column its place in the flow falls in, and cuts
+// it where the column ends. A multi-column container is a block formatting
+// context, so its floats are its own, and Chromium cuts one at a column
+// break exactly as it cuts a block (`getClientRects` has a rectangle for
+// each piece). `starts` is where each column begins in the flow, from the
+// plan where a column has content in it and one column's height after the
+// last where it has none.
+void func placeColumnFloats(floats:arr[Box], units:arr[ColumnUnit], count:int,
+                            colW:int, gap:int, innerY:int, target:int, tallest:int) {
+    arr[int] starts = []
+    for int k = 0, k < count, k++ { starts.push(0 - 1) }
+    for int i = 0, i < units.length, i++ {
+        int col = colPlanCol[i]
+        if col < count && starts[col] < 0 { starts[col] = colPlanTop[i] }
+        if colPlanFirstH[i] >= 0 {
+            for int j = 1, j <= colPlanExtra[i], j++ {
+                if col + j < count { starts[col + j] = colPlanTop[i] + j * target }
+            }
+        }
+    }
+    if starts[0] < 0 { starts[0] = innerY }
+    for int k = 1, k < count, k++ {
+        if starts[k] < 0 || starts[k] < starts[k - 1] { starts[k] = starts[k - 1] + tallest }
+    }
+    for int i = 0, i < floats.length, i++ {
+        Box f = floats[i]
+        int top = f.y
+        int bottom = f.y + f.h
+        int k = 0
+        while k + 1 < count && starts[k + 1] <= top { k++ }
+        int end = starts[k] + tallest
+        offsetBox(f, k * (colW + gap), innerY - starts[k])
+        bool whole = f.children.length == 0 && f.lines.length == 0 && f.kind == BOX_BLOCK
+        if bottom > end && whole && k + 1 < count && tallest > 0 {
+            int rest = bottom - end
+            int extra = minInt(Math.floorDiv(rest + tallest - 1, tallest), count - 1 - k)
+            int lastH = minInt(rest - (extra - 1) * tallest, tallest)
+            cutUnitIntoColumns(f, end - top, extra, lastH, k, colW, gap, innerY, tallest)
+        }
+    }
+}
+
 // One run of children laid out at the column width and then moved into
 // columns of equal height. Returns the height of the tallest column,
 // which is the run's height.
@@ -3446,7 +3503,16 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     arr[Box] noBroken = []
     columnBrokenBoxes = noBroken
     collectColumnUnits(b, units, from, to)
-    if units.length == 0 { return flowH }
+    // Its floats are part of what the columns balance over: a container
+    // is as tall as its floats need, as any block formatting context is.
+    arr[Box] floats = []
+    if docHasFloats {
+        collectColumnFloats(b, floats, from, to)
+        for int i = 0, i < floats.length, i++ {
+            flowH = maxInt(flowH, floats[i].y + floats[i].h + floats[i].mb - innerY)
+        }
+    }
+    if units.length == 0 && floats.length == 0 { return flowH }
 
     // `column-fill: auto` fills each column to the container's own block
     // size before starting the next, so with no height to fill to there
@@ -3457,6 +3523,10 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
     if s.columnFillAuto && s.height.kind != LEN_PX { return flowH }
 
     int target = 0
+    // What the floats alone ask of a column: the flow's height with them in
+    // it, shared among the columns, before the balancing below grows the
+    // target to make whole lines fit.
+    int floatFloor = 0
     if s.columnFillAuto {
         // Given a definite height, each column fills to THAT -- which is
         // the balanced share only by coincidence, and this line used to
@@ -3471,21 +3541,36 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
             target = target - b.pt - b.pb - b.bt - b.bb
         }
         target = maxInt(target, 1)
-        columnPlan(units, target)
+        floatFloor = target
+        if units.length > 0 { columnPlan(units, target) }
     } else {
         // Balance: aim for an equal share and grow the target until every
         // unit fits in the columns there are. A unit taller than the
         // target sets its own column's height, which is why this is a
         // loop rather than one division.
         target = maxInt(Math.floorDiv(flowH + count - 1, count), 1)
-        columnPlan(units, target)
-        int guard = 0
-        while guard < 64 {
-            if colPlanCount <= count { break }
-            target = target + maxInt(Math.floorDiv(target, 8), 1)
+        floatFloor = target
+        if units.length > 0 {
             columnPlan(units, target)
-            guard++
+            int guard = 0
+            while guard < 64 {
+                if colPlanCount <= count { break }
+                target = target + maxInt(Math.floorDiv(target, 8), 1)
+                columnPlan(units, target)
+                guard++
+            }
         }
+    }
+    // Nothing but floats: no plan to make, and no column holds more than
+    // the target.
+    if units.length == 0 {
+        colPlanCol = []
+        colPlanTop = []
+        colPlanFirstH = []
+        colPlanExtra = []
+        colPlanLastH = []
+        colPlanCount = 1
+        colPlanHeight = 0
     }
 
     // Move each unit into the column the plan gave it. A unit's offset is
@@ -3507,6 +3592,16 @@ int func layoutColumnRun(b:Box, innerX:int, innerY:int, width:int, count:int, fr
         }
     }
     int tallest = colPlanHeight
+    if floats.length > 0 {
+        // The columns are as tall as the floats need, which the balanced
+        // target already says: the flow's height with them in it, shared.
+        tallest = maxInt(tallest, floatFloor)
+        placeColumnFloats(floats, units, count, colW, gap, innerY, target, tallest)
+        // They are in their columns now, and the container must not grow
+        // to the places they had in the flow.
+        arr[FloatRect] none = []
+        bfcFloats = none
+    }
     // A child whose lines were split no longer occupies one rectangle: it
     // gets one per column it has lines in. This runs after `tallest`
     // because a part fills its column, and the column's height is not

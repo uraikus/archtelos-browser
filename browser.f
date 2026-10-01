@@ -143,6 +143,7 @@ void func showStatusNow(msg:text) {
 
 void func loadInto(url:text) {
     showStatusNow(`Loading ${url} ...`)
+    stopSmoothScroll()
     page = loadPage(url, clientWidth)
     // A new document starts at the top, unless something in it asked
     // for `scroll-initial-target`: layout works out where, and the
@@ -187,6 +188,46 @@ void func startAnimationTimer() {
     if cssSawKeyframes && animLive { animationTimer = setInterval(animationTick, 40) }
 }
 
+// A smooth scroll (`scroll-behavior: smooth` on the root element): the
+// page asked to be taken somewhere, and the shell takes it there over the
+// time Chromium takes, a frame at a time. Wheel, keys and a new page all
+// cancel it, as in Chromium.
+int smoothTimer = 0
+int smoothFrom = 0
+int smoothTo = 0
+int smoothStartMs = 0
+
+void func stopSmoothScroll() {
+    if smoothTimer != 0 {
+        clearInterval(smoothTimer)
+        smoothTimer = 0
+    }
+}
+
+void func smoothScrollTick() {
+    int next = smoothScrollAt(smoothFrom, smoothTo, (now() - smoothStartMs).toFloat())
+    scrollY = next
+    clampScroll()
+    repaint()
+    if next == smoothTo { stopSmoothScroll() }
+}
+
+// Scroll the document to `target`, smoothly when the root element says so.
+void func scrollDocumentTo(target:int) {
+    stopSmoothScroll()
+    int to = clampInt(target, 0, maxScroll())
+    Node html = page.doc == null ? null : findElement(page.doc, 'html')
+    if html != null && smoothScrollOf(html.style) && to != scrollY {
+        smoothFrom = scrollY
+        smoothTo = to
+        smoothStartMs = now()
+        smoothTimer = setInterval(smoothScrollTick, 16)
+        return
+    }
+    scrollY = to
+    clampScroll()
+}
+
 // A link to a place in the document already open is not a load: the
 // same document is styled again, because `:target` now names another
 // element, and scrolled to it (HTML, "navigate to a fragment").
@@ -202,8 +243,8 @@ void func goToFragment(url:text) {
     setTargetFragment(page, url)
     restylePage(page, clientWidth)
     text frag = urlFragmentOf(url)
-    if cssTargetNode > 0 { scrollY = page.initialScrollY }
-    else if frag == '' || asciiLower(frag.toAscii()) == 'top' { scrollY = 0 }
+    if cssTargetNode > 0 { scrollDocumentTo(page.initialScrollY) }
+    else if frag == '' || asciiLower(frag.toAscii()) == 'top' { scrollDocumentTo(0) }
     clampScroll()
     statusText = ''
 }
@@ -235,6 +276,7 @@ void func reload() {
 }
 
 void func scrollBy(dy:int) {
+    stopSmoothScroll()
     int before = scrollY
     scrollY = scrollY + dy
     clampScroll()

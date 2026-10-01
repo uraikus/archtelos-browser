@@ -51,7 +51,7 @@ Inside the window:
 | Input | Effect |
 |---|---|
 | wheel, `Up`/`Down`, `PageUp`/`PageDown`, `Home`/`End`, space | scroll |
-| click a link | follow it; the target shows in the status bar on hover. A link to a place in the open document (`#section`) is not a load: the page is styled again, because `:target` now names another element, and scrolled to it |
+| click a link | follow it; the target shows in the status bar on hover. A link to a place in the open document (`#section`) is not a load: the page is styled again, because `:target` now names another element, and scrolled to it -- over about as long as Chromium takes (a curve and a duration read from it) where the root element says `scroll-behavior: smooth`, and by wheel, key or a new page cancelled |
 | `BackSpace`, or the `<` button | back |
 | `F5` | reload |
 | `F6`, or a click on the address bar | edit the address; `Return` loads, `Escape` cancels |

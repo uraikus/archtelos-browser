@@ -1966,6 +1966,19 @@ bool func scrollInitialTarget(s:Style) {
     return v == null ? false : v
 }
 
+// `scroll-behavior`, kept by the computed style's serial. It does NOT
+// inherit, and only `smooth` asks for anything: a scroll the page makes --
+// a click on a link to a fragment -- takes time instead of arriving at
+// once. The viewport takes the answer from the root element.
+map[bool] smoothScrollOfSerial = {}
+bool anySmoothScroll = false
+
+bool func smoothScrollOf(s:Style) {
+    if !anySmoothScroll || s == null { return false }
+    bool v = smoothScrollOfSerial[`${s.serial}`]
+    return v == null ? false : v
+}
+
 // `interactivity: inert`, kept by the computed style's serial. It does
 // NOT inherit -- the child of an inert element computes to `auto`, which
 // is measured -- because what reaches the subtree is the inertness

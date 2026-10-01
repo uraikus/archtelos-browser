@@ -5,6 +5,38 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### The default column gap is 1em, and floats go into columns
+
+`column-gap: normal` is `1em` in a multi-column container and this engine
+used nothing: a 300px container with `column-count: 2` laid out two columns
+of 150 where Chromium lays out two of 142 with the second at 158, and
+`column-width: 100px` made three columns where Chromium, counting the gap,
+makes two. The suite had assumed no gap everywhere it did not write one,
+so its expectations were wrong in the same direction; they are Chromium's
+now (`tests/unit/test_multicol.f`).
+
+A multi-column container is also a block formatting context, and holds its
+floats. They are laid out in the flow, counted in the height the columns
+balance over, and then moved into the column their place in the flow falls
+in, cut where a column ends if they have nothing inside to move: a 60px
+float alone in two columns makes a container 30px tall with two 30px
+pieces, which `getClientRects` returns as two rectangles in Chromium.
+Twenty-eight checks in the same suite, from 400px containers with words that
+are 40x20 boxes so no font decides anything.
+
+### `scroll-behavior: smooth`: 299 → 300
+
+A click on a link to a fragment takes time where the root element says
+`smooth`, over Chromium's curve and duration: cubic-bezier(.42, 0, .58, 1)
+across 16.6 ms for each root pixel of distance, at most 700 ms, each number
+read frame by frame from a live headless browser. This was declined a few
+hours earlier for want of any way to read those frames; `tests/chromium.py
+sample` now reads them, over the DevTools pipe with the standard library
+alone. A wheel, a key or a new page cancels the scroll. On the body alone
+the viewport stays instant, as in Chromium. Twenty-three checks in
+`tests/unit/test_scrollbehavior.f`, and the window checked by hand under
+Xvfb (todo.md).
+
 ### `inherit` on a property that does not inherit, and `all: inherit`
 
 Two hundred and seven of the 298 properties the instrument counts as

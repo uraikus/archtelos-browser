@@ -56,31 +56,45 @@ checkEqInt(findById(plain, 'b0').w, 300, 'each filling the container')
 
 // ---- column-count --------------------------------------------------------
 
+// `column-gap: normal` is 1em in a multi-column container (16px here), so a
+// 300px container with two columns has columns of (300 - 16) / 2 = 142 and
+// the second starts at 158. Every number in this section is Chromium's.
 Box two = colsOf('column-count:2')
 checkEqInt(findById(two, 'c').h, 90, 'two columns halve the height')
-checkEqInt(findById(two, 'b0').w, 150, 'and halve the width of what is in them')
+checkEqInt(findById(two, 'b0').w, 142, 'and take the gap out of the width of what is in them')
 checkEqInt(findById(two, 'b0').x, 0, 'the first block is in the first column')
 checkEqInt(findById(two, 'b0').y, 0, 'at the top')
 checkEqInt(findById(two, 'b2').y, 60, 'the third is still in the first column')
 checkEqInt(findById(two, 'b2').x, 0, 'which has room for three')
-checkEqInt(findById(two, 'b3').x, 150, 'the fourth starts the second column')
+checkEqInt(findById(two, 'b3').x, 158, 'the fourth starts the second column, a gap past the first')
 checkEqInt(findById(two, 'b3').y, 0, 'back at the top')
+Box twoNormal = colsOf('column-count:2;column-gap:normal')
+checkEqInt(findById(twoNormal, 'b3').x, 158, '`column-gap: normal` says it outright')
+Box twoNone = colsOf('column-count:2;column-gap:0')
+checkEqInt(findById(twoNone, 'b0').w, 150, 'and a gap of nothing, written, is nothing')
+checkEqInt(findById(twoNone, 'b3').x, 150, 'with the columns side by side')
 
-Box three = colsOf('column-count:3')
+Box three = colsOf('column-count:3;column-gap:0')
 checkEqInt(findById(three, 'c').h, 60, 'three columns take a third of the height')
 checkEqInt(findById(three, 'b2').x, 100, 'and the third block starts the second column')
 checkEqInt(findById(three, 'b4').x, 200, 'the fifth the third column')
 
 // ---- column-width --------------------------------------------------------
-// A width asks for as many columns of at least that width as fit.
+// A width asks for as many columns of at least that width as fit, counting
+// the gap between them: floor((300 + 16) / (100 + 16)) is two, not three.
 
 Box byWidth = colsOf('column-width:100px')
-checkEqInt(findById(byWidth, 'b0').w, 100, 'column-width gives three columns of 100 in 300')
-checkEqInt(findById(byWidth, 'b2').x, 100, 'and fills them in turn')
+checkEqInt(findById(byWidth, 'b0').w, 142, 'column-width:100px gives two columns of 142 in 300')
+checkEqInt(findById(byWidth, 'b3').x, 158, 'the second a gap past the first')
+Box byWidthFits = colsOf('column-width:100px;column-gap:0')
+checkEqInt(findById(byWidthFits, 'b0').w, 100, 'with no gap it is three columns of 100')
+checkEqInt(findById(byWidthFits, 'b2').x, 100, 'and fills them in turn')
+Box byWide = colsOf('column-width:150px')
+checkEqInt(findById(byWide, 'b0').w, 300, 'a width of 150 does not fit twice with the gap: one column')
 
 // Both together: the count is a maximum.
 Box both = colsOf('column-width:100px;column-count:2')
-checkEqInt(findById(both, 'b0').w, 150, 'a count beside a width caps the number of columns')
+checkEqInt(findById(both, 'b0').w, 142, 'a count beside a width caps the number of columns')
 
 // ---- column-gap ----------------------------------------------------------
 
@@ -515,5 +529,83 @@ Box avoidK = layoutHtml(head
 Box avoidW = findById(avoidK, 'w')
 checkEqInt(boxFragCount(avoidW), 0, '`avoid` keeps the wrapper in one piece')
 checkEqInt(avoidW.h, 64, 'at its whole height')
+
+// ---- floats in a column --------------------------------------------------
+// A multi-column container is a block formatting context, so it holds its
+// floats, and the columns balance over what they take: a 60px float alone
+// in two columns makes a container 30px tall and is cut in two at the
+// break, one 50x30 piece in each column (`getClientRects` in Chromium
+// returns one rectangle per piece). Every number here is Chromium's, from
+// 400px containers with no gap and words that are 40x20 boxes, so no font
+// decides anything. A float is cut only where it has nothing inside it to
+// move, as every other box here is.
+
+text func colWords(n:int) {
+    text out = ''
+    for int i = 0, i < n, i++ {
+        out = out + '<span style="display:inline-block;width:40px;height:20px;vertical-align:top"></span>'
+    }
+    return out
+}
+
+text func colFloat(side:text, w:int, h:int) {
+    return `<div id="f" style="float:${side};width:${w}px;height:${h}px"></div>`
+}
+
+Box func floatCols(style:text, inner:text) {
+    return layoutHtml(head + `<div id="c" style="width:400px;column-count:2;column-gap:0;${style}">${inner}</div></body>`, 400)
+}
+
+Box fa = floatCols('', colFloat('left', 50, 60))
+checkEqInt(findById(fa, 'c').h, 30, 'a 60px float alone: the container balances to 30')
+checkEqInt(findById(fa, 'f').h, 30, 'and the float keeps the part in its column')
+checkEqInt(boxFragCount(findById(fa, 'f')), 1, 'with one more piece')
+checkEqInt(boxFrag(findById(fa, 'f'), 0).x, 200, 'in the second column')
+checkEqInt(boxFrag(findById(fa, 'f'), 0).h, 30, 'the other half')
+
+Box fb = floatCols('', colFloat('left', 50, 20))
+checkEqInt(findById(fb, 'c').h, 10, 'a 20px float: the container is 10')
+checkEqInt(boxFrag(findById(fb, 'f'), 0).h, 10, 'and its two pieces are 10 each')
+
+Box fc = floatCols('', colFloat('left', 50, 60) + colWords(8))
+checkEqInt(findById(fc, 'c').h, 40, 'eight words beside it: lines of 20 make the column 40')
+checkEqInt(findById(fc, 'f').h, 40, 'the float is cut where the column ends')
+checkEqInt(boxFrag(findById(fc, 'f'), 0).h, 20, 'and the last 20 are in the next')
+
+Box fd = floatCols('', colFloat('left', 50, 60) + colWords(26))
+checkEqInt(findById(fd, 'c').h, 80, 'twenty-six words: 80, the lines deciding')
+checkEqInt(findById(fd, 'f').h, 60, 'a float shorter than the column is not cut')
+checkEqInt(boxFragCount(findById(fd, 'f')), 0, 'and has no second piece')
+
+Box fe = floatCols('', colFloat('left', 50, 40) + colWords(26))
+checkEqInt(findById(fe, 'c').h, 60, 'a 40px float over twenty-six words: 60')
+
+Box ff = floatCols('height:40px;column-fill:auto', colFloat('left', 50, 60))
+checkEqInt(findById(ff, 'f').h, 40, 'in a container 40 tall that fills one column first, 40 stay')
+checkEqInt(boxFrag(findById(ff, 'f'), 0).h, 20, 'and 20 go on')
+
+Box fg = floatCols('', colFloat('right', 50, 60))
+checkEqInt(findById(fg, 'f').x, 150, 'a float to the right is at the right of its column')
+checkEqInt(boxFrag(findById(fg, 'f'), 0).x, 350, 'and of the next')
+
+Box fh = floatCols('', '<div style="height:30px"></div>' + colFloat('left', 50, 30) + '<div style="height:30px"></div>')
+checkEqInt(findById(fh, 'c').h, 30, 'a float after a block that fills the first column')
+checkEqInt(findById(fh, 'f').x, 200, 'goes to the top of the second')
+checkEqInt(findById(fh, 'f').y, 0, 'at its top')
+checkEqInt(boxFragCount(findById(fh, 'f')), 0, 'whole')
+
+Box fi = floatCols('', colFloat('left', 50, 60) + '<div style="height:60px"></div>')
+checkEqInt(findById(fi, 'c').h, 30, 'a float beside a 60px block: 30')
+checkEqInt(boxFrag(findById(fi, 'f'), 0).x, 200, 'cut in two like it')
+
+Box fj = floatCols('', colFloat('left', 50, 100) + '<div style="height:30px"></div>')
+checkEqInt(findById(fj, 'c').h, 50, 'a 100px float and a 30px block: the float decides, 50')
+checkEqInt(findById(fj, 'f').h, 50, 'half of it in the first column')
+checkEqInt(boxFrag(findById(fj, 'f'), 0).h, 50, 'half in the second')
+
+// A float in a column does not leave its place in the flow behind: the
+// control, with the float taken out, is the container the blocks alone make.
+Box fk = floatCols('', '<div style="height:30px"></div><div style="height:30px"></div>')
+checkEqInt(findById(fk, 'c').h, 30, 'two 30px blocks and no float: 30')
 
 finish('multicol')

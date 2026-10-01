@@ -58,7 +58,7 @@ selector drops its whole rule. What is left of CSS Cascade 4:
    a press of button 6 or 7 and this reads those; a Windows build reads
    `WM_MOUSEWHEEL` only, so the same gesture produces nothing there
    (FINDINGS.md, finding 38; festina.md §3s). What is also missing is a
-   keyboard scroll of the focused container, `scroll-behavior`, and a
+   keyboard scroll of the focused container and a
    click on the empty part of a track, which every browser treats as a
    page up or down.
 
@@ -4859,25 +4859,42 @@ the more practical instrument.
 by this network's egress policy, so a session cannot fetch the document
 itself; it has to be handed in.
 
-### `scroll-behavior`, measured and not taken
+### `scroll-behavior`, measured
 
-The property has a row in `css-properties.txt` (`smooth`) and no field in
-`Style`, so it grades as changing nothing, and the only thing in this
-engine it could act on is a fragment jump (`goToFragment`). Adding the
-field would move the count by one and leave the page jumping, which is a
-count that rose without the feature working.
+Read frame by frame with `tests/chromium.py sample` (a live headless
+browser over the DevTools pipe; `--dump-dom` produces no frames and a
+smooth scroll never advances there). A page with `html {
+scroll-behavior: smooth }`, a fragment link or `scrollIntoView()`, and
+`window.scrollY` read every animation frame:
 
-What would make it real is a scroll that takes time -- a timer stepping
-`scrollY` toward the target, which the animation clock's timer could
-carry -- and the curve and duration to give it. Neither is measurable
-with what is here. A page with `html { scroll-behavior: smooth }` that
-calls `scrollIntoView()` on an element 500px down and samples
-`scrollY` every 16 ms for 2.5 s, under `headless_shell --dump-dom`,
-reads 0 at every sample, and the same at 2000px: the animation is
-driven by compositor frames and this mode produces none. A headed
-browser under Xvfb could be asked, but it would need a driver the
-project does not have (no Playwright or DevTools client is installed,
-and adding one needs permission).
+| distance (px) | arrives (ms) |
+|---|---|
+| 100 | 165 |
+| 250 | 265 |
+| 500 | 375 |
+| 1000 | 520 |
+| 2000 | 695 |
+| 5000 and 10000 | 700 |
+
+The position follows cubic-bezier(.42, 0, .58, 1) over that time (root
+mean square error under 2px at every distance up to 2000), and the time is
+16.6 ms times the square root of the distance, capped at 700. Also
+measured: the first frame moves after one frame (about 17 ms); a click on
+a link is smooth with the same numbers as `scrollIntoView()`; `scroll-
+behavior: smooth` on the body alone leaves the viewport instant, so the
+viewport takes the root element's value; `behavior: 'instant'` overrides
+it; and scrolling up is the same curve backward. Held in `smoothScrollAt`
+and `smoothScrollDuration` in `src/css/animation.f` and checked in
+`tests/unit/test_scrollbehavior.f`. The window's timer was checked by hand
+under Xvfb: the target's top edge read 603, 423, 231, 159, 82, 43 and 36
+pixels from the screen top at 50 ms intervals, arriving where an instant
+jump arrives.
+
+Not done: a scroll container's own `scroll-behavior` (a fragment target
+inside one is set when the document is laid out, and there is no
+programmatic scroll for the property to act on), the keyboard (Chromium
+scrolls smoothly on a key press, and this engine's keys are instant), and
+a wheel, which is instant in Chromium and here.
 
 ## HTML: the remaining conformance gap
 
@@ -5080,16 +5097,10 @@ what agrees):
 A box that establishes one now contains its floats, isolates them from
 the list outside it, keeps its margins from collapsing with its
 children's and goes beside the floats in the context it is in (forty-eight
-fixtures against Chromium, in `tests/unit/test_bfc.f`). Two things
-measured differently are left:
+fixtures against Chromium, in `tests/unit/test_bfc.f`), and so does a
+multicol container, whose floats are cut at the column breaks
+(`tests/unit/test_multicol.f`). Two things measured differently are left:
 
-- **A multicol container does not contain its floats.** `<div
-  style="column-count:2"><div style="float:left;width:50px;height:60px">`
-  is 400x30 in Chromium and 400x0 here, and the float's own rectangle is
-  258x30 there where 50x60 is declared, which has not been explained.
-  `boxEstablishesBFC` does not ask for a multicol container for that
-  reason: containing the float here would fix the container's height and
-  leave the float's size disagreeing.
 - **Why a call that takes a `Box` cost 6 to 8 million instructions a site
   is not known.** Written as `flag && boxEstablishesBFC(b)` or as a nested
   `if`, in `collapsedTopMargin`, `collapsedBottomMargin`, the child loop's

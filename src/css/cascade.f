@@ -276,6 +276,9 @@ bool cascadeSawWillChange = false
 bool cascadeSawInteractivity = false
 // And for `scroll-initial-target`, which the pass after layout reads.
 bool cascadeSawInitialTarget = false
+
+// And for `scroll-behavior`, which the shell reads when it scrolls.
+bool cascadeSawScrollBehavior = false
 // And for `view-transition-name`, which the painter's stacking
 // predicate reads.
 bool cascadeSawViewTransition = false
@@ -407,6 +410,9 @@ void func cascadeReset() {
     cascadeSawWillChange = false
     cascadeSawInteractivity = false
     cascadeSawInitialTarget = false
+    cascadeSawScrollBehavior = false
+    smoothScrollOfSerial = {}
+    anySmoothScroll = false
     cascadeSawViewTransition = false
     cascadeSawMathDepth = false
     cascadeSawRuby = false
@@ -581,6 +587,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawInitialTarget && dn == 'scroll-initial-target' {
                 cascadeSawInitialTarget = true
+            }
+            if !cascadeSawScrollBehavior && dn == 'scroll-behavior' {
+                cascadeSawScrollBehavior = true
             }
             if !cascadeSawViewTransition && dn == 'view-transition-name' {
                 cascadeSawViewTransition = true
@@ -1969,6 +1978,9 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawInitialTarget && decls[d].name == 'scroll-initial-target' {
                 cascadeSawInitialTarget = true
+            }
+            if !cascadeSawScrollBehavior && decls[d].name == 'scroll-behavior' {
+                cascadeSawScrollBehavior = true
             }
             if !cascadeSawViewTransition && decls[d].name == 'view-transition-name' {
                 cascadeSawViewTransition = true
@@ -7567,6 +7579,17 @@ void func applyInitialTarget(s:Style, props:map[text]) {
     }
 }
 
+// `scroll-behavior` does not inherit, and only `smooth` asks for anything
+// (todo.md has Chromium's frames).
+void func applyScrollBehavior(s:Style, props:map[text]) {
+    ascii decl = styleProp(props, 'scroll-behavior')
+    if decl == null { return }
+    if asciiLower(asciiTrim(decl)) == 'smooth' {
+        smoothScrollOfSerial[`${s.serial}`] = true
+        anySmoothScroll = true
+    }
+}
+
 // `interactivity` does not inherit, and only `inert` does anything here
 // (CSS UI 4). What the subtree gets is the hit tester stopping above it.
 void func applyInteractivity(s:Style, props:map[text]) {
@@ -8165,6 +8188,7 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     if cascadeSawWillChange { applyWillChange(s, props) }
     if cascadeSawInteractivity { applyInteractivity(s, props) }
     if cascadeSawInitialTarget { applyInitialTarget(s, props) }
+    if cascadeSawScrollBehavior { applyScrollBehavior(s, props) }
     if cascadeSawViewTransition { applyViewTransition(s, props) }
     refreshFontKey(s)
     // CSS Color Adjustment 1 §2. `color-scheme` is inherited, and it
@@ -9388,6 +9412,19 @@ Style func computeStyleValues(n:Node, parentIn:Style, isRootIn:bool, props:map[t
     // `gap` reaches here as `row-gap` and `column-gap`.
     s.rowGap = pxProp(props, 'row-gap', s.fontSize, s.rowGap)
     s.columnGap = pxProp(props, 'column-gap', s.fontSize, s.columnGap)
+    // `column-gap: normal` is 1em in a multi-column container and nothing
+    // in a grid or flex one (CSS Multi-column 1 §3.3, measured: 16px in a
+    // 300px container with two columns is columns of 142 and a second one
+    // at 158). This field is shared, so the multi-column case is decided
+    // where both it and the font size are known.
+    if s.columnCount > 0 || s.columnWidth.kind == LEN_PX {
+        ascii writtenGap = styleProp(props, 'column-gap')
+        bool gapWritten = false
+        if writtenGap != null && cssWideKeyword(writtenGap) == CSSWIDE_NONE {
+            gapWritten = parseLength(writtenGap, s.fontSize).kind == LEN_PX
+        }
+        if !gapWritten { s.columnGap = s.fontSize }
+    }
     s.order = 0
     ascii od = styleProp(props, 'order')
     if od != null {

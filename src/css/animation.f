@@ -1533,3 +1533,34 @@ void func applyAnimations(props:map[text], parent:Style) {
         }
     }
 }
+
+// ---- a smooth scroll ---------------------------------------------------
+//
+// `scroll-behavior: smooth` makes a scroll the page asks for take time.
+// Both numbers are Chromium's, read a frame at a time with
+// `tests/chromium.py sample` (tests/unit/test_scrollbehavior.f has the
+// frames): the position follows cubic-bezier(.42, 0, .58, 1) over a
+// duration that grows with the square root of the distance, 16.6 ms for
+// each root pixel, and stops growing at 700 ms.
+const float SMOOTH_SCROLL_MS_PER_ROOT_PX = 16.6
+const float SMOOTH_SCROLL_MAX_MS = 700.0
+
+int func smoothScrollDuration(distance:int) {
+    float d = distance < 0 ? (0 - distance).toFloat() : distance.toFloat()
+    float ms = SMOOTH_SCROLL_MS_PER_ROOT_PX * Math.sqrt(d)
+    if ms > SMOOTH_SCROLL_MAX_MS { ms = SMOOTH_SCROLL_MAX_MS }
+    return Math.round(ms)
+}
+
+// Where a scroll that began at `from` and was sent to `to` is, `elapsedMs`
+// later.
+int func smoothScrollAt(from:int, to:int, elapsedMs:float) {
+    int distance = to - from
+    if distance == 0 { return to }
+    float total = smoothScrollDuration(distance).toFloat()
+    if elapsedMs >= total { return to }
+    if elapsedMs <= 0.0 { return from }
+    float eased = animTimingAt(animBezier(0.42, 0.0, 0.58, 1.0), elapsedMs / total)
+    return from + Math.round(distance.toFloat() * eased)
+}
+
