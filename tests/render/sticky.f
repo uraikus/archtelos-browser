@@ -213,4 +213,151 @@ check(scHitQ != null && getAttr(scHitQ.node, 'id') == 'q', 'a click on the stuck
 Box scHitBehind = hitTest(scHit.root, 10, 100)
 check(scHitBehind == null || getAttr(scHitBehind.node, 'id') != 'q', 'and one below it does not')
 
+// ---- left and right --------------------------------------------------
+//
+// The other axis is the same rule across: a `left` inset can only push
+// the box right, a `right` inset can only pull it left, and the total is
+// clamped to the two distances the box can travel inside its containing
+// block's content box. Every row is the number Chromium gave for the
+// same document (todo.md, "left and right on a sticky box"), as a
+// position in the scroller's content box.
+//
+// The document cannot scroll across here -- the shell has no horizontal
+// page scroll -- so a box in the page is only moved from where the flow
+// put it to where its inset wants it, and the scroller is where
+// scrolling across is checked.
+
+// A containing block `cbW` wide, a flex row so that the box is `spacer`
+// pixels in without a float or an inline run, with the marker 50px wide
+// and 20px tall.
+text func hRow(decl:text, spacer:int, cbW:int, cbStyle:text) {
+    return `<div id="cb" style="position:relative;display:flex;width:${cbW}px;height:50px;${cbStyle}">`
+        + `<div style="flex:none;width:${spacer}px;height:1px"></div>`
+        + `<div id="q" style="${decl};flex:none;width:50px;height:20px;background:#0088ff"></div></div>`
+}
+
+// The first marker column along row 10, or -1.
+int func hFirst(x0:int, x1:int) {
+    for int x = x0, x < x1, x++ {
+        if getPixelColor(x, 10) == stMark { return x }
+    }
+    return -1
+}
+
+int func hDocPos(decl:text, spacer:int, cbW:int, cbStyle:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0">' + hRow(decl, spacer, cbW, cbStyle) + '</body>',
+        'tests/fixtures/page.html', 400)
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    return hFirst(0, 400)
+}
+
+text H_LEFT = 'position:sticky;left:10px'
+text H_RIGHT = 'position:sticky;right:10px'
+
+checkEqInt(hDocPos(H_LEFT, 0, 1000, ''), 10, 'a left inset pushes a box at the edge in')
+checkEqInt(hDocPos(H_LEFT, 100, 1000, ''), 100, 'and leaves a box beyond it alone')
+checkEqInt(hDocPos('position:sticky', 0, 1000, ''), 0, 'a sticky box with no inset stays put')
+checkEqInt(hDocPos(H_RIGHT, 500, 1000, ''), 340, 'a right inset pulls a box beyond the viewport back to its edge less 10')
+checkEqInt(hDocPos(H_RIGHT, 100, 1000, ''), 100, 'and leaves a box inside it alone')
+checkEqInt(hDocPos(H_RIGHT, 0, 200, ''), 0, 'a containing block narrower than the view clamps it')
+checkEqInt(hDocPos('position:sticky;left:10%', 0, 1000, ''), 40, 'a percentage inset is of the viewport, not the containing block')
+checkEqInt(hDocPos('position:sticky;right:10%', 500, 1000, ''), 310, 'on the right as well')
+checkEqInt(hDocPos('position:sticky;left:10px;right:10px', 100, 1000, ''), 100, 'both insets together leave a box that fits where it is')
+// Two ways to say the same: a percentage is the pixels it resolves to.
+checkEqInt(hDocPos('position:sticky;left:10%', 0, 1000, ''), hDocPos('position:sticky;left:40px', 0, 1000, ''),
+    'a percentage inset equals its pixels')
+// The clamp is to the content box: 30px of padding and 30px of border
+// on the left of the block put its content at 60, where the box rests
+// even though `left: 10px` asks for less.
+checkEqInt(hDocPos(H_LEFT, 0, 600, 'padding-left:30px;border-left:30px solid #444;box-sizing:content-box'), 60,
+    'a box is clamped to its containing block content box')
+
+// Scrolling across, in a 300px container with 7px of border, 5px of
+// padding before and 8 after, so the content box starts at screen
+// column 62.
+text func hScDoc(decl:text, spacer:int, cbW:int, cbStyle:text) {
+    return '<!doctype html><body style="margin:0;font-size:0">'
+        + '<div id="sc" style="width:300px;height:100px;overflow:auto;position:absolute;left:50px;top:0;'
+        + 'border-left:7px solid #888;padding-left:5px;padding-right:8px;font-size:0">'
+        + hRow(decl, spacer, cbW, cbStyle)
+        + '<div style="width:1600px;height:1px"></div></div></body>'
+}
+
+int func hScPos(decl:text, spacer:int, cbW:int, cbStyle:text, inner:int) {
+    Page p = pageFromHtml(hScDoc(decl, spacer, cbW, cbStyle), 'tests/fixtures/page.html', 400)
+    Box sc = null
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if getAttr(all[i].node, 'id') == 'sc' { sc = all[i] }
+    }
+    if inner > 0 { boxScrollLeftBy(sc, inner) }
+    clearCanvas()
+    paintPage(p, 0, 0, 300)
+    int x = hFirst(0, 400)
+    return x < 0 ? -1 : x - 62 + inner
+}
+
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 0), 10, 'left: 10px with the box first: stuck at scroll 0')
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 20), 30, 'and at scroll 20')
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 60), 70, 'and at scroll 60')
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 300), 310, 'and at scroll 300')
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 700), 710, 'and at scroll 700')
+// Past the clamp the box is where the end of its containing block is, and
+// a few pixels more scroll would carry it out of the container's clip, so
+// the check is made while it is still in view.
+checkEqInt(hScPos(H_LEFT, 0, 1000, '', 945), 950, 'clamped to the end of its containing block')
+checkEqInt(hScPos(H_LEFT, 100, 1000, '', 0), 100, 'a box beyond its stop waits at scroll 0')
+checkEqInt(hScPos(H_LEFT, 100, 1000, '', 60), 100, 'and at scroll 60')
+checkEqInt(hScPos(H_LEFT, 100, 1000, '', 100), 110, 'until it is reached')
+checkEqInt(hScPos(H_LEFT, 100, 1000, '', 200), 210, 'and then rides along')
+checkEqInt(hScPos(H_RIGHT, 600, 1000, '', 0), 240, 'a right inset pulls it to the view edge less 10')
+checkEqInt(hScPos(H_RIGHT, 600, 1000, '', 60), 300, 'and carries it along as the container scrolls')
+checkEqInt(hScPos(H_RIGHT, 600, 1000, '', 300), 540, 'at scroll 300')
+checkEqInt(hScPos(H_RIGHT, 600, 1000, '', 500), 600, 'until it reaches its natural place')
+checkEqInt(hScPos(H_RIGHT, 600, 1000, '', 560), 600, 'and stays in it')
+checkEqInt(hScPos('position:sticky;left:0', 0, 200, '', 152), 150, 'a narrow containing block clamps at its far edge')
+checkEqInt(hScPos('position:sticky;left:10px;right:10px', 100, 1000, '', 0), 100, 'both insets: a box that fits stays')
+checkEqInt(hScPos('position:sticky;left:10px;right:10px', 100, 1000, '', 200), 210, 'and both at scroll 200')
+checkEqInt(hScPos(H_LEFT, 0, 600, 'padding-left:30px;border-left:30px solid #444;box-sizing:content-box', 0), 60,
+    'rests inside the containing block content box')
+checkEqInt(hScPos(H_LEFT, 0, 600, 'padding-left:30px;border-left:30px solid #444;box-sizing:content-box', 605), 610,
+    'and is clamped to its far edge')
+// A percentage inset is of the scrollport's width -- 300 -- and not of
+// the 1000px containing block.
+checkEqInt(hScPos('position:sticky;left:10%', 0, 1000, '', 0), 30, 'left: 10% is of the container content box')
+checkEqInt(hScPos('position:sticky;left:10%', 0, 1000, '', 60), 90, 'and rides along')
+checkEqInt(hScPos('position:sticky;left:10%', 0, 1000, '', 60), hScPos('position:sticky;left:30px', 0, 1000, '', 60),
+    'and equals its pixels')
+
+// A click lands where the box is drawn across as well as down.
+Page hHit = pageFromHtml(hScDoc(H_LEFT, 0, 1000, ''), 'tests/fixtures/page.html', 400)
+arr[Box] hHitBoxes = []
+collectBoxesForTag(hHit.root, 'div', hHitBoxes)
+for int i = 0, i < hHitBoxes.length, i++ {
+    if getAttr(hHitBoxes[i].node, 'id') == 'sc' { boxScrollLeftBy(hHitBoxes[i], 200) }
+}
+// Scrolled 200 across, the box is laid out at screen column 62 and drawn
+// 200 right of that, plus the 10px inset.
+Box hHitQ = hitTest(hHit.root, 62 + 10 + 20, 10)
+check(hHitQ != null && getAttr(hHitQ.node, 'id') == 'q', 'a click on the box where it is stuck reaches it')
+Box hHitNot = hitTest(hHit.root, 62 + 200 + 10 + 80, 10)
+check(hHitNot == null || getAttr(hHitNot.node, 'id') != 'q', 'and one beyond its right edge does not')
+
+// ---- percentages in the vertical inset ---------------------------------
+//
+// A percentage inset is of the scrollport -- the box it sticks to --
+// and not of the containing block. The document is 300px tall here, so
+// `top: 10%` is 30px, and the box (natural place 50, containing block
+// 100 tall) is stuck 30px below the top edge.
+checkEqInt(stTop('position:sticky;top:10%', 60), 30, 'top: 10% of the viewport, not of the 100px containing block')
+checkEqInt(stTop('position:sticky;top:10%', 60), stTop('position:sticky;top:30px', 60), 'which is its pixels')
+checkEqInt(stTop('position:sticky;top:10%', 20), stTop('position:sticky;top:30px', 20), 'at another scroll too')
+// In a container it is the container's content height, 100px: the same
+// rows as `top: 10px`.
+checkEqInt(scPos('auto', 'position:sticky;top:10%', 400, 0, 100, 60, 0), 75, 'top: 10% in a 100px container is 10px')
+checkEqInt(scPos('auto', 'position:sticky;top:10%', 400, 0, 100, 200, 0), 215, 'and at scroll 200')
+checkEqInt(scPos('auto', 'position:sticky;bottom:10%', 400, 300, 100, 60, 0), 135, 'bottom: 10% in a 100px container is 10px')
+
 finish('sticky')

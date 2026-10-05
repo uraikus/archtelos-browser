@@ -4461,6 +4461,42 @@ scroll offset.
 
 The measurement alone; the tests and the implementation follow.
 
+### `left` and `right` on a sticky box, and what a percentage is of
+
+The other axis is the same rule across, and the documents that measured it
+are the vertical ones with the axes swapped. A 300px-wide scroller (7px
+`border-left`, 5px `padding-left`, 8px `padding-right`, `overflow: auto`)
+holding a 1000px flex row as its containing block, a 50px sticky item in it,
+and 1600px of width below so that it scrolls; positions are
+`rect.left - content-left + scrollLeft`.
+
+| item | scrollLeft 0 | 20 | 60 | 100 | 200 | 300 | 500 | 700 | 1000 |
+|---|---|---|---|---|---|---|---|---|---|
+| `left:10px`, first | **10** | 30 | 70 | 110 | 210 | 310 | 510 | 710 | **950** |
+| `left:10px`, after 100px | 100 | 100 | 100 | 110 | 210 | 310 | 510 | 710 | 950 |
+| `right:10px`, after 600px | **240** | 260 | 300 | 340 | 440 | 540 | 600 | 600 | 600 |
+| `left:0` in a 200px block | 0 | 20 | 60 | 100 | 150 | 150 | 150 | 150 | 150 |
+| `left:10px; right:10px`, after 100px | 100 | 100 | 100 | 110 | 210 | 310 | 510 | 710 | 950 |
+| `left:10px`, block with 30px padding and border | 60 | 60 | 70 | 110 | 210 | 310 | 510 | 610 | 610 |
+| `left:10%`, first | **30** | 50 | 90 | 130 | 230 | 330 | 530 | 730 | 950 |
+
+- The rule is the vertical one: the view is the scroller's content box
+  moved by its own scroll offset, a `left` inset only pushes right, a
+  `right` inset only pulls left, and the result stays in the containing
+  block's content box (rows four and six).
+- **A percentage inset is of the scrollport, not of the containing block.**
+  `left: 10%` is 30 in a 300px scroller whose containing block is 1000px
+  wide. The vertical axis does the same: in a 300px viewport `top: 10%` on a
+  box in a 100px containing block holds the box 30px down the screen (doc
+  position 90 at scroll 60) where this engine had held it 10px down, and
+  `bottom: 10%` is 30px up.
+- In the document, a viewport 300px wide put `left: 10px` at 10, `left:
+  10px` after 100px at 100, `right: 10px` after 500px at 240 (a view's
+  width less 10 less the box), `right: 10px` in a 200px block at 0 and
+  `left: 10%` at 30. The document cannot be scrolled across here -- the
+  shell has no horizontal page scroll -- so only those placements, and the
+  scroller, are checkable.
+
 ### The four synthesis controls, measured -- one of them acts here
 
 **`font-synthesis-small-caps` has landed**, with the `font-synthesis`
@@ -5145,11 +5181,6 @@ multicol container, whose floats are cut at the column breaks
 The layout engine handles normal flow well and does not attempt the
 rest. In rough order of how often real pages need it:
 
-- **`left` and `right` on a sticky box.** They need a horizontal scroll
-  offset, and the painter has a `paintScrollY` and no `paintScrollX`,
-  because the document itself does not scroll across. (A scroll
-  container's own `boxScrollLeft` is there, so only the document's
-  scrollport lacks one.)
 - **Sub-pixel layout.** Every length is an integer, so three items
   sharing 400px are 133, 134 and 133 where a browser keeps 133.33 and
   rounds only when painting. Distributing free space by rounding the

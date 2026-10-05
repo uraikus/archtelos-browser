@@ -4007,39 +4007,86 @@ Box func stickyScroller(b:Box) {
     return null
 }
 
-int func stickyOffsetY(b:Box) {
+// The shift `stickyShift` last worked out, which is two numbers and so
+// is left in two globals.
+int stickyDx = 0
+int stickyDy = 0
+
+// How far `b` is drawn from where it was laid out, down and across --
+// the two axes are one rule, and share the scrollport and the
+// containing block, so they are found together. A percentage inset is of
+// the scrollport and not of the containing block, which is not what a
+// reader of the rule would guess and which Chromium measured: `top: 10%`
+// on a box in a 100px containing block in a 300px viewport is 30px.
+void func stickyShift(b:Box) {
+    stickyDx = 0
+    stickyDy = 0
     Style s = b.style
-    if s == null { return 0 }
+    if s == null { return }
     int viewTop = paintScrollY
     int viewHeight = paintViewHeight
+    int viewLeft = 0
+    int viewWidth = canvasViewWidth()
     Box scroller = stickyScroller(b)
     if scroller != null {
         viewTop = contentY(scroller) + boxScrollTop(scroller)
         viewHeight = scrollVisibleHeight(scroller)
+        viewLeft = contentX(scroller) + boxScrollLeft(scroller)
+        viewWidth = scrollHVisibleWidth(scroller)
     }
     // The containing block is the parent's content box -- measured with
     // 30px of padding and 30px of border on the parent, which separates
     // that rectangle from its padding box and its border box. It is
-    // both what a percentage inset is of and what the shift is clamped
-    // to.
+    // what the shift is clamped to.
     Box up = parentBox(b)
     int cbTop = up == null ? b.y : contentY(up)
     int cbHeight = up == null ? b.h : up.h - up.pt - up.pb - up.bt - up.bb
+    int cbLeft = up == null ? b.x : contentX(up)
+    int cbWidth = up == null ? b.w : contentWidth(up)
     int dy = 0
     if !lenIsAuto(s.top) {
-        int want = viewTop + resolveLen(s.top, cbHeight, 0)
+        int want = viewTop + resolveLen(s.top, viewHeight, 0)
         if want > b.y { dy = want - b.y }
     }
     if !lenIsAuto(s.bottom) {
-        int limit = viewTop + viewHeight - resolveLen(s.bottom, cbHeight, 0)
+        int limit = viewTop + viewHeight - resolveLen(s.bottom, viewHeight, 0)
         if b.y + b.h + dy > limit { dy = limit - b.y - b.h }
     }
-    if dy == 0 || up == null { return dy }
-    int low = cbTop - b.y
-    int high = cbTop + cbHeight - b.y - b.h
-    if dy < low { dy = low }
-    if dy > high { dy = high }
-    return dy
+    int dx = 0
+    if !lenIsAuto(s.left) {
+        int want = viewLeft + resolveLen(s.left, viewWidth, 0)
+        if want > b.x { dx = want - b.x }
+    }
+    if !lenIsAuto(s.right) {
+        int limit = viewLeft + viewWidth - resolveLen(s.right, viewWidth, 0)
+        if b.x + b.w + dx > limit { dx = limit - b.x - b.w }
+    }
+    if up != null {
+        if dy != 0 {
+            int low = cbTop - b.y
+            int high = cbTop + cbHeight - b.y - b.h
+            if dy < low { dy = low }
+            if dy > high { dy = high }
+        }
+        if dx != 0 {
+            int low = cbLeft - b.x
+            int high = cbLeft + cbWidth - b.x - b.w
+            if dx < low { dx = low }
+            if dx > high { dx = high }
+        }
+    }
+    stickyDx = dx
+    stickyDy = dy
+}
+
+int func stickyOffsetY(b:Box) {
+    stickyShift(b)
+    return stickyDy
+}
+
+int func stickyOffsetX(b:Box) {
+    stickyShift(b)
+    return stickyDx
 }
 
 // Set to the box `paintSticky` is re-entering `paintBox` for, so its
@@ -4049,8 +4096,10 @@ int func stickyOffsetY(b:Box) {
 int stickyBoxId = 0
 
 void func paintSticky(b:Box) {
-    int dy = stickyOffsetY(b)
-    if dy == 0 {
+    stickyShift(b)
+    int dx = stickyDx
+    int dy = stickyDy
+    if dx == 0 && dy == 0 {
         int plain = stickyBoxId
         stickyBoxId = b.id
         paintBox(b)
@@ -4058,7 +4107,7 @@ void func paintSticky(b:Box) {
         return
     }
     pSaveState()
-    pTranslate(0, dy)
+    pTranslate(dx, dy)
     // The cull is in document coordinates and this subtree is now drawn
     // `dy` from where it was laid out, so the window moves with it --
     // otherwise a box stuck at the top of the screen is culled for
@@ -5244,7 +5293,11 @@ Box func hitChild(c:Box, x:int, y:int) {
     // under it is tested. The offset is worked out from the scroll
     // position the painter last drew at, which is the one the click
     // arrived on: a click is answered after a paint, not before one.
-    if anySticky && c.style.position == POS_STICKY { hy = hy - stickyOffsetY(c) }
+    if anySticky && c.style.position == POS_STICKY {
+        stickyShift(c)
+        hx = hx - stickyDx
+        hy = hy - stickyDy
+    }
     if cascadeSawTransform && c.style.transforms.length > 0 {
         untransformPoint(c, hx, hy)
         hx = untransformedX

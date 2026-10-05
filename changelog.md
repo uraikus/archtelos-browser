@@ -5,6 +5,22 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### `position: sticky` honours `left` and `right`, and a percentage inset is of the scrollport
+
+The painter shifted a sticky box down and up and never across. It now
+finds both axes together: the view is the scrollport's content box, moved by
+the scroll container's own scroll offset (`boxScrollLeft`) or, in the
+document, the viewport; a `left` inset only pushes the box right, a `right`
+inset only pulls it left, and the result stays in the containing block's
+content box. Clicks come back through the same shift on both axes. The same
+measurement found that a percentage inset is of the scrollport and not of
+the containing block, so `top: 10%` in a 300px viewport is 30px however
+tall the containing block is; it had been 10% of the block. Forty-two new
+checks in `tests/render/sticky.f` (twenty-seven failed before the change,
+the rest are the checks that must keep passing). The cost is behind
+`anySticky`, so a page that never says `sticky` pays nothing for it.
+The Chromium rows are in todo.md.
+
 ### A list item whose first baseline is a table's, and an inside marker above a block
 
 An outside marker sits on the first baseline in its item, and a table has

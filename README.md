@@ -387,7 +387,8 @@ not.
 **`position: sticky`** keeps the box where the flow put it and draws it
 somewhere else. A `top` inset holds it that far below the top of its
 scrollport while the content scrolls under it, a `bottom` inset that far
-above the bottom, and it travels no further than its containing block's
+above the bottom, and `left` and `right` do the same across; a percentage
+inset is of the scrollport. It travels no further than its containing block's
 content box — so a stuck heading leaves with its own section rather
 than sitting over the next one. The scrollport is the content box of the
 nearest ancestor with `overflow` other than `visible` or `clip`, moved by
@@ -396,9 +397,9 @@ The shift belongs to the painter
 because the scroll position changes on every wheel event and the
 document is laid out once, and clicks come back through it, so a stuck
 box is clickable where it is drawn rather than where it was laid out.
-The two insets that act are the vertical ones: the painter is given the
-document's scroll offset down the page, and the document does not
-scroll across.
+The document does not scroll across, so `left` and `right` move a box
+in it only from where the flow put it to where its inset wants it; a
+scroll container that scrolls across carries them along.
 
 **`@keyframes` and `animation`** run as a function of a clock. An element
 that names an animation has the animated value of every property its
