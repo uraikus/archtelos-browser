@@ -576,4 +576,514 @@ Box gPlain = gridOf('grid-template-columns:100px 150px 50px',
 checkEqInt(findById(gPlain, 'pa').w, 60, 'an ordinary nested grid keeps its own first track')
 checkEqInt(findById(gPlain, 'pb').x, 60, 'and its own second')
 
+// ---- justify-content and align-content position the tracks ------------
+//
+// Measured in Chromium (todo.md): two `auto` columns holding `ab` and
+// `cd` in a 400px grid are 200 wide apiece under `normal` and their
+// content width apiece under `start`, `center`, `end` and
+// `space-between`, which then place the pair at the start, centred, at
+// the end, and spread to both edges. `align-content` answers the same
+// way on the row axis.
+//
+// The numbers below are relations rather than pixel counts wherever a
+// font advance is involved, because this engine's advance is not
+// Chromium's: what is asserted is that `normal` fills the container and
+// that the other four leave the tracks at the width `start` gives them
+// and only move them.
+
+Box func jcGrid(jc:text) {
+    text decl = jc == '' ? '' : (';justify-content:' + jc)
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-columns:auto auto;'
+        + 'width:400px' + decl + '">'
+        + '<div id="c1">ab</div><div id="c2">cd</div></div></body>', 800)
+}
+
+Box jcNormal = jcGrid('normal')
+Box jcNone = jcGrid('')
+Box jcStart = jcGrid('start')
+Box jcCentre = jcGrid('center')
+Box jcEnd = jcGrid('end')
+Box jcBetween = jcGrid('space-between')
+
+Box nc1 = findById(jcNormal, 'c1')
+Box nc2 = findById(jcNormal, 'c2')
+checkEqInt(nc1.x, 0, 'normal puts the first track at the start')
+checkEqInt(nc1.w, 200, 'and stretches it to half the container')
+checkEqInt(nc2.x, 200, 'the second follows it')
+checkEqInt(nc2.w, 200, 'and takes the other half')
+
+// Declaring nothing is `normal`, which is the initial value -- so the
+// two must agree rather than each match a number.
+checkEqInt(findById(jcNone, 'c1').w, nc1.w, 'an undeclared justify-content is normal')
+checkEqInt(findById(jcNone, 'c2').x, nc2.x, 'on both tracks')
+
+Box sc1 = findById(jcStart, 'c1')
+Box sc2 = findById(jcStart, 'c2')
+check(sc1.w < 200, 'start does not stretch the track')
+check(sc1.w > 0, 'and leaves it its content width')
+checkEqInt(sc1.x, 0, 'start packs the tracks at the start')
+checkEqInt(sc2.x, sc1.x + sc1.w, 'with the second against the first')
+
+// The four that do not stretch must all give the same track widths:
+// only where the tracks sit changes.
+int packed = sc1.w + sc2.w
+checkEqInt(findById(jcCentre, 'c1').w, sc1.w, 'center leaves the widths alone')
+checkEqInt(findById(jcEnd, 'c1').w, sc1.w, 'and so does end')
+checkEqInt(findById(jcBetween, 'c1').w, sc1.w, 'and space-between')
+
+checkEqInt(findById(jcCentre, 'c1').x, Math.floorDiv(400 - packed, 2),
+           'center puts the pair in the middle')
+checkEqInt(findById(jcEnd, 'c2').x + findById(jcEnd, 'c2').w, 400,
+           'end puts the last track against the far edge')
+checkEqInt(findById(jcBetween, 'c1').x, 0, 'space-between starts at the near edge')
+checkEqInt(findById(jcBetween, 'c2').x + findById(jcBetween, 'c2').w, 400,
+           'and ends at the far one')
+
+// ---- the row axis answers the same way ---------------------------------
+Box func acGrid(ac:text) {
+    text decl = ac == '' ? '' : (';align-content:' + ac)
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-rows:auto auto;'
+        + 'height:400px' + decl + '">'
+        + '<div id="r1">ab</div><div id="r2">cd</div></div></body>', 800)
+}
+
+Box acNormal = acGrid('normal')
+Box acStart = acGrid('start')
+Box acEnd = acGrid('end')
+Box acBetween = acGrid('space-between')
+
+checkEqInt(findById(acNormal, 'r1').h, 200, 'align-content: normal stretches the row')
+checkEqInt(findById(acNormal, 'r2').y, 200, 'and the second follows it')
+
+Box ar1 = findById(acStart, 'r1')
+Box ar2 = findById(acStart, 'r2')
+check(ar1.h < 200, 'start does not stretch the row')
+checkEqInt(ar1.y, 0, 'and packs it at the top')
+checkEqInt(ar2.y, ar1.y + ar1.h, 'with the second under it')
+
+checkEqInt(findById(acEnd, 'r2').y + findById(acEnd, 'r2').h, 400,
+           'end puts the last row against the bottom')
+checkEqInt(findById(acBetween, 'r1').y, 0, 'space-between starts at the top')
+checkEqInt(findById(acBetween, 'r2').y + findById(acBetween, 'r2').h, 400,
+           'and ends at the bottom')
+
+// ---- Grid 1 §12.5: a spanning item widens the tracks it spans ---------
+// Measured against Chromium first (todo.md carries the fourteen cases).
+// Every assertion here is a relation rather than one of Chromium's
+// pixel counts, because this engine's font advance is its own: what
+// must hold is that the extra a spanning item needs is shared equally
+// among the spanned intrinsic tracks, that a track outside the span or
+// unable to grow takes none of it, and that two spans overlapping a
+// track resolve by the maximum of what each planned rather than by
+// whichever ran last.
+//
+// Every container here is wide and says `justify-content: start`, which
+// is what makes the instrument able to fail. A grid that shrinks to fit
+// is the obvious fixture and the wrong one: its width already accounts
+// for the spanning item, so §12.8 stretches the tracks to fill it and
+// two of these checks pass against an engine that has no §12.5 at all.
+// Chromium gives the same track sizes either way, so nothing is given
+// up by taking the stretch out of the picture.
+
+text SPAN20 = 'WWWWWWWWWWWWWWWWWWWW'
+text SPAN10 = 'WWWWWWWWWW'
+text SPAN15 = 'WWWWWWWWWWWWWWW'
+
+Box func spanGrid(cols:text, extra:text, items:text) {
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;width:700px;justify-content:start;'
+        + 'grid-template-columns:' + cols + ';' + extra + '">' + items
+        + '</div></body>', 800)
+}
+
+text PROBES = '<div id="c1">x</div><div id="c2">x</div>'
+text PROBES3 = '<div id="c1">x</div><div id="c2">x</div><div id="c3">x</div>'
+
+// The item alone, so the test knows what it is asking the tracks to hold
+// without hard-coding a font advance.
+Box lone = layoutHtml(head + '<div id="w" style="float:left">' + SPAN20
+                      + '</div></body>', 800)
+int span20W = findById(lone, 'w').w
+check(span20W > 100, 'the spanning item is wide enough to be worth sharing')
+
+// Two auto columns with nothing spanning them: the baseline the rest is
+// measured against.
+Box noSpan = spanGrid('auto auto', '', PROBES)
+int probeW = findById(noSpan, 'c1').w
+check(probeW < span20W, 'a track holding one character is narrower than the item')
+
+Box two = spanGrid('auto auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box t1 = findById(two, 'c1')
+Box t2 = findById(two, 'c2')
+check(t1.w > probeW, 'a spanning item widens the first track it spans')
+checkEqInt(t2.w, t1.w, 'and both tracks take an equal share of the extra')
+checkEqInt(t1.w + t2.w, span20W, 'and together they come to hold the item')
+
+// The gutter between the tracks counts against what the item needs, so
+// the tracks grow less by exactly the gap.
+Box gapped = spanGrid('auto auto', 'column-gap:20px',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box gapA = findById(gapped, 'c1')
+Box gapB = findById(gapped, 'c2')
+checkEqInt(gapB.w, gapA.w, 'a gap leaves the shares equal')
+checkEqInt(gapA.w + gapB.w + 20, span20W, 'and the gutter is part of what the item spans')
+
+// A fixed track takes no share: it is not intrinsic, so all of the extra
+// goes to the one track that can grow.
+Box fixed = spanGrid('60px auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+checkEqInt(findById(fixed, 'c1').w, 60, 'a fixed track keeps its length')
+checkEqInt(findById(fixed, 'c2').w, span20W - 60,
+           'and the intrinsic track absorbs the whole of the extra')
+
+// A track stops at its growth limit and hands the remainder on.
+Box limited = spanGrid('minmax(auto,40px) auto', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+checkEqInt(findById(limited, 'c1').w, 40, 'a track grows no further than its limit')
+checkEqInt(findById(limited, 'c2').w, span20W - 40,
+           'and what it could not take goes to the rest')
+
+// A track outside the span is untouched.
+Box three = spanGrid('auto auto auto', '',
+    PROBES3 + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box t3a = findById(three, 'c1')
+Box t3b = findById(three, 'c2')
+Box t3c = findById(three, 'c3')
+checkEqInt(t3b.w, t3a.w, 'the two spanned tracks share equally')
+checkEqInt(t3a.w + t3b.w, span20W, 'and hold the item between them')
+checkEqInt(t3c.w, probeW, 'the track outside the span is left where it was')
+
+// An item spanning a flexible track contributes to no base size: §12.7
+// gives the `fr` track the leftover afterwards, so the `auto` track
+// stays exactly where it sits with no spanning item at all.
+Box flexed = spanGrid('auto 1fr', '',
+    PROBES + '<div style="grid-column:1/3">' + SPAN20 + '</div>')
+Box flexCtl = spanGrid('auto 1fr', '', PROBES)
+checkEqInt(findById(flexed, 'c1').w, findById(flexCtl, 'c1').w,
+           'spanning a flexible track grows no base size')
+
+// Two spans overlapping one track. This is the case a sequential loop
+// cannot produce: the first item needs ten Ws over tracks 1-2 and the
+// second fifteen over 2-3, and growing for one and then the other gives
+// the wrong answer whichever order it runs in. Each track takes the
+// maximum of what the two items planned for it against the original
+// sizes, so track 1 gets half of the first item and tracks 2 and 3 half
+// of the second -- which leaves the first item's pair wider than it
+// asked for.
+Box loneA = layoutHtml(head + '<div id="w" style="float:left">' + SPAN10
+                       + '</div></body>', 800)
+Box loneB = layoutHtml(head + '<div id="w" style="float:left">' + SPAN15
+                       + '</div></body>', 800)
+int span10W = findById(loneA, 'w').w
+int span15W = findById(loneB, 'w').w
+check(span15W > span10W, 'the second spanning item is the wider of the two')
+
+Box over = spanGrid('auto auto auto', '',
+    PROBES3
+    + '<div style="grid-row:2;grid-column:1/3">' + SPAN10 + '</div>'
+    + '<div style="grid-row:3;grid-column:2/4">' + SPAN15 + '</div>')
+Box o1 = findById(over, 'c1')
+Box o2 = findById(over, 'c2')
+Box o3 = findById(over, 'c3')
+checkEqInt(o3.w, o2.w, 'the wider span leaves its two tracks equal')
+checkEqInt(o2.w + o3.w, span15W, 'and they hold the wider item exactly')
+checkEqInt(o1.w, Math.floorDiv(span10W, 2),
+           'the first track takes half of the narrower item, not what is left of it')
+check(o1.w + o2.w > span10W,
+      'so the narrower item ends up with more room than it asked for')
+
+// Grid 1 §8.5 step 1: every item with a definite row *and* column takes
+// its cells before any auto-placed item is positioned, whatever the
+// order they are written in. Marking them as the placement loop reaches
+// them lets an auto item earlier in the document take a cell a later
+// item had named -- measured against Chromium, which puts the second
+// auto item in row 2 either way.
+text CLAIMED = '<div id="s" style="grid-row:1/3;grid-column:2;height:200px">t</div>'
+text AUTOS = '<div id="c1">x</div><div id="c2">x</div>'
+
+Box claimLast = layoutHtml(head
+    + '<div style="display:grid;grid-template-columns:auto auto;width:400px;'
+    + 'justify-content:start">' + AUTOS + CLAIMED + '</div></body>', 800)
+Box claimFirst = layoutHtml(head
+    + '<div style="display:grid;grid-template-columns:auto auto;width:400px;'
+    + 'justify-content:start">' + CLAIMED + AUTOS + '</div></body>', 800)
+checkEqInt(findById(claimLast, 'c1').x, 0, 'the first auto item takes the first column')
+checkEqInt(findById(claimLast, 'c2').x, 0,
+           'and the second goes under it, not into the cell the span named')
+check(findById(claimLast, 'c2').y > 0, 'which is the row below')
+checkEqInt(findById(claimFirst, 'c2').x, findById(claimLast, 'c2').x,
+           'and where the claim is written makes no difference')
+checkEqInt(findById(claimFirst, 'c2').y, findById(claimLast, 'c2').y,
+           'in either axis')
+
+// The block axis answers the same way: a 200px item spanning two auto
+// rows makes them 100 apiece, a declared row keeps its length and the
+// spanned rows take what is left, and a row outside the span is
+// untouched. Measured against Chromium with the same fixtures.
+Box func spanRows(rows:text, items:text) {
+    return layoutHtml(head
+        + '<div id="g" style="display:grid;grid-template-columns:auto auto;'
+        + 'width:400px;align-content:start;justify-content:start;'
+        + 'grid-template-rows:' + rows + '">' + items + '</div></body>', 800)
+}
+
+text TALL = '<div id="s" style="grid-row:1/3;grid-column:2;height:200px">t</div>'
+
+Box rowSpan = spanRows('auto auto',
+    '<div id="c1">x</div><div id="c2">x</div>' + TALL)
+Box rs1 = findById(rowSpan, 'c1')
+checkEqInt(findById(rowSpan, 's').h, 200, 'the spanning item keeps its declared height')
+checkEqInt(rs1.h, 100, 'and the two rows it spans take half of it each')
+checkEqInt(findById(rowSpan, 'g').h, 200, 'so the grid is exactly as tall as the item')
+
+Box rowFixed = spanRows('60px auto',
+    '<div id="c1">x</div><div id="c2">x</div>' + TALL)
+checkEqInt(findById(rowFixed, 'c1').h, 60, 'a declared row keeps its height')
+checkEqInt(findById(rowFixed, 'g').h, 200, 'and the automatic one absorbs the rest')
+
+Box rowOutside = spanRows('auto auto auto',
+    '<div id="c1">x</div><div id="c2">x</div><div id="c3" style="grid-row:3">x</div>' + TALL)
+checkEqInt(findById(rowOutside, 'c1').h, 100, 'the spanned rows share equally')
+checkEqInt(findById(rowOutside, 'c3').h, 20,
+           'and the row outside the span keeps its one line')
+
+// ---- Grid 1 §8.3: a name the template does not know -------------------
+// "If not enough lines with that name exist, all implicit grid lines
+// are assumed to have that name for the purpose of finding this
+// position." Every check here asserts that the named placement lands
+// exactly where the numbered one does, rather than at a pixel worked
+// out here: the explicit grid has lines 1, 2 and 3, so a name nothing
+// declares is line 4, and `grid-column: 4` is the same placement said
+// another way.
+
+Box func namedGrid(cols:text, items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:400px;grid-template-rows:50px 50px;'
+        + 'grid-template-columns:' + cols + '">' + items + '</div></body>', 800)
+}
+
+void func sameAs(named:text, numbered:text, cols:text, before:text, what:text) {
+    Box a = namedGrid(cols, before + '<div id="i" style="' + named + '">t</div>')
+    Box b = namedGrid(cols, before + '<div id="i" style="' + numbered + '">t</div>')
+    Box ia = findById(a, 'i')
+    Box ib = findById(b, 'i')
+    checkEqInt(ia.x, ib.x, what)
+    checkEqInt(ia.w, ib.w, what + ', and is as wide')
+    checkEqInt(ia.y, ib.y, what + ', on the other axis too')
+    checkEqInt(ia.h, ib.h, what + ', and as tall')
+}
+
+text TWOCOLS = '100px 100px'
+
+sameAs('grid-column:zz;grid-row:1', 'grid-column:4;grid-row:1', TWOCOLS, '',
+       'an unknown name is the first line after the explicit grid')
+sameAs('grid-column:zz / zz;grid-row:1', 'grid-column:4;grid-row:1', TWOCOLS, '',
+       'the same name on both edges spans one track')
+sameAs('grid-column:zz / span 2;grid-row:1', 'grid-column:4 / span 2;grid-row:1',
+       TWOCOLS, '', 'and a span from it runs on from there')
+sameAs('grid-column:1 / zz;grid-row:1', 'grid-column:1 / 4;grid-row:1', TWOCOLS, '',
+       'an unknown name on the end edge reaches the same line')
+sameAs('grid-row:zz;grid-column:1', 'grid-row:4;grid-column:1', TWOCOLS, '',
+       'and the row axis answers the same way')
+sameAs('grid-area:zz', 'grid-row:4;grid-column:4', TWOCOLS, '',
+       'grid-area names both axes at once')
+
+// A name that exists, but not often enough: the shortfall comes from
+// the implicit lines, so `aa 2` against one `aa` is line 4 as well.
+sameAs('grid-column:aa 2;grid-row:1', 'grid-column:4;grid-row:1', '[aa] 100px 100px', '',
+       'a name short by one takes the shortfall from the implicit lines')
+sameAs('grid-column:aa 3;grid-row:1', 'grid-column:4;grid-row:1', '[aa] 100px [aa] 100px', '',
+       'and short by one of two is the same line')
+// A count the template does satisfy still means what it says.
+sameAs('grid-column:aa 2;grid-row:1', 'grid-column:2;grid-row:1', '[aa] 100px [aa] 100px', '',
+       'a count the template can meet is the line it names')
+
+// The count is against the explicit grid, not the grid as it stands: an
+// item forcing tracks 3 to 5 into being does not move where `zz` is.
+sameAs('grid-column:zz;grid-row:2', 'grid-column:4;grid-row:2', TWOCOLS,
+       '<div style="grid-column:5;grid-row:1">o</div>',
+       'implicit tracks already made do not move an unknown name')
+
+// The search runs **backwards** when the name is on a span and the
+// other edge is a definite line: `span zz / 3` counts back from line 3
+// for a line named `zz`, finds none in the explicit grid, and takes
+// the implicit lines *before* it. That creates a column ahead of line
+// 1 and renumbers everything after it.
+//
+// The column it creates is one the template could have written, so the
+// check is an agreement and not a pixel. The sibling is what makes it
+// about the renumbering rather than only about the item: it is
+// auto-placed, so it moves only if line 1 really moved. todo.md has
+// Chromium's reading of both.
+Box backNamed = namedGrid(TWOCOLS,
+    '<div id="i" style="grid-column:span zz / 3">t</div>'
+    + '<div id="j">u</div>')
+Box backWritten = layoutHtml(head
+    + '<div style="display:grid;width:400px;grid-template-rows:50px 50px;'
+    + 'grid-template-columns:auto 100px 100px">'
+    + '<div id="i" style="grid-column:1 / 4">t</div>'
+    + '<div id="j">u</div></div></body>', 800)
+Box backI = findById(backNamed, 'i')
+Box backWI = findById(backWritten, 'i')
+Box backJ = findById(backNamed, 'j')
+Box backWJ = findById(backWritten, 'j')
+// The written-out grid has to be worth agreeing with: its first column
+// takes what the two 100px ones leave, so the item spans the container
+// and the sibling is twice a declared track. A template that made
+// three equal columns would grade nothing.
+checkEqInt(backWI.w, 400, 'the written-out grid spans its container')
+checkEqInt(backWJ.w, 200, 'and its first column takes what is left over')
+checkEqInt(backI.x, backWI.x, 'a backwards search makes a column ahead of line 1')
+checkEqInt(backI.w, backWI.w, 'and the item spans it')
+checkEqInt(backJ.x, backWJ.x, 'the line it added renumbers the rest')
+checkEqInt(backJ.w, backWJ.w, 'so an auto-placed sibling lands in that column')
+
+// Forward, the same sentence has a numbered equivalent on the template
+// as written, because the line it reaches is after the explicit grid:
+// `1 / span zz` counts forward from line 1, finds no `zz`, and takes
+// the first implicit line -- which is line 4.
+sameAs('grid-column:1 / span zz;grid-row:1', 'grid-column:1 / 4;grid-row:1',
+       TWOCOLS, '', 'a named span forward reaches the first implicit line')
+sameAs('grid-column:2 / span zz;grid-row:1', 'grid-column:2 / 4;grid-row:1',
+       TWOCOLS, '', 'from wherever it starts')
+// And a name the template does declare is counted rather than assumed.
+// The declared line is two tracks along on purpose: one track along is
+// a span of one, which is what a dropped name gives, so the check
+// would read clean either way.
+sameAs('grid-column:1 / span aa;grid-row:1', 'grid-column:1 / 3;grid-row:1',
+       '100px 100px [aa] 100px', '', 'a span to a name the template declares stops there')
+sameAs('grid-column:1 / span aa 2;grid-row:1', 'grid-column:1 / 3;grid-row:1',
+       '100px [aa] 100px [aa] 100px', '', 'and a count picks which one')
+
+// A subgrid has no implicit tracks of its own (Grid 2 §3.1): its lines
+// are its parent's and that is all of them, so a backwards search that
+// would run off the front is clamped to line 1 rather than making one.
+// `grid-auto-columns` is what makes the difference visible -- without a
+// size on it the track the engine should not create comes out zero
+// wide and the check reads clean either way.
+Box func subNoImplicit(colStyle:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:400px;'
+        + 'grid-template-columns:100px 100px 100px 100px">'
+        + '<div style="display:grid;grid-column:1 / 5;'
+        + 'grid-template-columns:subgrid;grid-auto-columns:50px">'
+        + '<div id="i" style="' + colStyle + '">t</div>'
+        + '<div id="j">u</div></div></div></body>', 800)
+}
+Box subNamed = subNoImplicit('grid-column:span zz / 3')
+Box subPlain = subNoImplicit('grid-column:1 / 3')
+checkEqInt(findById(subPlain, 'i').w, 200, 'the subgrid fixture spans two of its parent\'s tracks')
+checkEqInt(findById(subNamed, 'i').x, findById(subPlain, 'i').x,
+           'a backwards span in a subgrid makes no track of its own')
+checkEqInt(findById(subNamed, 'i').w, findById(subPlain, 'i').w,
+           'and is clamped to the subgrid\'s first line')
+checkEqInt(findById(subNamed, 'j').x, findById(subPlain, 'j').x,
+           'so the sibling beside it does not move either')
+
+// ---- Grid 2 §3: what a subgrid owes its parent -------------------------
+// A subgrid is not a spanning item. Its children are placed on the
+// parent's tracks and each contributes to the one it sits in, so the
+// parent sizes its tracks as though those children were written
+// directly in it -- which is how these are asserted, against that
+// arrangement rather than against a pixel count. Measured against
+// Chromium first (todo.md).
+
+Box func parentGrid(cols:text, items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;width:700px;justify-content:start;'
+        + 'grid-template-columns:' + cols + '">' + items + '</div></body>', 800)
+}
+
+text WIDE = 'WWWWWWWWWWWWWWWWWWWW'
+text SUBOPEN = '<div style="display:grid;grid-template-columns:subgrid;grid-column:1/3">'
+
+// The same two children, once inside a subgrid across both tracks and
+// once written directly in the parent, one per track.
+Box viaSub = parentGrid('auto auto',
+    SUBOPEN + '<div id="c1">' + WIDE + '</div><div id="c2">x</div></div>')
+Box direct = parentGrid('auto auto',
+    '<div id="c1">' + WIDE + '</div><div id="c2">x</div>')
+checkEqInt(findById(viaSub, 'c1').w, findById(direct, 'c1').w,
+           'a subgrid\'s first child sizes the parent track it sits in')
+checkEqInt(findById(viaSub, 'c2').w, findById(direct, 'c2').w,
+           'and its second sizes the second track')
+checkEqInt(findById(viaSub, 'c2').x, findById(direct, 'c2').x,
+           'so the two arrangements put the second child in the same place')
+
+// And a subgrid is not a spanning item: were it one, §12.5 would share
+// the wide child's width equally between the two tracks. `c2` is what
+// reports the first track's width in each arrangement -- in `asSpan` it
+// is auto-placed under the spanning item, so it is as wide as track one
+// and nothing else.
+Box asSpan = parentGrid('auto auto',
+    '<div style="grid-column:1/3">' + WIDE + '</div><div id="c2">x</div>')
+check(findById(viaSub, 'c1').w > findById(asSpan, 'c2').w,
+      'a subgrid gives its first track more than an equal share of a span')
+
+// A child spanning two parent tracks from inside a subgrid is shared
+// equally between them, exactly as one written in the parent is.
+Box subSpan = parentGrid('auto auto',
+    SUBOPEN + '<div id="c1" style="grid-column:1/3">' + WIDE + '</div></div>')
+Box plainSpan = parentGrid('auto auto',
+    '<div id="c1" style="grid-column:1/3">' + WIDE + '</div>')
+checkEqInt(findById(subSpan, 'c1').w, findById(plainSpan, 'c1').w,
+           'a spanning child inside a subgrid is shared as one in the parent is')
+
+// The block axis answers the same way: a row-subgrid's children size
+// the parent's rows, which is what puts the second child at the first
+// one's height rather than at half the pair's.
+Box func rowSub(items:text) {
+    return layoutHtml(head
+        + '<div style="display:grid;grid-template-columns:200px;'
+        + 'grid-template-rows:auto auto;width:400px;align-content:start">'
+        + items + '</div></body>', 800)
+}
+
+text ROWKIDS = '<div id="c1" style="grid-row:1;height:80px">a</div>'
+    + '<div id="c2" style="grid-row:2;height:30px">b</div>'
+
+Box rowViaSub = rowSub('<div style="display:grid;grid-template-rows:subgrid;'
+    + 'grid-row:1/3;grid-column:1">' + ROWKIDS + '</div>')
+Box rowDirect = rowSub(ROWKIDS)
+checkEqInt(findById(rowViaSub, 'c2').y, findById(rowDirect, 'c2').y,
+           'a row-subgrid\'s children size the parent\'s rows')
+checkEqInt(findById(rowViaSub, 'c1').h, findById(rowDirect, 'c1').h,
+           'so the first row is as tall as the child that sits in it')
+
+// ---- a subgrid names the lines it spans ---------------------------------
+// The parent's columns are fixed lengths here, so each line has a
+// distinct x and a check can tell them apart. With `auto` columns and
+// nothing sizing them every line sits at zero, and two of these read as
+// passing against an engine that drops the name list entirely.
+Box func namedSub(span:text, names:text, place:text) {
+    return parentGrid('100px 100px 100px',
+        '<div style="display:grid;grid-template-columns:subgrid ' + names
+        + ';grid-column:' + span + '"><div id="c1" style="grid-column:' + place
+        + '">x</div></div>')
+}
+
+text ABC = '[a] [b] [c]'
+
+checkEqInt(findById(namedSub('1/4', ABC, 'b'), 'c1').x, 100,
+           'a named subgrid line is the line it names')
+checkEqInt(findById(namedSub('1/4', ABC, 'b'), 'c1').x,
+           findById(namedSub('1/4', ABC, '2'), 'c1').x,
+           'which is where the number for that line puts it')
+
+// The names count from the subgrid's own first line, so on a subgrid
+// starting at the parent's second line `b` is the parent's third.
+checkEqInt(findById(namedSub('2/4', ABC, 'b'), 'c1').x, 200,
+           'the names count from the subgrid\'s own first line')
+checkEqInt(findById(namedSub('2/4', ABC, 'b'), 'c1').x,
+           findById(namedSub('2/4', ABC, '2'), 'c1').x,
+           'so a name and the subgrid\'s own line number agree')
+checkEqInt(findById(namedSub('2/4', ABC, 'a'), 'c1').x, 100,
+           'and the first name is the subgrid\'s own first line')
+
+checkEqInt(findById(namedSub('1/4', '[a]', 'a'), 'c1').x, 0,
+           'fewer names than lines is not an error')
+
 finish('grid')

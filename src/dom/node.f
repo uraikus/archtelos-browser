@@ -296,7 +296,14 @@ bool func isPresentationalAttr(name:text) {
 void func setAttr(n:Node, name:text, value:text) {
     n.attrs[name] = value
     n.present[name] = true
+    // the class list is split from the attribute on first use, so a
+    // changed attribute has to drop it
+    if name == 'class' && n.classesParsed {
+        n.classesParsed = false
+        n.classes = []
+    }
     if isPresentationalAttr(name) { n.hasPresHint = true }
+    if name == 'style' && styleAttrSaysInherit(value) { nodeSawInheritInStyle = true }
 }
 
 bool func hasParent(n:Node) {

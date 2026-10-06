@@ -32,6 +32,20 @@ void func checkEqInt(actual:int, expected:int, label:text) {
     }
 }
 
+// Within `slack` either way. A painted geometry lands on an integer
+// pixel and the number it came from did not, so a check against the
+// browser's rectangle is a check to within a pixel.
+void func checkNear(actual:int, expected:int, slack:int, label:text) {
+    int d = actual - expected
+    if d < 0 { d = 0 - d }
+    if d <= slack {
+        checksPassed++
+    } else {
+        checksFailed++
+        log(`FAIL: ${label}: expected ${expected} +/- ${slack}, got ${actual}`)
+    }
+}
+
 // Exits explicitly rather than falling off the end: the preload
 // workers are live threads, and a live thread keeps the program
 // running (specification 12.1). See FINDINGS.md, "a declared thread

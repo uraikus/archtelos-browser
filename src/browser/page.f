@@ -16,6 +16,16 @@ struct Page {
     height:int          // document height after layout
     error:text
     loaded:bool
+    // What the painter needs to know about this document, taken when
+    // its layout finished and put back before it is painted. See
+    // DocFlags in paint.f: the questions are globals, and a second
+    // document laid out afterwards would otherwise answer them.
+    flags:DocFlags
+    // Where the document starts scrolled to, which
+    // `scroll-initial-target` on an element in its own flow asks for.
+    // Layout works it out and the shell applies it, because the shell
+    // owns the page's scroll position (todo.md).
+    initialScrollY:int
 }
 
 int maxImagesPerPage = 60
@@ -193,11 +203,20 @@ Page func loadPage(url:text, width:int) {
     timing('fetch', t0)
     int t1 = now()
     nodeRegistryReset()
+    // A scroll offset belongs to the document it was scrolled in. The
+    // maps holding one outlive a box tree by being keyed on node id --
+    // which is what the line above starts again -- so an offset left
+    // behind would open whichever element of this page takes that id
+    // part-way down.
+    boxScrollReset()
     if !r.ok {
         page.error = r.error
         page.doc = errorDocument(url, r.error)
     } else {
         page.url = r.finalUrl
+        // A redirect's final address has no fragment of its own, and the
+        // one asked for is still the one the reader named.
+        if urlFragmentOf(page.url) == '' && urlFragmentOf(url) != '' { page.url = `${page.url}#${asciiAfterHash(url)}` }
         // Decoded once and used twice: the scanner reads the same
         // bytes the tokenizer is about to.
         ascii src = blobToAsciiSafe(r.data).toAscii()
@@ -224,6 +243,7 @@ Page func pageFromHtml(html:text, baseUrl:text, width:int) {
     page.width = width
     page.error = ''
     nodeRegistryReset()
+    boxScrollReset()
     // No scan: there is no base to resolve against and nothing was
     // fetched. Clearing the cache keeps a resource fetched for an
     // earlier page from being served to this one unrevalidated.
@@ -307,6 +327,60 @@ void func timing(label:text, since:int) {
     if archtelosTiming { log(`[timing] ${label}: ${now() - since} ms`) }
 }
 
+// The fragment of a URL, percent-decoded, or '' where there is none.
+// Everything after the first `#`, as written.
+text func asciiAfterHash(url:text) {
+    ascii a = url.toAscii()
+    int h = asciiIndexOf(a, '#', 0)
+    if h < 0 || h + 1 >= a.length { return '' }
+    return a.slice(h + 1, a.length).toText()
+}
+
+text func urlFragmentOf(url:text) {
+    ascii a = url.toAscii()
+    if a == null { return '' }
+    int h = asciiIndexOf(a, '#', 0)
+    if h < 0 || h + 1 >= a.length { return '' }
+    ascii f = a.slice(h + 1, a.length)
+    text out = ''
+    int i = 0
+    while i < f.length {
+        int c = f.charCodeAt(i)
+        if c == CH_PERCENT && i + 2 < f.length && isHexCode(f.charCodeAt(i + 1))
+            && isHexCode(f.charCodeAt(i + 2)) {
+            out = out + (hexValue(f.charCodeAt(i + 1)) * 16 + hexValue(f.charCodeAt(i + 2))).toChar()
+            i = i + 3
+            continue
+        }
+        out = out + c.toChar()
+        i++
+    }
+    return out
+}
+
+// The element a fragment names: the first with that id and, failing one,
+// the first <a> with that name. Compared as written, in case.
+int func targetNodeFor(n:Node, frag:text, byName:bool) {
+    if n.kind == NODE_ELEMENT {
+        if !byName && getAttr(n, 'id') == frag { return n.id }
+        if byName && n.tag == 'a' && getAttr(n, 'name') == frag { return n.id }
+    }
+    for int i = 0, i < n.children.length, i++ {
+        int got = targetNodeFor(n.children[i], frag, byName)
+        if got > 0 { return got }
+    }
+    return 0
+}
+
+void func setTargetFragment(page:Page, url:text) {
+    cssTargetFragment = urlFragmentOf(url)
+    cssTargetNode = 0
+    if cssTargetFragment == '' { return }
+    int found = targetNodeFor(page.doc, cssTargetFragment, false)
+    if found == 0 { found = targetNodeFor(page.doc, cssTargetFragment, true) }
+    cssTargetNode = found
+}
+
 void func preparePage(page:Page, width:int) {
     int t0 = now()
     cascadeReset()
@@ -320,6 +394,7 @@ void func preparePage(page:Page, width:int) {
     Node titleNode = findElement(page.doc, 'title')
     page.title = titleNode == null ? '' : textContent(titleNode).replace(spaceRun, ' ').trim()
     int t2 = now()
+    setTargetFragment(page, page.url)
     computeStyles(page.doc)
     timing('cascade', t2)
     // Background images come from computed styles, so they cannot be
@@ -335,10 +410,27 @@ void func preparePage(page:Page, width:int) {
     if archtelosTiming { log(layoutProfile()) }
 }
 
+// The page again with the animation clock moved: the styles are computed
+// afresh against the sheets already gathered and the tree is laid out
+// again. Nothing is fetched and no sheet is re-parsed, which is what
+// `preparePage` would do.
+void func restylePage(page:Page, width:int) {
+    map[Style] freshStyles = {}
+    styleCache = freshStyles
+    resetPseudoElements()
+    computeStyles(page.doc)
+    layoutPage(page, width)
+}
+
 void func layoutPage(page:Page, width:int) {
     page.width = width
     cssViewportWidth = width
     page.root = layoutDocument(page.doc, width)
+    // The painter's per-document questions are answered while the box
+    // tree is built, so they belong to this page and not to whichever
+    // page is laid out next. See DocFlags in paint.f.
+    page.flags = captureDocFlags()
+    page.initialScrollY = docInitialScrollY
     if page.root == null {
         page.height = 0
         return
@@ -351,17 +443,284 @@ void func layoutPage(page:Page, width:int) {
 // One page of a paginated render: the strip of the document that begins
 // at `startY`, placed inside the page box's margins.
 //
-// Nothing is moved to make a page. The document is laid out once, at the
-// page area's width, and a page is that document drawn at an offset --
-// which is the same thing a scroll position is, and uses the same
-// painter.
+// Nothing is moved to make a page. A page is the document laid out at the
+// page area's width, drawn at an offset -- which is the same thing a scroll
+// position is, and uses the same painter.
 //
 // A box that straddles a page boundary is painted whole, because the
 // painter culls by box and not by pixel, so the margins are laid back
 // over it afterwards in the page's own colour. The page box's background
 // is the root element's, propagated to it (CSS2 §13.2).
-void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
+// ---- the page margin boxes --------------------------------------------
+//
+// Sixteen boxes in the page margin (CSS Paged Media 3 §5), each drawn
+// from its own `content`. Measured in todo.md against Chromium's own
+// print, read out of the PDF: the five along each of the top and
+// bottom edges are vertically centred in their band, the three down
+// each side are top-, middle- and bottom-aligned in the side region,
+// and the corners align INWARD, toward the page content.
+//
+// A margin box inherits from the ROOT element rather than from `body`,
+// which the measurement settles: `html { font: 16px monospace }`
+// reaches the box and `body { ... }` does not, because the page
+// context inherits from the root.
+
+// Where one box goes, as (x, y, w, h). Four values out of a function
+// need globals (FINDINGS.md, "one value out of a function").
+int mbX = 0
+int mbY = 0
+int mbW = 0
+int mbH = 0
+
+void func marginBoxRect(box:PageBox, slot:int) {
+    int innerW = maxInt(box.width - box.marginLeft - box.marginRight, 0)
+    int innerH = maxInt(box.height - box.marginTop - box.marginBottom, 0)
+    int right = box.width - box.marginRight
+    int bottom = box.height - box.marginBottom
+    if slot == MB_TOP_LEFT_CORNER { mbX = 0  mbY = 0  mbW = box.marginLeft  mbH = box.marginTop  return }
+    if slot == MB_TOP_RIGHT_CORNER { mbX = right  mbY = 0  mbW = box.marginRight  mbH = box.marginTop  return }
+    if slot == MB_BOTTOM_LEFT_CORNER { mbX = 0  mbY = bottom  mbW = box.marginLeft  mbH = box.marginBottom  return }
+    if slot == MB_BOTTOM_RIGHT_CORNER { mbX = right  mbY = bottom  mbW = box.marginRight  mbH = box.marginBottom  return }
+    if slot == MB_TOP_LEFT || slot == MB_TOP_CENTER || slot == MB_TOP_RIGHT {
+        mbX = box.marginLeft  mbY = 0  mbW = innerW  mbH = box.marginTop  return
+    }
+    if slot == MB_BOTTOM_LEFT || slot == MB_BOTTOM_CENTER || slot == MB_BOTTOM_RIGHT {
+        mbX = box.marginLeft  mbY = bottom  mbW = innerW  mbH = box.marginBottom  return
+    }
+    if slot == MB_LEFT_TOP || slot == MB_LEFT_MIDDLE || slot == MB_LEFT_BOTTOM {
+        mbX = 0  mbY = box.marginTop  mbW = box.marginLeft  mbH = innerH  return
+    }
+    mbX = right  mbY = box.marginTop  mbW = box.marginRight  mbH = innerH
+}
+
+// The style a margin box draws in: the root element's, with whatever
+// the box itself declares on top. Only the handful of properties a
+// margin box is written for are read; the rest are recorded in todo.md
+// rather than half-applied.
+Style func marginBoxStyle(rootStyle:Style, decls:arr[PageDecl]) {
+    Style s = rootStyle
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name == 'color' {
+            int c = parseCssColor(decls[i].value, rootStyle.color)
+            if c != COLOR_UNSET { s.color = c }
+        } else if decls[i].name == 'font-size' {
+            int px = pageMarginPx(decls[i].value, rootStyle.fontSize)
+            if px > 0 {
+                s.fontSize = px
+                s.fontKey = `${s.fontSize}|${s.fontBold ? 1 : 0}|${s.fontItalic ? 1 : 0}|${s.fontFamily}`
+            }
+        }
+    }
+    return s
+}
+
+int func marginBoxAlignOf(decls:arr[PageDecl], slot:int, vertical:bool) {
+    int a = vertical ? marginBoxDefaultVAlign(slot) : marginBoxDefaultAlign(slot)
+    text want = vertical ? 'vertical-align' : 'text-align'
+    for int i = 0, i < decls.length, i++ {
+        if decls[i].name != want { continue }
+        ascii v = asciiLower(asciiTrim(decls[i].value))
+        if v == 'left' || v == 'start' || v == 'top' { a = MBALIGN_START }
+        else if v == 'center' || v == 'middle' { a = MBALIGN_CENTER }
+        else if v == 'right' || v == 'end' || v == 'bottom' { a = MBALIGN_END }
+    }
+    return a
+}
+
+void func paintPageMarginBoxes(box:PageBox, name:text, index:int, total:int, rootStyle:Style, blank:bool) {
+    for int slot = 0, slot < MB_COUNT, slot++ {
+        arr[PageDecl] decls = marginBoxDecls(slot, name, index, blank)
+        if decls.length == 0 { continue }
+        text content = ''
+        for int i = 0, i < decls.length, i++ {
+            if decls[i].name == 'content' {
+                content = marginBoxContent(decls[i].value, index, total)
+            }
+        }
+        if content == '' { continue }
+        marginBoxRect(box, slot)
+        if mbW <= 0 || mbH <= 0 { continue }
+        Style s = marginBoxStyle(rootStyle, decls)
+        int w = measureWidth(s, content)
+        int lh = lineHeightOf(s)
+        int align = marginBoxAlignOf(decls, slot, false)
+        int valign = marginBoxAlignOf(decls, slot, true)
+        int x = mbX
+        if align == MBALIGN_CENTER { x = mbX + Math.floorDiv(mbW - w, 2) }
+        else if align == MBALIGN_END { x = mbX + mbW - w }
+        int top = mbY
+        if valign == MBALIGN_CENTER { top = mbY + Math.floorDiv(mbH - lh, 2) }
+        else if valign == MBALIGN_END { top = mbY + mbH - lh }
+        setFontFor(s)
+        applyFillColor(s.color)
+        drawText(content, x, top + fontAscent(s))
+    }
+    fillAlpha(1.0)
+}
+
+// ---- pages of different widths -----------------------------------------
+//
+// A named page may declare a sheet of its own size, and what is on it is
+// laid out at that sheet's width: Chromium prints a 100px block on an 800px
+// sheet 760 wide and the same block on a 400px one 360 wide (todo.md). So
+// the document is laid out once for each width its pages have, and a page
+// is a strip of the layout at its own -- each run of pages with one name is
+// paginated against its layout and the runs are put end to end.
+//
+// A run is a stretch of the body's children sharing one `page` name, which
+// is the only place a name can change that the pagination here goes: a
+// change deeper inside a wrapper forces a break and does not change the
+// width. A page of another size by `:first`, `:left` or `:right` inside a
+// run keeps the run's width for the same reason.
+//
+// The layouts a page is drawn from, parallel to `pageRoots`: the flags the
+// painter needs for each, and the number of the layout it is. Box ids count
+// from one in every layout, so a root cannot be told from another by its id.
+arr[DocFlags] pageFlagList = []
+arr[int] pageLayoutNo = []
+// The layout `page.root` is, and the pagination the lists above are from.
+int activeLayout = 0
+int layoutListsRun = 0 - 1
+
+// Makes `page` the layout page `index` is a strip of, so that the painter
+// -- which reads `page.root` and the flags taken with it -- draws that one.
+void func usePageLayout(page:Page, index:int) {
+    if layoutListsRun != paginationRun { return }
+    if index < 0 || index >= pageRoots.length || index >= pageLayoutNo.length { return }
+    if pageLayoutNo[index] == activeLayout { return }
+    page.root = pageRoots[index]
+    page.flags = pageFlagList[index]
+    page.width = page.root.w
+    activeLayout = pageLayoutNo[index]
+}
+
+void func resetPaginationArrays() {
+    arr[int] ys = []
+    arr[int] ends = []
+    arr[text] names = []
+    arr[PageBox] boxes = []
+    arr[bool] blanks = []
+    arr[Box] roots = []
+    pageStartY = ys
+    pageEndY = ends
+    pageNames = names
+    pageBoxes = boxes
+    pageBlanks = blanks
+    pageRoots = roots
+}
+
+// Breaks `page` into pages, each drawn from the layout at its sheet's width.
+void func paginatePage(page:Page) {
+    arr[DocFlags] flagsList = []
+    arr[int] layoutNos = []
+    pageFlagList = flagsList
+    pageLayoutNo = layoutNos
+    activeLayout = 0
+    paginateDocument(page.root)
+    layoutListsRun = paginationRun
     if page.root == null { return }
+    int firstW = pageAreaWidth(pageBoxes[0])
+    bool uniform = true
+    for int i = 1, i < pageBoxes.length, i++ {
+        if pageAreaWidth(pageBoxes[i]) != firstW { uniform = false }
+    }
+    if uniform {
+        // One width: the layout the page was given, or one at that width
+        // when it was not made at it.
+        if page.width != firstW {
+            setCssViewport(firstW, pageAreaHeight(pageBoxes[0]))
+            restylePage(page, firstW)
+            paginateDocument(page.root)
+            layoutListsRun = paginationRun
+        }
+        for int i = 0, i < pageBoxes.length, i++ {
+            pageFlagList.push(page.flags)
+            pageLayoutNo.push(0)
+        }
+        return
+    }
+
+    // The runs of the body's children that share a page name.
+    Box firstHost = paginationHost(page.root)
+    arr[int] runFrom = []
+    arr[int] runTo = []
+    arr[text] runName = []
+    for int i = 0, i < firstHost.children.length, i++ {
+        Box c = firstHost.children[i]
+        if c.kind == BOX_TEXT || c.kind == BOX_BR || boxIsOutOfFlow(c) || boxIsFloated(c) {
+            if runTo.length > 0 { runTo[runTo.length - 1] = i + 1 }
+            continue
+        }
+        if runFrom.length == 0 || c.style.pageName != runName[runName.length - 1] {
+            runFrom.push(runFrom.length == 0 ? 0 : i)
+            runTo.push(i + 1)
+            runName.push(c.style.pageName)
+        } else {
+            runTo[runTo.length - 1] = i + 1
+        }
+    }
+
+    // Nothing paginated yet in this run's arrays: they are the ones about to
+    // be rebuilt from nothing, one run at a time.
+    arr[int] layoutW = [page.width]
+    arr[Box] layoutRoot = [page.root]
+    arr[DocFlags] layoutFlags = [page.flags]
+    resetPaginationArrays()
+    int index = 1
+    for int r = 0, r < runFrom.length, r++ {
+        PageBox box = pageBoxFor(runName[r], index, false)
+        int w = pageAreaWidth(box)
+        int v = 0 - 1
+        for int k = 0, k < layoutW.length, k++ {
+            if layoutW[k] == w { v = k }
+        }
+        if v < 0 {
+            setCssViewport(w, pageAreaHeight(box))
+            restylePage(page, w)
+            layoutW.push(w)
+            layoutRoot.push(page.root)
+            layoutFlags.push(page.flags)
+            v = layoutW.length - 1
+        }
+        Box root = layoutRoot[v]
+        Box host = paginationHost(root)
+        arr[ColumnUnit] units = []
+        fragForPage = true
+        collectColumnUnits(host, units, runFrom[r], runTo[r])
+        fragForPage = false
+        if units.length == 0 { continue }
+        // Where the run begins in its own layout, and the blank page a
+        // `left` or `right` break at its start asks for (CSS 2 §13.3.1).
+        int top = r == 0 ? 0 : units[0].top
+        if r > 0 {
+            int side = pageSideAt(host, units, 0)
+            if side != BRK_AUTO && pageIsRight(index) != (side == BRK_RIGHT) && index < PAGE_LIMIT {
+                pageStartY.push(top)
+                pageEndY.push(top)
+                pageNames.push('')
+                pageBlanks.push(true)
+                pageBoxes.push(pageBoxFor('', index, true))
+                pageRoots.push(root)
+                index++
+            }
+        }
+        paginateUnits(host, units, index, top, root)
+        while pageFlagList.length < pageBoxes.length {
+            pageFlagList.push(layoutFlags[v])
+            pageLayoutNo.push(v)
+        }
+        index = pageBoxes.length + 1
+    }
+    // The page is left as the first of its pages has it.
+    page.root = layoutRoot[0]
+    page.flags = layoutFlags[0]
+    page.width = layoutW[0]
+}
+
+void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int, index:int, total:int) {
+    if page.root == null { return }
+    usePageLayout(page, index)
+    restoreDocFlags(page.flags)
     int t0 = now()
     int areaW = pageAreaWidth(box)
     // How much of the sheet this page actually carries: a page that ends
@@ -384,11 +743,18 @@ void func paintPagedPage(page:Page, box:PageBox, startY:int, endY:int) {
     drawRect(0, 0, box.marginLeft, box.height)
     drawRect(box.marginLeft + areaW, 0, box.width - box.marginLeft - areaW, box.height)
     fillAlpha(1.0)
+    // The boxes go on last, over the margins that were just laid back
+    // over the content -- which is what puts them in the margin rather
+    // than under it. A document that declares none pays one boolean.
+    if anyPageMarginBox {
+        paintPageMarginBoxes(box, pageNames[index], index + 1, total, page.root.style, pageBlanks[index])
+    }
     timing('paint', t0)
 }
 
 void func paintPage(page:Page, top:int, scrollY:int, viewHeight:int) {
     if page.root == null { return }
+    restoreDocFlags(page.flags)
     int t0 = now()
     int bg = canvasBackground(page.root)
     applyFillColor(bg)

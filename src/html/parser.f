@@ -187,6 +187,21 @@ bool func isSpecialElement(tag:text) {
         || tag == 'track' || tag == 'ul' || tag == 'wbr' || tag == 'xmp'
 }
 
+// Whether an element is special: an HTML one from the list above, or one
+// of six MathML and three SVG elements. The name alone does not say --
+// an SVG `tr` is not special and an SVG `foreignObject` is.
+bool func isSpecialNode(id:int) {
+    int ns = nsOf(id)
+    text t = tagOf(id)
+    if ns == NS_HTML { return isSpecialElement(t) }
+    if ns == NS_MATHML {
+        return t == 'mi' || t == 'mo' || t == 'mn' || t == 'ms' || t == 'mtext'
+            || t == 'annotation-xml'
+    }
+    if ns == NS_SVG { return t == 'foreignObject' || t == 'desc' || t == 'title' }
+    return false
+}
+
 bool func isFormattingElement(tag:text) {
     return tag == 'a' || tag == 'b' || tag == 'big' || tag == 'code' || tag == 'em'
         || tag == 'font' || tag == 'i' || tag == 'nobr' || tag == 's' || tag == 'small'
@@ -326,13 +341,21 @@ bool func scopeStops(kind:int, tag:text) {
     return false
 }
 
+// Whether a MathML or SVG element ends a scope search. Table scope is
+// "html, table, template" and nothing foreign; default, list item and
+// button scope list the special MathML and SVG elements beside their HTML
+// ones.
+bool func foreignScopeStops(kind:int, id:int) {
+    if kind == SCOPE_TABLE { return false }
+    return isSpecialNode(id)
+}
+
 bool func hasElementInScope(tag:text, kind:int) {
     for int i = openElements.length - 1, i >= 0, i-- {
         int id = openElements[i]
         if htmlTagOf(id) == tag { return true }
         if nsOf(id) != NS_HTML {
-            // foreign integration points also terminate a scope search
-            if isMathTextIntegrationPoint(id) || isHtmlIntegrationPoint(id) { return false }
+            if foreignScopeStops(kind, id) { return false }
             continue
         }
         if scopeStops(kind, tagOf(id)) { return false }
@@ -635,7 +658,7 @@ bool func adoptionAgency(subject:text) {
         // formatting element on the stack
         int furthestBlock = -1
         for int i = stackIndex + 1, i < openElements.length, i++ {
-            if isSpecialElement(tagOf(openElements[i])) {
+            if isSpecialNode(openElements[i]) {
                 furthestBlock = i
                 break
             }
@@ -798,6 +821,20 @@ void func splitLeadingWhitespace(t:text) {
     while i < a.length && isSpaceCode(a.charCodeAt(i)) { i++ }
     leadingSpace = a.slice(0, i).toText()
     remainingText = a.slice(i, a.length).toText()
+}
+
+// Every whitespace character of a run, in order, with the rest dropped.
+// The frameset modes are written per character -- they insert a whitespace
+// character and ignore any other one -- so a run reaching them keeps all of
+// its whitespace and not merely the leading part.
+text func whitespaceCharsOf(t:text) {
+    ascii a = t.toAscii()
+    if a == null { return '' }
+    text out = ''
+    for int i = 0, i < a.length, i++ {
+        if isSpaceCode(a.charCodeAt(i)) { out = out + a.slice(i, i + 1).toText() }
+    }
+    return out
 }
 
 void func clearStackBackToTableContext() {
@@ -1176,6 +1213,13 @@ void func modeInBody(tok:Token) {
 
 void func inBodyStartTag(tok:Token) {
     text n = tok.name
+    // "A start tag whose tag name is 'image'": change the token's tag name
+    // to `img` and reprocess it, which from here is the same as carrying on
+    // under the new name.
+    if n == 'image' {
+        tok.name = 'img'
+        n = 'img'
+    }
     if n == 'html' {
         if stackHasTag('template') { return }
         mergeAttributesInto(openElements[0], tok)
@@ -1239,13 +1283,14 @@ void func inBodyStartTag(tok:Token) {
     if n == 'li' {
         framesetOk = false
         for int i = openElements.length - 1, i >= 0, i-- {
-            text t = tagOf(openElements[i])
+            int id = openElements[i]
+            text t = htmlTagOf(id)
             if t == 'li' {
                 generateImpliedEndTags('li')
                 popUntilIncludingTag('li')
                 break
             }
-            if isSpecialElement(t) && t != 'address' && t != 'div' && t != 'p' { break }
+            if isSpecialNode(id) && t != 'address' && t != 'div' && t != 'p' { break }
         }
         if hasElementInScope('p', SCOPE_BUTTON) { closePElement() }
         insertElementForToken(tok)
@@ -1254,13 +1299,14 @@ void func inBodyStartTag(tok:Token) {
     if n == 'dd' || n == 'dt' {
         framesetOk = false
         for int i = openElements.length - 1, i >= 0, i-- {
-            text t = tagOf(openElements[i])
+            int id = openElements[i]
+            text t = htmlTagOf(id)
             if t == 'dd' || t == 'dt' {
                 generateImpliedEndTags(t)
                 popUntilIncludingTag(t)
                 break
             }
-            if isSpecialElement(t) && t != 'address' && t != 'div' && t != 'p' { break }
+            if isSpecialNode(id) && t != 'address' && t != 'div' && t != 'p' { break }
         }
         if hasElementInScope('p', SCOPE_BUTTON) { closePElement() }
         insertElementForToken(tok)
@@ -1306,7 +1352,7 @@ void func inBodyStartTag(tok:Token) {
     if n == 'nobr' {
         reconstructActiveFormatting()
         if hasElementInScope('nobr', SCOPE_DEFAULT) {
-            adoptionAgency('nobr')
+            if !adoptionAgency('nobr') { inBodyAnyOtherEndTag('nobr') }
             reconstructActiveFormatting()
         }
         int id = insertElementForToken(tok)
@@ -1559,13 +1605,13 @@ void func inBodyEndTag(tok:Token) {
 
 void func inBodyAnyOtherEndTag(n:text) {
     for int i = openElements.length - 1, i >= 0, i-- {
-        text t = tagOf(openElements[i])
-        if t == n {
+        int id = openElements[i]
+        if htmlTagOf(id) == n {
             generateImpliedEndTags(n)
             while openElements.length > i { popOpenElement() }
             return
         }
-        if isSpecialElement(t) { return }
+        if isSpecialNode(id) { return }
     }
 }
 
@@ -2018,8 +2064,8 @@ void func modeAfterBody(tok:Token) {
 
 void func modeInFrameset(tok:Token) {
     if tok.kind == TOK_TEXT {
-        splitLeadingWhitespace(tok.data)
-        if leadingSpace != '' { insertCharacters(leadingSpace) }
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
         return
     }
     if tok.kind == TOK_COMMENT {
@@ -2062,8 +2108,8 @@ void func modeInFrameset(tok:Token) {
 
 void func modeAfterFrameset(tok:Token) {
     if tok.kind == TOK_TEXT {
-        splitLeadingWhitespace(tok.data)
-        if leadingSpace != '' { insertCharacters(leadingSpace) }
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
         return
     }
     if tok.kind == TOK_COMMENT {
@@ -2117,6 +2163,11 @@ void func modeAfterAfterBody(tok:Token) {
 }
 
 void func modeAfterAfterFrameset(tok:Token) {
+    if tok.kind == TOK_TEXT {
+        text spaces = whitespaceCharsOf(tok.data)
+        if spaces != '' { insertCharacters(spaces) }
+        return
+    }
     if tok.kind == TOK_COMMENT {
         insertCommentNode(tok.data, documentId)
         return
@@ -2303,6 +2354,19 @@ int func insertForeignElement(tok:Token, ns:int) {
     return el.id
 }
 
+// Pops back to HTML content: every foreign element above the nearest HTML
+// element or integration point. An integration point stops it because the
+// content there is already HTML -- `<math><mtext><svg></p>x` leaves the
+// `<p>` inside `mtext`, measured in Chromium.
+void func popOutOfForeignContent() {
+    while openElements.length > 1 {
+        int id = currentNodeId()
+        if nsOf(id) == NS_HTML || isMathTextIntegrationPoint(id)
+            || isHtmlIntegrationPoint(id) { break }
+        popOpenElement()
+    }
+}
+
 void func processTokenForeign(tok:Token) {
     if tok.kind == TOK_TEXT {
         insertCharacters(tok.data)
@@ -2316,12 +2380,7 @@ void func processTokenForeign(tok:Token) {
     if tok.kind == TOK_DOCTYPE { return }
     if tok.kind == TOK_START {
         if foreignBreakoutTag(tok) {
-            // pop back to HTML content, then reprocess
-            while openElements.length > 1 {
-                int id = currentNodeId()
-                if nsOf(id) == NS_HTML || isMathTextIntegrationPoint(id) || isHtmlIntegrationPoint(id) { break }
-                popOpenElement()
-            }
+            popOutOfForeignContent()
             processToken(tok)
             return
         }
@@ -2331,6 +2390,30 @@ void func processTokenForeign(tok:Token) {
         return
     }
     if tok.kind == TOK_END {
+        // `p` and `br` break out of foreign content as an end tag, exactly
+        // as the start tags above do: the foreign elements are popped and
+        // the token is handled by the HTML rules, so `<svg></p><foo>` puts
+        // the `<p>` and the `<foo>` beside the svg rather than inside it.
+        // Any other unmatched end tag does not -- `<svg></div>x` leaves the
+        // text in the svg. Mapped against Chromium on thirteen fixtures,
+        // recorded in todo.md, because four corpus cases would not have
+        // said where the popping stops.
+        //
+        // It has to come before the "any other end tag" walk below, which
+        // dispatches to the HTML rules WITHOUT popping and so inserted the
+        // `<p>` into the svg.
+        if tok.name == 'p' || tok.name == 'br' {
+            popOutOfForeignContent()
+            // `dispatchToken` and not `processToken`: the popping stops at
+            // an integration point, and the dispatcher sends an END token
+            // at one back to the foreign rules -- its exceptions are for
+            // text and start tags. `processToken` there re-entered this
+            // branch, which popped nothing and dispatched again, until the
+            // stack gave out. A segmentation fault in the unit suite, on a
+            // run whose conformance number had gone up.
+            dispatchToken(tok, insertionMode)
+            return
+        }
         // "any other end tag" in foreign content
         int i = openElements.length - 1
         if i < 0 { return }
@@ -2461,6 +2544,7 @@ text func dropLeadingNewline(t:text) {
 
 Node func parseHtml(src:ascii) {
     Node doc = newDocument()
+    nodeSawInheritInStyle = false
     documentId = doc.id
     insertionMode = IM_INITIAL
     originalInsertionMode = IM_INITIAL

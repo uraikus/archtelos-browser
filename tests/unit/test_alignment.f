@@ -103,8 +103,8 @@ checkEq(findById(noClip, 't').lines[0].frags[0].content, 'xxxxxxxxxxxxxxxxxxxx',
         'a box that does not clip does not ellipsise either')
 
 // ---- pointer-events ------------------------------------------------------
-// The one interaction property this engine can answer, because it has
-// hit testing: `none` makes a box invisible to it.
+// One of the two interaction properties this engine can answer, because
+// it has hit testing: `none` makes a box invisible to it.
 
 Box hitRoot = layoutHtml(head
     + '<div id="a" style="width:100px;height:40px"></div></body>', 400)
@@ -124,5 +124,74 @@ Box behindRoot = layoutHtml(head
     + '<span id="over" style="pointer-events:none">xx</span></div></body>', 400)
 Box behindHit = hitTest(behindRoot, 5, 5)
 check(behindHit != null, 'something behind a pointer-events:none box is still hit')
+
+// ---- interactivity: inert, which is not pointer-events -----------------
+// The other one. `inert` takes the box AND its subtree out of hit
+// testing, and a descendant cannot undo it -- which is exactly where it
+// parts from `pointer-events: none`, whose descendants this engine
+// searches on purpose because a child may ask for pointer events back.
+// Chromium's rows are in todo.md.
+
+text func hitIdAt(css:text, kidCss:text, x:int, y:int) {
+    Box r = layoutHtml(head
+        + `<div id="a" style="width:100px;height:40px;${css}">`
+        + `<div id="k" style="width:100px;height:40px;${kidCss}"></div>`
+        + '</div></body>', 400)
+    Box h = hitTest(r, x, y)
+    if h == null { return 'none' }
+    text id = attrOf(h.node.id, 'id')
+    return id == null ? 'anon' : id
+}
+
+// The control: with nothing declared the child is what a point over
+// both lands on.
+checkEq(hitIdAt('', '', 50, 20), 'k', 'the innermost box at the point is what is hit')
+
+// `pointer-events: none` lets a child opt back in.
+checkEq(hitIdAt('pointer-events:none', 'pointer-events:auto', 50, 20), 'k',
+        'a child of a pointer-events:none box can ask for pointer events back')
+
+// `inert` does not. What the point lands on instead is whatever is
+// behind the subtree -- the root element in Chromium, an anonymous box
+// here -- so the check is that nothing in the inert subtree is hit
+// rather than that nothing at all is.
+bool func hitOutsideInert(css:text, kidCss:text) {
+    text id = hitIdAt(css, kidCss, 50, 20)
+    return id != 'a' && id != 'k'
+}
+
+check(hitOutsideInert('interactivity:inert', 'interactivity:auto'),
+      'a child of an inert box cannot')
+check(hitOutsideInert('interactivity:inert', ''),
+      'and an inert box is not hit itself')
+check(hitOutsideInert('interactivity:inert;pointer-events:auto', ''),
+      'inert beats pointer-events: auto on the same box')
+checkEq(hitIdAt('interactivity:auto', '', 50, 20), 'k',
+        'interactivity: auto is the initial value and changes nothing')
+
+// An inert INLINE is skipped too, and the box behind it answered --
+// which is what Chromium does, and the one case where inert and
+// pointer-events agree, because a run of text cannot ask to be hit
+// again.
+text func hitInlineAt(css:text) {
+    Box r = layoutHtml(head
+        + `<div id="u" style="width:200px"><span id="s" style="${css}">xx</span></div>`
+        + '</body>', 400)
+    Box h = hitTest(r, 5, 5)
+    if h == null { return 'none' }
+    text id = attrOf(h.node.id, 'id')
+    return id == null ? 'anon' : id
+}
+
+check(hitInlineAt('') != 'u', 'a plain inline is hit rather than the block behind it')
+checkEq(hitInlineAt('pointer-events:none'), 'u',
+        'the block behind a pointer-events:none inline is hit instead')
+checkEq(hitInlineAt('interactivity:inert'), 'u', 'and behind an inert one')
+
+// The instrument: the two properties have to disagree on the same
+// fixture, or this section is testing one of them twice.
+check(hitIdAt('pointer-events:none', 'pointer-events:auto', 50, 20)
+      != hitIdAt('interactivity:inert', 'interactivity:auto', 50, 20),
+      'inert and pointer-events really do differ on a child that opts back in')
 
 finish('alignment')

@@ -143,14 +143,125 @@ void func showStatusNow(msg:text) {
 
 void func loadInto(url:text) {
     showStatusNow(`Loading ${url} ...`)
+    stopSmoothScroll()
     page = loadPage(url, clientWidth)
-    scrollY = 0
+    // A new document starts at the top, unless something in it asked
+    // for `scroll-initial-target`: layout works out where, and the
+    // shell applies it because the shell owns this offset. `reload`
+    // keeps the position the reader was at, so it overwrites this
+    // afterwards on purpose.
+    scrollY = page.initialScrollY
+    clampScroll()
     statusText = ''
     editing = false
+    startAnimationTimer()
+}
+
+// ---- CSS animations -----------------------------------------------------
+//
+// The clock is the shell's: while any animation on the page can still
+// change, a timer moves it on, styles are computed again and the page is
+// drawn. A page with none never starts the timer.
+int animationTimer = 0
+int animationStartMs = 0
+
+void func stopAnimationTimer() {
+    if animationTimer != 0 {
+        clearInterval(animationTimer)
+        animationTimer = 0
+    }
+}
+
+void func animationTick() {
+    if page.doc == null { stopAnimationTimer()  return }
+    animationClock = (now() - animationStartMs).toFloat()
+    restylePage(page, clientWidth)
+    clampScroll()
+    repaint()
+    if !animLive { stopAnimationTimer() }
+}
+
+void func startAnimationTimer() {
+    stopAnimationTimer()
+    animationStartMs = now()
+    animationClock = 0.0
+    if cssSawKeyframes && animLive { animationTimer = setInterval(animationTick, 40) }
+}
+
+// Styles are computed again for a reason other than the timer -- a
+// fragment navigation changed `:target` -- so a transition it starts
+// begins at the document's clock and not at the last tick's. If one is
+// running afterwards the timer is needed, and it keeps the clock it has
+// rather than starting over.
+void func restyleNow() {
+    animationClock = (now() - animationStartMs).toFloat()
+    restylePage(page, clientWidth)
+    if animLive && animationTimer == 0 { animationTimer = setInterval(animationTick, 40) }
+}
+
+// A smooth scroll (`scroll-behavior: smooth` on the root element): the
+// page asked to be taken somewhere, and the shell takes it there over the
+// time Chromium takes, a frame at a time. Wheel, keys and a new page all
+// cancel it, as in Chromium.
+int smoothTimer = 0
+int smoothFrom = 0
+int smoothTo = 0
+int smoothStartMs = 0
+
+void func stopSmoothScroll() {
+    if smoothTimer != 0 {
+        clearInterval(smoothTimer)
+        smoothTimer = 0
+    }
+}
+
+void func smoothScrollTick() {
+    int next = smoothScrollAt(smoothFrom, smoothTo, (now() - smoothStartMs).toFloat())
+    scrollY = next
+    clampScroll()
+    repaint()
+    if next == smoothTo { stopSmoothScroll() }
+}
+
+// Scroll the document to `target`, smoothly when the root element says so.
+void func scrollDocumentTo(target:int) {
+    stopSmoothScroll()
+    int to = clampInt(target, 0, maxScroll())
+    Node html = page.doc == null ? null : findElement(page.doc, 'html')
+    if html != null && smoothScrollOf(html.style) && to != scrollY {
+        smoothFrom = scrollY
+        smoothTo = to
+        smoothStartMs = now()
+        smoothTimer = setInterval(smoothScrollTick, 16)
+        return
+    }
+    scrollY = to
+    clampScroll()
+}
+
+// A link to a place in the document already open is not a load: the
+// same document is styled again, because `:target` now names another
+// element, and scrolled to it (HTML, "navigate to a fragment").
+bool func isSameDocument(url:text) {
+    if !page.loaded || page.doc == null || url == null { return false }
+    ascii a = url.toAscii()
+    if a == null || asciiIndexOf(a, '#', 0) < 0 { return false }
+    return withoutFragment(url) == withoutFragment(page.url)
+}
+
+void func goToFragment(url:text) {
+    page.url = url
+    setTargetFragment(page, url)
+    restyleNow()
+    text frag = urlFragmentOf(url)
+    if cssTargetNode > 0 { scrollDocumentTo(page.initialScrollY) }
+    else if frag == '' || asciiLower(frag.toAscii()) == 'top' { scrollDocumentTo(0) }
+    clampScroll()
+    statusText = ''
 }
 
 void func navigate(url:text) {
-    loadInto(url)
+    if isSameDocument(url) { goToFragment(url) } else { loadInto(url) }
     // a new navigation truncates any forward history
     while history.length > historyIndex + 1 { history.pop() }
     history.push(page.url)
@@ -161,7 +272,8 @@ void func navigate(url:text) {
 void func goBack() {
     if historyIndex <= 0 { return }
     historyIndex--
-    loadInto(history[historyIndex])
+    if isSameDocument(history[historyIndex]) { goToFragment(history[historyIndex]) }
+    else { loadInto(history[historyIndex]) }
     repaint()
 }
 
@@ -175,6 +287,7 @@ void func reload() {
 }
 
 void func scrollBy(dy:int) {
+    stopSmoothScroll()
     int before = scrollY
     scrollY = scrollY + dy
     clampScroll()
@@ -185,7 +298,6 @@ bool func isNavigableHref(href:text) {
     if href == null || href == '' { return false }
     ascii a = href.toAscii()
     if a == null { return true }
-    if a.charCodeAt(0) == CH_HASH { return false }
     return !asciiStartsWithLower(a, 'javascript:', 0) && !asciiStartsWithLower(a, 'mailto:', 0) && !asciiStartsWithLower(a, 'tel:', 0)
 }
 
@@ -195,11 +307,14 @@ bool func isNavigableHref(href:text) {
 // scrollable box inside a page usable at all.
 void func wheelAt(x:int, y:int, dy:int) {
     if page != null && page.root != null && y >= TOOLBAR_H {
-        Box inner = scrollContainerAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
+        Box inner = wheelTargetAt(page.root, x, y - TOOLBAR_H + scrollY, dy)
         if inner != null && boxScrollBy(inner, dy) {
             repaint()
             return
         }
+        // a container with `overscroll-behavior` other than `auto` has
+        // reached its end, so the page does not take what is left
+        if wheelChainBlocked { return }
     }
     scrollBy(dy)
 }
@@ -216,7 +331,7 @@ on mouseWheelDown(x:int, y:int) { wheelAt(x, y, SCROLL_STEP) }
 // by the thumb.
 void func wheelAcrossAt(x:int, y:int, dx:int) {
     if page == null || page.root == null || y < TOOLBAR_H { return }
-    Box inner = scrollContainerAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
+    Box inner = wheelTargetAcrossAt(page.root, x, y - TOOLBAR_H + scrollY, dx)
     if inner != null && boxScrollLeftBy(inner, dx) { repaint() }
 }
 
@@ -233,6 +348,32 @@ int dragThumbGrab = 0
 // Which bar the drag is on: a box may have both, and the pointer took
 // hold of one of them.
 bool dragThumbAcross = false
+
+// The box whose `resize` grabber the pointer took hold of, where the
+// pointer was when it last moved, and the size the drag has taken the
+// box to. Held by node id for the same reason as above.
+//
+// The drag is driven by the pointer's DELTAS rather than by its
+// position, for two reasons: a grabber inside a scrolled container is
+// hit at a point in that container's coordinates and not the page's,
+// and a pointer held past the minimum size would otherwise lose the
+// distance it went and grow the box the moment it came back.
+int dragResizeNode = 0
+int dragResizeLastX = 0
+int dragResizeLastY = 0
+int dragResizeW = 0
+int dragResizeH = 0
+
+// The box a resize drag is on, found again in the tree laid out most
+// recently -- which for this drag is a tree laid out since it began.
+Box func dragResizeBox(b:Box) {
+    if b.node != null && b.node.id == dragResizeNode && resizeGrabberShown(b) { return b }
+    for int i = 0, i < b.children.length, i++ {
+        Box found = dragResizeBox(b.children[i])
+        if found != null { return found }
+    }
+    return null
+}
 
 // The box a drag is on, found again in the tree laid out most recently.
 Box func dragThumbBox(b:Box) {
@@ -267,6 +408,19 @@ on mouseDown(x:int, y:int, button:int) {
     // A press on a scrollbar's thumb takes hold of it, and nothing else
     // happens with that press: it is not a click on what is behind it.
     int docY = y - TOOLBAR_H + scrollY
+    // The grabber is drawn over the corner between the two scrollbars,
+    // so the pointer is tested against it first.
+    if anyResize {
+        Box grab = resizeGrabberAt(page.root, x, docY)
+        if grab != null {
+            dragResizeNode = grab.node.id
+            dragResizeLastX = x
+            dragResizeLastY = docY
+            dragResizeW = grab.w
+            dragResizeH = grab.h
+            return
+        }
+    }
     Box thumb = scrollThumbAt(page.root, x, docY)
     if thumb != null {
         dragThumbNode = thumb.node.id
@@ -288,11 +442,37 @@ on mouseDown(x:int, y:int, button:int) {
 }
 
 on mouseUp(x:int, y:int, button:int) {
-    if button == 1 { dragThumbNode = 0 }
+    if button == 1 {
+        dragThumbNode = 0
+        dragResizeNode = 0
+    }
 }
 
 on mouse(x:int, y:int) {
     if page.root == null { return }
+    // A resize drag restyles and lays the document out again, because
+    // the dragged size reaches layout as a declaration: it is the
+    // element's own used width and height, and everything that depends
+    // on them -- its lines, its descendants, the boxes after it --
+    // follows from that one pass rather than from a second rule here.
+    if dragResizeNode != 0 {
+        Box held = dragResizeBox(page.root)
+        if held == null { dragResizeNode = 0 }
+        else {
+            int docYn = y - TOOLBAR_H + scrollY
+            dragResizeW = dragResizeW + (x - dragResizeLastX)
+            dragResizeH = dragResizeH + (docYn - dragResizeLastY)
+            dragResizeLastX = x
+            dragResizeLastY = docYn
+            if resizeSetSize(held, dragResizeW, dragResizeH) {
+                computeStyles(page.doc)
+                layoutPage(page, clientWidth)
+                clampScroll()
+                repaint()
+            }
+            return
+        }
+    }
     // A drag in progress moves the thumb and nothing else: the pointer
     // may leave the bar, and the thumb still follows it, which is what
     // every scrollbar does.
@@ -388,6 +568,11 @@ for int i = 1, i < argv.length, i++ {
     } else if arg == '--print' && i + 1 < argv.length {
         printPath = argv[i + 1]
         i++
+    } else if arg == '--no-background-graphics' {
+        // What a print dialog's "background graphics" setting turns
+        // off, and what `print-color-adjust: exact` turns back on for
+        // the boxes that ask (todo.md).
+        printOmitBackgrounds = true
     } else if arg == '--width' && i + 1 < argv.length {
         int w = argv[i + 1].toInt()
         if w != null && w > 0 { requestedWidth = w }
@@ -399,9 +584,17 @@ for int i = 1, i < argv.length, i++ {
             screenshotHeightGiven = true
         }
         i++
+    } else if arg == '--time' && i + 1 < argv.length {
+        // The moment, in milliseconds after the load, the document's
+        // animations are drawn at.
+        parseNumberAt(argv[i + 1].toAscii(), 0)
+        if numOk { animationClock = numValue }
+        i++
     } else if arg == '--help' || arg == '-h' {
-        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H]')
+        log('usage: browser [url-or-file] [--screenshot out.png] [--print out.png] [--width W] [--height H] [--time MS] [--no-background-graphics]')
+        log('  --time draws CSS animations at MS milliseconds after the load')
         log('  --print paginates the document and writes out-1.png, out-2.png, ...')
+        log('  --no-background-graphics omits backgrounds, which print-color-adjust: exact overrides')
         close(0)
     } else {
         startUrl = arg
@@ -442,18 +635,18 @@ if printPath != '' {
     // out of the document's own stylesheet, so it is not known until the
     // document has been read once. It is laid out again at that width
     // rather than guessed at.
-    PageBox firstBox = pageBoxFor('', 1)
+    PageBox firstBox = pageBoxFor('', 1, false)
     int areaW = pageAreaWidth(firstBox)
     setCssViewport(areaW, pageAreaHeight(firstBox))
     preparePage(page, areaW)
-    paginateDocument(page.root)
+    paginatePage(page)
     int written = 0
     for int i = 0, i < pageStartY.length, i++ {
         PageBox pbox = pageBoxes[i]
         setClientWidth(pbox.width)
         setClientHeight(pbox.height)
         clearCanvas()
-        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i])
+        paintPagedPage(page, pbox, pageStartY[i], pageEndY[i], i, pageStartY.length)
         text out = printPageName(printPath, i + 1)
         if saveCanvas(out) { written++ } else { log(`could not write ${out}`) }
     }

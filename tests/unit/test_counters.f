@@ -220,4 +220,43 @@ Page cs12 = pageFromHtml(head + '<style>.v { display:inline-block }'
 checkEq(generatedBefore(cs12.root, 'x'), generatedBefore(cs11.root, 'x'),
         'and one written in a style attribute counts the same')
 
+// ---- attr() in content (CSS Values and Units 3 §6) -------------------
+//
+// Values 3 allows `attr()` in `content` and nowhere else -- the typed
+// form that reaches other properties is Values 5 -- so this is the
+// whole of that feature, and it had no check until now.
+Page pa1 = pageFromHtml(head
+    + '<style>span::before{content:attr(data-x)}</style>'
+    + '<span id="x" data-x="hello"></span></body>', 'about:blank', 600)
+checkEq(generatedBefore(pa1.root, 'x'), 'hello', 'attr() generates the attribute\'s value')
+
+// An attribute that is not there is the empty string, not the word
+// `null` and not a dropped declaration.
+Page pa2 = pageFromHtml(head
+    + '<style>span::before{content:attr(data-missing)}</style>'
+    + '<span id="x" data-x="hello"></span></body>', 'about:blank', 600)
+checkEq(generatedBefore(pa2.root, 'x'), '', 'a missing attribute generates nothing')
+
+// It composes with the strings beside it, in the order written.
+Page pa3 = pageFromHtml(head
+    + '<style>span::before{content:"[" attr(data-x) "]"}</style>'
+    + '<span id="x" data-x="mid"></span></body>', 'about:blank', 600)
+checkEq(generatedBefore(pa3.root, 'x'), '[mid]', 'and sits among the strings in order')
+
+// The attribute name is matched case-insensitively, as HTML attribute
+// names are, and its VALUE is not folded.
+Page pa4 = pageFromHtml(head
+    + '<style>span::before{content:attr(DATA-X)}</style>'
+    + '<span id="x" data-x="MiXeD"></span></body>', 'about:blank', 600)
+checkEq(generatedBefore(pa4.root, 'x'), 'MiXeD',
+        'the name folds and the value does not')
+
+// The check that needs no number: an attribute holding exactly what a
+// string would have said must generate what that string generates.
+Page pa5 = pageFromHtml(head
+    + '<style>#a::before{content:attr(data-x)}#b::before{content:"same"}</style>'
+    + '<span id="a" data-x="same"></span><span id="b"></span></body>', 'about:blank', 600)
+checkEq(generatedBefore(pa5.root, 'a'), generatedBefore(pa5.root, 'b'),
+        'attr() and the string it holds generate the same content')
+
 finish('counters')
