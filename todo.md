@@ -4497,6 +4497,88 @@ and 1600px of width below so that it scrolls; positions are
   shell has no horizontal page scroll -- so only those placements, and the
   scroller, are checkable.
 
+### CSS Transitions 1, measured
+
+Seventy-odd documents to Chromium 141. Each declares a transition on `#e`,
+changes a class, and reads `getComputedStyle` back with every transition
+paused at a chosen `currentTime` (`getAnimations()`, `pause()`,
+`currentTime = t`), so the numbers are the curve and not a frame clock.
+`getAnimations()` also says which transitions *exist*, with their duration
+and delay, which is how most of the rules below were found.
+
+Width 100px to 200px over 1s, read at 0, 100, 250, 500, 750, 900 and 1000 ms:
+
+| timing | 0 | 100 | 250 | 500 | 750 | 900 | 1000 |
+|---|---|---|---|---|---|---|---|
+| `ease` (the default) | 100 | 109.469 | 140.844 | 180.234 | 196.031 | 199.422 | 200 |
+| `linear` | 100 | 110 | 125 | 150 | 175 | 190 | 200 |
+| `ease-in-out` | 100 | 101.969 | 112.906 | 150 | 187.078 | 198.016 | 200 |
+| `steps(4)` | 100 | 100 | 125 | 150 | 175 | 175 | 200 |
+
+The same curves as animations, because a transition is a two-keyframe
+animation whose ends are the old and the new computed value.
+
+- **What starts one.** A computed value that differs between the style
+  before the change and the style after it, on a property the *after-change*
+  style lists in `transition-property`, with a duration plus a delay above
+  zero. So a rule that sets the value *and* the `transition` starts one
+  (`.b { width: 200px; transition: width 1s }` from a plain `#e { width:
+  100px }`: 150px at 500 ms), and one that sets the value and says
+  `transition: none` does not (200px at once). The duration, delay and
+  timing function come from the after-change style too: `.b {
+  transition-delay: .5s }` delays a transition that `#e` declared with no
+  delay, and `.b { transition-duration: 2s }` lengthens it. A zero duration
+  starts nothing; a zero duration with a delay of 1s starts one that holds the
+  old value for a second and then jumps (100 at 999 ms, 200 at 1000).
+- **A delay holds the old value** (width at 0, 250, 500, 750, 1000, 1500 ms
+  under `1s linear .5s`: 100, 100, 100, 125, 150, 200) and a **negative delay
+  starts part-way** (`-.5s`: 150, 175, 200 at 0, 250, 500).
+- **Longhand lists cycle**: `transition-property: width, opacity, height`
+  with durations `1s, 2s` gives height 1s, the list repeating. A later item
+  for the same property overrides an earlier one (`color 2s, all 1s` gives
+  colour 1s). `transition-property: all` covers every property that changes.
+  A shorthand name covers its longhands (`margin` starts four
+  transitions, `border-radius` four). The shorthand `transition` takes its
+  parts in any order: a first time is the duration, a second the delay, a lone
+  `1s` is `all 1s ease 0s`.
+- **Discrete properties need `allow-discrete`**, in the shorthand or in
+  `transition-behavior` (one item per property, cycling). `text-align: left`
+  to `right` under `transition: text-align 1s` is `right` at once, and under
+  `transition: text-align 1s allow-discrete` is `left` at 499 ms and `right`
+  at 501. `transition: all` does not include them without the keyword, and with
+  it does. `display` and `visibility` are the exceptions in the other
+  direction: `visibility: visible` to `hidden` transitions *without* the
+  keyword and stays `visible` until the end, and `display: block` to `none`
+  with it stays `block` until 1000 ms and is `none` at 1000.
+- **A value that cannot be interpolated starts nothing**: `width: auto` to
+  `200px` and `height: auto` to `200px` change at once. `px` to `%` does
+  interpolate (`100px` to `50%` of 400 is 150 at 500 ms), and so do a
+  `calc()` and a pair of colours, transform lists (`translateX(0)` to
+  `scale(2)` through the matrix: 1.5 at 500 ms) and shadows.
+- **`currentcolor` is compared unresolved**: `border-color: currentcolor`
+  with only `color` changing starts no transition, and the border is
+  the new colour at once.
+- **Reversing.** A transition running when the value goes back to the one it
+  started from is replaced by one from the *current* value to that start, and
+  its duration is shortened by how far the first had got: width 100 to 200
+  over 1s, reversed at 500 ms, is a 500 ms transition from 150 (150, 140,
+  125, 100 at 0, 100, 250, 500 ms); reversed at 250 ms it lasts 250 ms; at
+  750 ms, 750 ms. Under `ease` it is shortened by the *eased* progress, not
+  the time -- 802.4 ms for a reversal at 500 ms, where the eased progress is
+  0.80234 -- and runs a fresh `ease` over that: 180.234, 169.297, 137.25, 108,
+  100.188, 100 at 0, 100, 250, 500, 750, 1000 ms. A reversal after it
+  finished is a plain 1s transition from 200. A **third value** is a full-
+  length transition from the current value (100 to 200, then 300 at 500 ms:
+  150, 187.5, 225, 300 at 0, 250, 500, 1000 ms). A reversal inside the
+  delay is no transition at all, because the computed value never moved.
+- **A child follows its parent's animated value** (`color` on `#p` with a
+  transition, read on a `<span>` inside it: 0, 50, 100 at 0, 500, 1000 ms),
+  and a child with a `transition` of its own for `color` does *not*: it starts
+  a new transition at every change of its inherited value and so sits at the
+  start of one, which no snapshot at a chosen time can show.
+
+The measurement alone; the tests and the implementation follow.
+
 ### The four synthesis controls, measured -- one of them acts here
 
 **`font-synthesis-small-caps` has landed**, with the `font-synthesis`
