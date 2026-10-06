@@ -228,7 +228,7 @@ arr[TrSpec] func trSpecsOf(props:map[text]) {
             s.delay = delay
             // read here and not into a local above: a `text` local stored
             // into the structs of a nested loop read back as machine code
-            // (FINDINGS.md, "a text local stored in a struct")
+            // (FINDINGS.md, finding 43)
             s.timing = animItem(props, 'transition-timing-function', i, 'ease')
             s.discrete = discrete
             out.push(s)
