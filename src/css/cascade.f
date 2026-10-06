@@ -7,6 +7,7 @@ import ../util/color.f
 import ../util/bidi.f
 import ua.f
 import animation.f
+import transition.f
 
 const int ORIGIN_UA = 0
 const int ORIGIN_AUTHOR = 1
@@ -414,6 +415,8 @@ void func cascadeReset() {
     smoothScrollOfSerial = {}
     anySmoothScroll = false
     cascadeSawViewTransition = false
+    cascadeSawTransition = false
+    trReset()
     cascadeSawMathDepth = false
     cascadeSawRuby = false
     anyZoom = false
@@ -593,6 +596,9 @@ void func indexSheet(sheet:Stylesheet, origin:int) {
             }
             if !cascadeSawViewTransition && dn == 'view-transition-name' {
                 cascadeSawViewTransition = true
+            }
+            if !cascadeSawTransition && (dn == 'transition' || dn == 'transition-duration') {
+                cascadeSawTransition = true
             }
             if !cascadeSawMathDepth && dn == 'math-depth' {
                 cascadeSawMathDepth = true
@@ -1984,6 +1990,10 @@ arr[Match] func collectMatches(n:Node) {
             }
             if !cascadeSawViewTransition && decls[d].name == 'view-transition-name' {
                 cascadeSawViewTransition = true
+            }
+            if !cascadeSawTransition
+                && (decls[d].name == 'transition' || decls[d].name == 'transition-duration') {
+                cascadeSawTransition = true
             }
             if !cascadeSawMathDepth && decls[d].name == 'math-depth' {
                 cascadeSawMathDepth = true
@@ -4869,6 +4879,11 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         animExpandShorthand(props, value)
         return
     }
+    // And `transition` the same way, for the same reason.
+    if cascadeSawTransition && name == 'transition' {
+        trExpandShorthand(props, value)
+        return
+    }
     // `all` (Cascade 4 §3.2) sets every property at once to one
     // CSS-wide keyword, and overrides every declaration before it in the
     // block -- so those are dropped here and the ones after it are
@@ -7034,7 +7049,16 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
         inheritParent = -1
         resolveInheritedDeclarations(props, parent, isRoot)
     }
+    // A transition compares the declared values, which an animation is
+    // about to write over, so the declared ones are kept apart where both
+    // are in play.
+    map[text] trDest = props
+    if cascadeSawTransition && cssSawKeyframes && props['animation-name'] != null { trDest = copyProps(props) }
     if cssSawKeyframes && props['animation-name'] != null { applyAnimations(props, parent) }
+    bool trLive = false
+    if cascadeSawTransition && n.id > 0 {
+        trLive = applyTransitions(`${n.id}|${collectingPseudoKey}`, props, trDest, parent)
+    }
     if archtelosTiming {
         profApplyMs = profApplyMs + (now() - t1)
         profElements++
@@ -7052,6 +7076,8 @@ Style func computeStyle(n:Node, parent:Style, isRoot:bool) {
     text key = styleCacheKey(n, parent, isRoot, matches)
     // An animated element's style is a function of the clock too.
     if cssSawKeyframes && props['animation-name'] != null { key = `${key}|t${animationClock}` }
+    // So is a transitioning one's, and no other element shares it.
+    if trLive { key = `${key}|x${n.id}:${animationClock}` }
     Style cached = styleCache[key]
     if cached != null {
         profShareTotal++

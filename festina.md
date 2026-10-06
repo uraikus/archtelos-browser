@@ -885,3 +885,26 @@ the parent's *computed* value for a property named at run time. With
 declarations after it, and `prop: inherit` is a copy of one field rather
 than of the parent's declaration text.
 
+
+## 3v Say when a `text` aliases a buffer that is about to go
+
+**Today.** A `text` taken from an `ascii` slice and returned through a
+local binding can outlive the buffer it points into, and then reads back as
+whatever was allocated there next (FINDINGS.md, finding 43). Nothing in the
+program is wrong by the language's own rules, nothing is reported at the
+store, and valgrind sees an ordinary read of mapped memory.
+
+**Proposal.** Two things, either of which would have found it:
+
+- `text` bindings always copy, as the section on text says a binding does
+  (`decisions.md`, section 83), including a binding to a local from the
+  result of a call. If that is already the rule, finding 43 is a bug in it
+  and wants a reduction this project could not make; if it is not, the
+  section is out of date.
+- A debug build that poisons freed text and `ascii` buffers, so that a
+  dangling one reads as an obvious pattern at the first use and not as a
+  plausible word or the bytes of the program.
+
+**What it removes here.** A workaround written as a comment at one call
+site -- read into the struct field directly -- that nothing stops the next
+loop from forgetting.

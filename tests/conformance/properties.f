@@ -359,6 +359,35 @@ arr[text] func digestFieldsForPseudo(decl:text, pseudo:text) {
     return fields
 }
 
+// A transition acts on a change, so a transition row is graded on a
+// document that makes one: the element is styled with the row's
+// declarations, a class then changes three of its properties -- one that
+// can be interpolated and has to be asked for by name, one the keyword
+// `all` would also take, and one that cannot be interpolated at all -- and
+// the document is styled again, and then once more a quarter of a second
+// later, which is before a one-second transition is half over. Every row's own effect is
+// then somewhere in what that leaves: a longer duration, a delay, another
+// timing function, another list of properties, or permission for the
+// discrete one to flip.
+arr[text] func digestFieldsForTransition(decl:text) {
+    cascadeReset()
+    Node doc = parseHtmlText(`<html><head><style>#t.go{opacity:.2;margin-left:20px;text-align:right}</style></head><body><table><tr><td><p id="t" style="${decl}">x</p></td></tr></table></body></html>`)
+    cascadeAddDocumentStyles(doc)
+    animationClock = 0.0
+    computeStyles(doc)
+    arr[Node] ps = []
+    collectElements(doc, 'p', ps)
+    arr[text] missing = ['MISSING']
+    if ps.length == 0 { return missing }
+    setAttr(ps[0], 'class', 'go')
+    computeStyles(doc)
+    animationClock = 250.0
+    computeStyles(doc)
+    arr[text] fields = styleDigestFields(ps[0].style)
+    animationClock = 500.0
+    return fields
+}
+
 bool verbose = false
 bool showFields = false
 int minimum = -1
@@ -483,8 +512,13 @@ for int i = 0, i < lines.length, i++ {
             continue
         }
     } else {
-        if context != '' { rowBaseFields = digestFieldsFor(context) }
-        gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
+        if asciiStartsWith(prop.toAscii(), 'transition', 0) {
+            rowBaseFields = digestFieldsForTransition(context)
+            gotFields = digestFieldsForTransition(`${prop}: ${own};${context}`)
+        } else {
+            if context != '' { rowBaseFields = digestFieldsFor(context) }
+            gotFields = digestFieldsFor(`${prop}: ${own};${context}`)
+        }
     }
     text rowBaseline = rowBaseFields.join('\u0001')
     // @supports takes a DECLARATION, not a property name, and for

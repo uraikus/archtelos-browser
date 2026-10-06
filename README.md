@@ -414,6 +414,22 @@ keeps a timer while any animation on the page can still change, and
 stops it when none can; a screenshot draws one moment, `--time 500`
 being half a second after the load.
 
+**`transition`** is the same interpolation between two values of one
+element's own. A document that declares a duration keeps, for every
+element, the values the last style computation found; a computation that
+finds a different value for a property the element's *new* style lists in
+`transition-property` starts a transition from the old value to the new,
+which runs on the animation clock with the timing function, delay and
+duration the new style gives, and is written over the declaration the same
+way an animation is. A change back to where a running transition began
+reverses it, shortened by how far it had got; a third value starts a new
+one from where the element is. A value that cannot be interpolated
+transitions only with `allow-discrete` (`display` and `visibility` as
+Chromium has them), and the first style of a page transitions from
+nothing. The one thing in this browser that restyles a page under the
+reader is following a link to a fragment, which changes `:target`; that is
+what starts one in the window.
+
 **Transforms** move, turn and scale a box and everything inside it
 without touching the layout: `transform` takes `translate`, `scale` and
 `rotate` in any order and composes them left to right, `transform-origin`

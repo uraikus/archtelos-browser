@@ -1440,6 +1440,8 @@ text func animUnderlying(prop:text, orig:map[text], parent:Style) {
     if prop == 'rotate' { return '0deg' }
     if prop == 'translate' { return '0px 0px' }
     if prop == 'visibility' { return 'visible' }
+    if prop == 'text-align' { return 'left' }
+    if prop == 'background-position-x' || prop == 'background-position-y' { return '0%' }
     if prop == 'font-weight' { return '400' }
     if asciiStartsWith(prop.toAscii(), 'margin-', 0) || asciiStartsWith(prop.toAscii(), 'padding-', 0)
         || prop == 'letter-spacing' || prop == 'word-spacing' || prop == 'outline-offset'

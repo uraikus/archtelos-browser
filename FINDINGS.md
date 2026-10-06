@@ -1422,3 +1422,41 @@ size where it should have kept the parent's computed length
 (todo.md, "The cascade"). A hand-written field list would have done the
 copy exactly, and is the list that rotted in `styleDigest`.
 
+
+## 43 A `text` bound to a local and then stored in a struct can read back as machine code
+
+In `src/css/transition.f` a list of transitions was built in a loop: each
+item's timing function was read from a comma list into a local `text`,
+and the local was stored into one struct per property the item named.
+
+```festina
+for int i = 0, i < list.length, i++ {
+    text timing = animItem(props, 'transition-timing-function', i, 'ease')
+    arr[text] targets = trLonghands(list[i])
+    for int k = 0, k < targets.length, k++ {
+        TrSpec s
+        s.timing = timing           // later: [AWAVSH...], then a crash
+        out.push(s)
+    }
+}
+```
+
+Read back in the same function, `s.timing` was not `linear` but the bytes
+of a function prologue (`AWAVSH` is `push r15; push r14; push rbx`), and
+`asciiStartsWith` on it faulted at address -16. valgrind reported nothing
+at the store, nor at the read until it was dereferenced: the pointer was
+into mapped memory. Writing the call straight into the field,
+`s.timing = animItem(...)`, with no local between, read back correctly,
+and `animSpecs` in `animation.f` is written that way and has never shown
+it.
+
+`animItem` returns an element of an `arr[text]` that `animList` filled
+with `ascii.toText()` of trimmed slices, so what is returned is derived
+from an `ascii` that is released when the function returns. The
+reproduction is the engine's own functions and **was not reduced to a
+program of its own**: four attempts with a function that returns a `text`
+out of a local array, a ternary against a literal, and a nested loop all
+read back correctly. So this entry records the shape that fails and the
+shape that does not, and nothing about which of the three ingredients --
+a slice's `toText()`, a local binding that does not copy, and a store into
+a struct that is later pushed -- is the one that does it.

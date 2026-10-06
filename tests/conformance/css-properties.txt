@@ -459,11 +459,11 @@ transform	translateX(10px)
 transform-box	content-box
 transform-origin	left
 transform-style	preserve-3d
-transition-behavior	allow-discrete
-transition-delay	1s
-transition-duration	1s
-transition-property	opacity
-transition-timing-function	linear
+transition-behavior	allow-discrete;transition-property:text-align;transition-duration:1s
+transition-delay	1s;transition-property:opacity;transition-duration:1s
+transition-duration	1s;transition-property:opacity
+transition-property	opacity;transition-duration:1s
+transition-timing-function	linear;transition-property:opacity;transition-duration:1s
 translate	10px
 unicode-bidi	embed
 user-select	none

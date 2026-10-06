@@ -10,10 +10,10 @@ Where the engine stands against
 **[CSS Snapshot 2026](https://www.w3.org/TR/css-2026/)** is measured,
 specification by specification, in [css-2026.md](css-2026.md). The
 snapshot's official definition of CSS is 24 specifications; the engine
-implements no part of 2 of them, and those two are the two it cannot:
-Compositing and Blending 1 needs an operator the runtime never changes,
-and Easing 1 needs a clock and a repaint loop rather than a property.
-That list, not a sense of what feels modern, sets the order below.
+implements part of every one of them, and the one it can do least of is
+Compositing and Blending 1, which needs an operator the runtime never
+changes. That list, not a sense of what feels modern, sets the order
+below.
 
 ### The cascade
 
@@ -5212,17 +5212,55 @@ what agrees):
 
 - **`animation-timeline` and `animation-range`**
   are ignored, and so is `@keyframes` inside a layer being scoped to it.
-- **Transitions.** Nothing changes a computed value under a running page,
-  so `transition-*` has nothing to act on.
 - **The window's timer and the `#fragment` click are checked by hand, not
   by the suite.** Under Xvfb, with `xdotool` and `xwd`: an alternating
   animation's width read 300, 228, 150 and 71 pixels in four captures half
   a second apart, a click on `<a href="#t">` scrolled the target to the top
   of the viewport and turned `#t:target` green, and Back returned to the
-  top. Repeating that in `tests/run.sh` needs those three tools, which the
+  top. A transition started by the same click read 136, 172, 233, 293, 341 and
+  400 pixels of a box going from 100 to 400 over a second (`#e:target`, a
+  `transition: width 1s linear`) in captures 50 to 70 ms apart, which is a
+  straight line arriving at the end on time and stopping its timer. Repeating that in `tests/run.sh` needs those three tools, which the
   suite does not otherwise ask for. A tick re-styles the whole document
   (`restylePage`) and repaints, so an animation on a large page runs at the
   speed of that page's layout, not at the 40 ms the timer asks for.
+
+## CSS Transitions 1: what is still open
+
+What agrees is in `tests/unit/test_transition.f`; the measurements are
+under "CSS Transitions 1, measured". Not reached:
+
+- **Nothing restyles a page except a click on a fragment link** (and a
+  resize drag), because there is no script and `:hover`, `:focus` and
+  `:active` never match. So a transition can only be started by `:target`,
+  and a document written for a browser -- `a:hover { color: red }` with a
+  `transition: color .3s` -- shows nothing here whatever the engine does.
+  Matching `:hover` needs the pointer position to reach the cascade, and
+  every move of the mouse onto another element would then restyle the whole
+  page; what that costs is unmeasured, and it is the thing that would make
+  transitions visible on ordinary pages.
+- **A child's own transition of an inherited property.** `color` changed
+  on a parent, with `transition: color` on the child as well, makes
+  Chromium start a transition on the child at every change of its inherited
+  value, so the child lags the parent (measured: it sat at the start of one
+  at every paused time). Here a child follows its parent's value, which is
+  what it does when it has no transition of its own. The element is only
+  asked about the properties its own declarations name, so a changed
+  inherited value is not a change.
+- **The declared value is compared, not the computed one.** `1em` and
+  `16px` are two values here, so a change between them starts a transition
+  between two lengths that look the same, and a font size that changes in
+  the same restyle as an `em` width moves the width without a transition.
+  A struct copy of the computed `Style` would compare them properly
+  (FINDINGS.md, 42).
+- **`@starting-style`**, which gives an element a before-change style on
+  its first computation, and the `transitionrun`, `transitionstart`,
+  `transitionend` and `transitioncancel` events, which are script.
+- **A transition on a pseudo-element** is keyed with it and has not been
+  measured; **`display`'s `allow-discrete` rule for `none` to a visible
+  value** is the specification's and was not read off Chromium.
+- **`font-style` and `font-weight`**: Chromium interpolates `font-style:
+  normal` to `italic` through `oblique 6.75deg`; here it flips at half way.
 
 ## Block formatting contexts: what is still open
 

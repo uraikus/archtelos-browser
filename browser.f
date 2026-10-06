@@ -188,6 +188,17 @@ void func startAnimationTimer() {
     if cssSawKeyframes && animLive { animationTimer = setInterval(animationTick, 40) }
 }
 
+// Styles are computed again for a reason other than the timer -- a
+// fragment navigation changed `:target` -- so a transition it starts
+// begins at the document's clock and not at the last tick's. If one is
+// running afterwards the timer is needed, and it keeps the clock it has
+// rather than starting over.
+void func restyleNow() {
+    animationClock = (now() - animationStartMs).toFloat()
+    restylePage(page, clientWidth)
+    if animLive && animationTimer == 0 { animationTimer = setInterval(animationTick, 40) }
+}
+
 // A smooth scroll (`scroll-behavior: smooth` on the root element): the
 // page asked to be taken somewhere, and the shell takes it there over the
 // time Chromium takes, a frame at a time. Wheel, keys and a new page all
@@ -241,7 +252,7 @@ bool func isSameDocument(url:text) {
 void func goToFragment(url:text) {
     page.url = url
     setTargetFragment(page, url)
-    restylePage(page, clientWidth)
+    restyleNow()
     text frag = urlFragmentOf(url)
     if cssTargetNode > 0 { scrollDocumentTo(page.initialScrollY) }
     else if frag == '' || asciiLower(frag.toAscii()) == 'top' { scrollDocumentTo(0) }
