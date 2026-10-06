@@ -5,6 +5,41 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Transitions 1
+
+A change of declared value under an element starts a transition between the
+old value and the new, which is what css-2026.md listed as nothing for want of
+anything to change one. Chromium was read first, with every transition paused
+at a chosen `currentTime` (todo.md, "CSS Transitions 1, measured"): the
+after-change style says which properties transition and how long they take;
+a running transition whose end is still the declared value runs on; a change
+back to where it began reverses it, shortened by the *eased* progress (802 ms,
+not 500, for a reversal half way through a 1 s `ease`); a third value starts a
+full transition from where the element is; a property that cannot be mixed
+transitions only with `allow-discrete`, `visibility` and `display` keeping the
+visible end; and the first style of a page has no before-change style.
+
+A document that says `transition` or `transition-duration` keeps, for every
+element, the declared values the last style computation found
+(`src/css/transition.f`), and the cascade starts, keeps, reverses and cancels
+against them and writes the value over the declaration the way an animation
+does. Elements that match the same rules still share a style unless one of them
+is running a transition. The shell computes styles at the document clock when a
+fragment navigation changes `:target` -- the one thing that restyles a page under
+the reader -- and keeps its timer while one runs; a box going from 100 to 400
+pixels over a second read 136, 172, 233, 293, 341 and 400 in captures under
+Xvfb. 205 checks in `tests/unit/test_transition.f`, 108 of which fail with the
+cascade call removed; the five `transition-*` rows of the property instrument
+now register (300 to 305 of 405), graded on a document that changes a class and
+is styled again at 250 ms.
+
+Two things found on the way. `setAttr` did not drop the cached class list, so a
+changed `class` attribute matched the old classes. And a `text` bound to a local
+and then stored in a struct read back as machine code (FINDINGS.md, 43;
+festina.md, 3v), which a transition's timing function hit. `tests/propread.f`
+holds the reading helpers `test_animation.f` had, now shared. The cost to a page
+that declares no `transition` is not resolvable by a count (benchmarks.md).
+
 ### `position: sticky` honours `left` and `right`, and a percentage inset is of the scrollport
 
 The painter shifted a sticky box down and up and never across. It now

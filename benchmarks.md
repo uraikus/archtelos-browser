@@ -4646,6 +4646,27 @@ page. A tenth of a percent is under what a timed round can resolve on this
 machine (a binary paired against a copy of itself reads +-4 ms), so no
 timed round was run; the count is the measurement.
 
+## CSS Transitions 1, on pages that declare no `transition`
+
+The change adds two comparisons to the loop over every declaration of
+every rule (`dn == 'transition' || dn == 'transition-duration'`) and, per
+element, one boolean read in `computeStyle`. Counted with
+`valgrind --tool=callgrind` on `tools/festina-generic` builds, whole
+program, 800x600 screenshot, the parent being the tree without the change;
+both binaries built and counted in the same batch, both screenshots
+byte-identical on each page.
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,060,659,246 | 1,061,070,703 | +411,457 (+0.039%) |
+| `features.html` | 1,240,810,404 | 1,241,046,968 | +236,564 (+0.019%) |
+
+Both are inside the +-0.5 M by which adding code that no page reaches
+moves `festina_cycle_*` placement (the entries below say the same), so
+there is no cost to a page that declares no `transition` that a count can
+resolve, and no timed round was run. Neither benchmark page says
+`transition`, so neither enters the new code.
+
 ## CSS Animations 1, on pages that declare no `@keyframes`
 
 Counted with `valgrind --tool=callgrind` on `tools/festina-generic` builds,
