@@ -4579,6 +4579,43 @@ animation whose ends are the old and the new computed value.
 
 The measurement alone; the tests and the implementation follow.
 
+### CSS Easing 1, measured -- three disagreements and one rule
+
+Forty-eight timing functions to Chromium 141: each handed to `el.animate()`
+as `easing` on a 1000 ms animation, paused at ten times, and read as
+`effect.getComputedTiming().progress` (four decimals). `el.animate` throws
+on a function that is not valid, which is how ten of the forty-eight were
+found to be refused. The rows are in `tests/unit/test_easing.f`.
+
+- **Agreed from the start**: the five keywords and `step-start`/`step-end`;
+  `cubic-bezier()`, with a `y` outside 0 to 1 overshooting (`.5,-1,.5,2` is
+  -0.1823 at 250 ms and 1.1823 at 750); `steps()` with every position term,
+  including `start`/`end` as the older spellings of `jump-start`/`jump-end`,
+  `jump-both` (`steps(1, jump-both)` is 0.5 until the end) and `jump-none`
+  (`steps(3, jump-none)` is 0, 0.5, 1).
+- **`linear()` carries on past its outer stops.** `linear(0 20%, 1 80%)` is
+  -0.3333 at 0 and 1.3333 at 1, not 0 and 1: below the first stop and above
+  the last, the line through the two nearest stops continues, and where those
+  two stand at one position the later one's output is the answer
+  (`linear(0 25%, .5 25%, 1)` is 0.5 from 0 to 25%; `linear(0 50%, 1 20%)`,
+  whose second stop is raised to 50%, is 1 everywhere). An input exactly on a
+  stop takes the segment above it, so a jump is to its far side. This engine
+  held the output at the first and last stop.
+- **A function with a number that is not whole, or not a number, is not
+  valid.** `steps(2.5)`, `steps(0)`, `steps(-1)`, `steps(3, bogus)`,
+  `steps(1, jump-none)`, `cubic-bezier(1.5, 0, .5, 1)`, a three-argument
+  `cubic-bezier()` and `linear()` or `linear(0)` with fewer than two stops
+  are all refused. This engine read `steps(2.5)` as `steps(2)`.
+- **A declaration that is not valid is dropped, and what was before it
+  stands.** `animation-timing-function: linear; animation-timing-function:
+  bogus` is `linear`; a comma list with one bad item is dropped whole, leaving
+  `ease` (the initial value) where nothing came before; `transition-timing-
+  function` the same; `animation: k 1s steps(2.5)` and `transition: width 1s
+  steps(2.5)` are dropped entire (no animation named, `transition-duration`
+  `0s`, or the earlier `transition` standing). In a keyframe a function that
+  is not valid is ignored and **the animation's own is used**, where this
+  engine used `ease`.
+
 ### The four synthesis controls, measured -- one of them acts here
 
 **`font-synthesis-small-caps` has landed**, with the `font-synthesis`

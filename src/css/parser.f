@@ -462,7 +462,12 @@ KeyframesRule func parseKeyframesBody(body:ascii) {
                 Decl dd = parseOneDeclaration(decls[d])
                 if dd == null || dd.important { continue }
                 text nm = dd.name
-                if nm == 'animation-timing-function' { easeFn = dd.value.toText()  continue }
+                // a function that is not one is ignored, and the animation's own
+                // is used (measured)
+                if nm == 'animation-timing-function' {
+                    if animTimingListValid(dd.value) { easeFn = dd.value.toText() }
+                    continue
+                }
                 if nm == 'animation-composition' { composeFn = dd.value.toText()  continue }
                 if asciiStartsWith(nm.toAscii(), 'animation'.toAscii(), 0) { continue }
                 names.push(nm)

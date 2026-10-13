@@ -128,7 +128,7 @@ void func trExpandShorthand(props:map[text], value:ascii) {
                 continue
             }
             if animIsTimingToken(tk) {
-                if haveEase { return }
+                if haveEase || !animTimingValid(tt) { return }
                 easeFn = tt
                 haveEase = true
                 continue

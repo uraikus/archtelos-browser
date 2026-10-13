@@ -4884,6 +4884,12 @@ void func applyDecl(props:map[text], nameIn:text, value:ascii) {
         trExpandShorthand(props, value)
         return
     }
+    // A timing function that is not one makes the declaration not valid,
+    // and a declaration that is not valid is dropped, so the one before it
+    // stands (measured).
+    if (cssSawKeyframes || cascadeSawTransition)
+        && (name == 'animation-timing-function' || name == 'transition-timing-function')
+        && !animTimingListValid(value) { return }
     // `all` (Cascade 4 §3.2) sets every property at once to one
     // CSS-wide keyword, and overrides every declaration before it in the
     // block -- so those are dropped here and the ones after it are

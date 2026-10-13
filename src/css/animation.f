@@ -177,10 +177,19 @@ Timing func animParseLinearStops(inner:ascii) {
     return t
 }
 
-Timing func animParseTiming(spec:text) {
+const int TF_INVALID = 3
+
+// The timing function a spec names, or one of kind TF_INVALID where it is
+// not one. Strict, because a declaration that is not valid is dropped and
+// the one before it stands: `steps(2.5)` is not `steps(2)`, a number with
+// trailing characters is not a number, and `linear(0)` is one stop short
+// (measured: `el.animate` throws on each).
+Timing func animParseTimingStrict(spec:text) {
     Timing cached = animTimingCache[spec]
     if cached != null { return cached }
-    Timing t = animBezier(0.25, 0.1, 0.25, 1.0)
+    Timing bad
+    bad.kind = TF_INVALID
+    Timing t = bad
     ascii a = asciiLower(asciiTrim(spec.toAscii()))
     if a == 'linear' {
         Timing lin
@@ -212,8 +221,9 @@ Timing func animParseTiming(spec:text) {
             arr[float] v = []
             bool ok = true
             for int i = 0, i < 4, i++ {
-                parseNumberAt(asciiTrim(args[i]), 0)
-                if !numOk { ok = false  break }
+                ascii tok = asciiTrim(args[i])
+                parseNumberAt(tok, 0)
+                if !numOk || numEnd != tok.length { ok = false  break }
                 v.push(numValue)
             }
             // the two x values must lie in [0, 1]
@@ -224,8 +234,10 @@ Timing func animParseTiming(spec:text) {
     } else if asciiStartsWith(a, 'steps(', 0) && asciiMatchingParen(a, 5) == a.length - 1 {
         arr[ascii] args = splitTopLevelCommas(a.slice(6, a.length - 1))
         if args.length >= 1 && args.length <= 2 {
-            parseNumberAt(asciiTrim(args[0]), 0)
-            if numOk {
+            ascii first = asciiTrim(args[0])
+            parseNumberAt(first, 0)
+            // a whole number of steps, and at least one
+            if numOk && numEnd == first.length && numValue == Math.floor(numValue).toFloat() {
                 Timing st
                 st.kind = TF_STEPS
                 st.n = Math.floor(numValue)
@@ -250,6 +262,33 @@ Timing func animParseTiming(spec:text) {
     return t
 }
 
+bool func animTimingValid(spec:text) {
+    return animParseTimingStrict(spec).kind != TF_INVALID
+}
+
+// Every item of a comma list is a timing function, or the value is a
+// CSS-wide keyword or has a `var()` in it that cannot be judged until it is
+// replaced. One bad item makes the whole declaration not valid.
+bool func animTimingListValid(value:ascii) {
+    if declIsCssWide(value) { return true }
+    if asciiIndexOf(value, 'var(', 0) >= 0 { return true }
+    arr[ascii] items = splitTopLevelCommas(value)
+    if items.length == 0 { return false }
+    for int i = 0, i < items.length, i++ {
+        ascii it = asciiTrim(items[i])
+        if it.length == 0 || !animTimingValid(it.toText()) { return false }
+    }
+    return true
+}
+
+// The function a spec names, or `ease` where it names none, which is what
+// the property's initial value is.
+Timing func animParseTiming(spec:text) {
+    Timing t = animParseTimingStrict(spec)
+    if t.kind == TF_INVALID { return animBezier(0.25, 0.1, 0.25, 1.0) }
+    return t
+}
+
 // x(s) or y(s) on a cubic Bezier from (0,0) to (1,1) with two control
 // values.
 float func animBezierAt(c1:float, c2:float, s:float) {
@@ -260,17 +299,23 @@ float func animBezierAt(c1:float, c2:float, s:float) {
 float func animTimingAt(t:Timing, x:float) {
     if t.kind == TF_LINEAR {
         if t.xs.length < 2 { return x }
-        if x <= t.xs[0] { return t.ys[0] }
         int last = t.xs.length - 1
-        if x >= t.xs[last] { return t.ys[last] }
-        for int i = 1, i <= last, i++ {
-            if x <= t.xs[i] {
-                float span = t.xs[i] - t.xs[i - 1]
-                if span <= 0.0 { return t.ys[i] }
-                return animLerp(t.ys[i - 1], t.ys[i], (x - t.xs[i - 1]) / span)
-            }
+        // The first stop above the input decides the segment. Below the first
+        // stop and above the last, the line through the two nearest stops
+        // carries on (measured: `linear(0 20%, 1 80%)` is -0.333 at 0 and
+        // 1.333 at 1), and where those two stand at one position the later
+        // one's output is the answer.
+        int above = -1
+        for int i = 0, i <= last, i++ {
+            if x < t.xs[i] { above = i  break }
         }
-        return t.ys[last]
+        int lo = above - 1
+        int hi = above
+        if above < 0 { lo = last - 1  hi = last }
+        if above == 0 { lo = 0  hi = 1 }
+        float span = t.xs[hi] - t.xs[lo]
+        if span <= 0.0 { return t.ys[hi] }
+        return animLerp(t.ys[lo], t.ys[hi], (x - t.xs[lo]) / span)
     }
     if t.kind == TF_STEPS {
         float n = t.n.toFloat()
@@ -420,7 +465,7 @@ void func animExpandShorthand(props:map[text], value:ascii) {
                 continue
             }
             if animIsTimingToken(tk) {
-                if haveEase { return }
+                if haveEase || !animTimingValid(tt) { return }
                 easeFn = tt
                 haveEase = true
                 continue

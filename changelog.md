@@ -5,6 +5,27 @@ benchmarks.md describes the present (CLAUDE.md, §3).
 
 ## Unreleased
 
+### CSS Easing 1, measured: `linear()` carries on, and a function that is not valid drops its declaration
+
+css-2026.md said the engine implemented nothing of Easing 1 while animations
+were using every function the engine parses. Forty-eight timing functions were read from Chromium as the
+eased progress of a paused animation (`tests/unit/test_easing.f`, 455 checks
+before and after the change, 46 failing before) and three disagreements came
+out of it. `linear()` continues along the line through its two nearest stops
+past the first and the last, so `linear(0 20%, 1 80%)` is -0.333 at 0 and 1.333
+at 1, where this engine held it at 0 and 1; and where those two stops share a
+position the later output is the answer. `steps(2.5)` was read as `steps(2)`,
+and a number with anything after it was read as the number; a function is now
+valid only if every argument is whole and complete.
+
+The third is what an invalid function does. Chromium drops the declaration, so
+`animation-timing-function: linear; animation-timing-function: bogus` is
+`linear`, a list with one bad item is dropped whole, `animation: k 1s steps(2.5)`
+and `transition: width 1s steps(2.5)` name nothing, and in a keyframe the
+animation's own function is used. This engine took the declaration and fell back
+to `ease`. The check is behind `cssSawKeyframes || cascadeSawTransition`, so a
+page with neither pays two boolean reads per declaration. todo.md has the rows.
+
 ### CSS Transitions 1
 
 A change of declared value under an element starts a transition between the
