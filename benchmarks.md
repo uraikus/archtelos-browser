@@ -4646,6 +4646,23 @@ page. A tenth of a percent is under what a timed round can resolve on this
 machine (a binary paired against a copy of itself reads +-4 ms), so no
 timed round was run; the count is the measurement.
 
+## CSS Easing 1's validity check, on pages that declare no animation or transition
+
+The change adds a test to `applyDecl`, the function every declaration passes
+through, behind `cssSawKeyframes || cascadeSawTransition`. Counted with
+`valgrind --tool=callgrind` on `tools/festina-generic` builds, whole program,
+800x600 screenshot, the parent being the tree without the change, both built
+and counted in the same batch, screenshots byte-identical.
+
+| page | parent | candidate | against the parent |
+|---|---|---|---|
+| `generated.html` | 1,060,901,449 | 1,060,992,745 | +91,296 (+0.009%) |
+| `features.html` | 1,240,810,003 | 1,240,812,674 | +2,671 (+0.0002%) |
+
+Neither page says `@keyframes` or `transition`, so neither reaches the check,
+and both differences are inside the +-0.5 M by which code no page reaches
+moves `festina_cycle_*` placement.
+
 ## CSS Transitions 1, on pages that declare no `transition`
 
 The change adds two comparisons to the loop over every declaration of
