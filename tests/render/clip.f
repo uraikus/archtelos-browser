@@ -230,4 +230,116 @@ check(getPixelColor(50, 50) == clipRed, 'a box with no clip paints whole')
 check(getPixelColor(99, 99) == clipRed, 'to its last pixel')
 check(getPixelColor(101, 50) != clipRed, 'and no further')
 
+// ---- polygon()'s fill rule (CSS Masking 1 §4.2) -----------------------
+//
+// A five-pointed star, its points joined in {5/2} order so the pentagon
+// in the middle is enclosed twice and the five arms once. That is the
+// only figure where the two fill rules disagree, and they disagree
+// about exactly one region: `nonzero` -- CSS's initial value -- keeps
+// the middle, `evenodd` cuts it out. An arm is enclosed once and is
+// kept by both, which is the control: a `polygon()` that had failed to
+// parse would lose that pixel too, and every check below would pass on
+// a box that painted nothing at all.
+//
+// Chromium 141 on this geometry, read with tests/chromium.py pixels:
+// the centre is red under `polygon(...)` and under
+// `polygon(nonzero, ...)`, white under `polygon(evenodd, ...)`, and the
+// arm is red under all three.
+text STAR = '80px 10px, 121.1px 136.6px, 13.4px 58.4px, 146.6px 58.4px, 38.9px 136.6px'
+
+bool func starFilled(rule:text, x:int, y:int) {
+    Page p = pageFromHtml(clipHead
+        + `<div style="width:160px;height:160px;background:red;clip-path:polygon(${rule}${STAR})"></div></body>`,
+        'tests/fixtures/page.html', 200)
+    clearCanvas()
+    paintPage(p, 0, 0, 200)
+    return getPixelColor(x, y) == clipRed
+}
+
+// The instrument first: the two rules have to disagree somewhere, or
+// every check below passes whichever one the engine draws.
+check(starFilled('', 80, 80) != starFilled('evenodd, ', 80, 80),
+    'the two fill rules disagree about the middle of a star')
+// And the star has to be there at all.
+check(starFilled('', 80, 25), 'an arm of the star is painted')
+check(!starFilled('', 5, 5), 'and the box outside it is not')
+
+// The default is nonzero, so the middle is kept.
+check(starFilled('', 80, 80), 'polygon() keeps the middle of a star by default')
+check(starFilled('nonzero, ', 80, 80), 'and nonzero says the same thing')
+// Two ways of asking for the same region must land on the same pixel,
+// rather than each matching a colour written down here.
+check(starFilled('', 80, 80) == starFilled('nonzero, ', 80, 80),
+    'the default and nonzero agree in the middle')
+check(starFilled('', 80, 25) == starFilled('nonzero, ', 80, 25),
+    'and on an arm')
+
+// evenodd cuts the middle out and leaves the arms.
+check(!starFilled('evenodd, ', 80, 80), 'evenodd cuts the middle of a star out')
+check(starFilled('evenodd, ', 80, 25), 'and keeps an arm')
+
+// ---- inset()'s round radius (CSS Masking 1 §4.1) ----------------------
+//
+// The radius cuts the corner off the rectangle. Every check here is an
+// agreement between two ways of reaching the same region rather than a
+// column worked out by hand, because this engine does not antialias and
+// Chromium does, so a boundary column copied from one would not survive
+// the other:
+//
+//   inset(10px round 0)  ==  inset(10px)      a zero radius is a square
+//                                             corner
+//   inset(0 round 50%)   ==  circle(50%)      half the box on both axes
+//                        ==  ellipse(50% 50%) IS an ellipse, and this
+//                                             engine reaches that shape
+//                                             down a different branch
+//
+// Chromium agrees with both, checked before they were written down: all
+// three of the second group start their red at x=19 on row 40, and both
+// of the first at x=10.
+//
+// The row past the corner is the control. A rounded inset that had
+// stopped clipping, or clipped everything, would move that one too.
+
+// The first column on a row that the box's colour reaches, or -1.
+int func insetFirst(shape:text, row:int) {
+    Page p = pageFromHtml(clipHead
+        + `<div style="width:200px;height:200px;background:red;clip-path:${shape}"></div></body>`,
+        'tests/fixtures/page.html', 220)
+    clearCanvas()
+    paintPage(p, 0, 0, 220)
+    for int x = 0, x < 220, x++ {
+        if getPixelColor(x, row) == clipRed { return x }
+    }
+    return -1
+}
+
+// The instrument first: a radius has to do something, and it has to cut
+// the corner inward rather than merely differ.
+check(insetFirst('inset(10px round 40px)', 12) > insetFirst('inset(10px)', 12),
+    'a round radius cuts the corner in')
+check(insetFirst('inset(10px)', 12) >= 0, 'the square inset is painted at all')
+check(insetFirst('inset(10px round 40px)', 100) >= 0,
+    'and the rounded one is painted past its corner')
+
+// A zero radius is a square corner.
+checkEqInt(insetFirst('inset(10px round 0)', 12), insetFirst('inset(10px)', 12),
+    'inset(10px round 0) is inset(10px) at the corner')
+checkEqInt(insetFirst('inset(10px round 0)', 100), insetFirst('inset(10px)', 100),
+    'and past it')
+
+// Half the box on both axes is an ellipse, which this engine reaches
+// down a different branch entirely.
+checkEqInt(insetFirst('inset(0 round 50%)', 40), insetFirst('circle(50%)', 40),
+    'inset(0 round 50%) is a circle')
+checkEqInt(insetFirst('inset(0 round 50%)', 40), insetFirst('ellipse(50% 50%)', 40),
+    'and an ellipse of the same radii')
+checkEqInt(insetFirst('inset(0 round 50%)', 80), insetFirst('circle(50%)', 80),
+    'at a second row')
+checkEqInt(insetFirst('inset(0 round 50%)', 100), insetFirst('circle(50%)', 100),
+    'and across the middle')
+
+// Past the corner a rounded inset is the plain one.
+checkEqInt(insetFirst('inset(10px round 40px)', 100), insetFirst('inset(10px)', 100),
+    'past its corner a rounded inset is the square one')
+
 finish('clip')

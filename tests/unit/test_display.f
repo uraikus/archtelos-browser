@@ -137,4 +137,71 @@ checkEqInt(displayFind(inlineTable, 'w').h, displayFind(inlineBlock, 'w').h,
 check(displayFind(inlineTable, 'w').h < displayFind(blockTable, 'w').h,
       'and shorter than the three the block-level table needs')
 
+// ---- blockification (Display 3 sec. 2.7) -------------------------------
+// A floated box, an absolutely positioned one, a flex or grid item and
+// the root element all have their `display` blockified: the
+// inline-level value is replaced by the block-level one it corresponds
+// to. css-2026.md recorded this as missing, and it was: the box tree
+// converted a flex item's *box kind* and nothing anywhere touched the
+// computed value, so `display: inline; float: left` stayed `inline`
+// where Chromium reports `block`.
+//
+// Every expectation below is Chromium 141's, read with getComputedStyle
+// off the same declaration.
+int func displayOf(css:text, body:text) {
+    cascadeReset()
+    Node d = parseHtmlText('<html><head><style>' + css + '</style></head><body>'
+        + body + '</body></html>')
+    cascadeAddDocumentStyles(d)
+    computeStyles(d)
+    arr[Node] found = []
+    collectElements(d, 'span', found)
+    for int i = 0, i < found.length, i++ {
+        if attrOf(found[i].id, 'id') == 'q' { return found[i].style.display }
+    }
+    return 0 - 1
+}
+text plainParent = '<div id="p"><span id="q">x</span></div>'
+text flexParent = '<div id="p" style="display:flex"><span id="q">x</span></div>'
+text gridParent = '<div id="p" style="display:grid"><span id="q">x</span></div>'
+
+// A float blockifies, and the inline-level values map onto their
+// block-level twins rather than all collapsing to `block`.
+checkEqInt(displayOf('#q{display:inline;float:left}', plainParent),
+           DISPLAY_BLOCK, 'a floated inline is blockified')
+checkEqInt(displayOf('#q{display:inline-block;float:left}', plainParent),
+           DISPLAY_BLOCK, 'and a floated inline-block')
+checkEqInt(displayOf('#q{display:inline-flex;float:left}', plainParent),
+           DISPLAY_FLEX, 'a floated inline-flex becomes a flex container')
+checkEqInt(displayOf('#q{display:inline-grid;float:left}', plainParent),
+           DISPLAY_GRID, 'and an inline-grid a grid one')
+checkEqInt(displayOf('#q{display:inline-table;float:left}', plainParent),
+           DISPLAY_TABLE, 'and an inline-table a table')
+// The two values a float leaves alone, which is what stops this being
+// "set everything to block".
+checkEqInt(displayOf('#q{display:none;float:left}', plainParent),
+           DISPLAY_NONE, '`none` is not blockified')
+checkEqInt(displayOf('#q{display:contents;float:left}', plainParent),
+           DISPLAY_CONTENTS, 'and neither is `contents`')
+
+// Absolute and fixed positioning blockify; relative does not, which is
+// the pair that stops a test passing on "any position at all".
+checkEqInt(displayOf('#q{display:inline;position:absolute}', plainParent),
+           DISPLAY_BLOCK, 'an absolutely positioned inline is blockified')
+checkEqInt(displayOf('#q{display:inline;position:fixed}', plainParent),
+           DISPLAY_BLOCK, 'and a fixed one')
+checkEqInt(displayOf('#q{display:inline;position:relative}', plainParent),
+           DISPLAY_INLINE, 'but a relatively positioned one is not')
+
+// A flex or grid item is blockified by its parent, not by anything it
+// says itself.
+checkEqInt(displayOf('#q{display:inline}', flexParent),
+           DISPLAY_BLOCK, 'a flex item is blockified')
+checkEqInt(displayOf('#q{display:inline-flex}', flexParent),
+           DISPLAY_FLEX, 'and an inline-flex item becomes a flex container')
+checkEqInt(displayOf('#q{display:inline}', gridParent),
+           DISPLAY_BLOCK, 'a grid item is blockified')
+checkEqInt(displayOf('#q{display:inline-table}', gridParent),
+           DISPLAY_TABLE, 'and an inline-table grid item a table')
+
 finish('display')

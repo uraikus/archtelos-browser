@@ -23,7 +23,7 @@ import ../assert.f
 PageBox func boxOf(css:text, name:text, index:int) {
     resetPageRules()
     parseStylesheet(css.toAscii())
-    return pageBoxFor(name, index)
+    return pageBoxFor(name, index, false)
 }
 
 void func checkBox(css:text, name:text, index:int, w:int, h:int, label:text) {
@@ -160,14 +160,14 @@ checkBox(bothNames, 'wide', 1, 1123, 794, 'and the named one is A4 landscape')
 cssMediaPrint = false
 resetPageRules()
 parseStylesheet('@media print { @page { margin: 60px } }'.toAscii())
-checkEqInt(pageBoxFor('', 1).marginTop, 38, 'on screen, @media print is not applied')
+checkEqInt(pageBoxFor('', 1, false).marginTop, 38, 'on screen, @media print is not applied')
 cssMediaPrint = true
 resetPageRules()
 parseStylesheet('@media print { @page { margin: 60px } }'.toAscii())
-checkEqInt(pageBoxFor('', 1).marginTop, 60, 'printing, it is')
+checkEqInt(pageBoxFor('', 1, false).marginTop, 60, 'printing, it is')
 resetPageRules()
 parseStylesheet('@media screen { @page { margin: 70px } }'.toAscii())
-checkEqInt(pageBoxFor('', 1).marginTop, 38, 'and @media screen is not')
+checkEqInt(pageBoxFor('', 1, false).marginTop, 38, 'and @media screen is not')
 cssMediaPrint = false
 
 // The ordinary rules inside `@media print` reach the cascade the same
@@ -222,10 +222,24 @@ checkEqInt(styleOfId('#a { page-break-after: always }', 'a').breakAfter, BRK_PAG
            'page-break-after: always')
 check(styleOfId('#a { page-break-inside: avoid }', 'a').breakInsideAvoid,
       'page-break-inside: avoid')
-checkEqInt(styleOfId('#a { break-before: left }', 'a').breakBefore, BRK_PAGE,
-           'a side keyword asks for a page break')
-checkEqInt(styleOfId('#a { break-before: recto }', 'a').breakBefore, BRK_PAGE,
-           'and so does recto')
+// A side keyword ends a page and then names the side the next one must
+// be formatted as, so it is its own value rather than BRK_PAGE: the
+// paginator needs the side to know whether to generate a blank page.
+checkEqInt(styleOfId('#a { break-before: left }', 'a').breakBefore, BRK_LEFT,
+           'break-before: left asks for a left page')
+checkEqInt(styleOfId('#a { break-before: right }', 'a').breakBefore, BRK_RIGHT,
+           'and right for a right one')
+// `recto` and `verso` are the same two sides named by the page
+// progression, which is left to right in the only writing mode here.
+checkEqInt(styleOfId('#a { break-before: recto }', 'a').breakBefore,
+           styleOfId('#a { break-before: right }', 'a').breakBefore,
+           'recto is right')
+checkEqInt(styleOfId('#a { break-before: verso }', 'a').breakBefore,
+           styleOfId('#a { break-before: left }', 'a').breakBefore,
+           'and verso is left')
+// All four still end a page, which is the test the unit collector makes.
+check(styleOfId('#a { break-before: verso }', 'a').breakBefore >= BRK_PAGE,
+      'a side keyword ends a page as page does')
 checkEqInt(styleOfId('#a { break-before: avoid-page }', 'a').breakBefore, BRK_AVOID,
            'avoid-page forbids one')
 checkEqInt(styleOfId('#a { break-before: column }', 'a').breakBefore, BRK_COLUMN,

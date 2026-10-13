@@ -82,4 +82,32 @@ check(getPixelColor(1, 10) == white || atRight != atLeft,
 shotText('<div style="width:200px;direction:rtl;text-align:left">ab</div>')
 checkEq(inkProfile(), atLeft, 'text-align:left pins it to the left whatever the direction')
 
+// ---- unicode-bidi reaches the pixels --------------------------------------
+// `embed` on an inline opens an embedding of its own, so the text
+// inside it is ordered as though the paragraph were right-to-left. The
+// check that earns its place is not a picture worked out here but two
+// ways of reaching the same order: the inline's embedding, and a block
+// that is right-to-left outright. Both are pinned to the left edge, so
+// that alignment is not what the comparison is measuring.
+text GIMEL = 'ג'
+text HEB = ALEF + BET + GIMEL
+text LEFT = 'width:300px;text-align:left'
+
+shotText('<div style="' + LEFT + '"><span style="direction:rtl;unicode-bidi:embed">ab '
+         + HEB + '</span></div>')
+text embedded = inkProfile()
+shotText('<div style="' + LEFT + ';direction:rtl">ab ' + HEB + '</div>')
+checkEq(embedded, inkProfile(), 'an embedding orders its text as a right-to-left block does')
+
+// And without it the inline's own direction does not reach the order,
+// which is the difference between `normal` and `embed`.
+shotText('<div style="' + LEFT + '"><span style="direction:rtl">ab ' + HEB + '</span></div>')
+check(inkProfile() != embedded, 'where without the embedding the paragraph direction stands')
+
+// `bidi-override` reverses Latin, which nothing else here does.
+shotText('<div style="' + LEFT + '">ab</div>')
+text plain = inkProfile()
+shotText('<div style="' + LEFT + '"><span style="direction:rtl;unicode-bidi:bidi-override">ab</span></div>')
+check(inkProfile() != plain, 'an override reverses Latin that would not otherwise move')
+
 finish('bidi render')

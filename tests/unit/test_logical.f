@@ -1,11 +1,12 @@
 // Logical properties (CSS Logical Properties 1, via the box and border
 // specifications that define their physical twins).
 //
-// The block aliases are a renaming in the horizontal writing mode this
-// engine lays out in: `block-start` is the top. The inline ones are not
-// a renaming, because `direction` decides which physical edge each
-// stands for -- `inline-start` is the left edge in a left-to-right
-// element and the right edge in a right-to-left one.
+// A logical edge is a physical one under two rotations. `direction`
+// decides which physical edge an inline one is -- `inline-start` is the
+// left edge of a left-to-right element and the right edge of a
+// right-to-left one -- and `writing-mode` decides both: in a vertical
+// mode `inline-start` is the top and `block-start` a side, the right in
+// `vertical-rl` and the left in `vertical-lr`.
 //
 // So each check asks the question the rule in CLAUDE.md asks of two
 // things that must agree: the logical spelling and the physical one
@@ -225,5 +226,154 @@ check(dirPs[0].style.directionRtl, 'and makes the element right-to-left')
 checkEqInt(resolveLen(dirPs[1].style.marginLeft, 0, -1), 40,
            'dir="ltr" leaves it on the left')
 check(!dirPs[1].style.directionRtl, 'and the element left-to-right')
+
+// ---- the two-value logical shorthands ----------------------------------
+// `applyDecl` sends every logical *longhand* through `wmPhysicalName`
+// and then expands the two-value shorthands further down with physical
+// names written into the source. Asking the code which names those are
+// -- every one containing `inline` or `block`, minus the ones
+// `wmPhysicalName` answers -- gives twelve, and todo.md has Chromium's
+// answer for each.
+//
+// The check needs no numbers, because a shorthand and its own two
+// longhands are two ways of writing one thing: whatever
+// `margin-inline-start` and `margin-inline-end` compute to,
+// `margin-inline` must compute to the same. That holds in every mode
+// and under `direction` without either side being known in advance,
+// which is the agreement CLAUDE.md asks for.
+
+arr[text] SHMODE = ['horizontal-tb', 'horizontal-tb', 'vertical-rl', 'vertical-lr']
+arr[text] SHDIR = ['ltr', 'rtl', 'ltr', 'ltr']
+
+Style func styleIn(mode:text, dir:text, decl:text) {
+    return styleOf(`writing-mode:${mode};direction:${dir};${decl}`)
+}
+
+// `overscroll-behavior` is not a field of `Style`: it lives in a side
+// map keyed by the style's serial, and `cascadeReset` restarts the
+// serials. So two styles computed in two documents cannot be compared
+// through it -- the second document's styles take the first's serials,
+// and the map answers for whichever was written last. Both elements go
+// in ONE document here, which is the only way the comparison means what
+// it says.
+void func sameOverscroll(mode:text, dir:text, logical:text, physical:text, label:text) {
+    cascadeReset()
+    Node doc = parseHtmlText(
+        `<html><body><p id="a" style="writing-mode:${mode};direction:${dir};` +
+        `overflow:scroll;${logical}">x</p>` +
+        `<p id="b" style="writing-mode:${mode};direction:${dir};` +
+        `overflow:scroll;${physical}">y</p></body></html>`)
+    cascadeAddDocumentStyles(doc)
+    computeStyles(doc)
+    arr[Node] ps = []
+    collectElements(doc, 'p', ps)
+    checkEqInt(overscrollX(ps[0].style), overscrollX(ps[1].style), `${label}: the x axis`)
+    checkEqInt(overscrollY(ps[0].style), overscrollY(ps[1].style), `${label}: the y axis`)
+    // The instrument: a pair that is `auto` on both axes would agree
+    // whatever the engine did with the logical name.
+    check(overscrollX(ps[1].style) != 0 || overscrollY(ps[1].style) != 0,
+          `${label}: the physical spelling it is graded against says something`)
+}
+
+void func sameFourSides(mode:text, dir:text, shortDecl:text, longDecl:text,
+                        kind:text, label:text) {
+    Style a = styleIn(mode, dir, shortDecl)
+    Style b = styleIn(mode, dir, longDecl)
+    text w = `${label} in ${mode}/${dir}`
+    if kind == 'margin' {
+        checkEqInt(resolveLen(a.marginTop, 0, -1), resolveLen(b.marginTop, 0, -1), `${w}: the top`)
+        checkEqInt(resolveLen(a.marginRight, 0, -1), resolveLen(b.marginRight, 0, -1), `${w}: the right`)
+        checkEqInt(resolveLen(a.marginBottom, 0, -1), resolveLen(b.marginBottom, 0, -1), `${w}: the bottom`)
+        checkEqInt(resolveLen(a.marginLeft, 0, -1), resolveLen(b.marginLeft, 0, -1), `${w}: the left`)
+    } else if kind == 'padding' {
+        checkEqInt(resolveLen(a.paddingTop, 0, -1), resolveLen(b.paddingTop, 0, -1), `${w}: the top`)
+        checkEqInt(resolveLen(a.paddingRight, 0, -1), resolveLen(b.paddingRight, 0, -1), `${w}: the right`)
+        checkEqInt(resolveLen(a.paddingBottom, 0, -1), resolveLen(b.paddingBottom, 0, -1), `${w}: the bottom`)
+        checkEqInt(resolveLen(a.paddingLeft, 0, -1), resolveLen(b.paddingLeft, 0, -1), `${w}: the left`)
+    } else if kind == 'inset' {
+        checkEqInt(resolveLen(a.top, 0, -1), resolveLen(b.top, 0, -1), `${w}: the top`)
+        checkEqInt(resolveLen(a.right, 0, -1), resolveLen(b.right, 0, -1), `${w}: the right`)
+        checkEqInt(resolveLen(a.bottom, 0, -1), resolveLen(b.bottom, 0, -1), `${w}: the bottom`)
+        checkEqInt(resolveLen(a.left, 0, -1), resolveLen(b.left, 0, -1), `${w}: the left`)
+    } else {
+        checkEqInt(a.borderTop, b.borderTop, `${w}: the top`)
+        checkEqInt(a.borderRight, b.borderRight, `${w}: the right`)
+        checkEqInt(a.borderBottom, b.borderBottom, `${w}: the bottom`)
+        checkEqInt(a.borderLeft, b.borderLeft, `${w}: the left`)
+    }
+}
+
+for int i = 0, i < SHMODE.length, i++ {
+    text m = SHMODE[i]
+    text d = SHDIR[i]
+    sameFourSides(m, d, 'margin-inline:11px 22px',
+        'margin-inline-start:11px;margin-inline-end:22px', 'margin', 'margin-inline')
+    sameFourSides(m, d, 'margin-block:11px 22px',
+        'margin-block-start:11px;margin-block-end:22px', 'margin', 'margin-block')
+    sameFourSides(m, d, 'padding-inline:11px 22px',
+        'padding-inline-start:11px;padding-inline-end:22px', 'padding', 'padding-inline')
+    sameFourSides(m, d, 'padding-block:11px 22px',
+        'padding-block-start:11px;padding-block-end:22px', 'padding', 'padding-block')
+    sameFourSides(m, d, 'position:absolute;inset-inline:11px 22px',
+        'position:absolute;inset-inline-start:11px;inset-inline-end:22px', 'inset', 'inset-inline')
+    sameFourSides(m, d, 'position:absolute;inset-block:11px 22px',
+        'position:absolute;inset-block-start:11px;inset-block-end:22px', 'inset', 'inset-block')
+    sameFourSides(m, d, 'border-inline:3px solid red',
+        'border-inline-start:3px solid red;border-inline-end:3px solid red', 'border', 'border-inline')
+    sameFourSides(m, d, 'border-block:3px solid red',
+        'border-block-start:3px solid red;border-block-end:3px solid red', 'border', 'border-block')
+}
+
+// The instrument. If the longhands themselves put every value on the
+// same physical side in all four rows, the eight agreements above would
+// hold on an engine that ignored the mode entirely. They do not: the
+// inline-start margin is the left edge in one row, the right in the
+// next and the top in the last two.
+checkEqInt(resolveLen(styleIn('horizontal-tb', 'ltr', 'margin-inline-start:11px').marginLeft, 0, -1),
+    11, 'inline-start is the left edge of a horizontal left-to-right box')
+checkEqInt(resolveLen(styleIn('horizontal-tb', 'rtl', 'margin-inline-start:11px').marginRight, 0, -1),
+    11, 'and the right edge of a right-to-left one')
+checkEqInt(resolveLen(styleIn('vertical-rl', 'ltr', 'margin-inline-start:11px').marginTop, 0, -1),
+    11, 'and the top edge of a vertical one')
+checkEqInt(resolveLen(styleIn('vertical-rl', 'ltr', 'margin-block-start:11px').marginRight, 0, -1),
+    11, 'whose block-start is the right edge in vertical-rl')
+checkEqInt(resolveLen(styleIn('vertical-lr', 'ltr', 'margin-block-start:11px').marginLeft, 0, -1),
+    11, 'and the left edge in vertical-lr')
+
+// The two axis pairs have no order to get wrong, so each is checked
+// against the physical spelling it means in that mode.
+for int i = 0, i < SHMODE.length, i++ {
+    text m = SHMODE[i]
+    text d = SHDIR[i]
+    bool vert = m != 'horizontal-tb'
+    Style ai = styleIn(m, d, 'contain:size;contain-intrinsic-inline-size:77px')
+    Style pi = styleIn(m, d, vert ? 'contain:size;contain-intrinsic-height:77px'
+                                  : 'contain:size;contain-intrinsic-width:77px')
+    checkEqInt(resolveLen(ai.intrinsicWidth, 0, -1), resolveLen(pi.intrinsicWidth, 0, -1),
+        `contain-intrinsic-inline-size in ${m}: the width`)
+    checkEqInt(resolveLen(ai.intrinsicHeight, 0, -1), resolveLen(pi.intrinsicHeight, 0, -1),
+        `contain-intrinsic-inline-size in ${m}: the height`)
+    Style ab = styleIn(m, d, 'contain:size;contain-intrinsic-block-size:77px')
+    Style pb = styleIn(m, d, vert ? 'contain:size;contain-intrinsic-width:77px'
+                                  : 'contain:size;contain-intrinsic-height:77px')
+    checkEqInt(resolveLen(ab.intrinsicWidth, 0, -1), resolveLen(pb.intrinsicWidth, 0, -1),
+        `contain-intrinsic-block-size in ${m}: the width`)
+    checkEqInt(resolveLen(ab.intrinsicHeight, 0, -1), resolveLen(pb.intrinsicHeight, 0, -1),
+        `contain-intrinsic-block-size in ${m}: the height`)
+
+    sameOverscroll(m, d, 'overscroll-behavior-inline:contain',
+        vert ? 'overscroll-behavior-y:contain' : 'overscroll-behavior-x:contain',
+        `overscroll-behavior-inline in ${m}`)
+    sameOverscroll(m, d, 'overscroll-behavior-block:contain',
+        vert ? 'overscroll-behavior-x:contain' : 'overscroll-behavior-y:contain',
+        `overscroll-behavior-block in ${m}`)
+}
+
+// And the instrument for those four: the physical spelling they are
+// graded against must differ between the horizontal row and the
+// vertical ones, or the loop is comparing each engine with itself.
+check(resolveLen(styleIn('horizontal-tb', 'ltr', 'contain:size;contain-intrinsic-inline-size:77px').intrinsicWidth, 0, -1)
+      != resolveLen(styleIn('vertical-rl', 'ltr', 'contain:size;contain-intrinsic-inline-size:77px').intrinsicWidth, 0, -1),
+      'contain-intrinsic-inline-size really does change axis with the mode')
 
 finish('logical properties')

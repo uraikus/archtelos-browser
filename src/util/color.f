@@ -1430,3 +1430,149 @@ arr[ascii] func colorTokens(v:ascii) {
     }
     return out
 }
+
+// ---- CSS Filter Effects 1 §8: the colour functions --------------------
+//
+// A filter is specified as a pass over the pixels an element and its
+// descendants painted. This engine cannot make that pass -- a `color`
+// read back off the canvas supports equality and nothing else
+// (FINDINGS.md, finding 35) -- and does not need to, because every
+// colour filter is affine and compositing forms convex combinations.
+// For `f(x) = Ax + b` and weights summing to one,
+//
+//     f(Cs*a + Cd*(1-a)) = f(Cs)*a + f(Cd)*(1-a)
+//
+// so filtering each source colour as it is drawn gives exactly the
+// pixels filtering the raster would, not merely close ones. Measured
+// against Chromium on a filtered subtree composited over an unfiltered
+// backdrop, which is the case the equivalence is usually doubted for
+// (todo.md).
+//
+// A bitmap image is the exception and is not filtered: it reaches the
+// canvas through `drawImage` and never through `applyFillColor`. That
+// is the pixel-reading limitation proper.
+
+const int CFILTER_GRAYSCALE = 1
+const int CFILTER_SEPIA = 2
+const int CFILTER_SATURATE = 3
+const int CFILTER_HUEROTATE = 4
+const int CFILTER_INVERT = 5
+const int CFILTER_BRIGHTNESS = 6
+const int CFILTER_CONTRAST = 7
+const int CFILTER_OPACITY = 8
+
+// The specification leaves open how a real number becomes an eight-bit
+// channel, and Chromium is not uniform about it: the matrix filters
+// round to nearest and the component-transfer ones truncate -- what a
+// matrix applied in fixed point and a component lookup table each do.
+// Following that reproduces all twenty-seven measured cases exactly;
+// either rule alone misses eight or eleven of them by one (todo.md).
+int func filterRound(v:float) {
+    if v < 0.0 { return 0 }
+    if v > 255.0 { return 255 }
+    return Math.round(v)
+}
+
+int func filterTrunc(v:float) {
+    if v < 0.0 { return 0 }
+    if v > 255.0 { return 255 }
+    return Math.floor(v)
+}
+
+// One row of a colour matrix, against the three input channels.
+int func filterMatrixRow(r:float, g:float, b:float,
+                         mr:float, mg:float, mb:float) {
+    return filterRound(r * mr + g * mg + b * mb)
+}
+
+const float FILTER_PI = 3.14159265358979
+
+// `saturate(s)`, which `grayscale(a)` is with `s = 1 - a`.
+int func filterSaturate(c:int, s:float) {
+    float r = colorRed(c).toFloat()
+    float g = colorGreen(c).toFloat()
+    float b = colorBlue(c).toFloat()
+    return packColor(
+        filterMatrixRow(r, g, b, 0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s),
+        filterMatrixRow(r, g, b, 0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s),
+        filterMatrixRow(r, g, b, 0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s),
+        colorAlpha(c))
+}
+
+int func filterSepia(c:int, a:float) {
+    float r = colorRed(c).toFloat()
+    float g = colorGreen(c).toFloat()
+    float b = colorBlue(c).toFloat()
+    float k = 1.0 - a
+    return packColor(
+        filterMatrixRow(r, g, b, 0.393 + 0.607 * k, 0.769 - 0.769 * k, 0.189 - 0.189 * k),
+        filterMatrixRow(r, g, b, 0.349 - 0.349 * k, 0.686 + 0.314 * k, 0.168 - 0.168 * k),
+        filterMatrixRow(r, g, b, 0.272 - 0.272 * k, 0.534 - 0.534 * k, 0.131 + 0.869 * k),
+        colorAlpha(c))
+}
+
+int func filterHueRotate(c:int, deg:float) {
+    float rad = deg * FILTER_PI / 180.0
+    float cs = Math.cos(rad)
+    float sn = Math.sin(rad)
+    float r = colorRed(c).toFloat()
+    float g = colorGreen(c).toFloat()
+    float b = colorBlue(c).toFloat()
+    return packColor(
+        filterMatrixRow(r, g, b,
+            0.213 + cs * 0.787 - sn * 0.213,
+            0.715 - cs * 0.715 - sn * 0.715,
+            0.072 - cs * 0.072 + sn * 0.928),
+        filterMatrixRow(r, g, b,
+            0.213 - cs * 0.213 + sn * 0.143,
+            0.715 + cs * 0.285 + sn * 0.140,
+            0.072 - cs * 0.072 - sn * 0.283),
+        filterMatrixRow(r, g, b,
+            0.213 - cs * 0.213 - sn * 0.787,
+            0.715 - cs * 0.715 + sn * 0.715,
+            0.072 + cs * 0.928 + sn * 0.072),
+        colorAlpha(c))
+}
+
+// The component-transfer three, each a line through the channel and
+// each truncated rather than rounded.
+//
+// The line is applied on the 0..255 scale rather than by dividing into
+// 0..1 and multiplying back, because the round trip loses a unit and
+// the truncation then keeps it lost: 255 * (1 - 55/255) is
+// 199.99999999999997, which truncates to 199 where the answer is 200.
+// A filter inside a filter is where that shows -- invert(1) twice must
+// be the identity and came back one short -- and it is why the nesting
+// check in tests/render/filter.f is written as an identity rather than
+// against a number. Chromium has the same truncation and not the same
+// error, because a component transfer there is a lookup table over the
+// 256 eight-bit inputs.
+int func filterTransfer(c:int, slope:float, intercept:float) {
+    float off = intercept * 255.0
+    return packColor(
+        filterTrunc(colorRed(c).toFloat() * slope + off),
+        filterTrunc(colorGreen(c).toFloat() * slope + off),
+        filterTrunc(colorBlue(c).toFloat() * slope + off),
+        colorAlpha(c))
+}
+
+// `opacity()` is the same kind of transfer on the alpha channel, and
+// truncates the same way: 255 * 0.5 is 127 and not 128, measured.
+int func filterOpacity(c:int, a:float) {
+    return packColor(colorRed(c), colorGreen(c), colorBlue(c),
+        filterTrunc(colorAlpha(c).toFloat() * a))
+}
+
+int func colorFilterOne(c:int, kind:int, amt:float) {
+    if kind == CFILTER_GRAYSCALE { return filterSaturate(c, 1.0 - amt) }
+    if kind == CFILTER_SATURATE { return filterSaturate(c, amt) }
+    if kind == CFILTER_SEPIA { return filterSepia(c, amt) }
+    if kind == CFILTER_HUEROTATE { return filterHueRotate(c, amt) }
+    // invert(a) is a*(1-v) + (1-a)*v, which is the line
+    // (1 - 2a)v + a.
+    if kind == CFILTER_INVERT { return filterTransfer(c, 1.0 - 2.0 * amt, amt) }
+    if kind == CFILTER_BRIGHTNESS { return filterTransfer(c, amt, 0.0) }
+    if kind == CFILTER_CONTRAST { return filterTransfer(c, amt, 0.5 - amt * 0.5) }
+    if kind == CFILTER_OPACITY { return filterOpacity(c, amt) }
+    return c
+}

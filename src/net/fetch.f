@@ -72,6 +72,9 @@ text func resolveUrl(base:text, rel:text) {
     if b == null { b = '' }
     if r.length == 0 { return base }
     if hasScheme(r) { return r.toText() }
+    // A reference that is only a fragment keeps the whole of the address
+    // it is on, query included.
+    if r.charCodeAt(0) == CH_HASH { return withoutFragment(base) + r.toText() }
     // the base's parts
     int schemeEnd = -1
     ascii scheme = ''

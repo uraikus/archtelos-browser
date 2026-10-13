@@ -157,6 +157,7 @@ int func scanAttributes(from:int, tok:Token) {
             tok.attrs[name] = value
             tok.present[name] = true
             if isPresentationalAttr(name) { tok.hasPresHint = true }
+            if name == 'style' && styleAttrSaysInherit(value) { nodeSawInheritInStyle = true }
         }
     }
     tokTagUnterminated = true
@@ -222,9 +223,17 @@ int func scanComment(from:int, tok:Token) {
         }
         i = j
     }
-    // EOF in comment: everything left is the comment
-    if tokLen > runStart {
-        text run = tokSrc.slice(runStart, tokLen).toText()
+    // EOF in comment: everything left is the comment, except the one or
+    // two dashes that took the tokenizer into its comment end dash and
+    // comment end states, which those states never append
+    int stop = tokLen
+    int eaten = 0
+    while stop > runStart && eaten < 2 && tokSrc.charCodeAt(stop - 1) == CH_MINUS {
+        stop--
+        eaten++
+    }
+    if stop > runStart {
+        text run = tokSrc.slice(runStart, stop).toText()
         data = data + run
     }
     tok.data = decodeText(data.toAscii(), false, false)
@@ -356,7 +365,19 @@ int func findRawTextEnd(from:int) {
             }
         }
         if c == CH_LT && peekCode(i + 1) == CH_SLASH && !doubleEscaped {
-            if asciiStartsWithLower(tokSrc, name, i + 2) && isTagTerminator(peekCode(i + 2 + name.length)) {
+            int afterName = i + 2 + name.length
+            // A real terminator, not the end of the input. The standard
+            // reaches an end tag through the end tag name state, which on
+            // whitespace, `/` or `>` goes on into the tag -- and on
+            // ANYTHING ELSE, the end of the input included, emits the `</`
+            // and the name it buffered as character tokens and returns to
+            // script data. So `</script` at the end of the input is text,
+            // where `</script ` is a tag whose EOF then drops it:
+            // tests16.dat has both, ten cases and seven, and treating EOF
+            // as a terminator answered the second correctly and the first
+            // not at all.
+            if afterName < tokLen && asciiStartsWithLower(tokSrc, name, i + 2)
+                    && isTagTerminator(peekCode(afterName)) {
                 return i
             }
         }
@@ -457,6 +478,15 @@ Token func nextToken() {
         }
         if nx == CH_SLASH {
             int after = peekCode(tokPos + 2)
+            if after == -1 {
+                // end tag open state at the end of the input: the `<` and
+                // the `/` reach the tree as characters, not as a bogus
+                // comment
+                Token t = makeToken(TOK_TEXT)
+                t.data = '</'
+                tokPos = tokPos + 2
+                return t
+            }
             if after == CH_GT {
                 // `</>` is a parse error and produces nothing
                 tokPos = tokPos + 3

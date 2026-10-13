@@ -3,9 +3,11 @@
 # implemented when it matches exactly the elements Chromium matches --
 # not merely when it parses.
 #
-# The list is Selectors 3's own feature set plus the parts of Selectors
-# 4 the snapshot's lowest class mentions, so the count says what is left
-# rather than only what works. It may not go down (CLAUDE.md §2).
+# The list is Selectors 3's own feature set plus every part of
+# Selectors 4 this fixture can grade without being changed, so the count
+# says what is left rather than only what works. The number that passes
+# may not go down (CLAUDE.md §2); adding a row that fails is how the
+# denominator grows, and is the point.
 #
 # A selector that matches nothing in the fixture proves nothing: an
 # engine that drops it agrees with one that implements it. Every
@@ -87,3 +89,112 @@ li:not(:first-child)
 div:has(.lead)
 li:not(:first-child, :last-child)
 [data-kind="ALPHA" i]
+
+# --- Selectors 4: the link and form-state pseudo-classes. `:read-write`
+# is about the control rather than the attribute -- a checkbox is
+# `:read-only` because `readonly` does not apply to that type -- and
+# `disabled` and `readonly` bar a control from constraint validation, so
+# `i2` and `i10` are in neither `:valid` nor `:invalid`. That pair is
+# what makes these rows able to fail: an implementation that puts every
+# control in one or the other passes neither.
+:any-link
+a:any-link
+input:read-write
+input:read-only
+p:read-only
+textarea:read-write
+textarea:read-only
+input:optional
+input:required
+input:placeholder-shown
+input:default
+option:default
+button:default
+input:indeterminate
+input:valid
+input:invalid
+# The validity conditions markup can express. The step base is `min`
+# when there is one and the `value` attribute otherwise, so `step=5
+# value=7` is a whole zero steps and valid; only `min=1 step=5 value=7`
+# can fail. todo.md holds the measurement, and the two conditions that
+# markup cannot express.
+select:invalid
+textarea:invalid
+input:required:invalid
+input:in-range
+input:out-of-range
+select:valid
+form:invalid
+input:enabled:required
+
+# --- Selectors 4: :dir(), which reads the element's directionality from
+# the nearest ancestor that declares one
+p:dir(ltr)
+p:dir(rtl)
+div:dir(rtl)
+:dir(rtl)
+# `dir="auto"` is the direction of the first strong character of the
+# element's own text. What counts as "its text" is the part the name
+# does not say: a descendant with a valid `dir`, a `bdi`, a textarea's
+# contents and an input's value are all passed over, and a `select`'s
+# options are not. todo.md holds the measurement.
+bdi:dir(rtl)
+bdi:dir(ltr)
+input:dir(rtl)
+textarea:dir(rtl)
+span:dir(rtl)
+b:dir(rtl)
+option:dir(ltr)
+
+# --- Selectors 4: a complex selector inside :is(), :where(), :not()
+# and :has(). Each takes a <complex-selector-list> in §3.1, not a
+# compound, and :has() takes a relative selector -- so a leading
+# combinator in it names a child or a sibling rather than a descendant.
+:is(div > p)
+:where(div > p)
+p:not(div > p)
+:is(h2):is(#h1)
+:not(:not(p))
+div:has(> p)
+div:has(+ div)
+p:has(+ p)
+li:has(~ li)
+div:not(:has(p))
+# `:is()` and `:where()` take a forgiving selector list (§3.1): an
+# alternative neither engine can read is dropped and the rest still
+# work. `:not()` and `:has()` do not -- but an invalid selector matches
+# nothing in Chromium, so those cannot be rows here and the unit suite
+# asserts them instead.
+:is(p, &&&bogus)
+:where(p, &&&bogus)
+:is(p, :totally-unknown)
+:is(p, > span)
+p:is(:nth-child(1), .lead)
+
+# One `:has()` may name two relations, which Chromium answers both of
+div:has(> p, + div)
+# and a relative selector may be complex under its own relation
+ul:has(> li + li)
+
+# --- Selectors 4: :nth-child()'s `of S` clause, which filters which
+# siblings are counted before An+B is applied to them. `S` is a whole
+# complex selector list, and only :nth-child() and :nth-last-child()
+# take one -- `:nth-of-type(1 of p)` is a syntax error in Chromium.
+p:nth-child(2 of .lead)
+:nth-child(1 of p)
+li:nth-child(even of :not(.x))
+:nth-child(2n of li)
+:nth-child(odd of li)
+:nth-child(-n+2 of li)
+:nth-last-child(1 of p)
+:nth-last-child(2 of li)
+:nth-child(1 of .lead, .tail)
+:nth-child(2 of div > p)
+li:nth-child(1 of li:not(:first-child))
+p:nth-child(1 of :is(.lead, .tail))
+
+# --- Selectors 4: combinations the list did not otherwise reach
+*|p
+:root > body
+:checked + input
+input:enabled:checked

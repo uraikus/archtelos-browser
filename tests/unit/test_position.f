@@ -66,4 +66,461 @@ collectBoxesForTag(p6.root, 'p', ap6)
 checkEqInt(ap6[0].y, 12, 'a fixed box ignores its positioned ancestor')
 checkEqInt(ap6[0].x, 8, 'in both axes')
 
+// ---- the static position (CSS2 §10.3.7) -------------------------------
+
+// A box with an `auto` inset sits where it would have been in flow, not
+// at the corner of its containing block. Every number below is
+// Chromium's, in todo.md, as the box's position relative to its
+// containing block.
+
+Box func staticBox(inner:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;font:16px/20px monospace">'
+        + '<div id="cb" style="position:relative;width:400px;height:200px">'
+        + inner + '</div></body>', 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'i', all)
+    return all.length > 0 ? all[0] : null
+}
+
+// The box under test is an <i>, so that `collectBoxesForTag` finds it
+// whether it was written block-level or inline-level.
+text ABS = '<i style="position:absolute;display:block;width:30px;height:20px"></i>'
+
+Box sb1 = staticBox(ABS)
+checkEqInt(sb1.x, 0, 'a direct child of the containing block starts at its corner')
+checkEqInt(sb1.y, 0, 'in both axes')
+
+Box sb2 = staticBox('<div style="height:50px"></div>' + ABS)
+checkEqInt(sb2.y, 50, 'a box after a 50px block sits below it')
+checkEqInt(sb2.x, 0, 'and still at the left')
+
+Box sb3 = staticBox('<div style="margin-left:60px">' + ABS + '</div>')
+checkEqInt(sb3.x, 60, 'a box inside an indented div is indented with it')
+checkEqInt(sb3.y, 0, 'and still at the top')
+
+Box sb4 = staticBox('<div style="height:50px"></div>'
+                    + '<div style="margin-left:60px">' + ABS + '</div>')
+checkEqInt(sb4.x, 60, 'both at once, across')
+checkEqInt(sb4.y, 50, 'and down')
+
+// A block-level box among inline content starts on the line after it.
+Box sb5 = staticBox('abcde' + ABS)
+checkEqInt(sb5.y, 20, 'a block-level box after text starts on the next line')
+checkEqInt(sb5.x, 0, 'at the start of it')
+
+// The flow begins inside the containing block's padding.
+Page padded = pageFromHtml('<!doctype html><body style="margin:0;font:16px/20px monospace">'
+    + '<div id="cb" style="position:relative;width:400px;height:200px;padding:20px">'
+    + '<div style="height:50px"></div>' + ABS + '</div></body>', 'about:blank', 800)
+arr[Box] padIt = []
+collectBoxesForTag(padded.root, 'i', padIt)
+checkEqInt(padIt[0].x, 20, "the containing block's padding moves the static position across")
+checkEqInt(padIt[0].y, 70, 'and down')
+
+// An inset that is not `auto` is unaffected, so the two axes are
+// decided separately.
+Box sb6 = staticBox('<div style="height:50px"></div>'
+    + '<div style="margin-left:60px">'
+    + '<i style="position:absolute;display:block;width:30px;height:20px;top:5px"></i>'
+    + '</div>')
+checkEqInt(sb6.x, 60, 'a declared top leaves the static position across alone')
+checkEqInt(sb6.y, 5, 'while down it is the inset that decides')
+
+// ---- a transform is a containing block (Transforms 1 §3, measured) -----
+//
+// Chromium, on a positioned grandparent holding a middle box holding an
+// out-of-flow child at left/top 0 (todo.md): the child lands on the
+// grandparent when the middle box has no transform and on the **middle
+// box** when it has one, and a `position: fixed` child does the same --
+// it lands on the viewport normally and on the transformed box here.
+//
+// The trigger is the computed value rather than the matrix:
+// `rotate(0deg)` computes to matrix(1, 0, 0, 1, 0, 0), byte for byte
+// what `translateX(0px)` computes to, and both count. Only `none` does
+// not -- which is exactly `transforms.length`.
+
+Box func cbChild(mid:text, kind:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0">'
+        + '<div style="position:relative;left:50px;top:50px;width:400px;height:200px;'
+        + 'border:1px solid #000">'
+        + '<div id="m" style="margin:20px;width:200px;height:100px;' + mid + '">'
+        + '<div id="c" style="position:' + kind + ';left:0;top:0;width:30px;height:30px"></div>'
+        + '</div></div></body>', 'about:blank', 800)
+    arr[Box] all = []
+    collectBoxesForTag(p.root, 'div', all)
+    for int i = 0, i < all.length, i++ {
+        if getAttr(all[i].node, 'id') == 'c' { return all[i] }
+    }
+    return null
+}
+
+Box cbPlainAbs = cbChild('', 'absolute')
+Box cbTxAbs = cbChild('transform:translateX(0px)', 'absolute')
+Box cbNoneAbs = cbChild('transform:none', 'absolute')
+Box cbRotAbs = cbChild('transform:rotate(0deg)', 'absolute')
+
+check(cbPlainAbs != null, 'the absolute child has a box')
+// The grandparent's one-pixel border puts its padding box at 51,51 and
+// stops the middle box's margin collapsing through it, so the middle box
+// is at 71,71 and the two are distinguishable on both axes.
+checkEqInt(cbPlainAbs.x, 51, 'with no transform the absolute child takes the positioned ancestor')
+checkEqInt(cbPlainAbs.y, 51, 'on both axes')
+checkEqInt(cbTxAbs.x, 71, 'a transform makes the middle box the containing block')
+checkEqInt(cbTxAbs.y, 71, 'on both axes')
+
+// `none` is not a transform, so it must agree with declaring nothing --
+// which is the check that does not depend on either number being known.
+checkEqInt(cbNoneAbs.x, cbPlainAbs.x, 'transform: none is not a containing block')
+checkEqInt(cbNoneAbs.y, cbPlainAbs.y, 'on both axes')
+
+// An identity matrix is still a transform, and the two spellings of one
+// must agree rather than each match a number.
+checkEqInt(cbRotAbs.x, cbTxAbs.x, 'rotate(0deg) is a transform as much as translateX(0px)')
+checkEqInt(cbRotAbs.y, cbTxAbs.y, 'on both axes')
+
+// A fixed child resolves against the viewport, and against a
+// transformed ancestor when there is one.
+Box cbPlainFix = cbChild('', 'fixed')
+Box cbTxFix = cbChild('transform:translateX(0px)', 'fixed')
+checkEqInt(cbPlainFix.x, 0, 'a fixed child takes the viewport')
+checkEqInt(cbPlainFix.y, 0, 'on both axes')
+checkEqInt(cbTxFix.x, 71, 'and a transformed ancestor where there is one')
+checkEqInt(cbTxFix.y, 71, 'on both axes')
+
+// ---- hit testing goes through the inverse transform --------------------
+//
+// A 100x40 box rotated 90 degrees about its centre is drawn 40 wide and
+// 100 tall. Chromium's elementFromPoint follows the drawn shape: the
+// points inside it and outside the laid-out rectangle hit it, and the
+// points inside the laid-out rectangle and outside the drawn one miss.
+
+// The body is given a height because hit testing culls by the
+// ancestor's rectangle, so an out-of-flow box outside it is unreachable
+// -- which is its own bug rather than this one's (todo.md).
+Box func hitTransformRoot() {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+        + '<div id="r" style="position:absolute;left:100px;top:300px;'
+        + 'width:100px;height:40px;transform:rotate(90deg)"></div>'
+        + '</body>', 'about:blank', 800)
+    return p.root
+}
+
+Box hitRootT = hitTransformRoot()
+// Drawn: x 130..170, y 270..370, about the centre 150,320.
+Box hitInsideDrawn = hitTest(hitRootT, 150, 280)
+Box hitInsideDrawn2 = hitTest(hitRootT, 150, 360)
+Box hitOutsideDrawn = hitTest(hitRootT, 110, 320)
+Box hitOutsideDrawn2 = hitTest(hitRootT, 190, 320)
+Box hitCentre = hitTest(hitRootT, 150, 320)
+
+check(hitInsideDrawn != null && getAttr(hitInsideDrawn.node, 'id') == 'r',
+      'a point inside the drawn box but outside the laid-out one hits it')
+check(hitInsideDrawn2 != null && getAttr(hitInsideDrawn2.node, 'id') == 'r',
+      'and so does the other end of it')
+check(hitOutsideDrawn == null || getAttr(hitOutsideDrawn.node, 'id') != 'r',
+      'a point inside the laid-out box but outside the drawn one misses')
+check(hitOutsideDrawn2 == null || getAttr(hitOutsideDrawn2.node, 'id') != 'r',
+      'on the other side too')
+check(hitCentre != null && getAttr(hitCentre.node, 'id') == 'r',
+      'the centre is inside both and hits')
+
+// The centre of a rotation does not move, so a box rotated by any angle
+// is hit at its centre -- which needs no number and holds for all four.
+Box func rotatedRoot(angle:text) {
+    Page p = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+        + '<div id="r" style="position:absolute;left:100px;top:100px;'
+        + 'width:80px;height:40px;transform:rotate(' + angle + ')"></div>'
+        + '</body>', 'about:blank', 800)
+    return p.root
+}
+Box rc0 = hitTest(rotatedRoot('0deg'), 140, 120)
+Box rc30 = hitTest(rotatedRoot('30deg'), 140, 120)
+Box rc90 = hitTest(rotatedRoot('90deg'), 140, 120)
+Box rc180 = hitTest(rotatedRoot('180deg'), 140, 120)
+check(rc0 != null && getAttr(rc0.node, 'id') == 'r', 'the centre is hit unrotated')
+check(rc30 != null && getAttr(rc30.node, 'id') == 'r', 'and at 30 degrees')
+check(rc90 != null && getAttr(rc90.node, 'id') == 'r', 'and at 90')
+check(rc180 != null && getAttr(rc180.node, 'id') == 'r', 'and at 180')
+
+// A translate moves the drawn box whole, so the point that was inside
+// misses and the point it moved onto hits.
+Page pmove = pageFromHtml('<!doctype html><body style="margin:0;height:600px">'
+    + '<div id="r" style="position:absolute;left:100px;top:100px;'
+    + 'width:80px;height:40px;transform:translate(200px,0)"></div>'
+    + '</body>', 'about:blank', 800)
+Box mvIn = hitTest(pmove.root, 140, 120)
+Box mvOut = hitTest(pmove.root, 340, 120)
+check(mvIn == null || getAttr(mvIn.node, 'id') != 'r',
+      'a translated box is not where it was laid out')
+check(mvOut != null && getAttr(mvOut.node, 'id') == 'r', 'it is where it was drawn')
+
+// ---- an out-of-flow box beyond its ancestors is still hit ------------
+//
+// Hit testing descends only into children whose rectangle holds the
+// point, so a box laid out past every ancestor's box was unreachable.
+// Chromium finds it: with an empty body -- `getBoundingClientRect`
+// gives it a height of **0** -- a `position: absolute` box at 100,100
+// answers `elementFromPoint` at 140,120, and so does one beyond a
+// parent ten pixels tall, and a `position: fixed` one beyond both
+// (todo.md).
+
+Box func outFlowRoot(css:text, body:text) {
+    Page p = pageFromHtml('<!doctype html><head><style>body{margin:0}' + css
+        + '</style><body>' + body + '</body>', 'about:blank', 800)
+    return p.root
+}
+
+text OF_ABS = '#a{position:absolute;left:100px;top:100px;width:80px;height:40px}'
+
+Box ofEmpty = hitTest(outFlowRoot(OF_ABS, '<div id="a"></div>'), 140, 120)
+check(ofEmpty != null && getAttr(ofEmpty.node, 'id') == 'a',
+      'an absolute box in an empty body is hit')
+
+Box ofBeside = hitTest(outFlowRoot(OF_ABS, '<div id="a"></div>'), 300, 120)
+check(ofBeside == null || getAttr(ofBeside.node, 'id') != 'a',
+      'and a point beside it is not')
+
+text OF_SHORT = '#p{position:relative;width:50px;height:10px}' + OF_ABS
+Box ofChild = hitTest(outFlowRoot(OF_SHORT, '<div id="p"><div id="a"></div></div>'), 140, 120)
+check(ofChild != null && getAttr(ofChild.node, 'id') == 'a',
+      'an absolute box beyond a short parent is hit')
+
+Box ofParent = hitTest(outFlowRoot(OF_SHORT, '<div id="p"><div id="a"></div></div>'), 20, 5)
+check(ofParent != null && getAttr(ofParent.node, 'id') == 'p',
+      'and the parent is still hit where it is')
+
+text OF_FIXED = '#p{width:10px;height:10px}'
+    + '#a{position:fixed;left:200px;top:200px;width:80px;height:40px}'
+Box ofFixed = hitTest(outFlowRoot(OF_FIXED, '<div id="p"><div id="a"></div></div>'), 240, 220)
+check(ofFixed != null && getAttr(ofFixed.node, 'id') == 'a',
+      'a fixed box beyond everything is hit')
+
+// `pointer-events: none` takes it out of hit testing wherever it is, so
+// the new path must honour it exactly as the ordinary descent does.
+Box ofNone = hitTest(outFlowRoot(OF_ABS + '#a{pointer-events:none}',
+    '<div id="a"></div>'), 140, 120)
+check(ofNone == null || getAttr(ofNone.node, 'id') != 'a',
+      'pointer-events: none keeps it out of the new path too')
+
+// And a transformed one is hit where it is drawn, which is the two
+// features agreeing rather than each answering on its own.
+Box ofTx = hitTest(outFlowRoot(
+    '#a{position:absolute;left:100px;top:100px;width:80px;height:40px;'
+    + 'transform:translate(200px,0)}', '<div id="a"></div>'), 340, 120)
+check(ofTx != null && getAttr(ofTx.node, 'id') == 'a',
+      'a translated out-of-flow box is hit where it is drawn')
+
+// ---- a click lands on the topmost box (CSS2 §9.9) ---------------------
+//
+// Hit testing answers the box the painter drew last at that point.
+// Measured in Chromium (todo.md), five pairs pinning five steps of the
+// painting order against the one below.
+
+Box func topAt(css:text, body:text, x:int, y:int) {
+    Page p = pageFromHtml('<!doctype html><head><style>body{margin:0;font:16px monospace}'
+        + css + '</style><body>' + body + '</body>', 'about:blank', 800)
+    return hitTest(p.root, x, y)
+}
+
+text func topIdAt(css:text, body:text, x:int, y:int) {
+    Box b = topAt(css, body, x, y)
+    if b == null { return 'null' }
+    text id = getAttr(b.node, 'id')
+    return id == null ? b.node.tag : id
+}
+
+// A positioned box written *before* an in-flow one still wins.
+checkEq(topIdAt(
+    '#pos{position:absolute;left:0;top:0;width:200px;height:100px}'
+    + '#flow{width:200px;height:100px}',
+    '<div id="pos"></div><div id="flow"></div>', 50, 50),
+    'pos', 'a positioned box beats an in-flow one written after it')
+
+// The later of two overlapping boxes at the same z wins. Two in-flow
+// blocks would be the plainest case and cannot be written here: a
+// negative `margin-top` is not applied by this engine, so they do not
+// overlap at all (todo.md). Two positioned boxes at the same z ask the
+// same question of the same loop.
+checkEq(topIdAt(
+    '#a{position:absolute;left:0;top:0;width:200px;height:100px}'
+    + '#b{position:absolute;left:0;top:0;width:200px;height:100px}',
+    '<div id="a"></div><div id="b"></div>', 50, 50),
+    'b', 'the later of two boxes at the same z wins')
+
+// The higher z-index wins whatever the document order.
+checkEq(topIdAt(
+    '#a{position:absolute;left:0;top:0;width:200px;height:100px;z-index:5}'
+    + '#b{position:absolute;left:0;top:0;width:200px;height:100px;z-index:1}',
+    '<div id="a"></div><div id="b"></div>', 50, 50),
+    'a', 'the higher z-index wins whatever the order')
+
+// A negative-z box loses to its stacking context's in-flow content.
+checkEq(topIdAt(
+    '#p{position:relative;z-index:0;width:200px;height:100px}'
+    + '#neg{position:absolute;z-index:-1;left:0;top:0;width:200px;height:100px}'
+    + '#flow{width:200px;height:100px}',
+    '<div id="p"><div id="neg"></div><div id="flow"></div></div>', 50, 50),
+    'flow', 'a negative z-index box is under the in-flow content')
+
+// A child wins over its parent's background.
+checkEq(topIdAt('#p{width:200px;height:100px}#c{width:100px;height:50px}',
+    '<div id="p"><div id="c"></div></div>', 50, 25),
+    'c', 'a child wins over its parent')
+
+// The in-flow box in the fourth case has no background at all and still
+// wins, so this is about the box rather than the ink -- asserted by
+// giving it one and requiring the same answer.
+checkEq(topIdAt(
+    '#p{position:relative;z-index:0;width:200px;height:100px}'
+    + '#neg{position:absolute;z-index:-1;left:0;top:0;width:200px;height:100px;background:red}'
+    + '#flow{width:200px;height:100px;background:transparent}',
+    '<div id="p"><div id="neg"></div><div id="flow"></div></div>', 50, 50),
+    'flow', 'and a transparent box still takes the click')
+
+// ---- position: sticky --------------------------------------------------
+//
+// The three fixtures measured against Chromium 141 in todo.md, put back
+// to this engine. What is asserted is the box's position in DOCUMENT
+// coordinates -- where it was laid out plus the painter's shift -- so
+// the answer can be compared at scroll positions that put it off the
+// screen, which a pixel check cannot reach. The pixel side is
+// tests/render/sticky.f.
+
+Page pSticky = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;top:10px;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:350px"></div></body></html>', 'about:blank', 400)
+arr[Box] stA = []
+collectBoxesForTag(pSticky.root, 'p', stA)
+
+// Where the box is drawn, in document coordinates, at a given scroll.
+int func stickyDocY(b:Box, scroll:int, viewport:int) {
+    paintScrollY = scroll
+    paintViewHeight = viewport
+    return b.y + stickyOffsetY(b)
+}
+
+Box qA = stA[0]
+checkEqInt(qA.y, 50, 'the sticky box is laid out where the flow puts it')
+checkEqInt(stickyDocY(qA, 0, 100), 50, 'top: at scroll 0 it has not moved')
+checkEqInt(stickyDocY(qA, 30, 100), 50, 'at scroll 30 it is still in place')
+checkEqInt(stickyDocY(qA, 60, 100), 70, 'at scroll 60 it is stuck at scroll + 10')
+checkEqInt(stickyDocY(qA, 300, 100), 230, 'at scroll 300 it has reached its containing block')
+checkEqInt(stickyDocY(qA, 500, 100), 230, 'and goes no further')
+
+// The same block put at y=400 with the box at its bottom, so a `bottom`
+// inset has something to do.
+Page pStickyB = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:400px"></div>'
+    + '<div style="height:200px">'
+    + '<div style="height:180px"></div>'
+    + '<p id="q" style="margin:0;position:sticky;bottom:10px;height:20px"></p></div>'
+    + '<div style="height:300px"></div></body></html>', 'about:blank', 400)
+arr[Box] stB = []
+collectBoxesForTag(pStickyB.root, 'p', stB)
+Box qB = stB[0]
+checkEqInt(qB.y, 580, 'the bottom-inset box is laid out at the end of its block')
+checkEqInt(stickyDocY(qB, 0, 100), 400, 'bottom: at scroll 0 it is pulled up to its containing block top')
+checkEqInt(stickyDocY(qB, 200, 100), 400, 'and held there')
+checkEqInt(stickyDocY(qB, 400, 100), 470, 'at scroll 400 it is stuck above the viewport bottom')
+checkEqInt(stickyDocY(qB, 490, 100), 560, 'and follows the scroll')
+checkEqInt(stickyDocY(qB, 600, 100), 580, 'until it is back in its own place')
+
+// 30px of padding and 30px of border on the containing block, which
+// separates its content box from its padding box and its border box.
+// Chromium clamps against the content box.
+Page pStickyC = pageFromHtml('<!doctype html><html style="margin:0;padding:0">'
+    + '<body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px;padding:30px;border:30px solid #000">'
+    + '<p id="q" style="margin:0;position:sticky;top:0;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:600px"></div></body></html>', 'about:blank', 400)
+arr[Box] stC = []
+collectBoxesForTag(pStickyC.root, 'p', stC)
+Box qC = stC[0]
+checkEqInt(qC.y, 110, 'the box starts inside the padding and the border')
+checkEqInt(stickyDocY(qC, 0, 100), 110, 'padded: at scroll 0 it has not moved')
+checkEqInt(stickyDocY(qC, 200, 100), 200, 'at scroll 200 it is stuck at the scroll position')
+checkEqInt(stickyDocY(qC, 300, 100), 290, 'at scroll 300 it has reached the content box bottom')
+checkEqInt(stickyDocY(qC, 400, 100), 290, 'which is neither the padding box nor the border box')
+
+// A sticky box with no inset has nothing to stick to.
+Page pStickyN = pageFromHtml('<!doctype html><body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;height:20px"></p></div></body>', 'about:blank', 400)
+arr[Box] stN = []
+collectBoxesForTag(pStickyN.root, 'p', stN)
+checkEqInt(stickyDocY(stN[0], 300, 100), 50, 'a sticky box with no inset never moves')
+
+// And the keyword is its own computed value rather than a synonym for
+// `relative`, which is what the cascade used to make of it -- so an
+// engine that went on mapping it to `relative` fails here as well as on
+// every geometry above.
+checkEqInt(findElement(pSticky.doc, 'p').style.position, POS_STICKY,
+    'position: sticky computes to sticky')
+checkEqInt(findElement(pSticky.doc, 'div').style.position, POS_STATIC,
+    'and leaves its neighbours static')
+
+// A stuck box takes the click where it is drawn, not where it was laid
+// out. The painter's scroll position is what the hit tester reads, so
+// the page is painted first, exactly as the shell does it.
+Page pHit = pageFromHtml('<!doctype html><body style="margin:0;padding:0">'
+    + '<div style="height:50px"></div>'
+    + '<div style="height:200px">'
+    + '<p id="q" style="margin:0;position:sticky;top:10px;height:20px"></p>'
+    + '<div style="height:180px"></div></div>'
+    + '<div style="height:350px"></div></body>', 'about:blank', 400)
+clearCanvas()
+paintPage(pHit, 0, 60, 100)
+// At scroll 60 the box is stuck at document 70..90.
+Box hitStuck = hitTest(pHit.root, 10, 80)
+check(hitStuck != null && getAttr(hitStuck.node, 'id') == 'q',
+    'a stuck box is clickable where it is drawn')
+Box hitNatural = hitTest(pHit.root, 10, 60)
+check(hitNatural == null || getAttr(hitNatural.node, 'id') != 'q',
+    'and not where the flow left it')
+
+// ---- will-change is a containing block, for a narrower list -----------
+// CSS Will Change 1: a `will-change` naming a property that would make
+// the element a containing block makes it one up front. The list is
+// NOT the one that creates a stacking context -- Chromium's two tables
+// are in todo.md, and seven names create a context without becoming a
+// containing block. Every check is against `cbChild`'s own two
+// answers, so neither 51 nor 71 is written down again.
+
+checkEqInt(cbChild('will-change:transform', 'absolute').x, cbTxAbs.x,
+    'will-change: transform is a containing block like a transform')
+checkEqInt(cbChild('will-change:transform', 'absolute').y, cbTxAbs.y, 'on both axes')
+checkEqInt(cbChild('will-change:filter', 'absolute').x, cbTxAbs.x,
+    'and so is will-change: filter')
+checkEqInt(cbChild('will-change:rotate', 'absolute').x, cbTxAbs.x, 'and will-change: rotate')
+checkEqInt(cbChild('will-change:left, translate', 'absolute').x, cbTxAbs.x,
+    'one qualifying name in a list is enough')
+
+// The seven that make a stacking context and not a containing block.
+checkEqInt(cbChild('will-change:opacity', 'absolute').x, cbPlainAbs.x,
+    'will-change: opacity is a stacking context and NOT a containing block')
+checkEqInt(cbChild('will-change:z-index', 'absolute').x, cbPlainAbs.x, 'nor is z-index')
+checkEqInt(cbChild('will-change:clip-path', 'absolute').x, cbPlainAbs.x, 'nor clip-path')
+checkEqInt(cbChild('will-change:mask', 'absolute').x, cbPlainAbs.x, 'nor mask')
+checkEqInt(cbChild('will-change:isolation', 'absolute').x, cbPlainAbs.x, 'nor isolation')
+checkEqInt(cbChild('will-change:mix-blend-mode', 'absolute').x, cbPlainAbs.x,
+    'nor mix-blend-mode')
+checkEqInt(cbChild('will-change:view-transition-name', 'absolute').x, cbPlainAbs.x,
+    'nor view-transition-name')
+checkEqInt(cbChild('will-change:left', 'absolute').x, cbPlainAbs.x,
+    'and a name that qualifies for neither changes nothing')
+
+// A `fixed` child asks the same question of the same box, as it does
+// of a transform.
+checkEqInt(cbChild('will-change:transform', 'fixed').x,
+    cbChild('transform:translateX(0px)', 'fixed').x,
+    'a fixed child takes a will-change containing block too')
+
 finish('position')

@@ -224,4 +224,23 @@ mqIs('(orientation >= portrait)', false, 'nor does orientation')
 mqIs('(orientation = landscape)', true, 'but equality is the colon form said differently')
 mqIs('(orientation = portrait)', false, 'and answers what the colon form answers')
 
+// ---- the resolution units, one of which nothing named ------------------
+// `dpcm` appeared in no suite at all, and it is a third spelling of the
+// same quantity `dpi` and `dppx` spell: one dot per centimetre is 2.54
+// per inch, and one per CSS pixel is 96 per inch. So the check is that
+// the three agree about the same resolution rather than that each
+// matches a number.
+mqIs('(min-resolution: 1dpcm)', evaluateMediaQuery('(min-resolution: 2.54dpi)'.toAscii()),
+     'a dot per centimetre is 2.54 per inch')
+// A value the viewport is under, so the pair is true rather than two
+// falses: an unsupported unit answers false, and false against false
+// would pass whatever the engine did with it.
+mqIs('(max-resolution: 100dpcm)', evaluateMediaQuery('(max-resolution: 254dpi)'.toAscii()),
+     'and the same asked the other way')
+mqIs('(min-resolution: 37.795275590551dpcm)',
+     evaluateMediaQuery('(min-resolution: 1dppx)'.toAscii()),
+     'and a dot per CSS pixel is one per 1/37.795 of a centimetre')
+mqIs('(resolution: 96dpi)', evaluateMediaQuery('(resolution: 1dppx)'.toAscii()),
+     'while 96 per inch and one per pixel are the same resolution')
+
 finish('media')
