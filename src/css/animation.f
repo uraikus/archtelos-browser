@@ -685,16 +685,20 @@ AnimTracks func animTracksFor(name:text) {
                 out.tracks.push(tr)
             }
             AnimTrack track = out.tracks[at]
+            // a function that is not one is ignored in a keyframe, and the
+            // animation's own is used (measured)
+            text own = ''
+            if f.timing != null && f.timing != '' && animTimingListValid(f.timing.toAscii()) { own = f.timing }
             int last = track.offsets.length - 1
             if last >= 0 && track.offsets[last] == f.offset {
                 // a later block at the same offset wins the property
                 track.values[last] = v
-                track.timings[last] = f.timing
+                track.timings[last] = own
                 track.comps[last] = f.composition
             } else {
                 track.offsets.push(f.offset)
                 track.values.push(v)
-                track.timings.push(f.timing)
+                track.timings.push(own)
                 track.comps.push(f.composition)
             }
         }
